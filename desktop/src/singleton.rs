@@ -22,6 +22,28 @@ pub fn ui_ctx() -> Option<egui::Context> {
     UI_CTX.get().cloned()
 }
 
+/// Restaura y trae al frente la ventana principal. Con la ventana minimizada
+/// u oculta, el bucle de eventos de eframe DUERME y los comandos de viewport
+/// se quedan encolados: hace falta el empujón NATIVO (SW_RESTORE genera
+/// mensajes reales que despiertan el bucle, y entonces los comandos entran).
+pub fn show_main_window(ctx: &egui::Context) {
+    #[cfg(windows)]
+    unsafe {
+        use windows::core::{w, PCWSTR};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
+        };
+        if let Ok(h) = FindWindowW(PCWSTR::null(), w!("PepoMote")) {
+            let _ = ShowWindow(h, SW_RESTORE);
+            let _ = SetForegroundWindow(h);
+        }
+    }
+    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    ctx.request_repaint();
+}
+
 pub enum Singleton {
     /// Somos la primera instancia; el socket es el cerrojo (mantener vivo).
     Primary(UdpSocket),
@@ -53,10 +75,7 @@ pub fn watch(sock: UdpSocket) {
                 };
                 if &buf[..len] == SHOW {
                     if let Some(ctx) = UI_CTX.get() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                        ctx.request_repaint();
+                        show_main_window(ctx);
                     }
                 }
             }

@@ -8,10 +8,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 fn show_window(ctx: &egui::Context) {
-    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-    ctx.request_repaint();
+    crate::singleton::show_main_window(ctx);
 }
 
 pub fn start(ctx_rx: std::sync::mpsc::Receiver<egui::Context>) {
