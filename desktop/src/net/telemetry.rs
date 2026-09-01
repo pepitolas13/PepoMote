@@ -70,6 +70,7 @@ pub fn run(
 
     let mut buf = [0u8; 128];
     let mut prev_buttons: u32 = 0;
+    let mut engine_session: Option<u32> = None;
     let mut win_start = Instant::now();
     let mut win_packets: u32 = 0;
     let mut win_first_t: Option<u64> = None;
@@ -141,6 +142,16 @@ pub fn run(
                     }
                     sess.last_seq = Some(p.seq);
                     sess.phone_udp = Some(from);
+                }
+
+                // Sesión nueva (conexión/reconexión): motor limpio. La primera
+                // muestra dispara el recentrado → el cursor aparece en el
+                // CENTRO de la pantalla nada más conectar, nunca donde quedó
+                // la referencia de la sesión anterior.
+                if engine_session != Some(p.session_id) {
+                    engine_session = Some(p.session_id);
+                    engine = PointerEngine::new();
+                    prev_buttons = 0;
                 }
 
                 win_packets += 1;

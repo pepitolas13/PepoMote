@@ -83,6 +83,15 @@ private fun Root(activity: MainActivity) {
     val context = LocalContext.current
     val link by LinkState.flow.collectAsState()
 
+    // Gesto/botón atrás: dentro de la app vuelve al inicio en vez de salir.
+    // En Home (y en el onboarding) se comporta como siempre: sale.
+    androidx.activity.compose.BackHandler(
+        enabled = activity.currentScreen != Screen.Home &&
+            activity.currentScreen != Screen.Onboarding
+    ) {
+        activity.currentScreen = Screen.Home
+    }
+
     val notifPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* con o sin permiso, el servicio arranca; solo cambia la notificación */ }
