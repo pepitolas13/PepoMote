@@ -13,6 +13,10 @@ pub enum Mode {
     Dolphin,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Ajustes persistentes (settings.json en el directorio de config).
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Config {
@@ -20,6 +24,9 @@ pub struct Config {
     pub sens_deg: f32,
     /// true = posicionamiento absoluto (recomendado); false = relativo (juegos).
     pub abs_mode: bool,
+    /// Configurar Dolphin solo (mandos multijugador) al conectar/desconectar.
+    #[serde(default = "default_true")]
+    pub auto_dolphin: bool,
 }
 
 impl Default for Config {
@@ -27,6 +34,7 @@ impl Default for Config {
         Self {
             sens_deg: 40.0,
             abs_mode: true,
+            auto_dolphin: true,
         }
     }
 }
@@ -56,18 +64,26 @@ impl Config {
     }
 }
 
+/// Un móvil conectado (indexado por slot: Jugador N = slot N-1).
+#[derive(Clone)]
+pub struct PlayerInfo {
+    pub name: String,
+    pub model: String,
+    pub battery_pct: u8,
+    pub rtt_ms: Option<f32>,
+}
+
 /// Estado compartido entre los hilos de red y la UI.
 pub struct Shared {
     pub status: LinkStatus,
     pub mode: Mode,
     pub config: Config,
-    pub device_name: String,
-    pub device_model: String,
-    pub battery_pct: u8,
+    pub players: [Option<PlayerInfo>; crate::net::MAX_PLAYERS],
     pub pps: f32,
     pub sensor_hz: f32,
-    pub rtt_ms: Option<f32>,
     pub dsu_clients: usize,
+    /// Resultado del último intento de configurar Dolphin (para la UI).
+    pub dolphin_cfg_status: Option<String>,
     pub last_error: Option<String>,
 }
 
@@ -77,15 +93,17 @@ impl Shared {
             status: LinkStatus::Waiting,
             mode: Mode::Pointer,
             config: Config::load(),
-            device_name: String::new(),
-            device_model: String::new(),
-            battery_pct: 0,
+            players: [None, None, None, None],
             pps: 0.0,
             sensor_hz: 0.0,
-            rtt_ms: None,
             dsu_clients: 0,
+            dolphin_cfg_status: None,
             last_error: None,
         }
+    }
+
+    pub fn player_count(&self) -> usize {
+        self.players.iter().filter(|p| p.is_some()).count()
     }
 }
 

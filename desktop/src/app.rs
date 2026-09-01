@@ -1,5 +1,5 @@
 use crate::pairing::PairingInfo;
-use crate::state::{LinkStatus, Mode, SharedState};
+use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use crate::theme;
 use egui::{Color32, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
 use std::time::Duration;
@@ -29,12 +29,12 @@ impl PepoMoteApp {
 struct Snapshot {
     status: LinkStatus,
     mode: Mode,
-    device: String,
-    battery: u8,
+    players: [Option<PlayerInfo>; crate::net::MAX_PLAYERS],
+    player_count: usize,
     pps: f32,
     sensor_hz: f32,
-    rtt_ms: Option<f32>,
     dsu_clients: usize,
+    dolphin_status: Option<String>,
     error: Option<String>,
 }
 
@@ -54,16 +54,12 @@ impl eframe::App for PepoMoteApp {
             Snapshot {
                 status: s.status,
                 mode: s.mode,
-                device: if s.device_model.is_empty() {
-                    s.device_name.clone()
-                } else {
-                    format!("{} ({})", s.device_name, s.device_model)
-                },
-                battery: s.battery_pct,
+                players: s.players.clone(),
+                player_count: s.player_count(),
                 pps: s.pps,
                 sensor_hz: s.sensor_hz,
-                rtt_ms: s.rtt_ms,
                 dsu_clients: s.dsu_clients,
+                dolphin_status: s.dolphin_cfg_status.clone(),
                 error: s.last_error.clone(),
             }
         };
@@ -71,55 +67,97 @@ impl eframe::App for PepoMoteApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(24.0))
             .show(ctx, |ui| {
-                // Con la ventana pequeña, el contenido (Ajustes incluido)
-                // hace scroll en vez de cortarse
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(8.0);
-                    ui.label(
-                        RichText::new("PepoMote")
-                            .size(34.0)
-                            .strong()
-                            .color(theme::TEXT),
-                    );
-                    ui.label(
-                        RichText::new("Apunta. Haz clic. Juega.")
-                            .size(14.0)
-                            .color(theme::TEXT_DIM),
-                    );
-                    ui.add_space(18.0);
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new("PepoMote")
+                                    .size(34.0)
+                                    .strong()
+                                    .color(theme::TEXT),
+                            );
+                            ui.label(
+                                RichText::new("Apunta. Haz clic. Juega.")
+                                    .size(14.0)
+                                    .color(theme::TEXT_DIM),
+                            );
+                            ui.add_space(18.0);
 
-                    match snap.status {
-                        LinkStatus::Waiting => self.ui_waiting(ui),
-                        LinkStatus::Connected => ui_connected(ui, &snap),
-                    }
+                            if snap.player_count == 0 {
+                                self.ui_qr(ui, 280.0, "Esperando al móvil…");
+                            } else {
+                                ui_players(ui, &snap);
+                                if snap.mode == Mode::Dolphin {
+                                    self.ui_dolphin(ui, &snap);
+                                }
+                                if snap.player_count < crate::net::MAX_PLAYERS {
+                                    ui.add_space(12.0);
+                                    self.ui_qr(ui, 170.0, "¿Otro jugador? Escanea");
+                                }
+                            }
 
-                    ui.add_space(10.0);
-                    self.ui_settings(ui);
+                            ui.add_space(10.0);
+                            self.ui_settings(ui);
 
-                    if let Some(err) = &snap.error {
-                        ui.add_space(10.0);
-                        ui.label(RichText::new(err).size(12.0).color(theme::ERROR));
-                    }
+                            if let Some(err) = &snap.error {
+                                ui.add_space(10.0);
+                                ui.label(RichText::new(err).size(12.0).color(theme::ERROR));
+                            }
 
-                    ui.add_space(12.0);
-                    ui.label(
-                        RichText::new(format!("v{} · pv1", env!("CARGO_PKG_VERSION")))
-                            .size(11.0)
-                            .color(theme::TEXT_DIM),
-                    );
-                });
+                            ui.add_space(12.0);
+                            ui.label(
+                                RichText::new(format!("v{} · pv1", env!("CARGO_PKG_VERSION")))
+                                    .size(11.0)
+                                    .color(theme::TEXT_DIM),
+                            );
+                        });
                     });
             });
+
+        let _ = snap.status;
     }
 }
 
 impl PepoMoteApp {
+    fn ui_qr(&self, ui: &mut egui::Ui, size: f32, caption: &str) {
+        draw_qr_card(ui, &self.qr_modules, self.qr_width, size);
+        ui.add_space(8.0);
+        ui.label(RichText::new(caption).size(13.0).color(theme::TEXT_DIM));
+        ui.label(
+            RichText::new(format!("{} : {}", self.pairing.host, self.pairing.port))
+                .size(11.0)
+                .color(theme::TEXT_DIM),
+        );
+    }
+
+    fn ui_dolphin(&self, ui: &mut egui::Ui, snap: &Snapshot) {
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(format!("Dolphin: {} cliente(s) DSU", snap.dsu_clients))
+                .size(13.0)
+                .color(theme::BLUE),
+        );
+        if ui
+            .button(RichText::new("Configurar Dolphin").size(13.0))
+            .clicked()
+        {
+            crate::dolphin::configure_now(&self.shared);
+        }
+        if let Some(msg) = &snap.dolphin_status {
+            let color = if msg.starts_with("Dolphin configurado") {
+                theme::OK
+            } else {
+                theme::WARN
+            };
+            ui.label(RichText::new(msg).size(12.0).color(color));
+        }
+    }
+
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
         let mut config = self.shared.lock().unwrap().config;
-        let before = (config.sens_deg, config.abs_mode);
+        let before = (config.sens_deg, config.abs_mode, config.auto_dolphin);
 
         egui::CollapsingHeader::new(
             RichText::new("Ajustes").size(14.0).color(theme::TEXT_DIM),
@@ -144,6 +182,11 @@ impl PepoMoteApp {
                 RichText::new("Apuntado absoluto (desactívalo para juegos)").size(13.0),
             );
             ui.add_space(4.0);
+            ui.checkbox(
+                &mut config.auto_dolphin,
+                RichText::new("Configurar Dolphin automáticamente (multijugador)").size(13.0),
+            );
+            ui.add_space(4.0);
             let before_auto = self.autostart;
             ui.checkbox(
                 &mut self.autostart,
@@ -157,91 +200,75 @@ impl PepoMoteApp {
             }
         });
 
-        if (config.sens_deg, config.abs_mode) != before {
+        if (config.sens_deg, config.abs_mode, config.auto_dolphin) != before {
             config.save();
             self.shared.lock().unwrap().config = config;
         }
     }
-
-    fn ui_waiting(&self, ui: &mut egui::Ui) {
-        draw_qr_card(ui, &self.qr_modules, self.qr_width);
-        ui.add_space(14.0);
-        status_row(ui, theme::TEXT_DIM, "Esperando al móvil…");
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new(format!(
-                "Escanea con la app PepoMote · {} : {}",
-                self.pairing.host, self.pairing.port
-            ))
-            .size(12.0)
-            .color(theme::TEXT_DIM),
-        );
-    }
 }
 
-fn ui_connected(ui: &mut egui::Ui, snap: &Snapshot) {
-    let card_w = 320.0f32.min(ui.available_width());
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(card_w, 214.0), egui::Sense::hover());
+fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
+    let card_w = 340.0f32.min(ui.available_width());
+    let row_h = 34.0;
+    let head_h = 58.0;
+    let card_h = head_h + row_h * snap.player_count as f32 + 14.0;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(card_w, card_h), egui::Sense::hover());
     ui.painter().rect(
         rect,
         Rounding::same(theme::RADIUS),
         theme::CARD,
-        Stroke::new(1.5_f32,theme::CARD_BORDER),
+        Stroke::new(1.5_f32, theme::CARD_BORDER),
     );
 
     let mut child = ui.child_ui(
-        rect.shrink(18.0),
+        rect.shrink(16.0),
         egui::Layout::top_down(egui::Align::Min),
         None,
     );
-    child.label(RichText::new(&snap.device).size(17.0).strong().color(theme::TEXT));
-    child.add_space(6.0);
     let mode_txt = match snap.mode {
-        Mode::Pointer => "Modo puntero",
-        Mode::Dolphin => "Modo Dolphin",
+        Mode::Pointer => "Modo puntero (apunta el Jugador 1)",
+        Mode::Dolphin => "Modo Dolphin: todos juegan",
     };
     child.label(RichText::new(mode_txt).size(13.0).color(theme::BLUE));
-    child.add_space(10.0);
-    stat_line(&mut child, "Paquetes/s", &format!("{:.0}", snap.pps));
-    stat_line(&mut child, "Sensor", &format!("{:.0} Hz", snap.sensor_hz));
-    stat_line(
-        &mut child,
-        "RTT",
-        &snap
-            .rtt_ms
-            .map(|r| format!("{r:.1} ms"))
-            .unwrap_or_else(|| "—".into()),
+    child.label(
+        RichText::new(format!(
+            "{:.0} paquetes/s · sensor {:.0} Hz",
+            snap.pps, snap.sensor_hz
+        ))
+        .size(11.0)
+        .color(theme::TEXT_DIM),
     );
-    stat_line(&mut child, "Batería del móvil", &format!("{}%", snap.battery));
-    if snap.mode == Mode::Dolphin {
-        stat_line(
-            &mut child,
-            "Dolphin",
-            &format!("{} cliente(s) DSU", snap.dsu_clients),
-        );
-    }
+    child.add_space(6.0);
 
-    ui.add_space(14.0);
-    status_row(ui, theme::OK, "Conectado");
-}
-
-fn stat_line(ui: &mut egui::Ui, label: &str, value: &str) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(label).size(13.0).color(theme::TEXT_DIM));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(RichText::new(value).size(13.0).strong().color(theme::TEXT));
+    for (i, slot) in snap.players.iter().enumerate() {
+        let Some(p) = slot else { continue };
+        child.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("J{}", i + 1))
+                    .size(13.0)
+                    .strong()
+                    .color(theme::CARD)
+                    .background_color(theme::BLUE),
+            );
+            let name = if p.model.is_empty() {
+                p.name.clone()
+            } else {
+                p.model.clone()
+            };
+            ui.label(RichText::new(name).size(13.0).color(theme::TEXT));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let rtt = p
+                    .rtt_ms
+                    .map(|r| format!("{r:.0} ms"))
+                    .unwrap_or_else(|| "—".into());
+                ui.label(
+                    RichText::new(format!("{}% · {rtt}", p.battery_pct))
+                        .size(12.0)
+                        .color(theme::TEXT_DIM),
+                );
+            });
         });
-    });
-}
-
-fn status_row(ui: &mut egui::Ui, dot: Color32, label: &str) {
-    ui.horizontal(|ui| {
-        let total = ui.available_width();
-        ui.add_space((total - 150.0).max(0.0) / 2.0);
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
-        ui.painter().circle_filled(rect.center(), 5.0, dot);
-        ui.label(RichText::new(label).color(theme::TEXT_DIM));
-    });
+    }
 }
 
 fn build_qr(url: &str) -> (Vec<bool>, usize) {
@@ -259,8 +286,8 @@ fn build_qr(url: &str) -> (Vec<bool>, usize) {
     }
 }
 
-fn draw_qr_card(ui: &mut egui::Ui, modules: &[bool], width: usize) {
-    let card_size = ui.available_width().clamp(180.0, 280.0);
+fn draw_qr_card(ui: &mut egui::Ui, modules: &[bool], width: usize, size: f32) {
+    let card_size = ui.available_width().clamp(120.0, size);
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(card_size), egui::Sense::hover());
     let painter = ui.painter();
 
@@ -268,7 +295,7 @@ fn draw_qr_card(ui: &mut egui::Ui, modules: &[bool], width: usize) {
         rect,
         Rounding::same(theme::RADIUS),
         theme::CARD,
-        Stroke::new(1.5_f32,theme::CARD_BORDER),
+        Stroke::new(1.5_f32, theme::CARD_BORDER),
     );
 
     if width == 0 {
@@ -277,10 +304,10 @@ fn draw_qr_card(ui: &mut egui::Ui, modules: &[bool], width: usize) {
 
     let quiet = 4;
     let total = width + quiet * 2;
-    let module = (card_size - 24.0) / total as f32;
+    let module = (card_size - 20.0) / total as f32;
     let origin = Pos2::new(
-        rect.min.x + 12.0 + quiet as f32 * module,
-        rect.min.y + 12.0 + quiet as f32 * module,
+        rect.min.x + 10.0 + quiet as f32 * module,
+        rect.min.y + 10.0 + quiet as f32 * module,
     );
 
     for y in 0..width {

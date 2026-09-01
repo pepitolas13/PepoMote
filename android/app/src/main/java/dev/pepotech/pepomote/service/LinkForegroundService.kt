@@ -99,7 +99,7 @@ class LinkForegroundService : Service() {
             deviceName = Build.MODEL ?: "Android",
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
             callbacks = object : ControlClient.Callbacks {
-                override fun onOk(sessionId: Int, udpPort: Int, mode: String) {
+                override fun onOk(sessionId: Int, udpPort: Int, mode: String, slot: Int) {
                     val sender = UdpSender(pairing.host, udpPort, sessionId) { rtt ->
                         LinkState.updateConnected { it.copy(rttMs = rtt) }
                     }
@@ -110,7 +110,7 @@ class LinkForegroundService : Service() {
                     motion = engine
                     engine.start()
                     LinkState.sendMode = { m -> control?.sendMode(m) }
-                    LinkState.publish(UiLink.Connected(pairing.pcName, mode, null, 0f))
+                    LinkState.publish(UiLink.Connected(pairing.pcName, mode, null, 0f, slot))
                     LinkState.pendingMode?.let { m ->
                         LinkState.pendingMode = null
                         control?.sendMode(m)

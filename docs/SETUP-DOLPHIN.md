@@ -1,5 +1,16 @@
 # SETUP-DOLPHIN — jugar a la Wii con PepoMote
 
+## Multijugador (v1.1): se configura solo
+
+Conecta el segundo móvil escaneando el MISMO QR: entra como Jugador 2. Con
+Dolphin CERRADO y el modo Dolphin activo, PepoMote escribe por ti las
+secciones Wiimote 1..N de la configuración de Dolphin (deja copia
+`WiimoteNew.ini.pepomote.bak`) y registra el servidor DSU. Abre Dolphin y a
+jugar: cada móvil es su propio Wiimote. Si Dolphin estaba abierto, la
+ventana de PepoMote te lo avisa: ciérralo y pulsa "Configurar Dolphin".
+El automatismo se puede apagar en Ajustes. Los pasos manuales de abajo solo
+hacen falta si prefieres mapear a mano.
+
 Requisitos: Dolphin 5.0+ reciente (2023 en adelante), PepoMote en el PC y el
 móvil emparejado.
 

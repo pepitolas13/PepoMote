@@ -29,7 +29,7 @@ Una línea UTF-8 = un mensaje JSON terminado en `\n`. El móvil conecta y envía
 | Mensaje | Dirección | Campos | Respuesta |
 |---|---|---|---|
 | `hello` | móvil→PC | `{"m":"hello","pv":1,"token":"...","code":"1234"?,"name":"<móvil>","model":"<modelo>"}` | `ok` / `err` |
-| `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer"}` | — |
+| `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer","slot":0}` | — |
 | `err` | PC→móvil | `{"m":"err","code":"bad_token"\|"bad_version"\|"busy","msg":"..."}` | cerrar |
 | `mode` | ambas | `{"m":"mode","mode":"pointer"\|"dolphin"}` | eco `mode` como confirmación |
 | `config` | ambas | `{"m":"config","sensor_hz":u16?,"sens_deg":f32?,...}` solo claves presentes | eco `config` |
@@ -37,6 +37,8 @@ Una línea UTF-8 = un mensaje JSON terminado en `\n`. El móvil conecta y envía
 | `bye` | ambas | `{"m":"bye"}` | cerrar |
 
 Latido: `ping` TCP cada 1 s si no hay tráfico. Sesión muerta a los 5 s sin nada (TCP ni UDP): el receptor libera el slot y descarta el `session_id`.
+
+**Multijugador (desde pv=1, cambio aditivo):** hasta 4 sesiones simultáneas. El receptor asigna a cada `hello` el slot libre más bajo y lo devuelve en `ok.slot` (0 = Jugador 1). Con los 4 ocupados, `err busy`. El mensaje `mode` solo tiene efecto desde el slot 0 (a los demás se les responde con el modo vigente). En modo puntero solo inyecta el slot 0; en modo Dolphin cada sesión alimenta su slot DSU homónimo (0..3), cada uno con su MAC (`"PMP1"+0x00+slot`) y su pulso de recentrado propio.
 
 ## 4. Telemetría (UDP, binario)
 

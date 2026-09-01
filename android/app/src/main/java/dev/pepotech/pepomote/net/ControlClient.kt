@@ -20,7 +20,7 @@ class ControlClient(
     private val callbacks: Callbacks
 ) {
     interface Callbacks {
-        fun onOk(sessionId: Int, udpPort: Int, mode: String)
+        fun onOk(sessionId: Int, udpPort: Int, mode: String, slot: Int)
         fun onError(code: String, msg: String)
         fun onModeChanged(mode: String)
         fun onClosed()
@@ -69,7 +69,8 @@ class ControlClient(
                     "ok" -> callbacks.onOk(
                         msg.getInt("session_id"),
                         msg.optInt("udp_port", port),
-                        msg.optString("mode", "pointer")
+                        msg.optString("mode", "pointer"),
+                        msg.optInt("slot", 0)
                     )
 
                     "err" -> {

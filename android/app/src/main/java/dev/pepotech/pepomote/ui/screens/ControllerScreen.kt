@@ -94,10 +94,20 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 Column(Modifier.weight(1f)) {
                     when (link) {
                         is UiLink.Connected -> {
-                            Text(link.pcName, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (link.slot > 0) "${link.pcName} · Jugador ${link.slot + 1}"
+                                else link.pcName,
+                                style = MaterialTheme.typography.titleMedium
+                            )
                             Text(
                                 buildString {
-                                    append(if (link.mode == "dolphin") "Dolphin" else "Puntero")
+                                    if (link.mode == "dolphin") {
+                                        append("Dolphin")
+                                    } else if (link.slot > 0) {
+                                        append("Puntero: apunta el Jugador 1")
+                                    } else {
+                                        append("Puntero")
+                                    }
                                     link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
                                 },
                                 style = MaterialTheme.typography.bodyMedium
@@ -123,7 +133,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 }
             }
 
-            if (link is UiLink.Connected && showChips) {
+            if (link is UiLink.Connected && showChips && link.slot == 0) {
                 Spacer(Modifier.height(6.dp))
                 ModeChips(current = link.mode)
             }

@@ -10,7 +10,9 @@ sealed class UiLink {
         val pcName: String,
         val mode: String,
         val rttMs: Float?,
-        val sensorHz: Float
+        val sensorHz: Float,
+        /** 0 = Jugador 1 (controla puntero y modo); 1..3 = jugadores extra */
+        val slot: Int = 0
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()

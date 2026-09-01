@@ -1,14 +1,15 @@
-//! Hilo caliente: UDP INPUT → puntero + botones. También responde el
-//! broadcast de descubrimiento y mide RTT con PING/PONG (PROTOCOL.md §4).
+//! Hilo caliente: UDP INPUT → puntero (Jugador 1) y DSU (todos los slots).
+//! También responde el broadcast de descubrimiento y mide RTT por jugador.
 
 use super::codec::{self, Packet};
-use super::SharedSession;
+use super::Sessions;
 use crate::dsu::{Dsu, MotionSample};
 use crate::input::{self, KeyCode, MouseButton};
 use crate::pairing::PairingInfo;
 use crate::pointer::{PointerEngine, PointerOutput};
 use crate::state::{Mode, SharedState};
 use serde_json::json;
+use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -36,11 +37,11 @@ const BUTTON_MAP: [(u32, Action); 15] = [
     (1 << 14, Action::Key(KeyCode::PlayPause)),
     (1 << 15, Action::Key(KeyCode::NextTrack)),
 ];
-// bit 16 (prev) no cabe en el array const sin duplicar tipos; se trata aparte.
+// bit 16 (prev) se trata aparte.
 
 pub fn run(
     shared: SharedState,
-    session: SharedSession,
+    sessions: Sessions,
     pairing: PairingInfo,
     dsu: Option<Arc<Dsu>>,
 ) {
@@ -69,8 +70,11 @@ pub fn run(
     let now_us = |s: Instant| s.elapsed().as_micros() as u64;
 
     let mut buf = [0u8; 128];
-    let mut prev_buttons: u32 = 0;
+    // Flancos de botones por sesión (cada jugador pulsa lo suyo)
+    let mut prev_buttons: HashMap<u32, u32> = HashMap::new();
+    // El motor de puntero pertenece al Jugador 1: se resetea si cambia su sesión
     let mut engine_session: Option<u32> = None;
+
     let mut win_start = Instant::now();
     let mut win_packets: u32 = 0;
     let mut win_first_t: Option<u64> = None;
@@ -78,16 +82,21 @@ pub fn run(
     let mut last_ping = Instant::now();
 
     loop {
+        // Ping de RTT a TODOS los jugadores
         if last_ping.elapsed() > Duration::from_millis(500) {
             last_ping = Instant::now();
-            let target = session
+            let targets: Vec<(u32, std::net::SocketAddr)> = sessions
                 .lock()
                 .unwrap()
-                .as_ref()
-                .and_then(|s| s.phone_udp.map(|a| (s.id, a)));
-            if let Some((id, addr)) = target {
+                .values()
+                .filter_map(|s| s.phone_udp.map(|a| (s.id, a)))
+                .collect();
+            for (id, addr) in targets {
                 let _ = socket.send_to(&codec::build_ping(id, now_us(start)), addr);
             }
+            // higiene: flancos de sesiones muertas fuera
+            let alive = sessions.lock().unwrap();
+            prev_buttons.retain(|id, _| alive.contains_key(id));
         }
 
         if win_start.elapsed() >= Duration::from_secs(1) {
@@ -123,17 +132,26 @@ pub fn run(
             Some(Packet::Ping { session_id, t_us }) => {
                 let _ = socket.send_to(&codec::build_pong(session_id, t_us), from);
             }
-            Some(Packet::Pong { t_us, .. }) => {
+            Some(Packet::Pong { session_id, t_us }) => {
                 let rtt_ms = (now_us(start).saturating_sub(t_us)) as f32 / 1000.0;
-                shared.lock().unwrap().rtt_ms = Some(rtt_ms);
+                let slot = sessions
+                    .lock()
+                    .unwrap()
+                    .get(&session_id)
+                    .map(|s| s.slot as usize);
+                if let Some(slot) = slot {
+                    if let Some(p) = shared.lock().unwrap().players[slot].as_mut() {
+                        p.rtt_ms = Some(rtt_ms);
+                    }
+                }
             }
             Some(Packet::Input(p)) => {
-                {
-                    let mut guard = session.lock().unwrap();
-                    let Some(sess) = guard.as_mut() else { continue };
-                    if sess.id != p.session_id {
+                // Validar sesión, seq y aprender la dirección UDP del jugador
+                let slot = {
+                    let mut guard = sessions.lock().unwrap();
+                    let Some(sess) = guard.get_mut(&p.session_id) else {
                         continue;
-                    }
+                    };
                     if let Some(last) = sess.last_seq {
                         if p.seq.wrapping_sub(last) == 0 || p.seq.wrapping_sub(last) > u32::MAX / 2
                         {
@@ -142,20 +160,8 @@ pub fn run(
                     }
                     sess.last_seq = Some(p.seq);
                     sess.phone_udp = Some(from);
-                }
-
-                // Sesión nueva (conexión/reconexión): motor limpio. La primera
-                // muestra dispara el recentrado → el cursor aparece en el
-                // CENTRO de la pantalla nada más conectar, nunca donde quedó
-                // la referencia de la sesión anterior.
-                if engine_session != Some(p.session_id) {
-                    engine_session = Some(p.session_id);
-                    engine = PointerEngine::new();
-                    prev_buttons = 0;
-                    // Centrado físico SIEMPRE al conectar, sea cual sea el
-                    // modo (absoluto, relativo o Dolphin)
-                    injector.move_abs(0.5, 0.5);
-                }
+                    sess.slot
+                };
 
                 win_packets += 1;
                 if win_first_t.is_none() {
@@ -165,25 +171,36 @@ pub fn run(
 
                 let (mode, config) = {
                     let mut s = shared.lock().unwrap();
-                    s.battery_pct = p.battery_pct;
+                    if let Some(pl) = s.players[slot as usize].as_mut() {
+                        pl.battery_pct = p.battery_pct;
+                    }
                     (s.mode, s.config)
                 };
 
                 if mode == Mode::Dolphin {
-                    // En modo Dolphin NADA se inyecta en el SO: todo va al DSU,
-                    // INLINE desde este hilo (envío UDP a localhost, ~µs):
-                    // misma latencia que el camino del puntero.
+                    // Todos los jugadores al DSU, cada uno en su slot, INLINE
                     if let Some(dsu) = &dsu {
-                        dsu.push(&MotionSample {
-                            t_us: p.t_sensor_us,
-                            accel_ms2: p.accel,
-                            gyro_rads: p.gyro,
-                            buttons: p.buttons,
-                            battery_pct: p.battery_pct,
-                            recenter_count: p.recenter_count,
-                        });
+                        dsu.push(
+                            slot,
+                            &MotionSample {
+                                t_us: p.t_sensor_us,
+                                accel_ms2: p.accel,
+                                gyro_rads: p.gyro,
+                                buttons: p.buttons,
+                                battery_pct: p.battery_pct,
+                                recenter_count: p.recenter_count,
+                            },
+                        );
                     }
-                } else {
+                } else if slot == 0 {
+                    // Modo puntero: el SO tiene UN cursor y es del Jugador 1
+                    if engine_session != Some(p.session_id) {
+                        engine_session = Some(p.session_id);
+                        engine = PointerEngine::new();
+                        prev_buttons.remove(&p.session_id);
+                        injector.move_abs(0.5, 0.5);
+                    }
+
                     engine.set_cursor_hint(injector.cursor_pos());
                     match engine.apply(&p, config.sens_deg, aspect, config.abs_mode, screen_w) {
                         PointerOutput::Abs { nx, ny } => injector.move_abs(nx, ny),
@@ -193,7 +210,8 @@ pub fn run(
                     if p.touch_scroll_dy != 0 {
                         injector.wheel(p.touch_scroll_dy as i32 * 4);
                     }
-                    let changed = p.buttons ^ prev_buttons;
+                    let prev = prev_buttons.entry(p.session_id).or_insert(0);
+                    let changed = p.buttons ^ *prev;
                     if changed != 0 {
                         for (bit, action) in BUTTON_MAP.iter() {
                             if changed & bit != 0 {
@@ -208,8 +226,9 @@ pub fn run(
                             injector.key(KeyCode::PrevTrack, p.buttons & (1 << 16) != 0);
                         }
                     }
+                    *prev = p.buttons;
                 }
-                prev_buttons = p.buttons;
+                // slot > 0 en modo puntero: se ignora (apunta el Jugador 1)
             }
             None => {}
         }
@@ -245,7 +264,5 @@ fn screen_width() -> f32 {
 
 #[cfg(not(windows))]
 fn screen_aspect() -> f32 {
-    // uinput normaliza al tamaño real de pantalla; el aspecto solo escala
-    // la sensibilidad vertical. 16:9 como aproximación razonable.
     16.0 / 9.0
 }

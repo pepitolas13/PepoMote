@@ -28,6 +28,7 @@ See [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — two minutes of one-time D
 
 ## Nice touches
 
+- **Local multiplayer**: up to 4 phones on one PC — scan the same QR and each phone becomes its own Wiimote in Dolphin, with Dolphin's controller config written for you automatically
 - Physical volume keys = A / B triggers (zero touch latency)
 - Turn the phone sideways for a NES-style pad (2D games)
 - Optional start-with-the-system (tray only, no window)

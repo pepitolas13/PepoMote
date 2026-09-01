@@ -2,6 +2,7 @@
 
 mod app;
 mod autostart;
+mod dolphin;
 mod dsu;
 mod icon;
 mod input;
