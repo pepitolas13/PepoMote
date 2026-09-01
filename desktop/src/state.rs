@@ -25,7 +25,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            sens_deg: 35.0,
+            sens_deg: 40.0,
             abs_mode: true,
         }
     }
