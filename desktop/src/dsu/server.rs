@@ -5,12 +5,10 @@
 //! PadData, ~1/s). El streaming de PadData sale inline del hilo de telemetría
 //! (dsu::Dsu::push) para no añadir latencia.
 
-use super::{mapping, MotionSample, SlotSamples};
+use super::{mapping, Client, Clients, MotionSample, SlotSamples};
 use crate::net::MAX_PLAYERS;
 use crate::state::SharedState;
-use std::collections::HashMap;
-use std::net::{SocketAddr, UdpSocket};
-use std::sync::{Arc, Mutex};
+use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 
 pub const DSU_PORT: u16 = 26760;
@@ -31,12 +29,35 @@ fn mac(slot: u8) -> [u8; 6] {
     [0x50, 0x4D, 0x50, 0x31, 0x00, slot]
 }
 
-pub fn run(
-    shared: SharedState,
-    socket: UdpSocket,
-    clients: Arc<Mutex<HashMap<SocketAddr, Instant>>>,
-    last: SlotSamples,
-) {
+const ALL_SLOTS: u8 = (1 << MAX_PLAYERS) - 1;
+
+/// Bitmask de slots que pide un PadData request (tras el tipo: flags u8,
+/// pad_id u8, mac [6]). flags 0 = todos; bit0 = por pad_id; bit1 = por MAC
+/// (combinables). Dolphin usa bit0 con el índice de cada uno de sus mandos.
+fn subscribed_slots(payload: &[u8]) -> u8 {
+    let flags = payload.first().copied().unwrap_or(0);
+    if flags == 0 {
+        return ALL_SLOTS;
+    }
+    let mut mask = 0u8;
+    if flags & 1 != 0 {
+        if let Some(&id) = payload.get(1) {
+            if (id as usize) < MAX_PLAYERS {
+                mask |= 1 << id;
+            }
+        }
+    }
+    if flags & 2 != 0 {
+        if let Some(m) = payload.get(2..8) {
+            if m[..5] == mac(0)[..5] && (m[5] as usize) < MAX_PLAYERS {
+                mask |= 1 << m[5];
+            }
+        }
+    }
+    mask
+}
+
+pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotSamples) {
     let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
     let mut buf = [0u8; 128];
     let mut last_sweep = Instant::now();
@@ -69,7 +90,13 @@ pub fn run(
                         }
                     }
                     MSG_PAD_DATA => {
-                        clients.lock().unwrap().insert(from, Instant::now());
+                        clients.lock().unwrap().insert(
+                            from,
+                            Client {
+                                last_seen: Instant::now(),
+                                slots: subscribed_slots(payload),
+                            },
+                        );
                     }
                     _ => {}
                 }
@@ -79,7 +106,7 @@ pub fn run(
         if last_sweep.elapsed() > Duration::from_secs(1) {
             last_sweep = Instant::now();
             let mut c = clients.lock().unwrap();
-            c.retain(|_, t| t.elapsed() < CLIENT_TTL);
+            c.retain(|_, cl| cl.last_seen.elapsed() < CLIENT_TTL);
             shared.lock().unwrap().dsu_clients = c.len();
         }
     }
@@ -260,6 +287,22 @@ mod tests {
         assert_eq!(live[1], 2, "slot 1 con muestra fresca = conectado");
         assert_eq!(live[0], 1);
         assert_eq!(&live[4..10], &[0x50, 0x4D, 0x50, 0x31, 0x00, 0x01]);
+    }
+
+    #[test]
+    fn suscripcion_por_slot_como_dolphin() {
+        // flags 0: todos los pads
+        assert_eq!(subscribed_slots(&[0, 0, 0, 0, 0, 0, 0, 0]), 0b1111);
+        // Dolphin: flags 1 (PadID) + índice del mando
+        assert_eq!(subscribed_slots(&[1, 0, 0, 0, 0, 0, 0, 0]), 0b0001);
+        assert_eq!(subscribed_slots(&[1, 2, 0, 0, 0, 0, 0, 0]), 0b0100);
+        assert_eq!(subscribed_slots(&[1, 7, 0, 0, 0, 0, 0, 0]), 0, "pad fuera de rango");
+        // por MAC (la nuestra) y combinado
+        assert_eq!(subscribed_slots(&[2, 0, 0x50, 0x4D, 0x50, 0x31, 0x00, 0x01]), 0b0010);
+        assert_eq!(subscribed_slots(&[3, 0, 0x50, 0x4D, 0x50, 0x31, 0x00, 0x03]), 0b1001);
+        assert_eq!(subscribed_slots(&[2, 0, 1, 2, 3, 4, 5, 6]), 0, "MAC ajena");
+        // petición truncada: nada
+        assert_eq!(subscribed_slots(&[1]), 0);
     }
 
     #[test]

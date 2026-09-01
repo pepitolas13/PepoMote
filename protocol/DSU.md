@@ -1,6 +1,6 @@
 # DSU (cemuhook) — notas verificadas y mapeo PepoMote
 
-Servidor DSU del receptor: `127.0.0.1:26760` (UDP), slot 0, un mando. Verificado contra la spec comunitaria (v1993.github.io/cemuhook-protocol) y `DualShockUDPClient.cpp` del código de Dolphin.
+Servidor DSU del receptor: `127.0.0.1:26760` (UDP), hasta 4 mandos (slot = jugador − 1, MAC `PMP1`+0x00+slot). Verificado contra la spec comunitaria (v1993.github.io/cemuhook-protocol) y `DualShockUDPClient.cpp` del código de Dolphin.
 
 ## Estructura
 
@@ -28,6 +28,7 @@ gyro_dsu  = gyro_android · 180 / π
 
 - Emitir un PadData por cada INPUT recibido, tope 250 Hz.
 - Dolphin re-envía sus peticiones (PortInfo/PadData) cada 1 s. Expirar el registro de un cliente a los 3 s sin re-petición.
+- **La petición PadData lleva suscripción** (tras el tipo: `flags` u8, `pad_id` u8, `mac` [6]): `flags=0` = todos los pads; bit0 = solo `pad_id`; bit1 = solo la MAC (combinables). HAY QUE HONRARLA: Dolphin abre un socket UDP por mando y se registra con `flags=1, pad_id=índice`, y al recibir NO filtra por slot (se queda con el último PadData que entre por ese socket). Enviar todos los slots a todos los sockets hace que cada Wiimote se mueva con todos los móviles a la vez (bug real de v1.1.0 con dos jugadores).
 - Responder peticiones de versión con 1001.
 
 ## Mapeo de ejes (móvil en mano como mando: pantalla arriba, borde superior apuntando a la TV)
