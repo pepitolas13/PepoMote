@@ -111,6 +111,8 @@ pub struct PointerEngine {
     /// Puente anti-salto del descongelado: se fija a (held − filtrado) al
     /// liberar (salto cero) y se disuelve exponencialmente con el movimiento.
     offset: (f32, f32),
+    /// t de la primera muestra: ventana de asentamiento del rotation vector.
+    first_t_us: Option<u64>,
     last_t_us: Option<u64>,
     // fallback relativo
     acc_x: f32,
@@ -128,6 +130,7 @@ impl PointerEngine {
             frozen: false,
             last_emitted: None,
             offset: (0.0, 0.0),
+            first_t_us: None,
             last_t_us: None,
             acc_x: 0.0,
             acc_y: 0.0,
@@ -187,6 +190,27 @@ impl PointerEngine {
         let (yaw_ref, pitch_ref) = self.ref_angles.unwrap();
         let yaw = wrap180(yaw_w - yaw_ref); // + = derecha
         let pitch = pitch_w - pitch_ref; // + = arriba
+
+        // Asentamiento del rotation vector: el sensor arranca en identidad y
+        // "salta" a la orientación real al engancharse a la gravedad. Si en
+        // los primeros 2.5 s la desviación excede lo físicamente razonable,
+        // la referencia era falsa: re-anclar (cursor quieto en el centro).
+        let first_t = *self.first_t_us.get_or_insert(p.t_sensor_us);
+        if p.t_sensor_us.saturating_sub(first_t) < 2_500_000 {
+            let lim = sens_deg * 0.9;
+            if yaw.abs() > lim || pitch.abs() * aspect_w_over_h > lim {
+                self.ref_angles = Some((yaw_w, pitch_w));
+                self.filter.reset();
+                self.frozen = false;
+                self.offset = (0.0, 0.0);
+                self.last_emitted = Some((0.0, 0.0));
+                return if abs_mode {
+                    PointerOutput::Abs { nx: 0.5, ny: 0.5 }
+                } else {
+                    PointerOutput::None
+                };
+            }
+        }
 
         let dt = dt.unwrap_or(0.005);
         let (yaw_f, pitch_f, speed) = self.filter.filter(yaw, pitch, dt);
@@ -399,6 +423,41 @@ mod tests {
         let expected = 0.5 + 10.0 / 35.0;
         assert!((nx - expected).abs() < 0.01, "nx={nx} esperado={expected}");
         assert!((ny - 0.5).abs() < 0.01, "ny={ny} debería seguir centrado");
+    }
+
+    #[test]
+    fn asentamiento_del_sensor_no_manda_el_cursor_a_la_esquina() {
+        // El rotation vector arranca en identidad y a los ~500 ms "salta" a
+        // la orientación real (aquí pitch -40°). Sin el guardián, la
+        // referencia falsa clavaba el cursor abajo; con él, se re-ancla y el
+        // cursor queda en el centro, y el apuntado posterior funciona.
+        let mut e = PointerEngine::new();
+        // primeras muestras: identidad (sensor sin asentar)
+        let mut t = 0u64;
+        for _ in 0..100 {
+            t += 5_000;
+            e.apply(&packet(arr(qrot_z(0.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0);
+        }
+        // el sensor se asienta: orientación real pitch -40°
+        let mut out = (0.0, 0.0);
+        for _ in 0..100 {
+            t += 5_000;
+            if let PointerOutput::Abs { nx, ny } =
+                e.apply(&packet(arr(qrot_x(-40.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0)
+            {
+                out = (nx, ny);
+            }
+        }
+        assert!(
+            (out.0 - 0.5).abs() < 0.02 && (out.1 - 0.5).abs() < 0.02,
+            "el cursor debería quedar centrado tras re-anclar, está en {out:?}"
+        );
+        // y el apuntado relativo a la nueva referencia funciona
+        let q = qrot_x(-40.0).mul(qrot_y(0.0)); // base
+        let _ = q;
+        let (nx, _) = run_to(&mut e, arr(qrot_z(-5.0).mul(qrot_x(-40.0))), 0, 300, t + 5_000);
+        let expected = 0.5 + 5.0 / 35.0;
+        assert!((nx - expected).abs() < 0.02, "nx={nx} esperado={expected}");
     }
 
     #[test]
