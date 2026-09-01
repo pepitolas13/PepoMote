@@ -6,11 +6,30 @@ import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.NetworkInterface
 
 data class ReceiverInfo(val name: String, val host: String, val tcpPort: Int)
 
 /** Descubrimiento por broadcast UDP (fallback sin mDNS): PMPDISCOVER1 → PMPHERE1. */
 object Discovery {
+    /**
+     * Destinos del sondeo: el broadcast limitado (255.255.255.255) y el
+     * DIRIGIDO de cada interfaz (p. ej. 192.168.1.255). Bastantes móviles y
+     * routers descartan el limitado; el dirigido llega. PROTOCOL.md §1.
+     */
+    private fun broadcastTargets(): List<InetAddress> {
+        val targets = LinkedHashSet<InetAddress>()
+        targets += InetAddress.getByName("255.255.255.255")
+        try {
+            NetworkInterface.getNetworkInterfaces()?.toList()?.forEach { nic ->
+                if (!nic.isUp || nic.isLoopback) return@forEach
+                nic.interfaceAddresses.forEach { ia -> ia.broadcast?.let { targets += it } }
+            }
+        } catch (_: Exception) {
+        }
+        return targets.toList()
+    }
+
     suspend fun scan(timeoutMs: Int = 1500): List<ReceiverInfo> = withContext(Dispatchers.IO) {
         val found = LinkedHashMap<String, ReceiverInfo>()
         try {
@@ -18,8 +37,12 @@ object Discovery {
                 socket.broadcast = true
                 socket.soTimeout = 300
                 val probe = PmpCodec.DISCOVER
-                val target = InetAddress.getByName("255.255.255.255")
-                socket.send(DatagramPacket(probe, probe.size, target, 26761))
+                for (target in broadcastTargets()) {
+                    try {
+                        socket.send(DatagramPacket(probe, probe.size, target, 26761))
+                    } catch (_: Exception) {
+                    }
+                }
 
                 val buf = ByteArray(1024)
                 val deadline = System.currentTimeMillis() + timeoutMs

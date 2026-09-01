@@ -5,6 +5,11 @@
 
 use crate::state::{Mode, SharedState};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+/// Dos móviles conectando a la vez disparan dos configuraciones: en serie,
+/// o se pisan el leer-modificar-escribir del mismo INI.
+static CONFIGURE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Mapeo validado contra Dolphin real (h3): botones por bytes analógicos,
 /// cruceta "Pad N/S/W/E", IMU completo y recentrado por botón Touch.
@@ -98,7 +103,8 @@ pub fn dolphin_running() -> bool {
                         .unwrap_or(entry.szExeFile.len())],
                 )
                 .to_lowercase();
-                if name == "dolphin.exe" {
+                // Dolphin.exe, DolphinQt.exe, Dolphin-x64.exe… según el build
+                if name.starts_with("dolphin") {
                     found = true;
                     break;
                 }
@@ -183,13 +189,35 @@ fn set_section(ini: &mut Ini, name: &str, body: Vec<String>) {
     }
 }
 
+/// Clave de una línea `Clave = valor` de INI (None para comentarios/vacías).
+fn ini_key(line: &str) -> Option<&str> {
+    let t = line.trim();
+    if t.is_empty() || t.starts_with('#') || t.starts_with(';') {
+        return None;
+    }
+    Some(t.split('=').next()?.trim())
+}
+
+/// Escribe el INI solo si cambia algo. El backup `.pepomote.bak` se hace UNA
+/// vez (el archivo tal como estaba antes de que PepoMote lo tocara nunca):
+/// re-copiarlo en cada pasada lo habría sustituido por nuestra propia versión.
+fn write_if_changed(path: &Path, original: &str, new: String) -> Result<(), String> {
+    if original == new {
+        return Ok(());
+    }
+    if path.exists() {
+        let bak = path.with_extension("ini.pepomote.bak");
+        if !bak.exists() {
+            let _ = std::fs::copy(path, bak);
+        }
+    }
+    std::fs::write(path, new).map_err(|e| e.to_string())
+}
+
 /// [Wiimote1..n] con nuestro mapeo; el resto de secciones, intactas.
 pub fn write_wiimotes(cfg_dir: &Path, n_players: usize) -> Result<(), String> {
     let path = cfg_dir.join("WiimoteNew.ini");
     let original = std::fs::read_to_string(&path).unwrap_or_default();
-    if path.exists() {
-        let _ = std::fs::copy(&path, cfg_dir.join("WiimoteNew.ini.pepomote.bak"));
-    }
     let mut ini = parse_ini(&original);
     for slot in 0..n_players.min(crate::net::MAX_PLAYERS) {
         let body: Vec<String> = MAPPING
@@ -199,20 +227,26 @@ pub fn write_wiimotes(cfg_dir: &Path, n_players: usize) -> Result<(), String> {
             .collect();
         set_section(&mut ini, &format!("Wiimote{}", slot + 1), body);
     }
-    std::fs::write(&path, serialize_ini(&ini)).map_err(|e| e.to_string())
+    write_if_changed(&path, &original, serialize_ini(&ini))
 }
 
-/// DSUClient.ini: [Server] Enabled=True + nuestra entrada (preservando otras).
+/// DSUClient.ini: [Server] Enabled=True + nuestra entrada, preservando las
+/// demás entradas y cualquier otra clave de la sección.
 pub fn ensure_dsu_server(cfg_dir: &Path) -> Result<(), String> {
     let path = cfg_dir.join("DSUClient.ini");
     let original = std::fs::read_to_string(&path).unwrap_or_default();
     let mut ini = parse_ini(&original);
 
     let mut entries = String::new();
+    let mut others: Vec<String> = Vec::new();
     if let Some((_, body)) = ini.sections.iter().find(|(n, _)| n == "Server") {
         for l in body {
-            if let Some(v) = l.trim().strip_prefix("Entries") {
-                entries = v.trim_start_matches(['=', ' ']).trim().to_owned();
+            match ini_key(l) {
+                Some("Entries") => {
+                    entries = l.split_once('=').map(|(_, v)| v.trim()).unwrap_or("").to_owned();
+                }
+                Some("Enabled") => {}
+                _ => others.push(l.clone()),
             }
         }
     }
@@ -223,15 +257,13 @@ pub fn ensure_dsu_server(cfg_dir: &Path) -> Result<(), String> {
         entries.push_str(DSU_ENTRY);
         entries.push(';');
     }
-    set_section(
-        &mut ini,
-        "Server",
-        vec![
-            "Enabled = True".to_owned(),
-            format!("Entries = {entries}"),
-        ],
-    );
-    std::fs::write(&path, serialize_ini(&ini)).map_err(|e| e.to_string())
+    let mut body = vec![
+        "Enabled = True".to_owned(),
+        format!("Entries = {entries}"),
+    ];
+    body.extend(others);
+    set_section(&mut ini, "Server", body);
+    write_if_changed(&path, &original, serialize_ini(&ini))
 }
 
 /// Perfiles manuales PepoMote-P1..P4 (fallback si alguien mapea a mano).
@@ -282,6 +314,7 @@ pub fn configure(n_players: usize) -> Result<String, String> {
 }
 
 fn run_configure(shared: &SharedState, n: usize) {
+    let _serial = CONFIGURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let msg = if dolphin_running() {
         "Dolphin está abierto: ciérralo y pulsa Configurar".to_owned()
     } else {
@@ -357,22 +390,57 @@ mod tests {
     }
 
     #[test]
+    fn backup_es_el_original_y_no_se_pisa() {
+        let dir = tmp_dir("bak");
+        let original = "[Wiimote1]\nDevice = Bluetooth/0/Wii Remote\nSource = 2\n";
+        std::fs::write(dir.join("WiimoteNew.ini"), original).unwrap();
+        let bak = dir.join("WiimoteNew.ini.pepomote.bak");
+
+        write_wiimotes(&dir, 1).unwrap();
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), original);
+
+        // segunda pasada con más jugadores: el backup sigue siendo el ORIGINAL
+        write_wiimotes(&dir, 3).unwrap();
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), original);
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(out.contains("Device = DSUClient/2/PepoMote"));
+    }
+
+    #[test]
+    fn sin_cambios_no_se_reescribe() {
+        let dir = tmp_dir("nochange");
+        write_wiimotes(&dir, 2).unwrap();
+        let path = dir.join("WiimoteNew.ini");
+        let m1 = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        write_wiimotes(&dir, 2).unwrap();
+        let m2 = std::fs::metadata(&path).unwrap().modified().unwrap();
+        assert_eq!(m1, m2, "un INI idéntico no debe tocar el disco");
+    }
+
+    #[test]
     fn dsu_server_agrega_sin_duplicar_ni_borrar() {
         let dir = tmp_dir("dsu");
         std::fs::write(
             dir.join("DSUClient.ini"),
-            "[Server]\nEnabled = False\nEntries = Otro:1.2.3.4:26760;\n",
+            "[Server]\nEnabled = False\nIPAddress = 127.0.0.1\nPort = 26760\nEntries = Otro:1.2.3.4:26760;\n",
         )
         .unwrap();
 
         ensure_dsu_server(&dir).unwrap();
         let out = std::fs::read_to_string(dir.join("DSUClient.ini")).unwrap();
         assert!(out.contains("Enabled = True"));
+        assert!(!out.contains("Enabled = False"));
         assert!(out.contains("Otro:1.2.3.4:26760"));
         assert!(out.contains("PepoMote:127.0.0.1:26760"));
+        // las claves ajenas de [Server] sobreviven
+        assert!(out.contains("IPAddress = 127.0.0.1"));
+        assert!(out.contains("Port = 26760"));
 
         ensure_dsu_server(&dir).unwrap();
         let out2 = std::fs::read_to_string(dir.join("DSUClient.ini")).unwrap();
         assert_eq!(out2.matches("PepoMote:127.0.0.1:26760").count(), 1);
+        assert_eq!(out2.matches("Entries").count(), 1);
+        assert_eq!(out, out2);
     }
 }

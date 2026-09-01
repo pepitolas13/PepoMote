@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -188,10 +189,15 @@ private fun Root(activity: MainActivity) {
         )
 
         Screen.Controller -> {
-            if (link is UiLink.Failed) {
-                val f = link as UiLink.Failed
-                Toast.makeText(context, "Error: ${f.msg}", Toast.LENGTH_LONG).show()
-                activity.currentScreen = Screen.Home
+            // Error de conexión: aviso y vuelta al inicio como EFECTO (no en
+            // plena composición, que lo repetía) y el estado se limpia para
+            // que el próximo Conectar no rebote con el error viejo.
+            LaunchedEffect(link) {
+                (link as? UiLink.Failed)?.let { f ->
+                    Toast.makeText(context, "Error: ${f.msg}", Toast.LENGTH_LONG).show()
+                    LinkState.clearFailure()
+                    activity.currentScreen = Screen.Home
+                }
             }
             val landscape =
                 LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE

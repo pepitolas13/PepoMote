@@ -34,7 +34,9 @@ impl PairingInfo {
 }
 
 /// IP local de la interfaz por defecto. El connect UDP no envía ningún paquete.
-fn local_ip() -> IpAddr {
+/// Puede cambiar en caliente (autoarranque antes de que haya red, cambio de
+/// Wi-Fi, DHCP): la UI la re-consulta para que el QR nunca se quede viejo.
+pub fn local_ip() -> IpAddr {
     UdpSocket::bind("0.0.0.0:0")
         .and_then(|s| {
             s.connect("8.8.8.8:80")?;
@@ -47,7 +49,16 @@ fn local_ip() -> IpAddr {
 fn host_name() -> String {
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "PC".to_owned())
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        // Los escritorios Linux no suelen exportar HOSTNAME a las apps gráficas
+        .or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "PC".to_owned())
 }
 
 /// Token de emparejamiento de 128 bits, persistido en el directorio de config.

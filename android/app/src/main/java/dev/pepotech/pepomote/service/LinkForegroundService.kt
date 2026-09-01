@@ -17,9 +17,12 @@ import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.ControlClient
+import dev.pepotech.pepomote.net.Discovery
 import dev.pepotech.pepomote.net.PairStore
+import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.net.UdpSender
 import dev.pepotech.pepomote.sensor.MotionEngine
+import kotlinx.coroutines.runBlocking
 
 /**
  * Mantiene vivo el enlace: canal de control TCP, socket UDP y sensores,
@@ -34,6 +37,10 @@ class LinkForegroundService : Service() {
         private const val MAX_ATTEMPTS = 3
 
         fun start(context: Context) {
+            // "Conectando" YA, antes de que el servicio llegue a arrancar: si
+            // el intento anterior acabó en Failed, la pantalla del mando aún
+            // lo veía y rebotaba al inicio repitiendo el error viejo.
+            LinkState.publish(UiLink.Connecting)
             context.startForegroundService(Intent(context, LinkForegroundService::class.java))
         }
 
@@ -44,8 +51,14 @@ class LinkForegroundService : Service() {
 
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var attempt = 0
+
+    /**
+     * Generación del enlace. Cada connect() la sube; los callbacks de un
+     * ControlClient anterior (su onClosed al cerrarlo, un reintento programado
+     * tras "Salir") comparan su generación y se ignoran si ya no es la viva.
+     */
     @Volatile
-    private var retrying = false
+    private var generation = 0
 
     private var control: ControlClient? = null
     private var udp: UdpSender? = null
@@ -74,7 +87,11 @@ class LinkForegroundService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
         )
 
-        acquireLocks()
+        // Un start() con el enlace ya vivo (QR nuevo desde Ajustes, Reconectar)
+        // reemplaza el enlace entero: antes se apilaban sensores y sockets del
+        // anterior, que seguían enviando al PC viejo.
+        teardownLink()
+        if (wakeLock?.isHeld != true) acquireLocks()
         LinkState.publish(UiLink.Connecting)
         ButtonState.reset()
 
@@ -89,9 +106,9 @@ class LinkForegroundService : Service() {
         super.onTaskRemoved(rootIntent)
     }
 
-    private fun connect(pairing: dev.pepotech.pepomote.net.Pairing) {
+    private fun connect(pairing: Pairing) {
         attempt++
-        retrying = false
+        val gen = ++generation
         control = ControlClient(
             host = pairing.host,
             port = pairing.port,
@@ -100,6 +117,7 @@ class LinkForegroundService : Service() {
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
             callbacks = object : ControlClient.Callbacks {
                 override fun onOk(sessionId: Int, udpPort: Int, mode: String, slot: Int) {
+                    if (gen != generation) return
                     val sender = UdpSender(pairing.host, udpPort, sessionId) { rtt ->
                         LinkState.updateConnected { it.copy(rttMs = rtt) }
                     }
@@ -124,15 +142,19 @@ class LinkForegroundService : Service() {
                 }
 
                 override fun onError(code: String, msg: String) {
+                    if (gen != generation) return
                     // Fallos de red transitorios (el primer intento tras el
                     // escaneo suele pillar la radio saliendo de la cámara):
                     // reintenta antes de rendirse.
                     if (code == "io" && attempt < MAX_ATTEMPTS) {
-                        retrying = true
+                        // Este cliente ya está muerto: su onClosed no debe
+                        // parar el servicio mientras el reintento vive
+                        val retryGen = ++generation
                         updateNotification("Reintentando conexión ($attempt/$MAX_ATTEMPTS)…")
-                        mainHandler.postDelayed({
-                            if (retrying) connect(pairing)
-                        }, 1000)
+                        Thread({
+                            val next = relocate(pairing)
+                            mainHandler.post { if (retryGen == generation) connect(next) }
+                        }, "pepomote-retry").start()
                     } else {
                         LinkState.publish(UiLink.Failed(code, msg))
                         stopSelf()
@@ -140,11 +162,12 @@ class LinkForegroundService : Service() {
                 }
 
                 override fun onModeChanged(mode: String) {
+                    if (gen != generation) return
                     LinkState.updateConnected { it.copy(mode = mode) }
                 }
 
                 override fun onClosed() {
-                    if (retrying) return // el reintento programado sigue vivo
+                    if (gen != generation) return
                     if (LinkState.flow.value !is UiLink.Failed) {
                         LinkState.publish(UiLink.Disconnected)
                     }
@@ -154,10 +177,28 @@ class LinkForegroundService : Service() {
         )
     }
 
-    override fun onDestroy() {
-        if (LinkState.flow.value is UiLink.Connected) {
-            UiSounds.disconnect()
-        }
+    /**
+     * Entre reintentos, busca el PC por nombre en la red: si ha cambiado de IP
+     * (DHCP, otra Wi-Fi, autoarranque antes que la red) el emparejamiento se
+     * actualiza solo y el usuario no tiene que volver a escanear el QR.
+     * El token no cambia: vive en el PC.
+     */
+    private fun relocate(pairing: Pairing): Pairing {
+        val found = try {
+            runBlocking { Discovery.scan(1200) }
+        } catch (_: Exception) {
+            emptyList()
+        }.firstOrNull {
+            it.name == pairing.pcName && (it.host != pairing.host || it.tcpPort != pairing.port)
+        } ?: return pairing
+        val moved = pairing.copy(host = found.host, port = found.tcpPort)
+        PairStore.save(this, moved)
+        return moved
+    }
+
+    /** Cierra el enlace actual (si lo hay) e invalida sus callbacks. */
+    private fun teardownLink() {
+        generation++
         LinkState.sendMode = null
         motion?.stop()
         udp?.close()
@@ -165,6 +206,13 @@ class LinkForegroundService : Service() {
         motion = null
         udp = null
         control = null
+    }
+
+    override fun onDestroy() {
+        if (LinkState.flow.value is UiLink.Connected) {
+            UiSounds.disconnect()
+        }
+        teardownLink()
         wakeLock?.release()
         wifiLock?.release()
         if (LinkState.flow.value is UiLink.Connecting || LinkState.flow.value is UiLink.Connected) {

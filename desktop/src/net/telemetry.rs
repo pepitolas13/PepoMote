@@ -9,7 +9,6 @@ use crate::pairing::PairingInfo;
 use crate::pointer::{PointerEngine, PointerOutput};
 use crate::state::{Mode, SharedState};
 use serde_json::json;
-use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -70,8 +69,10 @@ pub fn run(
     let now_us = |s: Instant| s.elapsed().as_micros() as u64;
 
     let mut buf = [0u8; 128];
-    // Flancos de botones por sesión (cada jugador pulsa lo suyo)
-    let mut prev_buttons: HashMap<u32, u32> = HashMap::new();
+    // Botones que el SO ve pulsados ahora mismo (solo inyecta el Jugador 1).
+    // Si su sesión muere o el modo deja de ser puntero con A/B/tecla
+    // sostenidos, hay que soltarlos: si no, el clic queda atascado en el SO.
+    let mut held: u32 = 0;
     // El motor de puntero pertenece al Jugador 1: se resetea si cambia su sesión
     let mut engine_session: Option<u32> = None;
 
@@ -94,9 +95,15 @@ pub fn run(
             for (id, addr) in targets {
                 let _ = socket.send_to(&codec::build_ping(id, now_us(start)), addr);
             }
-            // higiene: flancos de sesiones muertas fuera
-            let alive = sessions.lock().unwrap();
-            prev_buttons.retain(|id, _| alive.contains_key(id));
+            // El Jugador 1 se ha ido (bye o timeout): nada puede quedar pulsado
+            let j1_gone = match engine_session {
+                Some(id) => !sessions.lock().unwrap().contains_key(&id),
+                None => false,
+            };
+            if j1_gone {
+                engine_session = None;
+                release_all(injector.as_mut(), &mut held);
+            }
         }
 
         if win_start.elapsed() >= Duration::from_secs(1) {
@@ -164,10 +171,14 @@ pub fn run(
                 };
 
                 win_packets += 1;
-                if win_first_t.is_none() {
-                    win_first_t = Some(p.t_sensor_us);
+                // Hz del sensor solo con el reloj del Jugador 1: los t_sensor
+                // de móviles distintos no son comparables entre sí
+                if slot == 0 {
+                    if win_first_t.is_none() {
+                        win_first_t = Some(p.t_sensor_us);
+                    }
+                    win_last_t = p.t_sensor_us;
                 }
-                win_last_t = p.t_sensor_us;
 
                 let (mode, config) = {
                     let mut s = shared.lock().unwrap();
@@ -178,6 +189,8 @@ pub fn run(
                 };
 
                 if mode == Mode::Dolphin {
+                    // Cambio a Dolphin con algo sostenido: soltarlo en el SO
+                    release_all(injector.as_mut(), &mut held);
                     // Todos los jugadores al DSU, cada uno en su slot, INLINE
                     if let Some(dsu) = &dsu {
                         dsu.push(
@@ -197,7 +210,7 @@ pub fn run(
                     if engine_session != Some(p.session_id) {
                         engine_session = Some(p.session_id);
                         engine = PointerEngine::new();
-                        prev_buttons.remove(&p.session_id);
+                        release_all(injector.as_mut(), &mut held);
                         injector.move_abs(0.5, 0.5);
                     }
 
@@ -210,29 +223,39 @@ pub fn run(
                     if p.touch_scroll_dy != 0 {
                         injector.wheel(p.touch_scroll_dy as i32 * 4);
                     }
-                    let prev = prev_buttons.entry(p.session_id).or_insert(0);
-                    let changed = p.buttons ^ *prev;
-                    if changed != 0 {
-                        for (bit, action) in BUTTON_MAP.iter() {
-                            if changed & bit != 0 {
-                                let down = p.buttons & bit != 0;
-                                match action {
-                                    Action::Mouse(b) => injector.button(*b, down),
-                                    Action::Key(k) => injector.key(*k, down),
-                                }
-                            }
-                        }
-                        if changed & (1 << 16) != 0 {
-                            injector.key(KeyCode::PrevTrack, p.buttons & (1 << 16) != 0);
-                        }
-                    }
-                    *prev = p.buttons;
+                    apply_buttons(injector.as_mut(), &mut held, p.buttons);
                 }
                 // slot > 0 en modo puntero: se ignora (apunta el Jugador 1)
             }
             None => {}
         }
     }
+}
+
+/// Inyecta los flancos entre lo que el SO ve pulsado (`held`) y `target`.
+fn apply_buttons(injector: &mut dyn input::Injector, held: &mut u32, target: u32) {
+    let changed = target ^ *held;
+    if changed == 0 {
+        return;
+    }
+    for (bit, action) in BUTTON_MAP.iter() {
+        if changed & bit != 0 {
+            let down = target & bit != 0;
+            match action {
+                Action::Mouse(b) => injector.button(*b, down),
+                Action::Key(k) => injector.key(*k, down),
+            }
+        }
+    }
+    if changed & (1 << 16) != 0 {
+        injector.key(KeyCode::PrevTrack, target & (1 << 16) != 0);
+    }
+    *held = target;
+}
+
+/// Suelta todo lo que siga pulsado en el SO.
+fn release_all(injector: &mut dyn input::Injector, held: &mut u32) {
+    apply_buttons(injector, held, 0);
 }
 
 #[cfg(windows)]

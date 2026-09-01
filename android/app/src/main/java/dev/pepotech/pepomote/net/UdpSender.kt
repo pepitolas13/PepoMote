@@ -17,6 +17,13 @@ class UdpSender(
     private val onRtt: (Float) -> Unit
 ) {
     private val socket = DatagramSocket().apply {
+        // DSCP EF (46): la Wi-Fi (WMM) mete estos datagramas en la cola de
+        // voz, por delante del tráfico normal → menos jitter con la red
+        // cargada. Si el sistema lo ignora o lo prohíbe, no pasa nada.
+        try {
+            trafficClass = 0xB8
+        } catch (_: Exception) {
+        }
         connect(InetSocketAddress(InetAddress.getByName(host), port))
     }
 

@@ -17,6 +17,8 @@ pub struct UinputInjector {
     pen: VirtualDevice,
     keys: VirtualDevice,
     pen_active: bool,
+    /// Resto de rueda por debajo de una muesca (120 = una muesca).
+    wheel_acc: i32,
 }
 
 impl UinputInjector {
@@ -28,6 +30,7 @@ impl UinputInjector {
         rel.insert(RelativeAxisType::REL_X);
         rel.insert(RelativeAxisType::REL_Y);
         rel.insert(RelativeAxisType::REL_WHEEL);
+        rel.insert(RelativeAxisType::REL_WHEEL_HI_RES);
         let mouse = VirtualDeviceBuilder::new()
             .map_err(explain)?
             .name("PepoMote Pointer")
@@ -83,6 +86,7 @@ impl UinputInjector {
             pen,
             keys,
             pen_active: false,
+            wheel_acc: 0,
         })
     }
 }
@@ -157,13 +161,26 @@ impl Injector for UinputInjector {
     }
 
     fn wheel(&mut self, delta: i32) {
-        let notches = delta / 120;
+        // La tira de scroll manda unas decenas de unidades por paquete: con
+        // solo `delta / 120` casi nunca llegaba a una muesca y no hacía nada.
+        // REL_WHEEL_HI_RES (1/120 de muesca) da scroll suave donde el
+        // escritorio lo soporta; las muescas enteras salen del acumulador
+        // para el resto.
+        let mut events = vec![InputEvent::new(
+            EventType::RELATIVE,
+            RelativeAxisType::REL_WHEEL_HI_RES.0,
+            delta,
+        )];
+        self.wheel_acc += delta;
+        let notches = self.wheel_acc / 120;
         if notches != 0 {
-            let _ = self.mouse.emit(&[InputEvent::new(
+            self.wheel_acc -= notches * 120;
+            events.push(InputEvent::new(
                 EventType::RELATIVE,
                 RelativeAxisType::REL_WHEEL.0,
                 notches,
-            )]);
+            ));
         }
+        let _ = self.mouse.emit(&events);
     }
 }

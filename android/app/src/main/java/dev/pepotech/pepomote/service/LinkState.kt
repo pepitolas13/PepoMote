@@ -39,4 +39,9 @@ object LinkState {
         val cur = _flow.value
         if (cur is UiLink.Connected) _flow.value = transform(cur)
     }
+
+    /** Error ya mostrado: vuelve a Desconectado para que no se re-dispare. */
+    internal fun clearFailure() {
+        if (_flow.value is UiLink.Failed) _flow.value = UiLink.Disconnected
+    }
 }

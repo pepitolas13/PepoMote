@@ -2,7 +2,7 @@ use crate::pairing::PairingInfo;
 use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use crate::theme;
 use egui::{Color32, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub struct PepoMoteApp {
     shared: SharedState,
@@ -10,6 +10,10 @@ pub struct PepoMoteApp {
     qr_modules: Vec<bool>,
     qr_width: usize,
     autostart: bool,
+    /// Última comprobación de la IP local (el QR debe llevar la IP viva).
+    ip_checked: Instant,
+    /// Ajustes cambiados en la UI pendientes de escribir a disco.
+    config_dirty: bool,
 }
 
 impl PepoMoteApp {
@@ -22,6 +26,25 @@ impl PepoMoteApp {
             qr_modules,
             qr_width,
             autostart: crate::autostart::is_enabled(),
+            ip_checked: Instant::now(),
+            config_dirty: false,
+        }
+    }
+
+    /// Con autoarranque el receptor suele nacer antes que la red (QR con
+    /// 127.0.0.1), y la IP puede cambiar con la Wi-Fi o el DHCP: cada 3 s se
+    /// re-consulta (un socket UDP sin tráfico) y el QR se regenera si cambió.
+    fn refresh_ip(&mut self) {
+        if self.ip_checked.elapsed() < Duration::from_secs(3) {
+            return;
+        }
+        self.ip_checked = Instant::now();
+        let ip = crate::pairing::local_ip();
+        if ip != self.pairing.host {
+            self.pairing.host = ip;
+            let (m, w) = build_qr(&self.pairing.pair_url());
+            self.qr_modules = m;
+            self.qr_width = w;
         }
     }
 }
@@ -48,6 +71,8 @@ impl eframe::App for PepoMoteApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
+
+        self.refresh_ip();
 
         let snap = {
             let s = self.shared.lock().unwrap();
@@ -201,8 +226,14 @@ impl PepoMoteApp {
         });
 
         if (config.sens_deg, config.abs_mode, config.auto_dolphin) != before {
-            config.save();
+            // En caliente para el puntero ya; a disco cuando sueltes el
+            // slider (arrastrarlo escribía el archivo en cada frame)
             self.shared.lock().unwrap().config = config;
+            self.config_dirty = true;
+        }
+        if self.config_dirty && !ui.input(|i| i.pointer.any_down()) {
+            config.save();
+            self.config_dirty = false;
         }
     }
 }
