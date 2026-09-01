@@ -33,6 +33,7 @@ import dev.pepotech.pepomote.ui.theme.PepoColors
 fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     var volB by remember { mutableStateOf(AppPrefs.volDownIsB(context)) }
+    var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
 
     Column(
         modifier = Modifier
@@ -69,6 +70,37 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         volB = it
                         AppPrefs.setVolDownIsB(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Sonidos", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = sounds,
+                    onCheckedChange = {
+                        sounds = it
+                        AppPrefs.setSoundsEnabled(context, it)
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )

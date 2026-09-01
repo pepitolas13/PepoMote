@@ -14,8 +14,13 @@ object UiSounds {
     private var connectId = 0
     private var disconnectId = 0
 
+    /** Interruptor global (Ajustes). La háptica no se toca, solo el audio. */
+    @Volatile
+    var enabled = true
+
     fun init(context: Context) {
         if (pool != null) return
+        enabled = AppPrefs.soundsEnabled(context)
         val attrs = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -31,6 +36,7 @@ object UiSounds {
     }
 
     private fun play(id: Int, vol: Float = 0.8f) {
+        if (!enabled) return
         pool?.play(id, vol, vol, 1, 0, 1f)
     }
 

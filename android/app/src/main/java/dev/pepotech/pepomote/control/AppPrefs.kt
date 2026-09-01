@@ -15,6 +15,16 @@ object AppPrefs {
             .edit().putBoolean("volDownB", value).apply()
     }
 
+    fun soundsEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("sounds", true)
+
+    fun setSoundsEnabled(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("sounds", value).apply()
+        UiSounds.enabled = value
+    }
+
     fun onboarded(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean("onboarded", false)
