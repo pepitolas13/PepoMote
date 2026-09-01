@@ -1,0 +1,25 @@
+[package]
+name = "pepomote"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "PepoMote receiver — turns your Android phone into a Wii-style pointer/controller for your PC"
+repository = "https://github.com/PepoTech/PepoMote"
+
+[[bin]]
+name = "PepoMote"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.29"
+egui = "0.29"
+qrcode = { version = "0.14", default-features = false }
+rand = "0.8"
+directories = "5"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

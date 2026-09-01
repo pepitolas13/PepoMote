@@ -1,0 +1,14 @@
+* text=auto
+
+# Scripts que deben ser LF siempre (Linux/CI)
+*.sh text eol=lf
+gradlew text eol=lf
+*.rules text eol=lf
+*.desktop text eol=lf
+*.yml text eol=lf
+
+# Binarios
+*.ttf binary
+*.png binary
+*.jar binary
+*.hex text eol=lf

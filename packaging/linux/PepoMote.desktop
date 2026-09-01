@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=PepoMote
+Comment=Turn your phone into a Wii-style pointer for your PC
+Comment[es]=Convierte tu móvil en un puntero estilo Wii para tu PC
+Exec=PepoMote
+Icon=pepomote
+Terminal=false
+Type=Application
+Categories=Utility;RemoteAccess;

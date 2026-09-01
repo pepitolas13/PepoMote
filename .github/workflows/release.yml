@@ -1,0 +1,13 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  # h5: construir los tres artefactos, firmar el APK, generar SHA256SUMS
+  # y publicar el GitHub Release. Esqueleto — se completa en el hito 5.
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "release pipeline se completa en h5"

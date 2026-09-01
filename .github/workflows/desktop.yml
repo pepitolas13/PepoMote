@@ -1,0 +1,48 @@
+name: desktop
+
+on:
+  push:
+    paths: ["desktop/**", "protocol/**", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["desktop/**", "protocol/**"]
+  workflow_call:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build (release)
+        working-directory: desktop
+        run: cargo build --release
+      - name: Test
+        working-directory: desktop
+        run: cargo test --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PepoMote-windows
+          path: desktop/target/release/PepoMote.exe
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System deps (egui/eframe + AppImage)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev libssl-dev libasound2-dev libudev-dev file
+      - name: Build (release)
+        working-directory: desktop
+        run: cargo build --release
+      - name: Test
+        working-directory: desktop
+        run: cargo test --release
+      - name: AppImage
+        run: bash packaging/linux/appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PepoMote-linux
+          path: dist/PepoMote-x86_64.AppImage

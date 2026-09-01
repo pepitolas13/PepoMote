@@ -1,0 +1,24 @@
+# Rust
+desktop/target/
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+*.iml
+.idea/
+
+# Firma (NUNCA subir)
+*.jks
+*.keystore
+keystore.properties
+
+# SO
+Thumbs.db
+.DS_Store
+
+# Artefactos
+*.AppImage
+dist/

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PepoMote</string>
+    <string name="home_subtitle">Tu móvil, mando de tu PC</string>
+    <string name="channel_connect">Conectar</string>
+    <string name="channel_connect_sub">Escanea el QR del PC</string>
+    <string name="channel_controller">Mando</string>
+    <string name="channel_controller_sub">Puntero y botones</string>
+    <string name="channel_dolphin">Dolphin</string>
+    <string name="channel_dolphin_sub">Juega a la Wii de verdad</string>
+    <string name="channel_settings">Ajustes</string>
+    <string name="channel_settings_sub">Sensibilidad y más</string>
+    <string name="status_disconnected">Sin conexión</string>
+</resources>
