@@ -101,8 +101,11 @@ private fun Root(activity: MainActivity) {
             return@rememberLauncherForActivityResult
         }
         PairStore.save(context, pairing)
-        ensureNotifPermission()
+        // Servicio ANTES del diálogo de permiso: pedirlo primero dejaba el
+        // arranque del servicio compitiendo con el diálogo del sistema y el
+        // primer emparejamiento fallaba en algunos OEMs.
         LinkForegroundService.start(context)
+        ensureNotifPermission()
         activity.currentScreen = Screen.Controller
     }
 
@@ -126,8 +129,8 @@ private fun Root(activity: MainActivity) {
             connected = link is UiLink.Connected,
             onConnect = {
                 if (PairStore.load(context) != null && link is UiLink.Disconnected) {
-                    ensureNotifPermission()
                     LinkForegroundService.start(context)
+                    ensureNotifPermission()
                     activity.currentScreen = Screen.Controller
                 } else {
                     activity.currentScreen = Screen.Pair
@@ -140,8 +143,8 @@ private fun Root(activity: MainActivity) {
                     activity.currentScreen = Screen.Controller
                 } else if (PairStore.load(context) != null) {
                     LinkState.pendingMode = "dolphin"
-                    ensureNotifPermission()
                     LinkForegroundService.start(context)
+                    ensureNotifPermission()
                     activity.currentScreen = Screen.Controller
                 } else {
                     activity.currentScreen = Screen.Pair

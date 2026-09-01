@@ -30,6 +30,8 @@ class LinkForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "link"
         private const val NOTIF_ID = 1
+        private const val ACTION_STOP = "dev.pepotech.pepomote.STOP"
+        private const val MAX_ATTEMPTS = 3
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, LinkForegroundService::class.java))
@@ -40,6 +42,11 @@ class LinkForegroundService : Service() {
         }
     }
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var attempt = 0
+    @Volatile
+    private var retrying = false
+
     private var control: ControlClient? = null
     private var udp: UdpSender? = null
     private var motion: MotionEngine? = null
@@ -49,6 +56,10 @@ class LinkForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         val pairing = PairStore.load(this)
         if (pairing == null) {
             stopSelf()
@@ -67,6 +78,20 @@ class LinkForegroundService : Service() {
         LinkState.publish(UiLink.Connecting)
         ButtonState.reset()
 
+        attempt = 0
+        connect(pairing)
+        return START_NOT_STICKY
+    }
+
+    /** Cerrar/deslizar la app de recientes = desconectar. Nada de zombis. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun connect(pairing: dev.pepotech.pepomote.net.Pairing) {
+        attempt++
+        retrying = false
         control = ControlClient(
             host = pairing.host,
             port = pairing.port,
@@ -96,8 +121,19 @@ class LinkForegroundService : Service() {
                 }
 
                 override fun onError(code: String, msg: String) {
-                    LinkState.publish(UiLink.Failed(code, msg))
-                    stopSelf()
+                    // Fallos de red transitorios (el primer intento tras el
+                    // escaneo suele pillar la radio saliendo de la cámara):
+                    // reintenta antes de rendirse.
+                    if (code == "io" && attempt < MAX_ATTEMPTS) {
+                        retrying = true
+                        updateNotification("Reintentando conexión ($attempt/$MAX_ATTEMPTS)…")
+                        mainHandler.postDelayed({
+                            if (retrying) connect(pairing)
+                        }, 1000)
+                    } else {
+                        LinkState.publish(UiLink.Failed(code, msg))
+                        stopSelf()
+                    }
                 }
 
                 override fun onModeChanged(mode: String) {
@@ -105,6 +141,7 @@ class LinkForegroundService : Service() {
                 }
 
                 override fun onClosed() {
+                    if (retrying) return // el reintento programado sigue vivo
                     if (LinkState.flow.value !is UiLink.Failed) {
                         LinkState.publish(UiLink.Disconnected)
                     }
@@ -112,7 +149,6 @@ class LinkForegroundService : Service() {
                 }
             }
         )
-        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -161,12 +197,18 @@ class LinkForegroundService : Service() {
             this, 0, Intent(this, MainActivity::class.java),
             android.app.PendingIntent.FLAG_IMMUTABLE
         )
+        val stopPi = android.app.PendingIntent.getService(
+            this, 1,
+            Intent(this, LinkForegroundService::class.java).setAction(ACTION_STOP),
+            android.app.PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("PepoMote")
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(pi)
+            .addAction(0, "Desconectar", stopPi)
             .build()
     }
 
