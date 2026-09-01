@@ -63,12 +63,20 @@ jobs:
 
   mobile_musl:
     runs-on: ubuntu-24.04-arm
+    # Un fallo del binario musl (postmarketOS) no debe bloquear la release entera
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Build in Alpine (musl)
         run: |
-          docker run --rm -v "$PWD:/src" -w /src/mobile-linux alpine:3.22 sh -c \
-            'apk add --no-cache build-base rust cargo && cargo build --release'
+          # El rust empaquetado en Alpine va por detrás del MSRV de varios crates del
+          # lockfile: rustup stable dentro del contenedor (host aarch64-unknown-linux-musl)
+          docker run --rm -v "$PWD:/src" -w /src/mobile-linux alpine:3.22 sh -c '
+            set -e
+            apk add --no-cache build-base curl
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+            export PATH="$HOME/.cargo/bin:$PATH"
+            cargo build --release'
       - name: Tarball
         run: bash packaging/linux-mobile/tarball.sh aarch64-musl
       - uses: actions/upload-artifact@v4
@@ -118,7 +126,7 @@ jobs:
       - name: SHA256SUMS
         run: |
           sha256sum PepoMote.exe PepoMote-x86_64.AppImage PepoMote.apk \
-            PepoMote-Mobile-aarch64.AppImage PepoMote-Mobile-aarch64-musl.tar.gz > SHA256SUMS.txt
+            PepoMote-Mobile-aarch64.AppImage $(ls PepoMote-Mobile-aarch64-musl.tar.gz 2>/dev/null) > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
