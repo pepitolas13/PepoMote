@@ -9,10 +9,20 @@ pub struct PepoMoteApp {
     pairing: PairingInfo,
     qr_modules: Vec<bool>,
     qr_width: usize,
+    autostart: bool,
+    /// Arranque --minimized: minimizar a la barra durante los primeros 2.5 s
+    /// (estado ortogonal a la visibilidad: la recreación de ventana y el
+    /// re-show de eframe no lo deshacen; SW_HIDE y Visible(false) sí perdían).
+    minimize_until: Option<std::time::Instant>,
 }
 
 impl PepoMoteApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, shared: SharedState, pairing: PairingInfo) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        shared: SharedState,
+        pairing: PairingInfo,
+        start_minimized: bool,
+    ) -> Self {
         theme::apply(&cc.egui_ctx);
         let (qr_modules, qr_width) = build_qr(&pairing.pair_url());
         Self {
@@ -20,6 +30,9 @@ impl PepoMoteApp {
             pairing,
             qr_modules,
             qr_width,
+            autostart: crate::autostart::is_enabled(),
+            minimize_until: start_minimized
+                .then(|| std::time::Instant::now() + Duration::from_millis(2500)),
         }
     }
 }
@@ -39,6 +52,15 @@ struct Snapshot {
 impl eframe::App for PepoMoteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_millis(100));
+
+        if let Some(t) = self.minimize_until {
+            if std::time::Instant::now() < t {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                ctx.request_repaint_after(Duration::from_millis(100));
+            } else {
+                self.minimize_until = None;
+            }
+        }
 
         // En Windows, cerrar = esconder a la bandeja ("Salir" está en el tray)
         #[cfg(windows)]
@@ -135,6 +157,18 @@ impl PepoMoteApp {
                 &mut config.abs_mode,
                 RichText::new("Apuntado absoluto (desactívalo para juegos)").size(13.0),
             );
+            ui.add_space(4.0);
+            let before_auto = self.autostart;
+            ui.checkbox(
+                &mut self.autostart,
+                RichText::new("Arrancar con el sistema").size(13.0),
+            );
+            if self.autostart != before_auto {
+                if let Err(e) = crate::autostart::set_enabled(self.autostart) {
+                    self.shared.lock().unwrap().last_error = Some(format!("Autoarranque: {e}"));
+                    self.autostart = before_auto;
+                }
+            }
         });
 
         if (config.sens_deg, config.abs_mode) != before {

@@ -37,6 +37,7 @@ pub fn start(ctx_rx: std::sync::mpsc::Receiver<egui::Context>) {
 
             let show_window = |ctx: &egui::Context| {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 ctx.request_repaint();
             };

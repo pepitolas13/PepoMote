@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod autostart;
 mod dsu;
 mod icon;
 mod input;
@@ -35,10 +36,22 @@ fn main() -> eframe::Result {
         tray::start(ctx_rx);
     }
 
+    // --minimized (autoarranque): en Windows nace escondido en la bandeja.
+    // En Linux se ignora (no todos los escritorios tienen bandeja).
+    // eframe recrea la ventana durante el arranque (~1 s) y re-muestra si se
+    // esconde por WinAPI externo; el escondite fiable es el ViewportCommand
+    // (fija el estado interno de eframe, igual que cerrar-a-bandeja), enviado
+    // DESPUÉS de la recreación. Lo hace la propia app a los 1.5 s.
+    #[cfg(windows)]
+    let start_hidden = std::env::args().any(|a| a == "--minimized");
+    #[cfg(not(windows))]
+    let start_hidden = false;
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([460.0, 640.0])
             .with_min_inner_size([360.0, 480.0])
+            .with_visible(!start_hidden)
             .with_title("PepoMote")
             .with_icon(egui::IconData {
                 rgba: icon::logo_rgba(64),
@@ -54,7 +67,12 @@ fn main() -> eframe::Result {
             singleton::set_ctx(cc.egui_ctx.clone());
             #[cfg(windows)]
             let _ = ctx_tx.send(cc.egui_ctx.clone());
-            Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing)))
+            Ok(Box::new(app::PepoMoteApp::new(
+                cc,
+                shared,
+                pairing,
+                start_hidden,
+            )))
         }),
     )
 }

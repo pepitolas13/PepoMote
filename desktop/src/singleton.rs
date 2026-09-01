@@ -17,6 +17,11 @@ pub fn set_ctx(ctx: egui::Context) {
     let _ = UI_CTX.set(ctx);
 }
 
+/// Contexto de la UI, si ya existe (para comandos de ventana desde hilos).
+pub fn ui_ctx() -> Option<egui::Context> {
+    UI_CTX.get().cloned()
+}
+
 pub enum Singleton {
     /// Somos la primera instancia; el socket es el cerrojo (mantener vivo).
     Primary(UdpSocket),
@@ -49,6 +54,7 @@ pub fn watch(sock: UdpSocket) {
                 if &buf[..len] == SHOW {
                     if let Some(ctx) = UI_CTX.get() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                         ctx.request_repaint();
                     }
