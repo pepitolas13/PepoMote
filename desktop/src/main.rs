@@ -7,6 +7,7 @@ mod input;
 mod net;
 mod pairing;
 mod pointer;
+mod singleton;
 mod sound;
 mod state;
 mod theme;
@@ -14,6 +15,13 @@ mod theme;
 mod tray;
 
 fn main() -> eframe::Result {
+    // Instancia única: si ya hay un PepoMote vivo (quizá escondido en la
+    // bandeja), se le pide que se muestre y este proceso termina.
+    match singleton::acquire() {
+        singleton::Singleton::Primary(lock) => singleton::watch(lock),
+        singleton::Singleton::AlreadyRunning => return Ok(()),
+    }
+
     let shared = state::new_shared();
     let pairing = pairing::PairingInfo::generate();
 
@@ -43,6 +51,7 @@ fn main() -> eframe::Result {
         "PepoMote",
         options,
         Box::new(move |cc| {
+            singleton::set_ctx(cc.egui_ctx.clone());
             #[cfg(windows)]
             let _ = ctx_tx.send(cc.egui_ctx.clone());
             Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing)))
