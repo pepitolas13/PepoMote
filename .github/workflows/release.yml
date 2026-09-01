@@ -4,10 +4,89 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 jobs:
-  # h5: construir los tres artefactos, firmar el APK, generar SHA256SUMS
-  # y publicar el GitHub Release. Esqueleto — se completa en el hito 5.
-  placeholder:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build (release)
+        working-directory: desktop
+        run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: desktop/target/release/PepoMote.exe
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev libssl-dev libasound2-dev libudev-dev file wget
+      - name: Build (release)
+        working-directory: desktop
+        run: cargo build --release
+      - name: AppImage
+        run: bash packaging/linux/appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/PepoMote-x86_64.AppImage
+
+  android:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "release pipeline se completa en h5"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Restore keystore from secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Falta el secret KEYSTORE_B64 (ver docs/RELEASE.md)"; exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > android/pepomote.jks
+      - name: Build signed APK
+        working-directory: android
+        env:
+          KEYSTORE_PATH: pepomote.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+      - name: Rename
+        run: cp android/app/build/outputs/apk/release/app-release.apk PepoMote.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: PepoMote.apk
+
+  publish:
+    needs: [windows, linux, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: sha256sum PepoMote.exe PepoMote-x86_64.AppImage PepoMote.apk > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            PepoMote.exe
+            PepoMote-x86_64.AppImage
+            PepoMote.apk
+            SHA256SUMS.txt
+          generate_release_notes: true
