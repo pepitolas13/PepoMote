@@ -117,6 +117,9 @@ class LinkForegroundService : Service() {
                     }
                     UiSounds.init(this@LinkForegroundService)
                     UiSounds.connect()
+                    // "Pulsar la diana" automáticamente al conectar: recentra
+                    // y centra el cursor con los primeros paquetes ya fluyendo
+                    mainHandler.postDelayed({ ButtonState.bumpRecenter() }, 300)
                     updateNotification("Conectado a ${pairing.pcName}")
                 }
 
