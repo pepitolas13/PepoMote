@@ -134,4 +134,20 @@ impl Injector for WinInjector {
     fn wheel(&mut self, delta: i32) {
         self.send_mouse(0, 0, delta, MOUSEEVENTF_WHEEL);
     }
+
+    fn cursor_pos(&mut self) -> Option<(f32, f32)> {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let mut p = POINT::default();
+        unsafe {
+            if GetCursorPos(&mut p).is_ok() {
+                let w = GetSystemMetrics(SM_CXSCREEN);
+                let h = GetSystemMetrics(SM_CYSCREEN);
+                if w > 0 && h > 0 {
+                    return Some((p.x as f32 / w as f32, p.y as f32 / h as f32));
+                }
+            }
+        }
+        None
+    }
 }

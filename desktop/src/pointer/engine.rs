@@ -113,6 +113,9 @@ pub struct PointerEngine {
     offset: (f32, f32),
     /// t de la primera muestra: ventana de asentamiento del rotation vector.
     first_t_us: Option<u64>,
+    /// Posición real del cursor (normalizada), si el SO la sabe: al
+    /// descongelar, el puntero continúa desde donde el RATÓN lo dejó.
+    cursor_hint: Option<(f32, f32)>,
     last_t_us: Option<u64>,
     // fallback relativo
     acc_x: f32,
@@ -131,10 +134,17 @@ impl PointerEngine {
             last_emitted: None,
             offset: (0.0, 0.0),
             first_t_us: None,
+            cursor_hint: None,
             last_t_us: None,
             acc_x: 0.0,
             acc_y: 0.0,
         }
+    }
+
+    /// La telemetría informa de la posición real del cursor antes de cada
+    /// apply (barato); solo se usa en la transición de descongelado.
+    pub fn set_cursor_hint(&mut self, hint: Option<(f32, f32)>) {
+        self.cursor_hint = hint;
     }
 
     /// `sens_deg`: grados de giro para cruzar el ancho de pantalla.
@@ -223,12 +233,23 @@ impl PointerEngine {
             let dev_p = pitch_f + self.offset.1 - prev_pitch;
             let dev = (dev_y * dev_y + dev_p * dev_p).sqrt();
             if speed > FREEZE_EXIT_DEG_S || dev > FREEZE_ESCAPE_DEG {
-                // Liberar SIN salto: el offset absorbe la diferencia exacta y
-                // el movimiento continúa desde el punto congelado.
+                // Liberar SIN salto y desde donde esté el cursor DE VERDAD:
+                // si el ratón real lo movió mientras estábamos congelados, el
+                // puntero continúa desde ahí (convivencia con el mouse).
                 self.frozen = false;
-                self.offset = (prev_yaw - yaw_f, prev_pitch - pitch_f);
+                let (anchor_yaw, anchor_pitch) = match (abs_mode, self.cursor_hint) {
+                    (true, Some((cx, cy))) => (
+                        (cx - 0.5) * sens_deg,
+                        (0.5 - cy) * sens_deg / aspect_w_over_h,
+                    ),
+                    _ => (prev_yaw, prev_pitch),
+                };
+                self.offset = (anchor_yaw - yaw_f, anchor_pitch - pitch_f);
+                self.last_emitted = Some((anchor_yaw, anchor_pitch));
             } else {
-                return self.emit(prev_yaw, prev_pitch, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, prev_yaw, prev_pitch);
+                // Congelado = SILENCIO: ni un paquete de inyección. El ratón
+                // real queda libre mientras el móvil esté quieto.
+                return PointerOutput::None;
             }
         }
 
@@ -458,6 +479,41 @@ mod tests {
         let (nx, _) = run_to(&mut e, arr(qrot_z(-5.0).mul(qrot_x(-40.0))), 0, 300, t + 5_000);
         let expected = 0.5 + 5.0 / 35.0;
         assert!((nx - expected).abs() < 0.02, "nx={nx} esperado={expected}");
+    }
+
+    #[test]
+    fn raton_real_libre_congelado_y_continuidad_al_retomar() {
+        let mut e = PointerEngine::new();
+        e.apply(&packet(arr(qrot_z(0.0)), 0, 0, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0);
+        let mut t = 0u64;
+        for _ in 0..400 {
+            t += 5_000;
+            e.apply(&packet(arr(qrot_z(0.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0);
+        }
+        // Congelado: SILENCIO (el ratón real queda libre)
+        for _ in 0..50 {
+            t += 5_000;
+            let out = e.apply(&packet(arr(qrot_z(0.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0);
+            assert_eq!(out, PointerOutput::None, "congelado debe callar");
+        }
+        // El ratón real dejó el cursor en (0.3, 0.7); el móvil retoma
+        e.set_cursor_hint(Some((0.3, 0.7)));
+        let mut first_abs: Option<(f32, f32)> = None;
+        for i in 1..100 {
+            t += 5_000;
+            let deg = -0.02 * i as f32 * 4.0; // rampa que escapa del freeze
+            if let PointerOutput::Abs { nx, ny } =
+                e.apply(&packet(arr(qrot_z(deg)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0)
+            {
+                first_abs = Some((nx, ny));
+                break;
+            }
+        }
+        let (nx, ny) = first_abs.expect("debería descongelar");
+        assert!(
+            (nx - 0.3).abs() < 0.03 && (ny - 0.7).abs() < 0.03,
+            "debe continuar desde el cursor real (0.3,0.7), fue ({nx},{ny})"
+        );
     }
 
     #[test]

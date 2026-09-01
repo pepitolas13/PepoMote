@@ -34,6 +34,12 @@ pub trait Injector: Send {
     fn button(&mut self, btn: MouseButton, down: bool);
     fn key(&mut self, key: KeyCode, down: bool);
     fn wheel(&mut self, delta: i32);
+    /// Posición actual del cursor, normalizada a la pantalla primaria
+    /// (puede salirse de 0..1 con varios monitores). None si el SO no
+    /// permite leerla (Wayland).
+    fn cursor_pos(&mut self) -> Option<(f32, f32)> {
+        None
+    }
 }
 
 #[cfg(windows)]

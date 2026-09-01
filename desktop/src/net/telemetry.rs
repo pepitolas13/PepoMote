@@ -184,6 +184,7 @@ pub fn run(
                         });
                     }
                 } else {
+                    engine.set_cursor_hint(injector.cursor_pos());
                     match engine.apply(&p, config.sens_deg, aspect, config.abs_mode, screen_w) {
                         PointerOutput::Abs { nx, ny } => injector.move_abs(nx, ny),
                         PointerOutput::Rel { dx, dy } => injector.move_rel(dx, dy),
