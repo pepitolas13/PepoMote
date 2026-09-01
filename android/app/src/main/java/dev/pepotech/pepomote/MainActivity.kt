@@ -128,6 +128,7 @@ private fun Root(activity: MainActivity) {
                 .setPrompt("Apunta al QR de PepoMote en tu PC")
                 .setBeepEnabled(false)
                 .setOrientationLocked(true)
+                .setCaptureActivity(PortraitCaptureActivity::class.java)
         )
     }
 
