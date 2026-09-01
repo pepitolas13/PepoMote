@@ -21,6 +21,9 @@ install -m 0644 "$PKG/dev.pepotech.PepoMote.desktop" "$APPDIR/usr/share/applicat
 cp "$PKG/dev.pepotech.PepoMote.desktop" "$APPDIR/dev.pepotech.PepoMote.desktop"
 install -m 0644 "$ROOT/packaging/linux/pepomote.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/dev.pepotech.PepoMote.png"
 cp "$ROOT/packaging/linux/pepomote.png" "$APPDIR/dev.pepotech.PepoMote.png"
+# Autocontenido: instalar solo con el AppImage + install.sh, sin el repo
+install -m 0644 "$PKG/90-pepomote-iio.rules" "$APPDIR/90-pepomote-iio.rules"
+install -m 0755 "$PKG/install.sh" "$APPDIR/install.sh"
 
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh

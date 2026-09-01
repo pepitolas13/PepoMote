@@ -1,21 +1,23 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # PepoMote para Linux móvil — instalación limpia, sin FUSE ni root obligatorio.
-#   ./install.sh PepoMote-Mobile-aarch64.AppImage       (Mobian, Debian, Fedora, Arch… — glibc)
-#   ./install.sh PepoMote-Mobile-aarch64-musl.tar.gz    (postmarketOS / Alpine — musl)
-# Deja la app en ~/.local/opt/PepoMote-Mobile con su lanzador e icono; la
-# regla udev (opcional, pide sudo) permite subir la frecuencia del IMU.
-set -euo pipefail
+#   sh install.sh PepoMote-Mobile-aarch64.AppImage       (Mobian, Debian, Fedora, Arch… — glibc)
+#   sh install.sh PepoMote-Mobile-aarch64-musl.tar.gz    (postmarketOS / Alpine — musl)
+# POSIX sh a propósito: postmarketOS no trae bash. Deja la app en
+# ~/.local/opt/PepoMote-Mobile con lanzador e icono (todo viene dentro del
+# paquete: no hace falta el repo); la regla udev (opcional, pide sudo/doas)
+# permite subir la frecuencia del IMU.
+set -eu
 
 PKG="${1:-}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST="$HOME/.local/opt/PepoMote-Mobile"
-APPS="$HOME/.local/share/applications"
-ICONS="$HOME/.local/share/icons/hicolor/256x256/apps"
-
-if [[ -z "$PKG" || ! -f "$PKG" ]]; then
+if [ -z "$PKG" ] || [ ! -f "$PKG" ]; then
     echo "Uso: $0 PepoMote-Mobile-aarch64.AppImage | PepoMote-Mobile-aarch64-musl.tar.gz"
     exit 1
 fi
+PKG="$(cd "$(dirname "$PKG")" && pwd)/$(basename "$PKG")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEST="$HOME/.local/opt/PepoMote-Mobile"
+APPS="$HOME/.local/share/applications"
+ICONS="$HOME/.local/share/icons/hicolor/256x256/apps"
 
 rm -rf "$DEST"
 mkdir -p "$DEST" "$APPS" "$ICONS" "$HOME/.local/bin"
@@ -25,12 +27,12 @@ case "$PKG" in
         echo "==> Extrayendo el AppImage (así no hace falta FUSE)"
         chmod +x "$PKG"
         tmp="$(mktemp -d)"
-        if (cd "$tmp" && "$OLDPWD/$PKG" --appimage-extract >/dev/null 2>&1) && [[ -x "$tmp/squashfs-root/usr/bin/PepoMote-Mobile" ]]; then
-            cp -a "$tmp/squashfs-root/." "$DEST/"
+        if (cd "$tmp" && "$PKG" --appimage-extract >/dev/null 2>&1) && [ -x "$tmp/squashfs-root/usr/bin/PepoMote-Mobile" ]; then
+            cp -R "$tmp/squashfs-root/." "$DEST/"
             BIN="$DEST/usr/bin/PepoMote-Mobile"
         else
-            echo "   (no se pudo extraer: se copia el AppImage tal cual, necesita libfuse2)"
-            install -m 0755 "$PKG" "$DEST/PepoMote-Mobile.AppImage"
+            echo "   (no se pudo extraer: se copia el AppImage tal cual; necesita libfuse2)"
+            cp "$PKG" "$DEST/PepoMote-Mobile.AppImage"
             BIN="$DEST/PepoMote-Mobile.AppImage"
         fi
         rm -rf "$tmp"
@@ -45,21 +47,35 @@ case "$PKG" in
 esac
 chmod +x "$BIN"
 
+# Recursos: primero los que vienen dentro del paquete; si no, los del repo
+res() {
+    if [ -f "$DEST/$1" ]; then echo "$DEST/$1"
+    elif [ -f "$SCRIPT_DIR/$1" ]; then echo "$SCRIPT_DIR/$1"
+    elif [ -f "$SCRIPT_DIR/../linux/$2" ]; then echo "$SCRIPT_DIR/../linux/$2"
+    fi
+}
+
 echo "==> Lanzador e icono"
 ln -sf "$BIN" "$HOME/.local/bin/PepoMote-Mobile"
-ICON_SRC="$SCRIPT_DIR/../linux/pepomote.png"
-[[ -f "$DEST/dev.pepotech.PepoMote.png" ]] && ICON_SRC="$DEST/dev.pepotech.PepoMote.png"
-[[ -f "$ICON_SRC" ]] && install -m 0644 "$ICON_SRC" "$ICONS/dev.pepotech.PepoMote.png"
-DESKTOP_SRC="$SCRIPT_DIR/dev.pepotech.PepoMote.desktop"
-[[ -f "$DEST/dev.pepotech.PepoMote.desktop" ]] && DESKTOP_SRC="$DEST/dev.pepotech.PepoMote.desktop"
-sed "s|^Exec=.*|Exec=$BIN|" "$DESKTOP_SRC" > "$APPS/dev.pepotech.PepoMote.desktop"
-command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null || true
-command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+ICON="$(res dev.pepotech.PepoMote.png pepomote.png)"
+[ -n "$ICON" ] && cp "$ICON" "$ICONS/dev.pepotech.PepoMote.png"
+DESKTOP="$(res dev.pepotech.PepoMote.desktop -)"
+if [ -n "$DESKTOP" ]; then
+    sed "s|^Exec=.*|Exec=$BIN|" "$DESKTOP" > "$APPS/dev.pepotech.PepoMote.desktop"
+else
+    printf '[Desktop Entry]\nName=PepoMote\nExec=%s\nIcon=dev.pepotech.PepoMote\nTerminal=false\nType=Application\nCategories=Game;Utility;\nX-Purism-FormFactor=Workstation;Mobile;\n' "$BIN" > "$APPS/dev.pepotech.PepoMote.desktop"
+fi
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" 2>/dev/null || true
+command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 
-if [[ -f "$SCRIPT_DIR/90-pepomote-iio.rules" ]] && command -v sudo >/dev/null; then
-    echo "==> Regla udev para subir la frecuencia del IMU (opcional; se pide sudo una vez, Ctrl+C para saltarla)"
-    if sudo install -m 0644 "$SCRIPT_DIR/90-pepomote-iio.rules" /etc/udev/rules.d/90-pepomote-iio.rules; then
-        sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=iio || true
+RULES="$(res 90-pepomote-iio.rules -)"
+SUDO=""
+command -v sudo >/dev/null 2>&1 && SUDO=sudo
+[ -z "$SUDO" ] && command -v doas >/dev/null 2>&1 && SUDO=doas
+if [ -n "$RULES" ] && [ -n "$SUDO" ]; then
+    echo "==> Regla udev para subir la frecuencia del IMU (opcional; pide contraseña una vez, Ctrl+C para saltarla)"
+    if $SUDO install -m 0644 "$RULES" /etc/udev/rules.d/90-pepomote-iio.rules 2>/dev/null; then
+        $SUDO udevadm control --reload-rules 2>/dev/null && $SUDO udevadm trigger --subsystem-match=iio 2>/dev/null || true
     fi
 fi
 

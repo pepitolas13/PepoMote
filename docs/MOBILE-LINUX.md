@@ -11,23 +11,29 @@ que el receptor muestra bajo el QR.
 
 ## Instalar
 
-Descarga de la release el paquete de tu distro y el `packaging/linux-mobile/`
-del repo (o usa el `install.sh` que va dentro del tar.gz):
+Sin `git`, sin `bash`, sin FUSE: solo el paquete de tu distro (de la
+[release](https://github.com/pepitolas13/PepoMote/releases/latest)) e `install.sh`.
 
-| Distro | Paquete |
-|---|---|
-| Mobian, Debian, Ubuntu, Fedora, Arch/Manjaro ARM… (glibc) | `PepoMote-Mobile-aarch64.AppImage` |
-| postmarketOS, Alpine (musl) | `PepoMote-Mobile-aarch64-musl.tar.gz` |
+**Mobian, Debian, Ubuntu, Fedora, Arch/Manjaro ARM… (glibc)** — en un terminal del móvil:
 
-```bash
-bash install.sh PepoMote-Mobile-aarch64.AppImage        # o el .tar.gz
+```sh
+cd ~ && wget https://github.com/pepitolas13/PepoMote/releases/latest/download/PepoMote-Mobile-aarch64.AppImage
+wget https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh
+sh install.sh PepoMote-Mobile-aarch64.AppImage
+```
+
+**postmarketOS / Alpine (musl)**:
+
+```sh
+cd ~ && wget https://github.com/pepitolas13/PepoMote/releases/latest/download/PepoMote-Mobile-aarch64-musl.tar.gz
+tar -xzf PepoMote-Mobile-aarch64-musl.tar.gz
+sh PepoMote-Mobile/install.sh PepoMote-Mobile-aarch64-musl.tar.gz
 ```
 
 El script deja la app en `~/.local/opt/PepoMote-Mobile` (extrae el AppImage:
-no hace falta FUSE), crea el lanzador con su icono y, si tienes `sudo`,
+no hace falta FUSE), crea el lanzador con su icono y, si hay `sudo` o `doas`,
 instala una regla udev opcional que permite subir la frecuencia del IMU
 (sin ella funciona igual, a la frecuencia por defecto del driver, 50-100 Hz).
-
 Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
 
 ## Emparejar (una sola vez)
