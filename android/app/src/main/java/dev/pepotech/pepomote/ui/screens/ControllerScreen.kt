@@ -45,9 +45,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/2, multimedia, B. */
+/**
+ * Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/2, multimedia, B.
+ * `showChips`: mostrar el selector Puntero/Dolphin (entrada por Conectar con
+ * el ajuste activo). Entrando por la tarjeta Dolphin no hay selector: esa
+ * pantalla es solo-Dolphin.
+ */
 @Composable
-fun ControllerScreen(link: UiLink, onDisconnect: () -> Unit) {
+fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
     val view = LocalView.current
 
     DisposableEffect(Unit) {
@@ -107,7 +112,7 @@ fun ControllerScreen(link: UiLink, onDisconnect: () -> Unit) {
                 }
             }
 
-            if (link is UiLink.Connected) {
+            if (link is UiLink.Connected && showChips) {
                 Spacer(Modifier.height(6.dp))
                 ModeChips(current = link.mode)
             }

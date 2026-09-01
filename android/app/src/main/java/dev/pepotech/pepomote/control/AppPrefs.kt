@@ -15,6 +15,16 @@ object AppPrefs {
             .edit().putBoolean("volDownB", value).apply()
     }
 
+    /** Mostrar el selector Puntero/Dolphin en el mando al entrar por Conectar. */
+    fun showDolphinChips(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("showDolphinChips", true)
+
+    fun setShowDolphinChips(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("showDolphinChips", value).apply()
+    }
+
     fun soundsEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean("sounds", true)

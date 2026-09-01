@@ -34,6 +34,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     var volB by remember { mutableStateOf(AppPrefs.volDownIsB(context)) }
     var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
+    var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
 
     Column(
         modifier = Modifier
@@ -101,6 +102,37 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         sounds = it
                         AppPrefs.setSoundsEnabled(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Modo Dolphin en el mando", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = dolphinChips,
+                    onCheckedChange = {
+                        dolphinChips = it
+                        AppPrefs.setShowDolphinChips(context, it)
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )

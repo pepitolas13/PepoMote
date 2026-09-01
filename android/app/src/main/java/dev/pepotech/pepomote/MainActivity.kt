@@ -42,6 +42,9 @@ class MainActivity : ComponentActivity() {
 
     internal var currentScreen by mutableStateOf(Screen.Home)
 
+    /** true = se entró al mando por la tarjeta Dolphin (pantalla solo-Dolphin). */
+    internal var controllerDolphinOnly by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -137,26 +140,45 @@ private fun Root(activity: MainActivity) {
         Screen.Home -> HomeScreen(
             connected = link is UiLink.Connected,
             onConnect = {
-                if (PairStore.load(context) != null && link is UiLink.Disconnected) {
-                    LinkForegroundService.start(context)
-                    ensureNotifPermission()
-                    activity.currentScreen = Screen.Controller
-                } else {
-                    activity.currentScreen = Screen.Pair
+                activity.controllerDolphinOnly = false
+                when {
+                    // Ya conectado (por Dolphin o lo que sea): al mando en
+                    // modo puntero — nunca al escáner
+                    link is UiLink.Connected || link is UiLink.Connecting -> {
+                        LinkState.sendMode?.invoke("pointer")
+                        activity.currentScreen = Screen.Controller
+                    }
+
+                    PairStore.load(context) != null -> {
+                        LinkState.pendingMode = "pointer"
+                        LinkForegroundService.start(context)
+                        ensureNotifPermission()
+                        activity.currentScreen = Screen.Controller
+                    }
+
+                    else -> activity.currentScreen = Screen.Pair
                 }
             },
-            onController = { activity.currentScreen = Screen.Controller },
+            onController = {
+                activity.controllerDolphinOnly = false
+                activity.currentScreen = Screen.Controller
+            },
             onDolphin = {
-                if (link is UiLink.Connected) {
-                    LinkState.sendMode?.invoke("dolphin")
-                    activity.currentScreen = Screen.Controller
-                } else if (PairStore.load(context) != null) {
-                    LinkState.pendingMode = "dolphin"
-                    LinkForegroundService.start(context)
-                    ensureNotifPermission()
-                    activity.currentScreen = Screen.Controller
-                } else {
-                    activity.currentScreen = Screen.Pair
+                activity.controllerDolphinOnly = true
+                when {
+                    link is UiLink.Connected || link is UiLink.Connecting -> {
+                        LinkState.sendMode?.invoke("dolphin")
+                        activity.currentScreen = Screen.Controller
+                    }
+
+                    PairStore.load(context) != null -> {
+                        LinkState.pendingMode = "dolphin"
+                        LinkForegroundService.start(context)
+                        ensureNotifPermission()
+                        activity.currentScreen = Screen.Controller
+                    }
+
+                    else -> activity.currentScreen = Screen.Pair
                 }
             },
             onNewPairing = { activity.currentScreen = Screen.Settings }
@@ -187,7 +209,14 @@ private fun Root(activity: MainActivity) {
             if (landscape) {
                 ControllerLandscapeScreen(link = link, onDisconnect = onDisconnect)
             } else {
-                ControllerScreen(link = link, onDisconnect = onDisconnect)
+                ControllerScreen(
+                    link = link,
+                    // Selector Puntero/Dolphin: solo entrando por Conectar/Mando
+                    // y con el ajuste activo. Por Dolphin: pantalla solo-Dolphin.
+                    showChips = !activity.controllerDolphinOnly &&
+                        AppPrefs.showDolphinChips(context),
+                    onDisconnect = onDisconnect
+                )
             }
         }
     }
