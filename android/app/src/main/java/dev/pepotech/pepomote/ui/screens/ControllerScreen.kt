@@ -60,6 +60,17 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
         onDispose { view.keepScreenOn = false }
     }
 
+    // Recentrar cuando el mando está EN PANTALLA y conectado: es el momento
+    // en que el usuario de verdad empuña el móvil (la primera conexión llega
+    // moviéndolo tras escanear el QR y un recentrado temprano se pierde).
+    val connected = link is UiLink.Connected
+    androidx.compose.runtime.LaunchedEffect(connected) {
+        if (connected) {
+            kotlinx.coroutines.delay(400)
+            ButtonState.bumpRecenter()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()

@@ -95,16 +95,9 @@ private fun Root(activity: MainActivity) {
         activity.currentScreen = Screen.Home
     }
 
-    val notifPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* con o sin permiso, el servicio arranca; solo cambia la notificación */ }
-
-    fun ensureNotifPermission() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-
+    // Sin petición de permiso de notificaciones: el servicio funciona igual
+    // sin él; si el usuario lo concede a mano, la notificación con
+    // "Desconectar" aparece. Cero fricción en el primer arranque.
     val qrLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@rememberLauncherForActivityResult
         val pairing = PairStore.parsePairUrl(contents)
@@ -117,7 +110,6 @@ private fun Root(activity: MainActivity) {
         // arranque del servicio compitiendo con el diálogo del sistema y el
         // primer emparejamiento fallaba en algunos OEMs.
         LinkForegroundService.start(context)
-        ensureNotifPermission()
         activity.currentScreen = Screen.Controller
     }
 
@@ -153,7 +145,6 @@ private fun Root(activity: MainActivity) {
                     PairStore.load(context) != null -> {
                         LinkState.pendingMode = "pointer"
                         LinkForegroundService.start(context)
-                        ensureNotifPermission()
                         activity.currentScreen = Screen.Controller
                     }
 
@@ -175,7 +166,6 @@ private fun Root(activity: MainActivity) {
                     PairStore.load(context) != null -> {
                         LinkState.pendingMode = "dolphin"
                         LinkForegroundService.start(context)
-                        ensureNotifPermission()
                         activity.currentScreen = Screen.Controller
                     }
 
