@@ -18,18 +18,21 @@ pub fn to_dsu(accel_ms2: [f32; 3], gyro_rads: [f32; 3]) -> ([f32; 3], [f32; 3]) 
     let [ax, ay, az] = accel_ms2;
     let [gx, gy, gz] = gyro_rads;
 
-    // Cada línea: un eje DSU ← un eje Android con su signo.
+    // Convención verificada contra el código de Dolphin (DualShockUDPClient):
+    //   Accel Up = -y_dsu · Accel Right = -x_dsu · Accel Forward = +z_dsu
+    //   Gyro Pitch Up = +pitch · Yaw Right = +yaw · Roll Right = +roll
+    // Móvil plano: android a=(0,0,+g) → dsu (0,-1,0) = Accel Up ✓
+    // Apuntando arriba θ: android a=(0, g·sinθ, g·cosθ) → dsu_z=+sinθ =
+    // Accel Forward ✓ (con -ay salía invertido: el bug de h3 en el real).
     let accel = [
         -ax / G, // DSU X ← -X android
         -az / G, // DSU Y ← -Z android
-        -ay / G, // DSU Z ← -Y android
+        ay / G,  // DSU Z ← +Y android
     ];
     let gyro = [
-        // pitch ← -X android: verificado contra Dolphin real (h3, con +gx el
-        // puntero vertical salía invertido; el horizontal ya estaba bien)
-        -gx * RAD_TO_DEG,
-        -gz * RAD_TO_DEG, // yaw  ← -Z android (giro horizontal)
-        gy * RAD_TO_DEG,  // roll ← +Y android (rotar sobre el eje de apuntado)
+        gx * RAD_TO_DEG,  // pitch ← +X android (muñeca arriba = Pitch Up)
+        -gz * RAD_TO_DEG, // yaw   ← -Z android (girar a la derecha = Yaw Right)
+        gy * RAD_TO_DEG,  // roll  ← +Y android (rolar a la derecha = Roll Right)
     ];
     (accel, gyro)
 }
@@ -116,9 +119,18 @@ mod tests {
     #[test]
     fn gyro_a_grados() {
         let (_, g) = to_dsu([0.0; 3], [1.0, 0.5, -2.0]);
-        assert!((g[0] + 57.29578).abs() < 1e-3); // pitch = -gx
+        assert!((g[0] - 57.29578).abs() < 1e-3); // pitch = +gx
         assert!((g[1] - 114.59156).abs() < 1e-3); // yaw = -gz = +2 rad/s
         assert!((g[2] - 28.64789).abs() < 1e-3); // roll = +gy
+    }
+
+    #[test]
+    fn apuntar_arriba_da_accel_forward_positivo() {
+        // Móvil con el morro 30° arriba: android a = (0, g·sin30, g·cos30)
+        let g30 = 9.80665f32;
+        let (a, _) = to_dsu([0.0, g30 * 0.5, g30 * 0.866025], [0.0; 3]);
+        assert!((a[2] - 0.5).abs() < 1e-4, "dsu_z={} (Accel Forward)", a[2]);
+        assert!((a[1] + 0.866025).abs() < 1e-4, "dsu_y={}", a[1]);
     }
 
     #[test]

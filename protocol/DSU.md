@@ -37,12 +37,17 @@ Ejes Android: X = derecha del dispositivo, Y = hacia la TV (borde superior), Z =
 ```
 dsu_accel_x = -ax / 9.80665
 dsu_accel_y = -az / 9.80665
-dsu_accel_z = -ay / 9.80665
-dsu_pitch   = -gx · 180/π   (verificado contra Dolphin real: con +gx el
-                             puntero vertical salía invertido)
+dsu_accel_z = +ay / 9.80665
+dsu_pitch   = +gx · 180/π
 dsu_yaw     = -gz · 180/π
 dsu_roll    = +gy · 180/π
 ```
+
+Convención verificada contra `DualShockUDPClient.cpp` de Dolphin: `Accel Up =
+-y_dsu`, `Accel Right = -x_dsu`, `Accel Forward = +z_dsu`, `Gyro Pitch Up =
++pitch`, `Yaw Right = +yaw`, `Roll Right = +roll`. El pitch del puntero IMU lo
+ancla el ACELERÓMETRO (el recentrado de Dolphin solo resetea el yaw): un signo
+mal en `dsu_accel_z` invierte el vertical aunque el gyro esté bien.
 
 Los signos exactos se validan en el hito 3 con el protocolo de calibración; **cualquier corrección se hace únicamente en `desktop/src/dsu/mapping.rs`** (matriz de signos comentada por eje).
 
