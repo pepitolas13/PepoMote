@@ -11,8 +11,15 @@ que el receptor muestra bajo el QR.
 
 ## Instalar
 
-Un solo comando en el terminal del móvil (detecta si es glibc o musl y
-descarga el paquete que toca de la [última release](https://github.com/pepitolas13/PepoMote/releases/latest)):
+**Mobian (o cualquier Debian/Ubuntu en el móvil): sin terminal.** Abre en el
+navegador del móvil la [última release](https://github.com/pepitolas13/PepoMote/releases/latest),
+descarga `pepomote-mobile_<versión>_arm64.deb`, tócalo en las descargas y
+pulsa **Instalar** (lo abre "Software"). Aparece "PepoMote" en el lanzador,
+con la regla del sensor ya instalada. Si tu Mobian no abre .deb al tocarlos:
+`sudo apt install ~/Downloads/pepomote-mobile_*_arm64.deb`.
+
+**Cualquier otra distro**, un solo comando en el terminal (detecta glibc o musl
+y descarga el paquete que toca de la última release):
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh | sh
