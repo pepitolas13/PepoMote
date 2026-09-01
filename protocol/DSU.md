@@ -60,3 +60,11 @@ En Dolphin: Controllers → Alternate Input Sources ON (servidor 127.0.0.1:26760
 3. Rotar sobre el eje de apuntado → Gyro Roll
 
 Con las 9 comprobaciones en verde, el puntero IMU ("Point" con Total Yaw/Pitch + Recenter) y Wii Sports funcionan. Perfil listo en `assets/dolphin/PepoMote.ini`.
+
+## Recentrado
+
+La diana del móvil incrementa `recenter_count` (PMP); el servidor DSU traduce cada flanco en un **pulso de 150 ms del botón Touch**, que el perfil mapea a `IMUPointer/Recenter`. Así el mismo gesto recentra en modo puntero y en Dolphin.
+
+## Modo
+
+El receptor solo alimenta el DSU en modo `dolphin` (en modo puntero el pad se reporta desconectado al caducar el TTL de 1 s). Así un Dolphin abierto no recibe movimiento mientras usas el cursor.

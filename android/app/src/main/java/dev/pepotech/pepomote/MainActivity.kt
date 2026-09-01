@@ -92,6 +92,10 @@ private fun Root() {
                 }
             },
             onController = { screen = Screen.Controller },
+            onDolphin = {
+                LinkState.sendMode?.invoke("dolphin")
+                screen = Screen.Controller
+            },
             onNewPairing = { screen = Screen.Pair }
         )
 

@@ -32,6 +32,7 @@ fun HomeScreen(
     connected: Boolean,
     onConnect: () -> Unit,
     onController: () -> Unit,
+    onDolphin: () -> Unit,
     onNewPairing: () -> Unit
 ) {
     Column(
@@ -90,7 +91,7 @@ fun HomeScreen(
                     subtitle = stringResource(R.string.channel_dolphin_sub),
                     glyph = ChannelGlyph.Pointer,
                     accent = PepoColors.Ok,
-                    onClick = onController
+                    onClick = onDolphin
                 )
             }
             item {

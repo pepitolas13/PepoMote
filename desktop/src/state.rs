@@ -67,6 +67,7 @@ pub struct Shared {
     pub pps: f32,
     pub sensor_hz: f32,
     pub rtt_ms: Option<f32>,
+    pub dsu_clients: usize,
     pub last_error: Option<String>,
 }
 
@@ -82,6 +83,7 @@ impl Shared {
             pps: 0.0,
             sensor_hz: 0.0,
             rtt_ms: None,
+            dsu_clients: 0,
             last_error: None,
         }
     }

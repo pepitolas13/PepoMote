@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod dsu;
 mod input;
 mod net;
 mod pairing;
@@ -12,7 +13,8 @@ fn main() -> eframe::Result {
     let shared = state::new_shared();
     let pairing = pairing::PairingInfo::generate();
 
-    net::start(shared.clone(), pairing.clone());
+    let dsu_tx = dsu::start(shared.clone());
+    net::start(shared.clone(), pairing.clone(), dsu_tx);
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

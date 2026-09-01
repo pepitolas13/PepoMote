@@ -32,6 +32,7 @@ struct Snapshot {
     pps: f32,
     sensor_hz: f32,
     rtt_ms: Option<f32>,
+    dsu_clients: usize,
     error: Option<String>,
 }
 
@@ -53,6 +54,7 @@ impl eframe::App for PepoMoteApp {
                 pps: s.pps,
                 sensor_hz: s.sensor_hz,
                 rtt_ms: s.rtt_ms,
+                dsu_clients: s.dsu_clients,
                 error: s.last_error.clone(),
             }
         };
@@ -152,7 +154,7 @@ impl PepoMoteApp {
 
 fn ui_connected(ui: &mut egui::Ui, snap: &Snapshot) {
     let card_w = 320.0f32.min(ui.available_width());
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(card_w, 190.0), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(card_w, 214.0), egui::Sense::hover());
     ui.painter().rect(
         rect,
         Rounding::same(theme::RADIUS),
@@ -184,6 +186,13 @@ fn ui_connected(ui: &mut egui::Ui, snap: &Snapshot) {
             .unwrap_or_else(|| "—".into()),
     );
     stat_line(&mut child, "Batería del móvil", &format!("{}%", snap.battery));
+    if snap.mode == Mode::Dolphin {
+        stat_line(
+            &mut child,
+            "Dolphin",
+            &format!("{} cliente(s) DSU", snap.dsu_clients),
+        );
+    }
 
     ui.add_space(14.0);
     status_row(ui, theme::OK, "Conectado");

@@ -21,6 +21,10 @@ object LinkState {
     private val _flow = MutableStateFlow<UiLink>(UiLink.Disconnected)
     val flow: StateFlow<UiLink> = _flow
 
+    /** Cambia el modo pointer/dolphin; lo conecta el servicio al ControlClient. */
+    @Volatile
+    var sendMode: ((String) -> Unit)? = null
+
     internal fun publish(state: UiLink) {
         _flow.value = state
     }

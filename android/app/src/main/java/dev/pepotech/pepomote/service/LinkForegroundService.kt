@@ -83,6 +83,7 @@ class LinkForegroundService : Service() {
                     }
                     motion = engine
                     engine.start()
+                    LinkState.sendMode = { m -> control?.sendMode(m) }
                     LinkState.publish(UiLink.Connected(pairing.pcName, mode, null, 0f))
                     updateNotification("Conectado a ${pairing.pcName}")
                 }
@@ -108,6 +109,7 @@ class LinkForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        LinkState.sendMode = null
         motion?.stop()
         udp?.close()
         control?.close()

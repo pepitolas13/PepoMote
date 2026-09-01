@@ -97,7 +97,12 @@ fun ControllerScreen(link: UiLink, onDisconnect: () -> Unit) {
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            if (link is UiLink.Connected) {
+                Spacer(Modifier.height(6.dp))
+                ModeChips(current = link.mode)
+            }
+
+            Spacer(Modifier.height(10.dp))
             PadCross(sizeDp = 168.dp)
 
             Spacer(Modifier.height(16.dp))
@@ -138,6 +143,41 @@ fun ControllerScreen(link: UiLink, onDisconnect: () -> Unit) {
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight(0.45f)
                 .width(30.dp)
+        )
+    }
+}
+
+/** Selector de modo: Puntero (controla el PC) / Dolphin (Wiimote virtual). */
+@Composable
+private fun ModeChips(current: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        ModeChip("Puntero", selected = current != "dolphin") {
+            dev.pepotech.pepomote.service.LinkState.sendMode?.invoke("pointer")
+        }
+        ModeChip("Dolphin", selected = current == "dolphin") {
+            dev.pepotech.pepomote.service.LinkState.sendMode?.invoke("dolphin")
+        }
+    }
+}
+
+@Composable
+private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(
+                if (selected) PepoColors.Blue else PepoColors.Card,
+                RoundedCornerShape(18.dp)
+            )
+            .pointerInput(label) {
+                detectTapGestures(onTap = { onClick() })
+            }
+            .padding(horizontal = 18.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = if (selected) PepoColors.Card else PepoColors.TextDim
+            )
         )
     }
 }
