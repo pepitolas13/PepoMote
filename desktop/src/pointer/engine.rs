@@ -3,12 +3,18 @@
 //! one-euro y deadzone con histéresis. Fallback: integración relativa del
 //! gyro para móviles sin rotation vector (flags bit0 = 0).
 
-use super::one_euro::OneEuro;
+use super::one_euro::Filter2D;
 use crate::net::codec::{InputPacket, FLAG_QUAT_VALID};
 
-/// Deadzone angular con histéresis: por debajo de este ángulo respecto a la
-/// última posición emitida, el cursor no se mueve.
-const DEADZONE_DEG: f32 = 0.08;
+/// Congelación por velocidad con histéresis (sustituye a la deadzone por
+/// posición, que producía avance a saltos en movimientos lentos): quieto de
+/// verdad = cursor clavado; en cuanto hay intención de movimiento, libre y
+/// continuo — sin cuantizar la trayectoria.
+const FREEZE_ENTER_DEG_S: f32 = 0.6;
+const FREEZE_EXIT_DEG_S: f32 = 1.8;
+/// Escape por posición: aunque la velocidad medida sea baja (deriva muy lenta,
+/// entrada en escalón), si lo filtrado se aleja esto del punto congelado, se libera.
+const FREEZE_ESCAPE_DEG: f32 = 0.35;
 
 /// Signos del fallback relativo (h1). Corrección SOLO aquí.
 const SIGN_X: f32 = -1.0;
@@ -78,8 +84,8 @@ impl Quat {
 pub struct PointerEngine {
     q_ref: Option<Quat>,
     last_recenter: Option<u8>,
-    f_yaw: OneEuro,
-    f_pitch: OneEuro,
+    filter: Filter2D,
+    frozen: bool,
     last_emitted: Option<(f32, f32)>, // grados (yaw, pitch)
     last_t_us: Option<u64>,
     // fallback relativo
@@ -92,10 +98,10 @@ impl PointerEngine {
         Self {
             q_ref: None,
             last_recenter: None,
-            // beta alto = el filtro se abre en movimientos rápidos (sin lag ni
-            // saltos); la estabilidad en reposo la da mincutoff + deadzone
-            f_yaw: OneEuro::new(1.0, 0.08),
-            f_pitch: OneEuro::new(1.0, 0.08),
+            // beta = cuánto se abre el filtro con la velocidad (menos lag en
+            // flicks); la estabilidad en reposo la da la congelación
+            filter: Filter2D::new(1.0, 0.08),
+            frozen: false,
             last_emitted: None,
             last_t_us: None,
             acc_x: 0.0,
@@ -140,8 +146,8 @@ impl PointerEngine {
         let q = Quat::from_packet(p);
         if recentered || self.q_ref.is_none() {
             self.q_ref = Some(q);
-            self.f_yaw.reset();
-            self.f_pitch.reset();
+            self.filter.reset();
+            self.frozen = false;
             self.last_emitted = Some((0.0, 0.0));
             return if abs_mode {
                 PointerOutput::Abs { nx: 0.5, ny: 0.5 }
@@ -156,14 +162,21 @@ impl PointerEngine {
         let pitch = v[2].clamp(-1.0, 1.0).asin().to_degrees(); // + = arriba
 
         let dt = dt.unwrap_or(0.005);
-        let yaw_f = self.f_yaw.filter(yaw, dt);
-        let pitch_f = self.f_pitch.filter(pitch, dt);
+        let (yaw_f, pitch_f, speed) = self.filter.filter(yaw, pitch, dt);
 
-        // Deadzone con histéresis sobre la última posición emitida
-        let (ly, lp) = self.last_emitted.unwrap_or((yaw_f, pitch_f));
-        let dist = ((yaw_f - ly).powi(2) + (pitch_f - lp).powi(2)).sqrt();
-        let (out_yaw, out_pitch) = if dist < DEADZONE_DEG {
-            (ly, lp)
+        // Congelación por velocidad con histéresis: clavado en reposo,
+        // continuo (sin saltos de cuantización) en cuanto te mueves
+        let (prev_yaw, prev_pitch) = self.last_emitted.unwrap_or((yaw_f, pitch_f));
+        let dev = ((yaw_f - prev_yaw).powi(2) + (pitch_f - prev_pitch).powi(2)).sqrt();
+        if self.frozen {
+            if speed > FREEZE_EXIT_DEG_S || dev > FREEZE_ESCAPE_DEG {
+                self.frozen = false;
+            }
+        } else if speed < FREEZE_ENTER_DEG_S && dev < FREEZE_ESCAPE_DEG {
+            self.frozen = true;
+        }
+        let (out_yaw, out_pitch) = if self.frozen {
+            (prev_yaw, prev_pitch)
         } else {
             self.last_emitted = Some((yaw_f, pitch_f));
             (yaw_f, pitch_f)
@@ -179,8 +192,8 @@ impl PointerEngine {
         } else {
             // Modo relativo con orientación absoluta: delta contra lo último emitido
             let px_per_deg = screen_w_px / sens_deg;
-            self.acc_x += (out_yaw - ly) * px_per_deg;
-            self.acc_y -= (out_pitch - lp) * px_per_deg;
+            self.acc_x += (out_yaw - prev_yaw) * px_per_deg;
+            self.acc_y -= (out_pitch - prev_pitch) * px_per_deg;
             let dx = self.acc_x as i32;
             let dy = self.acc_y as i32;
             self.acc_x -= dx as f32;
