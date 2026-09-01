@@ -152,6 +152,9 @@ pub fn run(
                     engine_session = Some(p.session_id);
                     engine = PointerEngine::new();
                     prev_buttons = 0;
+                    // Centrado físico SIEMPRE al conectar, sea cual sea el
+                    // modo (absoluto, relativo o Dolphin)
+                    injector.move_abs(0.5, 0.5);
                 }
 
                 win_packets += 1;
