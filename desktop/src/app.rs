@@ -91,6 +91,11 @@ impl eframe::App for PepoMoteApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(24.0))
             .show(ctx, |ui| {
+                // Con la ventana pequeña, el contenido (Ajustes incluido)
+                // hace scroll en vez de cortarse
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(8.0);
                     ui.label(
@@ -126,6 +131,7 @@ impl eframe::App for PepoMoteApp {
                             .color(theme::TEXT_DIM),
                     );
                 });
+                    });
             });
     }
 }
