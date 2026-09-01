@@ -3,11 +3,10 @@ pub mod control;
 pub mod discovery;
 pub mod telemetry;
 
-use crate::dsu::MotionSample;
+use crate::dsu::Dsu;
 use crate::pairing::PairingInfo;
 use crate::state::SharedState;
 use std::net::SocketAddr;
-use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
 /// Sesión activa (un móvil a la vez en v1). La crea el canal de control,
@@ -20,7 +19,7 @@ pub struct Session {
 
 pub type SharedSession = Arc<Mutex<Option<Session>>>;
 
-pub fn start(shared: SharedState, pairing: PairingInfo, dsu_tx: SyncSender<MotionSample>) {
+pub fn start(shared: SharedState, pairing: PairingInfo, dsu: Option<Arc<Dsu>>) {
     let session: SharedSession = Arc::new(Mutex::new(None));
 
     {
@@ -38,7 +37,7 @@ pub fn start(shared: SharedState, pairing: PairingInfo, dsu_tx: SyncSender<Motio
         let pairing = pairing.clone();
         std::thread::Builder::new()
             .name("pmp-telemetry".into())
-            .spawn(move || telemetry::run(shared, session, pairing, dsu_tx))
+            .spawn(move || telemetry::run(shared, session, pairing, dsu))
             .expect("hilo telemetría");
     }
     {

@@ -1,15 +1,18 @@
-//! Servidor DSU (cemuhook) en 127.0.0.1:26760 — verificado contra la spec
-//! comunitaria y el cliente de Dolphin (protocol/DSU.md). Un mando, slot 0.
+//! Servidor DSU (cemuhook) — verificado contra la spec comunitaria y el
+//! código de Dolphin (protocol/DSU.md). Un mando, slot 0.
+//!
+//! Este hilo SOLO atiende las peticiones de Dolphin (version/PortInfo/registro
+//! PadData, ~1/s). El streaming de PadData sale inline del hilo de telemetría
+//! (dsu::Dsu::push) para no añadir ni un milisegundo de latencia.
 
-use super::mapping;
-use super::MotionSample;
+use super::{mapping, MotionSample};
 use crate::state::SharedState;
 use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const DSU_PORT: u16 = 26760;
+pub const DSU_PORT: u16 = 26760;
 const PROTOCOL_VERSION: u16 = 1001;
 const SERVER_ID: u32 = 0x50455030; // "0EPP"
 const MAC: [u8; 6] = [0x50, 0x4D, 0x50, 0x31, 0x00, 0x01]; // "PMP1" + slot
@@ -22,31 +25,19 @@ const MSG_PAD_DATA: u32 = 0x100002;
 const CLIENT_TTL: Duration = Duration::from_secs(3);
 /// Con más de esto sin muestras del móvil, el pad se reporta desconectado.
 const PAD_TTL: Duration = Duration::from_secs(1);
-/// Duración del pulso del botón Touch al recentrar (para IMUPointer/Recenter).
-const RECENTER_PULSE: Duration = Duration::from_millis(150);
 
-pub fn run(shared: SharedState, rx: Receiver<MotionSample>) {
-    let socket = match UdpSocket::bind(("127.0.0.1", DSU_PORT)) {
-        Ok(s) => s,
-        Err(e) => {
-            shared.lock().unwrap().last_error =
-                Some(format!("DSU: no puedo escuchar en {DSU_PORT}: {e}"));
-            return;
-        }
-    };
-    let _ = socket.set_read_timeout(Some(Duration::from_millis(4)));
-
-    let mut clients: HashMap<SocketAddr, Instant> = HashMap::new();
-    let mut packet_counter: u32 = 0;
+pub fn run(
+    shared: SharedState,
+    socket: UdpSocket,
+    clients: Arc<Mutex<HashMap<SocketAddr, Instant>>>,
+    last: Arc<Mutex<Option<(MotionSample, Instant)>>>,
+) {
+    let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
     let mut buf = [0u8; 128];
-    let mut last_sample: Option<(MotionSample, Instant)> = None;
-    let mut last_recenter: Option<u8> = None;
-    let mut pulse_until = Instant::now();
     let mut last_sweep = Instant::now();
 
     loop {
-        // Peticiones entrantes
-        while let Ok((len, from)) = socket.recv_from(&mut buf) {
+        if let Ok((len, from)) = socket.recv_from(&mut buf) {
             if let Some((msg_type, payload)) = parse_request(&buf[..len]) {
                 match msg_type {
                     MSG_VERSION => {
@@ -56,7 +47,8 @@ pub fn run(shared: SharedState, rx: Receiver<MotionSample>) {
                         let _ = socket.send_to(&finish(out), from);
                     }
                     MSG_PORT_INFO => {
-                        let connected = pad_connected(&last_sample);
+                        let guard = last.lock().unwrap();
+                        let connected = pad_connected(&guard);
                         let count = payload
                             .first_chunk::<4>()
                             .map(|c| i32::from_le_bytes(*c))
@@ -66,44 +58,24 @@ pub fn run(shared: SharedState, rx: Receiver<MotionSample>) {
                             let slot = payload.get(4 + i).copied().unwrap_or(i as u8);
                             let mut out = Vec::with_capacity(32);
                             out.extend_from_slice(&MSG_PORT_INFO.to_le_bytes());
-                            out.extend_from_slice(&pad_info(slot, connected, &last_sample));
+                            out.extend_from_slice(&pad_info(slot, connected, &guard));
                             out.push(0);
                             let _ = socket.send_to(&finish(out), from);
                         }
                     }
                     MSG_PAD_DATA => {
-                        clients.insert(from, Instant::now());
+                        clients.lock().unwrap().insert(from, Instant::now());
                     }
                     _ => {}
                 }
             }
         }
 
-        // Caducar clientes
         if last_sweep.elapsed() > Duration::from_secs(1) {
             last_sweep = Instant::now();
-            clients.retain(|_, t| t.elapsed() < CLIENT_TTL);
-            shared.lock().unwrap().dsu_clients = clients.len();
-        }
-
-        // Muestras del móvil → PadData a los clientes registrados
-        while let Ok(sample) = rx.try_recv() {
-            if last_recenter != Some(sample.recenter_count) {
-                if last_recenter.is_some() {
-                    pulse_until = Instant::now() + RECENTER_PULSE;
-                }
-                last_recenter = Some(sample.recenter_count);
-            }
-            let touch_pressed = Instant::now() < pulse_until;
-            last_sample = Some((sample, Instant::now()));
-
-            if !clients.is_empty() {
-                packet_counter = packet_counter.wrapping_add(1);
-                let packet = pad_data_packet(&sample, touch_pressed, packet_counter, &last_sample);
-                for addr in clients.keys() {
-                    let _ = socket.send_to(&packet, addr);
-                }
-            }
+            let mut c = clients.lock().unwrap();
+            c.retain(|_, t| t.elapsed() < CLIENT_TTL);
+            shared.lock().unwrap().dsu_clients = c.len();
         }
     }
 }
@@ -157,7 +129,7 @@ fn finish(payload: Vec<u8>) -> Vec<u8> {
 }
 
 /// PadData de 100 bytes (spec en protocol/DSU.md).
-fn pad_data_packet(
+pub fn pad_data_packet(
     sample: &MotionSample,
     touch_pressed: bool,
     counter: u32,
@@ -218,7 +190,6 @@ mod tests {
         assert_eq!(&out[0..4], b"DSUS");
         assert_eq!(u16::from_le_bytes(out[4..6].try_into().unwrap()), 1001);
         assert_eq!(u16::from_le_bytes(out[6..8].try_into().unwrap()), 84);
-        // CRC: recomputar con el campo a cero
         let mut copy = out.clone();
         let crc_in = u32::from_le_bytes(copy[8..12].try_into().unwrap());
         copy[8..12].copy_from_slice(&[0; 4]);
@@ -230,23 +201,17 @@ mod tests {
         let s = sample();
         let last = Some((s, Instant::now()));
         let out = pad_data_packet(&s, true, 42, &last);
-        // tipo
         assert_eq!(u32::from_le_bytes(out[16..20].try_into().unwrap()), MSG_PAD_DATA);
-        // slot 0 conectado, modelo 2
         assert_eq!(out[20], 0);
         assert_eq!(out[21], 2);
         assert_eq!(out[22], 2);
-        // connected + contador
         assert_eq!(out[31], 1);
         assert_eq!(u32::from_le_bytes(out[32..36].try_into().unwrap()), 42);
-        // A → Cross en buttons2 (bit6)
+        // A → Cross en bitmask2 (informativo) y en su byte analógico
         assert_eq!(out[37] & (1 << 6), 1 << 6);
-        // pulso de recentrado en el botón Touch
-        assert_eq!(out[39], 0xFF);
-        // sticks neutros
+        assert_eq!(out[39], 0xFF); // pulso de recentrado en Touch
         assert_eq!(&out[40..44], &[128, 128, 128, 128]);
-        // A pulsado → byte analógico de Cross (offset 49: dpad 44-47, square 48)
-        assert_eq!(out[49], 0xFF);
+        assert_eq!(out[49], 0xFF); // Cross analógico
         assert_eq!(out[48], 0); // square no
         // offsets: touch1 56..62, touch2 62..68, timestamp 68..76,
         // accel 76..88, gyro 88..100
@@ -254,10 +219,8 @@ mod tests {
             u64::from_le_bytes(out[68..76].try_into().unwrap()),
             123_456_789
         );
-        // accel plano: DSU Y = -1 g
         let ay = f32::from_le_bytes(out[80..84].try_into().unwrap());
         assert!((ay + 1.0).abs() < 1e-5, "ay={ay}");
-        // gyro pitch = +gx en °/s (convención del código de Dolphin)
         let pitch = f32::from_le_bytes(out[88..92].try_into().unwrap());
         assert!((pitch - 57.29578).abs() < 1e-3, "pitch={pitch}");
     }

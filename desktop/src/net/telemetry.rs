@@ -3,14 +3,14 @@
 
 use super::codec::{self, Packet};
 use super::SharedSession;
-use crate::dsu::MotionSample;
+use crate::dsu::{Dsu, MotionSample};
 use crate::input::{self, KeyCode, MouseButton};
 use crate::pairing::PairingInfo;
 use crate::pointer::{PointerEngine, PointerOutput};
 use crate::state::{Mode, SharedState};
 use serde_json::json;
 use std::net::UdpSocket;
-use std::sync::mpsc::SyncSender;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Mapeo bit de botón → acción en modo puntero (PROTOCOL.md §4.2).
@@ -42,7 +42,7 @@ pub fn run(
     shared: SharedState,
     session: SharedSession,
     pairing: PairingInfo,
-    dsu_tx: SyncSender<MotionSample>,
+    dsu: Option<Arc<Dsu>>,
 ) {
     let socket = match UdpSocket::bind(("0.0.0.0", pairing.port)) {
         Ok(s) => s,
@@ -156,17 +156,19 @@ pub fn run(
                 };
 
                 if mode == Mode::Dolphin {
-                    // En modo Dolphin NADA se inyecta en el SO: todo va al DSU.
-                    // try_send: si DSU se atasca se tiran muestras, nunca se
-                    // bloquea este hilo.
-                    let _ = dsu_tx.try_send(MotionSample {
-                        t_us: p.t_sensor_us,
-                        accel_ms2: p.accel,
-                        gyro_rads: p.gyro,
-                        buttons: p.buttons,
-                        battery_pct: p.battery_pct,
-                        recenter_count: p.recenter_count,
-                    });
+                    // En modo Dolphin NADA se inyecta en el SO: todo va al DSU,
+                    // INLINE desde este hilo (envío UDP a localhost, ~µs):
+                    // misma latencia que el camino del puntero.
+                    if let Some(dsu) = &dsu {
+                        dsu.push(&MotionSample {
+                            t_us: p.t_sensor_us,
+                            accel_ms2: p.accel,
+                            gyro_rads: p.gyro,
+                            buttons: p.buttons,
+                            battery_pct: p.battery_pct,
+                            recenter_count: p.recenter_count,
+                        });
+                    }
                 } else {
                     match engine.apply(&p, config.sens_deg, aspect, config.abs_mode, screen_w) {
                         PointerOutput::Abs { nx, ny } => injector.move_abs(nx, ny),

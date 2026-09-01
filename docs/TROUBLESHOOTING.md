@@ -24,6 +24,18 @@ apuntas (pensado para juegos). Actívalo para el uso normal.
 - HUD del receptor: si el RTT sube de ~15 ms, es la red — pásate a 5 GHz o al hotspot del móvil.
 - Frecuencia real del sensor en el HUD: algunos móviles capan a 50-100 Hz; funciona igual, con algo menos de finura.
 
+## Latencia jugando en Dolphin
+
+PepoMote añade lo mismo que en modo puntero (~10-20 ms en LAN 5 GHz). Si notas
+retardo, casi siempre viene de la cadena de vídeo, no del mando:
+
+1. **La TV**: activa el "Modo juego" de la tele. Una TV en modo normal mete
+   50-100 ms de procesado — es la causa nº 1.
+2. **Dolphin**: Gráficos → Avanzado → activa "Present XFB Immediately"
+   (Immediately Present XFB) y desactiva V-Sync. Pantalla completa.
+3. **Wi-Fi**: HUD del receptor con RTT alto → 5 GHz o hotspot del móvil.
+4. Comprueba que el HUD marca ~200-250 paquetes/s durante el juego.
+
 ## Android mata la conexión al apagar la pantalla
 
 PepoMote usa un servicio en primer plano con wakelock; concédele la exención de optimización de batería cuando la pida. En OEMs agresivos (Xiaomi, Huawei…): dontkillmyapp.com/<tu-marca>.

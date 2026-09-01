@@ -17,8 +17,8 @@ fn main() -> eframe::Result {
     let shared = state::new_shared();
     let pairing = pairing::PairingInfo::generate();
 
-    let dsu_tx = dsu::start(shared.clone());
-    net::start(shared.clone(), pairing.clone(), dsu_tx);
+    let dsu = dsu::start(shared.clone());
+    net::start(shared.clone(), pairing.clone(), dsu);
 
     #[cfg(windows)]
     let (ctx_tx, ctx_rx) = std::sync::mpsc::channel::<egui::Context>();
