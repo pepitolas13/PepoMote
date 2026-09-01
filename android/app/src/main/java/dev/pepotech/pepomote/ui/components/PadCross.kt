@@ -65,6 +65,7 @@ private fun androidx.compose.foundation.layout.BoxScope.PadArm(
                     down = true
                     ButtonState.set(bit, true)
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    dev.pepotech.pepomote.control.UiSounds.blip()
                     tryAwaitRelease()
                     down = false
                     ButtonState.set(bit, false)

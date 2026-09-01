@@ -44,6 +44,7 @@ fun TriggerZone() {
                     down = true
                     ButtonState.set(ButtonState.B, true)
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    dev.pepotech.pepomote.control.UiSounds.blip()
                     tryAwaitRelease()
                     down = false
                     ButtonState.set(ButtonState.B, false)

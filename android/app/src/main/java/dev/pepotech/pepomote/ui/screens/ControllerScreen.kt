@@ -89,7 +89,17 @@ fun ControllerScreen(link: UiLink, onDisconnect: () -> Unit) {
                         }
 
                         is UiLink.Connecting -> Text("Conectando…", style = MaterialTheme.typography.titleMedium)
-                        else -> Text("Sin conexión", style = MaterialTheme.typography.titleMedium)
+                        else -> {
+                            Text("Sin conexión", style = MaterialTheme.typography.titleMedium)
+                            val ctx = androidx.compose.ui.platform.LocalContext.current
+                            if (dev.pepotech.pepomote.net.PairStore.load(ctx) != null) {
+                                TextButton(onClick = {
+                                    dev.pepotech.pepomote.service.LinkForegroundService.start(ctx)
+                                }) {
+                                    Text("Reconectar", color = PepoColors.Blue)
+                                }
+                            }
+                        }
                     }
                 }
                 TextButton(onClick = onDisconnect) {
@@ -121,7 +131,8 @@ fun ControllerScreen(link: UiLink, onDisconnect: () -> Unit) {
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
                 textColor = PepoColors.Card,
-                textSize = 44
+                textSize = 44,
+                pop = true
             )
 
             Spacer(Modifier.height(14.dp))
@@ -200,6 +211,7 @@ private fun RecenterButton() {
                             delay(150)
                             ButtonState.bumpRecenter()
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            dev.pepotech.pepomote.control.UiSounds.tick()
                         }
                         tryAwaitRelease()
                         job.cancel()

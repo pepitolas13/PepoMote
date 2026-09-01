@@ -1,8 +1,11 @@
 package dev.pepotech.pepomote
 
 import android.Manifest
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -13,43 +16,82 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.ui.screens.ControllerLandscapeScreen
 import dev.pepotech.pepomote.ui.screens.ControllerScreen
 import dev.pepotech.pepomote.ui.screens.HomeScreen
+import dev.pepotech.pepomote.ui.screens.OnboardingScreen
 import dev.pepotech.pepomote.ui.screens.PairScreen
+import dev.pepotech.pepomote.ui.screens.SettingsScreen
 import dev.pepotech.pepomote.ui.theme.PepoMoteTheme
 
-private enum class Screen { Home, Pair, Controller }
+internal enum class Screen { Onboarding, Home, Pair, Controller, Settings }
 
 class MainActivity : ComponentActivity() {
+
+    internal var currentScreen by mutableStateOf(Screen.Home)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        UiSounds.init(this)
+        if (!AppPrefs.onboarded(this)) currentScreen = Screen.Onboarding
         setContent {
             PepoMoteTheme {
-                Root()
+                Root(this)
             }
         }
+    }
+
+    /**
+     * Volumen-abajo = gatillo B mientras el mando está abierto: tacto físico
+     * real con latencia táctil cero. Configurable en Ajustes.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN &&
+            currentScreen == Screen.Controller &&
+            AppPrefs.volDownIsB(this)
+        ) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) {
+                    ButtonState.set(ButtonState.B, true)
+                    UiSounds.blip()
+                    window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+
+                KeyEvent.ACTION_UP -> ButtonState.set(ButtonState.B, false)
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 }
 
 @Composable
-private fun Root() {
+private fun Root(activity: MainActivity) {
     val context = LocalContext.current
-    var screen by remember { mutableStateOf(Screen.Home) }
     val link by LinkState.flow.collectAsState()
 
     val notifPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* con o sin permiso, el servicio arranca; solo cambia la notificación */ }
+
+    fun ensureNotifPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     val qrLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@rememberLauncherForActivityResult
@@ -59,11 +101,9 @@ private fun Root() {
             return@rememberLauncherForActivityResult
         }
         PairStore.save(context, pairing)
-        if (Build.VERSION.SDK_INT >= 33) {
-            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
+        ensureNotifPermission()
         LinkForegroundService.start(context)
-        screen = Screen.Controller
+        activity.currentScreen = Screen.Controller
     }
 
     fun scanQr() {
@@ -76,58 +116,67 @@ private fun Root() {
         )
     }
 
-    when (screen) {
+    when (activity.currentScreen) {
+        Screen.Onboarding -> OnboardingScreen(onDone = {
+            AppPrefs.setOnboarded(context)
+            activity.currentScreen = Screen.Home
+        })
+
         Screen.Home -> HomeScreen(
             connected = link is UiLink.Connected,
             onConnect = {
-                // Si ya hay emparejamiento guardado, reconecta directo
                 if (PairStore.load(context) != null && link is UiLink.Disconnected) {
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
+                    ensureNotifPermission()
                     LinkForegroundService.start(context)
-                    screen = Screen.Controller
+                    activity.currentScreen = Screen.Controller
                 } else {
-                    screen = Screen.Pair
+                    activity.currentScreen = Screen.Pair
                 }
             },
-            onController = { screen = Screen.Controller },
+            onController = { activity.currentScreen = Screen.Controller },
             onDolphin = {
                 if (link is UiLink.Connected) {
                     LinkState.sendMode?.invoke("dolphin")
-                    screen = Screen.Controller
+                    activity.currentScreen = Screen.Controller
                 } else if (PairStore.load(context) != null) {
                     LinkState.pendingMode = "dolphin"
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
+                    ensureNotifPermission()
                     LinkForegroundService.start(context)
-                    screen = Screen.Controller
+                    activity.currentScreen = Screen.Controller
                 } else {
-                    screen = Screen.Pair
+                    activity.currentScreen = Screen.Pair
                 }
             },
-            onNewPairing = { screen = Screen.Pair }
+            onNewPairing = { activity.currentScreen = Screen.Settings }
         )
 
         Screen.Pair -> PairScreen(
             onScanQr = { scanQr() },
-            onBack = { screen = Screen.Home }
+            onBack = { activity.currentScreen = Screen.Home }
+        )
+
+        Screen.Settings -> SettingsScreen(
+            onNewPairing = { activity.currentScreen = Screen.Pair },
+            onBack = { activity.currentScreen = Screen.Home }
         )
 
         Screen.Controller -> {
             if (link is UiLink.Failed) {
                 val f = link as UiLink.Failed
                 Toast.makeText(context, "Error: ${f.msg}", Toast.LENGTH_LONG).show()
-                screen = Screen.Home
+                activity.currentScreen = Screen.Home
             }
-            ControllerScreen(
-                link = link,
-                onDisconnect = {
-                    LinkForegroundService.stop(context)
-                    screen = Screen.Home
-                }
-            )
+            val landscape =
+                LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val onDisconnect = {
+                LinkForegroundService.stop(context)
+                activity.currentScreen = Screen.Home
+            }
+            if (landscape) {
+                ControllerLandscapeScreen(link = link, onDisconnect = onDisconnect)
+            } else {
+                ControllerScreen(link = link, onDisconnect = onDisconnect)
+            }
         }
     }
 }

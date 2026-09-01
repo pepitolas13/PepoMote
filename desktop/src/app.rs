@@ -40,6 +40,13 @@ impl eframe::App for PepoMoteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_millis(100));
 
+        // En Windows, cerrar = esconder a la bandeja ("Salir" está en el tray)
+        #[cfg(windows)]
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+
         let snap = {
             let s = self.shared.lock().unwrap();
             Snapshot {
@@ -233,7 +240,7 @@ fn build_qr(url: &str) -> (Vec<bool>, usize) {
 }
 
 fn draw_qr_card(ui: &mut egui::Ui, modules: &[bool], width: usize) {
-    let card_size = 280.0;
+    let card_size = ui.available_width().clamp(180.0, 280.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(card_size), egui::Sense::hover());
     let painter = ui.painter();
 

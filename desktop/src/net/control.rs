@@ -83,6 +83,7 @@ fn handle(stream: TcpStream, shared: &SharedState, session: &SharedSession, pair
         &mut writer,
         &json!({"m":"ok","session_id":session_id,"udp_port":pairing.port,"mode":mode_str(mode)}),
     );
+    crate::sound::connect_chime();
 
     // Bucle de control hasta que el móvil se vaya
     loop {
@@ -121,6 +122,7 @@ fn handle(stream: TcpStream, shared: &SharedState, session: &SharedSession, pair
     }
 
     let _ = peer; // (log futuro)
+    crate::sound::disconnect_chime();
     *session.lock().unwrap() = None;
     let mut s = shared.lock().unwrap();
     s.status = LinkStatus::Waiting;

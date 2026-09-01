@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import dev.pepotech.pepomote.MainActivity
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.ControlClient
 import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.UdpSender
@@ -89,6 +90,8 @@ class LinkForegroundService : Service() {
                         LinkState.pendingMode = null
                         control?.sendMode(m)
                     }
+                    UiSounds.init(this@LinkForegroundService)
+                    UiSounds.connect()
                     updateNotification("Conectado a ${pairing.pcName}")
                 }
 
@@ -113,6 +116,9 @@ class LinkForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        if (LinkState.flow.value is UiLink.Connected) {
+            UiSounds.disconnect()
+        }
         LinkState.sendMode = null
         motion?.stop()
         udp?.close()

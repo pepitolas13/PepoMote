@@ -13,6 +13,12 @@ Se completa con cada hito. Esqueleto:
 
 Ejecuta `packaging/linux/install.sh` (instala la regla udev) y cierra sesión y vuelve a entrar. La regla `uaccess` da acceso al usuario de la sesión activa, sin grupos ni root.
 
+## El cursor no va donde apunto / se mueve "acumulando"
+
+Mira en Ajustes de la ventana del PC si "Apuntado absoluto" está desactivado:
+en modo relativo el cursor se desplaza con el giro en vez de ir a donde
+apuntas (pensado para juegos). Actívalo para el uso normal.
+
 ## El cursor va a tirones
 
 - HUD del receptor: si el RTT sube de ~15 ms, es la red — pásate a 5 GHz o al hotspot del móvil.

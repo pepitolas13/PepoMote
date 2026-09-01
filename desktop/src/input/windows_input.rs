@@ -81,6 +81,19 @@ impl Injector for WinInjector {
             }
             let ax = (((px - vx) / vw * 65535.0).round() as i32).clamp(0, 65535);
             let ay = (((py - vy) / vh * 65535.0).round() as i32).clamp(0, 65535);
+            if std::env::var_os("PEPOMOTE_DEBUG_ABS").is_some() {
+                static ONCE: std::sync::Once = std::sync::Once::new();
+                ONCE.call_once(|| {
+                    let _ = std::fs::write(
+                        "C:\\PepoMote\\abs_debug.txt",
+                        format!(
+                            "nx={nx} ny={ny}\nSM_CX={} SM_CY={}\nvx={vx} vy={vy} vw={vw} vh={vh}\npx={px} py={py} ax={ax} ay={ay}\n",
+                            GetSystemMetrics(SM_CXSCREEN),
+                            GetSystemMetrics(SM_CYSCREEN)
+                        ),
+                    );
+                });
+            }
             self.send_mouse(
                 ax,
                 ay,
