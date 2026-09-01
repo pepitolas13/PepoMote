@@ -51,6 +51,10 @@ pub fn start() {
             let _tray = match TrayIconBuilder::new()
                 .with_icon(icon)
                 .with_menu(Box::new(menu))
+                // click izquierdo = abrir la ventana (nuestro handler);
+                // el menú solo con click derecho — sin esto la librería
+                // ademas abría el menú con el izquierdo, descolocado
+                .with_menu_on_left_click(false)
                 .with_tooltip("PepoMote")
                 .build()
             {
