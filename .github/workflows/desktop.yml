@@ -2,6 +2,7 @@ name: desktop
 
 on:
   push:
+    branches: [main]
     paths: ["desktop/**", "protocol/**", ".github/workflows/desktop.yml"]
   pull_request:
     paths: ["desktop/**", "protocol/**"]
