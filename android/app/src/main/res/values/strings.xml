@@ -11,4 +11,5 @@
     <string name="channel_settings">Ajustes</string>
     <string name="channel_settings_sub">Sensibilidad y más</string>
     <string name="status_disconnected">Sin conexión</string>
+    <string name="status_connected">Conectado</string>
 </resources>

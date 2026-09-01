@@ -85,9 +85,11 @@ Cadencia: la del sensor (típico 100-200 Hz), tope 250 Hz, mínimo keepalive 1 H
 
 En modo `dolphin` el receptor NO inyecta nada en el SO: todo el estado va al servidor DSU (mapeo en `protocol/DSU.md`).
 
-### 4.3 `PING`/`PONG` UDP (RTT del hot path, para el HUD)
+### 4.3 `PING`/`PONG` UDP (RTT del hot path, para los HUD)
 
-Mismo socket UDP. `PING` móvil→PC: magic + tipo `0x02` + u16 reservado... layout: bytes 0-7 como INPUT (magic, tipo=0x02, flags, reservado), bytes 8-11 `session_id`, bytes 12-19 u64 `t_envio_us` (reloj del móvil). Total 20 bytes. El receptor responde `PONG` (tipo `0x03`) con el mismo cuerpo tal cual. El móvil calcula RTT y lo enseña; lo reporta por `config` si el receptor lo pide.
+Mismo socket UDP, **bidireccional**. Layout (20 bytes): bytes 0-7 como INPUT (magic, tipo, flags, reservado), bytes 8-11 `session_id`, bytes 12-19 u64 `t_envio_us` (reloj del emisor del PING). Tipos: `0x02` PING, `0x03` PONG.
+
+Regla: quien recibe un PING responde un PONG con el mismo cuerpo (solo cambia el tipo). Quien recibe un PONG con su `session_id` calcula `RTT = ahora − t_envio_us` con su propio reloj. El móvil pinguea a 1 Hz (HUD del mando); el receptor pinguea a 2 Hz (HUD de la ventana).
 
 ## 5. Versionado
 

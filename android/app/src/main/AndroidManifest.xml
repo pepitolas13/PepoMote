@@ -33,5 +33,10 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name=".service.LinkForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
     </application>
 </manifest>

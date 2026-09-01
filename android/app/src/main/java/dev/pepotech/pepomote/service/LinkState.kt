@@ -1,0 +1,32 @@
+package dev.pepotech.pepomote.service
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+sealed class UiLink {
+    data object Disconnected : UiLink()
+    data object Connecting : UiLink()
+    data class Connected(
+        val pcName: String,
+        val mode: String,
+        val rttMs: Float?,
+        val sensorHz: Float
+    ) : UiLink()
+
+    data class Failed(val code: String, val msg: String) : UiLink()
+}
+
+/** Estado observable del enlace, publicado por LinkForegroundService. */
+object LinkState {
+    private val _flow = MutableStateFlow<UiLink>(UiLink.Disconnected)
+    val flow: StateFlow<UiLink> = _flow
+
+    internal fun publish(state: UiLink) {
+        _flow.value = state
+    }
+
+    internal fun updateConnected(transform: (UiLink.Connected) -> UiLink.Connected) {
+        val cur = _flow.value
+        if (cur is UiLink.Connected) _flow.value = transform(cur)
+    }
+}

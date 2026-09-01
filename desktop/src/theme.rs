@@ -33,7 +33,7 @@ pub fn apply(ctx: &egui::Context) {
     visuals.panel_fill = BACKGROUND;
     visuals.window_fill = CARD;
     visuals.override_text_color = Some(TEXT);
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.5, CARD_BORDER);
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.5_f32, CARD_BORDER);
     visuals.widgets.inactive.bg_fill = CARD;
     visuals.widgets.inactive.weak_bg_fill = CARD;
     visuals.widgets.hovered.bg_fill = GLOW;

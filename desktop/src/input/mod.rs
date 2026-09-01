@@ -1,0 +1,33 @@
+//! Inyección de entrada en el SO. Windows: SendInput. Linux: uinput.
+
+#[cfg(target_os = "linux")]
+mod linux_uinput;
+#[cfg(windows)]
+mod windows_input;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MouseButton {
+    Left,
+    Right,
+}
+
+pub trait Injector: Send {
+    fn move_rel(&mut self, dx: i32, dy: i32);
+    fn button(&mut self, btn: MouseButton, down: bool);
+    fn wheel(&mut self, delta: i32);
+}
+
+#[cfg(windows)]
+pub fn new_injector() -> Result<Box<dyn Injector>, String> {
+    Ok(Box::new(windows_input::WinInjector::new()))
+}
+
+#[cfg(target_os = "linux")]
+pub fn new_injector() -> Result<Box<dyn Injector>, String> {
+    linux_uinput::UinputInjector::new().map(|i| Box::new(i) as Box<dyn Injector>)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn new_injector() -> Result<Box<dyn Injector>, String> {
+    Err("plataforma sin soporte de inyección".into())
+}

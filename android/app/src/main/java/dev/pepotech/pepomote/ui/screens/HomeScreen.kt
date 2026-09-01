@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.R
@@ -29,22 +27,13 @@ import dev.pepotech.pepomote.ui.components.ChannelCard
 import dev.pepotech.pepomote.ui.components.ChannelGlyph
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
-private data class Channel(
-    val title: Int,
-    val subtitle: Int,
-    val glyph: ChannelGlyph,
-    val accent: Color
-)
-
-private val channels = listOf(
-    Channel(R.string.channel_connect, R.string.channel_connect_sub, ChannelGlyph.Qr, PepoColors.Blue),
-    Channel(R.string.channel_controller, R.string.channel_controller_sub, ChannelGlyph.Pad, PepoColors.Blue),
-    Channel(R.string.channel_dolphin, R.string.channel_dolphin_sub, ChannelGlyph.Pointer, PepoColors.Ok),
-    Channel(R.string.channel_settings, R.string.channel_settings_sub, ChannelGlyph.Gear, PepoColors.TextDim)
-)
-
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    connected: Boolean,
+    onConnect: () -> Unit,
+    onController: () -> Unit,
+    onNewPairing: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -63,11 +52,11 @@ fun HomeScreen() {
             Box(
                 Modifier
                     .size(10.dp)
-                    .background(PepoColors.TextDim, CircleShape)
+                    .background(if (connected) PepoColors.Ok else PepoColors.TextDim, CircleShape)
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                stringResource(R.string.status_disconnected),
+                stringResource(if (connected) R.string.status_connected else R.string.status_disconnected),
                 style = MaterialTheme.typography.bodyMedium
             )
         }
@@ -77,12 +66,40 @@ fun HomeScreen() {
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(channels) { ch ->
+            item {
                 ChannelCard(
-                    title = stringResource(ch.title),
-                    subtitle = stringResource(ch.subtitle),
-                    glyph = ch.glyph,
-                    accent = ch.accent
+                    title = stringResource(R.string.channel_connect),
+                    subtitle = stringResource(R.string.channel_connect_sub),
+                    glyph = ChannelGlyph.Qr,
+                    accent = PepoColors.Blue,
+                    onClick = onConnect
+                )
+            }
+            item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_controller),
+                    subtitle = stringResource(R.string.channel_controller_sub),
+                    glyph = ChannelGlyph.Pad,
+                    accent = PepoColors.Blue,
+                    onClick = onController
+                )
+            }
+            item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_dolphin),
+                    subtitle = stringResource(R.string.channel_dolphin_sub),
+                    glyph = ChannelGlyph.Pointer,
+                    accent = PepoColors.Ok,
+                    onClick = onController
+                )
+            }
+            item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_settings),
+                    subtitle = stringResource(R.string.channel_settings_sub),
+                    glyph = ChannelGlyph.Gear,
+                    accent = PepoColors.TextDim,
+                    onClick = onNewPairing
                 )
             }
         }
