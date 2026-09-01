@@ -1,10 +1,14 @@
 package dev.pepotech.pepomote.control
 
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Estado de botones compartido entre la UI (escribe) y el hilo de sensores (lee).
- * Bits según PROTOCOL.md §4.2.
+ * Bits según PROTOCOL.md §4.2. Las pulsaciones pasan por [PressLatch]: un
+ * toque, por corto que sea, dura lo suficiente en el cable para llegar.
  */
 object ButtonState {
     const val A = 1 shl 0
@@ -29,9 +33,20 @@ object ButtonState {
     private val recenter = AtomicInteger(0)
     private val scrollAcc = AtomicInteger(0)
 
-    fun set(bit: Int, down: Boolean) {
+    private val handler = Handler(Looper.getMainLooper())
+    private val latch = PressLatch(object : PressLatch.Scheduler {
+        override fun now(): Long = SystemClock.uptimeMillis()
+        override fun postDelayed(delayMs: Long, task: Runnable) {
+            handler.postDelayed(task, delayMs)
+        }
+
+        override fun cancel(task: Runnable) = handler.removeCallbacks(task)
+    }) { bit, down ->
         mask.updateAndGet { if (down) it or bit else it and bit.inv() }
     }
+
+    /** Pulsación física/táctil: el flanco de bajada sale al instante. */
+    fun set(bit: Int, down: Boolean) = latch.set(bit, down)
 
     fun current(): Int = mask.get()
 
@@ -49,6 +64,7 @@ object ButtonState {
     fun drainScroll(): Int = scrollAcc.getAndSet(0).coerceIn(-32768, 32767)
 
     fun reset() {
+        latch.reset()
         mask.set(0)
         scrollAcc.set(0)
     }

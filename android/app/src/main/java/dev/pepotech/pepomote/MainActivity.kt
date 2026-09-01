@@ -58,9 +58,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Bits pulsados por las teclas de volumen: su UP se procesa SIEMPRE. */
+    private var volumeHeld = 0
+
     /**
      * Botones físicos de volumen mientras el mando está abierto: subir = A,
      * bajar = gatillo B. Tacto real con latencia cero. Configurable en Ajustes.
+     * La duración mínima del toque en el cable la pone ButtonState (PressLatch).
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val bit = when (event.keyCode) {
@@ -68,17 +72,24 @@ class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_VOLUME_DOWN -> ButtonState.B
             else -> return super.dispatchKeyEvent(event)
         }
-        if (currentScreen == Screen.Controller && AppPrefs.volDownIsB(this)) {
-            when (event.action) {
-                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) {
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> if (currentScreen == Screen.Controller && AppPrefs.volDownIsB(this)) {
+                if (event.repeatCount == 0) {
+                    volumeHeld = volumeHeld or bit
                     ButtonState.set(bit, true)
                     if (bit == ButtonState.A) UiSounds.pop() else UiSounds.blip()
                     window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 }
-
-                KeyEvent.ACTION_UP -> ButtonState.set(bit, false)
+                return true
             }
-            return true
+
+            // Lo que pulsamos nosotros lo soltamos nosotros, aunque ya no
+            // estemos en el mando: si no, el botón se quedaba pulsado
+            KeyEvent.ACTION_UP -> if (volumeHeld and bit != 0) {
+                volumeHeld = volumeHeld and bit.inv()
+                ButtonState.set(bit, false)
+                return true
+            }
         }
         return super.dispatchKeyEvent(event)
     }
