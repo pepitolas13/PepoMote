@@ -9,8 +9,26 @@
 set -eu
 
 PKG="${1:-}"
-if [ -z "$PKG" ] || [ ! -f "$PKG" ]; then
-    echo "Uso: $0 PepoMote-Mobile-aarch64.AppImage | PepoMote-Mobile-aarch64-musl.tar.gz"
+RELEASE="https://github.com/pepitolas13/PepoMote/releases/latest/download"
+
+# Sin argumento: descarga el paquete que toca (musl si es Alpine/postmarketOS,
+# glibc si no). Así vale un solo comando: wget -qO- .../install.sh | sh
+if [ -z "$PKG" ]; then
+    if [ -f /etc/alpine-release ] || ldd --version 2>&1 | grep -qi musl; then
+        PKG="$HOME/PepoMote-Mobile-aarch64-musl.tar.gz"
+    else
+        PKG="$HOME/PepoMote-Mobile-aarch64.AppImage"
+    fi
+    echo "==> Descargando $(basename "$PKG")"
+    if command -v wget >/dev/null 2>&1; then
+        wget -q --show-progress -O "$PKG" "$RELEASE/$(basename "$PKG")" 2>/dev/null || wget -q -O "$PKG" "$RELEASE/$(basename "$PKG")"
+    else
+        curl -fL -o "$PKG" "$RELEASE/$(basename "$PKG")"
+    fi
+fi
+if [ ! -f "$PKG" ]; then
+    echo "Uso: $0 [PepoMote-Mobile-aarch64.AppImage | PepoMote-Mobile-aarch64-musl.tar.gz]"
+    echo "(sin argumento se descarga solo de la última release)"
     exit 1
 fi
 PKG="$(cd "$(dirname "$PKG")" && pwd)/$(basename "$PKG")"

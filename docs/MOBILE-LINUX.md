@@ -11,24 +11,17 @@ que el receptor muestra bajo el QR.
 
 ## Instalar
 
-Sin `git`, sin `bash`, sin FUSE: solo el paquete de tu distro (de la
-[release](https://github.com/pepitolas13/PepoMote/releases/latest)) e `install.sh`.
-
-**Mobian, Debian, Ubuntu, Fedora, Arch/Manjaro ARM… (glibc)** — en un terminal del móvil:
+Un solo comando en el terminal del móvil (detecta si es glibc o musl y
+descarga el paquete que toca de la [última release](https://github.com/pepitolas13/PepoMote/releases/latest)):
 
 ```sh
-cd ~ && wget https://github.com/pepitolas13/PepoMote/releases/latest/download/PepoMote-Mobile-aarch64.AppImage
-wget https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh
-sh install.sh PepoMote-Mobile-aarch64.AppImage
+wget -qO- https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh | sh
 ```
 
-**postmarketOS / Alpine (musl)**:
-
-```sh
-cd ~ && wget https://github.com/pepitolas13/PepoMote/releases/latest/download/PepoMote-Mobile-aarch64-musl.tar.gz
-tar -xzf PepoMote-Mobile-aarch64-musl.tar.gz
-sh PepoMote-Mobile/install.sh PepoMote-Mobile-aarch64-musl.tar.gz
-```
+(Con `curl`: `curl -fsSL <esa URL> | sh`.) Si prefieres descargar el paquete a
+mano: `sh install.sh PepoMote-Mobile-aarch64.AppImage` (Mobian, Debian,
+Fedora, Arch… — glibc) o `sh install.sh PepoMote-Mobile-aarch64-musl.tar.gz`
+(postmarketOS / Alpine — musl).
 
 El script deja la app en `~/.local/opt/PepoMote-Mobile` (extrae el AppImage:
 no hace falta FUSE), crea el lanzador con su icono y, si hay `sudo` o `doas`,
