@@ -176,8 +176,8 @@ fn pad_data_packet(
     p.push(ps);
     p.push(if touch_pressed { 0xFF } else { 0 }); // botón Touch = recentrado
     p.extend_from_slice(&[128, 128, 128, 128]); // sticks LX LY RX RY neutros
-    p.extend_from_slice(&dpad); // analógico L D R U
-    p.extend_from_slice(&face); // analógico Y B A X
+    p.extend_from_slice(&dpad); // analógico L D R U ("Pad W/S/E/N")
+    p.extend_from_slice(&face); // analógico square cross circle triangle
     p.extend_from_slice(&[0, 0, 0, 0]); // analógico R1 L1 R2 L2
     p.extend_from_slice(&[0u8; 6]); // touch 1 inactivo
     p.extend_from_slice(&[0u8; 6]); // touch 2 inactivo
@@ -245,6 +245,9 @@ mod tests {
         assert_eq!(out[39], 0xFF);
         // sticks neutros
         assert_eq!(&out[40..44], &[128, 128, 128, 128]);
+        // A pulsado → byte analógico de Cross (offset 49: dpad 44-47, square 48)
+        assert_eq!(out[49], 0xFF);
+        assert_eq!(out[48], 0); // square no
         // offsets: touch1 56..62, touch2 62..68, timestamp 68..76,
         // accel 76..88, gyro 88..100
         assert_eq!(

@@ -83,10 +83,13 @@ pub fn buttons_to_dsu(pmp: u32) -> (u8, u8, u8, [u8; 4], [u8; 4]) {
     let ps = if bit(8) { 0xFF } else { 0 }; // Home → PS
 
     let on = |c: bool| if c { 0xFFu8 } else { 0 };
-    // dpad analógico en orden DSU: Left, Down, Right, Up
+    // dpad analógico en el orden del struct de Dolphin: Left, Down, Right, Up
+    // (entradas "Pad W", "Pad S", "Pad E", "Pad N")
     let dpad = [on(bit(4)), on(bit(3)), on(bit(5)), on(bit(2))];
-    // caras analógicas en orden DSU: Y(Triangle), B(Circle), A(Cross), X(Square)
-    let face = [on(bit(10)), on(bit(1)), on(bit(0)), on(bit(9))];
+    // caras analógicas en el orden del struct de Dolphin (PadDataResponse):
+    // square, cross, circle, triangle — Dolphin lee los botones de cara de
+    // AQUÍ (los bits de button_states2 los ignora)
+    let face = [on(bit(9)), on(bit(0)), on(bit(1)), on(bit(10))];
 
     (b1, b2, ps, dpad, face)
 }
@@ -141,8 +144,8 @@ mod tests {
         assert_eq!(b1, (1 << 3) | (1 << 4)); // Options + Up
         assert_eq!(b2, 1 << 6); // Cross
         assert_eq!(ps, 0xFF);
-        assert_eq!(dpad, [0, 0, 0, 0xFF]);
-        assert_eq!(face, [0, 0, 0xFF, 0]);
+        assert_eq!(dpad, [0, 0, 0, 0xFF]); // L D R U → solo Up
+        assert_eq!(face, [0, 0xFF, 0, 0]); // square CROSS circle triangle → A
     }
 
     #[test]
