@@ -10,19 +10,10 @@ pub struct PepoMoteApp {
     qr_modules: Vec<bool>,
     qr_width: usize,
     autostart: bool,
-    /// Arranque --minimized: minimizar a la barra durante los primeros 2.5 s
-    /// (estado ortogonal a la visibilidad: la recreación de ventana y el
-    /// re-show de eframe no lo deshacen; SW_HIDE y Visible(false) sí perdían).
-    minimize_until: Option<std::time::Instant>,
 }
 
 impl PepoMoteApp {
-    pub fn new(
-        cc: &eframe::CreationContext<'_>,
-        shared: SharedState,
-        pairing: PairingInfo,
-        start_minimized: bool,
-    ) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, shared: SharedState, pairing: PairingInfo) -> Self {
         theme::apply(&cc.egui_ctx);
         let (qr_modules, qr_width) = build_qr(&pairing.pair_url());
         Self {
@@ -31,8 +22,6 @@ impl PepoMoteApp {
             qr_modules,
             qr_width,
             autostart: crate::autostart::is_enabled(),
-            minimize_until: start_minimized
-                .then(|| std::time::Instant::now() + Duration::from_millis(2500)),
         }
     }
 }
@@ -52,15 +41,6 @@ struct Snapshot {
 impl eframe::App for PepoMoteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_millis(100));
-
-        if let Some(t) = self.minimize_until {
-            if std::time::Instant::now() < t {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                ctx.request_repaint_after(Duration::from_millis(100));
-            } else {
-                self.minimize_until = None;
-            }
-        }
 
         // En Windows, cerrar = esconder a la bandeja ("Salir" está en el tray)
         #[cfg(windows)]

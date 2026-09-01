@@ -1,47 +1,53 @@
-//! Instancia única: con cerrar-a-bandeja, lanzar el exe otra vez debe
-//! MOSTRAR la instancia viva, no crear una segunda peleando por los puertos.
+//! Instancia única + petición de "mostrar la ventana".
 //!
-//! Mecanismo: un socket UDP en loopback como cerrojo. Si el bind falla, ya
-//! hay una instancia — se le manda "PMPSHOW1" y este proceso muere en paz.
+//! Con --minimized la ventana NI SE CREA al arrancar (solo red + bandeja):
+//! el primer "mostrar" (bandeja o relanzar el exe) desbloquea su creación.
+//! Con la UI ya viva, "mostrar" restaura por WinAPI + comandos de viewport.
 
 use std::net::UdpSocket;
-use std::sync::OnceLock;
+use std::sync::mpsc::Sender;
+use std::sync::{Mutex, OnceLock};
 
 const SINGLETON_PORT: u16 = 26762;
 const SHOW: &[u8] = b"PMPSHOW1";
 
 static UI_CTX: OnceLock<egui::Context> = OnceLock::new();
+static SHOW_SIGNAL: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// La UI registra su contexto en cuanto existe.
 pub fn set_ctx(ctx: egui::Context) {
     let _ = UI_CTX.set(ctx);
 }
 
-/// Contexto de la UI, si ya existe (para comandos de ventana desde hilos).
-pub fn ui_ctx() -> Option<egui::Context> {
-    UI_CTX.get().cloned()
+/// Canal que desbloquea la CREACIÓN de la ventana (arranque --minimized).
+pub fn set_show_signal(tx: Sender<()>) {
+    *SHOW_SIGNAL.lock().unwrap() = Some(tx);
 }
 
-/// Restaura y trae al frente la ventana principal. Con la ventana minimizada
-/// u oculta, el bucle de eventos de eframe DUERME y los comandos de viewport
-/// se quedan encolados: hace falta el empujón NATIVO (SW_RESTORE genera
-/// mensajes reales que despiertan el bucle, y entonces los comandos entran).
-pub fn show_main_window(ctx: &egui::Context) {
-    #[cfg(windows)]
-    unsafe {
-        use windows::core::{w, PCWSTR};
-        use windows::Win32::UI::WindowsAndMessaging::{
-            FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
-        };
-        if let Ok(h) = FindWindowW(PCWSTR::null(), w!("PepoMote")) {
-            let _ = ShowWindow(h, SW_RESTORE);
-            let _ = SetForegroundWindow(h);
+/// Muestra la ventana: si aún no existe, desbloquea su creación; si existe,
+/// la restaura. Con la ventana minimizada u oculta el bucle de eframe DUERME
+/// y los comandos de viewport se encolan: el empujón NATIVO (SW_RESTORE)
+/// genera mensajes reales que lo despiertan, y entonces los comandos entran.
+pub fn request_show() {
+    if let Some(ctx) = UI_CTX.get() {
+        #[cfg(windows)]
+        unsafe {
+            use windows::core::{w, PCWSTR};
+            use windows::Win32::UI::WindowsAndMessaging::{
+                FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
+            };
+            if let Ok(h) = FindWindowW(PCWSTR::null(), w!("PepoMote")) {
+                let _ = ShowWindow(h, SW_RESTORE);
+                let _ = SetForegroundWindow(h);
+            }
         }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        ctx.request_repaint();
+    } else if let Some(tx) = SHOW_SIGNAL.lock().unwrap().as_ref() {
+        let _ = tx.send(());
     }
-    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-    ctx.request_repaint();
 }
 
 pub enum Singleton {
@@ -63,7 +69,7 @@ pub fn acquire() -> Singleton {
     }
 }
 
-/// Hilo del cerrojo: cada "PMPSHOW1" restaura la ventana.
+/// Hilo del cerrojo: cada "PMPSHOW1" pide mostrar la ventana.
 pub fn watch(sock: UdpSocket) {
     std::thread::Builder::new()
         .name("pmp-singleton".into())
@@ -74,9 +80,7 @@ pub fn watch(sock: UdpSocket) {
                     continue;
                 };
                 if &buf[..len] == SHOW {
-                    if let Some(ctx) = UI_CTX.get() {
-                        show_main_window(ctx);
-                    }
+                    request_show();
                 }
             }
         })
