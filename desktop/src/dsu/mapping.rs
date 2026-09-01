@@ -25,9 +25,11 @@ pub fn to_dsu(accel_ms2: [f32; 3], gyro_rads: [f32; 3]) -> ([f32; 3], [f32; 3]) 
         -ay / G, // DSU Z ← -Y android
     ];
     let gyro = [
-        gx * RAD_TO_DEG,  // pitch ← +X android (muñeca arriba/abajo)
-        -gz * RAD_TO_DEG, // yaw   ← -Z android (giro horizontal)
-        gy * RAD_TO_DEG,  // roll  ← +Y android (rotar sobre el eje de apuntado)
+        // pitch ← -X android: verificado contra Dolphin real (h3, con +gx el
+        // puntero vertical salía invertido; el horizontal ya estaba bien)
+        -gx * RAD_TO_DEG,
+        -gz * RAD_TO_DEG, // yaw  ← -Z android (giro horizontal)
+        gy * RAD_TO_DEG,  // roll ← +Y android (rotar sobre el eje de apuntado)
     ];
     (accel, gyro)
 }
@@ -114,7 +116,7 @@ mod tests {
     #[test]
     fn gyro_a_grados() {
         let (_, g) = to_dsu([0.0; 3], [1.0, 0.5, -2.0]);
-        assert!((g[0] - 57.29578).abs() < 1e-3); // pitch = +gx
+        assert!((g[0] + 57.29578).abs() < 1e-3); // pitch = -gx
         assert!((g[1] - 114.59156).abs() < 1e-3); // yaw = -gz = +2 rad/s
         assert!((g[2] - 28.64789).abs() < 1e-3); // roll = +gy
     }

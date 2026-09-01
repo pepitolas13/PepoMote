@@ -254,9 +254,9 @@ mod tests {
         // accel plano: DSU Y = -1 g
         let ay = f32::from_le_bytes(out[80..84].try_into().unwrap());
         assert!((ay + 1.0).abs() < 1e-5, "ay={ay}");
-        // gyro pitch = +gx en °/s
+        // gyro pitch = -gx en °/s (convención Dolphin, verificada en h3)
         let pitch = f32::from_le_bytes(out[88..92].try_into().unwrap());
-        assert!((pitch - 57.29578).abs() < 1e-3, "pitch={pitch}");
+        assert!((pitch + 57.29578).abs() < 1e-3, "pitch={pitch}");
     }
 
     #[test]
