@@ -155,6 +155,18 @@ impl PepoMoteApp {
                 .size(11.0)
                 .color(theme::TEXT_DIM),
         );
+        // Sin cámara (Linux móvil): código de 4 dígitos, un solo uso, 120 s
+        let (code, left) = self.shared.lock().unwrap().pair_code.current();
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Sin cámara: código").size(12.0).color(theme::TEXT_DIM));
+            ui.label(RichText::new(code).size(20.0).strong().color(theme::TEXT));
+            ui.label(
+                RichText::new(format!("({} s)", left.as_secs()))
+                    .size(11.0)
+                    .color(theme::TEXT_DIM),
+            );
+        });
     }
 
     fn ui_dolphin(&self, ui: &mut egui::Ui, snap: &Snapshot) {

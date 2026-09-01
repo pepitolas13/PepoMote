@@ -3,6 +3,16 @@ use std::net::{IpAddr, UdpSocket};
 
 pub const TCP_PORT: u16 = 26761;
 
+/// Puerto PMP (TCP y UDP). `PEPOMOTE_PORT` lo cambia (puerto ocupado, dos
+/// receptores en el mismo PC); el cerrojo de instancia única usa el siguiente.
+pub fn port() -> u16 {
+    std::env::var("PEPOMOTE_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .filter(|p| *p > 1024)
+        .unwrap_or(TCP_PORT)
+}
+
 #[derive(Clone)]
 pub struct PairingInfo {
     pub host: IpAddr,
@@ -15,7 +25,7 @@ impl PairingInfo {
     pub fn generate() -> Self {
         Self {
             host: local_ip(),
-            port: TCP_PORT,
+            port: port(),
             token: load_or_create_token(),
             name: host_name(),
         }

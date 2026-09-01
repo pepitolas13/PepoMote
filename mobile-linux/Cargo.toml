@@ -1,0 +1,26 @@
+[package]
+name = "pepomote-mobile"
+version = "1.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "PepoMote sender for Linux phones (Mobian, postmarketOS…) — your phone as a Wii-style pointer and controller for your PC"
+repository = "https://github.com/pepitolas13/PepoMote"
+
+[[bin]]
+name = "PepoMote-Mobile"
+path = "src/main.rs"
+
+[dependencies]
+pmp = { path = "../pmp" }
+eframe = "0.29"
+egui = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "5"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

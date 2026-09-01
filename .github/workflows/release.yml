@@ -41,6 +41,41 @@ jobs:
           name: linux
           path: dist/PepoMote-x86_64.AppImage
 
+  mobile:
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libgl1-mesa-dev file wget
+      - name: Build (release)
+        working-directory: mobile-linux
+        run: cargo build --release
+      - name: AppImage
+        run: bash packaging/linux-mobile/appimage.sh aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile
+          path: dist/PepoMote-Mobile-aarch64.AppImage
+
+  mobile_musl:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in Alpine (musl)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src/mobile-linux alpine:3.22 sh -c \
+            'apk add --no-cache build-base rust cargo && cargo build --release'
+      - name: Tarball
+        run: bash packaging/linux-mobile/tarball.sh aarch64-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile_musl
+          path: dist/PepoMote-Mobile-aarch64-musl.tar.gz
+
   android:
     runs-on: ubuntu-latest
     steps:
@@ -74,19 +109,23 @@ jobs:
           path: PepoMote.apk
 
   publish:
-    needs: [windows, linux, android]
+    needs: [windows, linux, mobile, mobile_musl, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
       - name: SHA256SUMS
-        run: sha256sum PepoMote.exe PepoMote-x86_64.AppImage PepoMote.apk > SHA256SUMS.txt
+        run: |
+          sha256sum PepoMote.exe PepoMote-x86_64.AppImage PepoMote.apk \
+            PepoMote-Mobile-aarch64.AppImage PepoMote-Mobile-aarch64-musl.tar.gz > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             PepoMote.exe
             PepoMote-x86_64.AppImage
             PepoMote.apk
+            PepoMote-Mobile-aarch64.AppImage
+            PepoMote-Mobile-aarch64-musl.tar.gz
             SHA256SUMS.txt
           generate_release_notes: true

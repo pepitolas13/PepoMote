@@ -1,0 +1,74 @@
+name: mobile-linux
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile-linux/**"
+      - "pmp/**"
+      - "desktop/src/theme.rs"
+      - "desktop/src/icon.rs"
+      - "packaging/linux-mobile/**"
+      - ".github/workflows/mobile-linux.yml"
+  pull_request:
+    paths: ["mobile-linux/**", "pmp/**", "packaging/linux-mobile/**"]
+  workflow_call:
+
+jobs:
+  # Compila y testea en x86_64 (rápido); el binario también sirve para probar
+  # el emisor en un PC Linux con --fake-sensors.
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libgl1-mesa-dev
+      - name: Test pmp
+        working-directory: pmp
+        run: cargo test --release
+      - name: Build + test
+        working-directory: mobile-linux
+        run: cargo build --release && cargo test --release
+
+  # Mobian y demás distros glibc (Debian, Fedora, Arch…): AppImage aarch64,
+  # compilado en un runner ARM nativo con la glibc más vieja disponible.
+  aarch64:
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libgl1-mesa-dev file wget
+      - name: Build (release)
+        working-directory: mobile-linux
+        run: cargo build --release
+      - name: AppImage
+        run: bash packaging/linux-mobile/appimage.sh aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PepoMote-Mobile-aarch64
+          path: dist/PepoMote-Mobile-aarch64.AppImage
+
+  # postmarketOS = Alpine = musl: hay que compilar CONTRA musl. Contenedor
+  # Alpine sobre el runner ARM (nativo), sin acciones JS dentro del contenedor.
+  musl:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in Alpine (musl)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src/mobile-linux alpine:3.22 sh -c \
+            'apk add --no-cache build-base rust cargo && cargo build --release'
+      - name: Tarball
+        run: bash packaging/linux-mobile/tarball.sh aarch64-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PepoMote-Mobile-aarch64-musl
+          path: dist/PepoMote-Mobile-aarch64-musl.tar.gz

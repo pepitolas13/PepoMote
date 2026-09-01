@@ -18,7 +18,7 @@ El receptor genera un token aleatorio de 128 bits (hex, 32 chars) y lo persiste.
 pepomote://pair?v=1&host=<ip>&port=<tcp>&t=<token_hex32>&name=<url-encoded>
 ```
 
-Alternativa sin cámara: el receptor muestra un código de 4 dígitos temporal (TTL 120 s); el móvil lo envía en el `hello` como `code` sobre un receptor descubierto; el receptor responde `ok` incluyendo `token` definitivo, que el móvil persiste.
+Alternativa sin cámara (el emisor Linux móvil la usa siempre): el receptor muestra bajo el QR un código de 4 dígitos temporal (TTL 120 s, **un solo uso**; se regenera además tras 5 intentos fallidos); el móvil lo envía en el `hello` como `code` (sin `token`) sobre un receptor descubierto o tecleado; el receptor responde `ok` incluyendo `token` definitivo, que el móvil persiste. Código malo o caducado → `err bad_code`. El `ok` lleva también `name` (nombre del PC).
 
 El token no es criptografía seria: identifica y evita conexiones accidentales en la LAN. Modelo de amenaza documentado en `docs/SECURITY.md`.
 
@@ -29,8 +29,8 @@ Una línea UTF-8 = un mensaje JSON terminado en `\n`. El móvil conecta y envía
 | Mensaje | Dirección | Campos | Respuesta |
 |---|---|---|---|
 | `hello` | móvil→PC | `{"m":"hello","pv":1,"token":"...","code":"1234"?,"name":"<móvil>","model":"<modelo>"}` | `ok` / `err` |
-| `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer","slot":0}` | — |
-| `err` | PC→móvil | `{"m":"err","code":"bad_token"\|"bad_version"\|"busy","msg":"..."}` | cerrar |
+| `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer","slot":0,"name":"<PC>"}` | — |
+| `err` | PC→móvil | `{"m":"err","code":"bad_token"\|"bad_code"\|"bad_version"\|"busy","msg":"..."}` | cerrar |
 | `mode` | ambas | `{"m":"mode","mode":"pointer"\|"dolphin"}` | eco `mode` como confirmación |
 | `config` | ambas | `{"m":"config","sensor_hz":u16?,"sens_deg":f32?,...}` solo claves presentes | eco `config` |
 | `ping` | ambas | `{"m":"ping","t":u64}` | `{"m":"pong","t":<mismo t>}` |

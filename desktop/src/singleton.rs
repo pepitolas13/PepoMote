@@ -8,8 +8,12 @@ use std::net::UdpSocket;
 use std::sync::mpsc::Sender;
 use std::sync::{Mutex, OnceLock};
 
-const SINGLETON_PORT: u16 = 26762;
 const SHOW: &[u8] = b"PMPSHOW1";
+
+/// Cerrojo = puerto PMP + 1 (26762 por defecto; sigue a PEPOMOTE_PORT).
+fn singleton_port() -> u16 {
+    crate::pairing::port().wrapping_add(1)
+}
 
 static UI_CTX: OnceLock<egui::Context> = OnceLock::new();
 static SHOW_SIGNAL: Mutex<Option<Sender<()>>> = Mutex::new(None);
@@ -58,11 +62,12 @@ pub enum Singleton {
 }
 
 pub fn acquire() -> Singleton {
-    match UdpSocket::bind(("127.0.0.1", SINGLETON_PORT)) {
+    let port = singleton_port();
+    match UdpSocket::bind(("127.0.0.1", port)) {
         Ok(sock) => Singleton::Primary(sock),
         Err(_) => {
             if let Ok(s) = UdpSocket::bind(("127.0.0.1", 0)) {
-                let _ = s.send_to(SHOW, ("127.0.0.1", SINGLETON_PORT));
+                let _ = s.send_to(SHOW, ("127.0.0.1", port));
             }
             Singleton::AlreadyRunning
         }

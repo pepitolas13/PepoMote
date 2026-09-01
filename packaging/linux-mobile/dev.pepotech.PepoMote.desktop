@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=PepoMote
+Comment=Your phone as a Wii-style pointer and controller for your PC
+Comment[es]=Tu móvil como puntero y mando estilo Wii para tu PC
+Exec=PepoMote-Mobile
+Icon=dev.pepotech.PepoMote
+Terminal=false
+Type=Application
+Categories=Game;Utility;
+Keywords=wii;pointer;puntero;mando;dolphin;
+X-Purism-FormFactor=Workstation;Mobile;
+X-KDE-FormFactor=handset;tablet;desktop;

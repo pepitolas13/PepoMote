@@ -1,0 +1,5 @@
+# PepoMote (Linux móvil): permitir al usuario subir la frecuencia de muestreo
+# del IMU. Los valores in_*_raw ya son legibles por todos; sin esta regla la
+# app funciona igual, pero a la frecuencia por defecto del driver (50-100 Hz).
+# Instalar en /etc/udev/rules.d/ y recargar: udevadm control --reload-rules && udevadm trigger
+ACTION=="add|change", SUBSYSTEM=="iio", KERNEL=="iio:device*", RUN+="/bin/chmod -f 0666 /sys$devpath/sampling_frequency /sys$devpath/in_anglvel_sampling_frequency /sys$devpath/in_accel_sampling_frequency"

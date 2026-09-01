@@ -36,6 +36,14 @@ retardo, casi siempre viene de la cadena de vídeo, no del mando:
 3. **Wi-Fi**: HUD del receptor con RTT alto → 5 GHz o hotspot del móvil.
 4. Comprueba que el HUD marca ~200-250 paquetes/s durante el juego.
 
+## Linux móvil: "No encuentro giroscopio"
+
+`ls /sys/bus/iio/devices/*/in_anglvel_x_raw` debe listar un archivo. Si no,
+el kernel no expone el gyro (falta el driver o el móvil no lo tiene). Si la
+cabecera del mando marca 50 Hz, instala la regla udev con
+`packaging/linux-mobile/install.sh` para que la app pueda subir la frecuencia.
+Más en [MOBILE-LINUX.md](MOBILE-LINUX.md).
+
 ## Android mata la conexión al apagar la pantalla
 
 PepoMote usa un servicio en primer plano con wakelock; concédele la exención de optimización de batería cuando la pida. En OEMs agresivos (Xiaomi, Huawei…): dontkillmyapp.com/<tu-marca>.

@@ -1,5 +1,7 @@
 # Rust
 desktop/target/
+pmp/target/
+mobile-linux/target/
 
 # Android / Gradle
 android/.gradle/

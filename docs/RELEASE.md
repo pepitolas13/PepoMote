@@ -16,14 +16,17 @@
 ## Cada versión
 
 1. Subir `versionCode`/`versionName` (android/app/build.gradle.kts) y
-   `version` (desktop/Cargo.toml). Commit.
+   `version` (desktop/Cargo.toml, mobile-linux/Cargo.toml, pmp/Cargo.toml). Commit.
 2. Tag y push:
    ```
    git tag v1.0.0
    git push origin main --tags
    ```
-3. GitHub Actions construye `PepoMote.exe`, `PepoMote-x86_64.AppImage` y
-   `PepoMote.apk` firmado, genera `SHA256SUMS.txt` y publica el Release solo.
+3. GitHub Actions construye `PepoMote.exe`, `PepoMote-x86_64.AppImage`,
+   `PepoMote.apk` firmado y el emisor para Linux móvil
+   (`PepoMote-Mobile-aarch64.AppImage` para glibc y
+   `PepoMote-Mobile-aarch64-musl.tar.gz` para postmarketOS, en runners ARM),
+   genera `SHA256SUMS.txt` y publica el Release solo.
 
 ## El keystore
 

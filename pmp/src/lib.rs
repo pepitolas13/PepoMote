@@ -1,5 +1,9 @@
 //! Codec del protocolo PMP v1. Fuente de verdad: protocol/PROTOCOL.md.
-//! Los tests de paridad usan los vectores dorados de protocol/vectors/.
+//! Lo comparten el receptor (parse) y el emisor Linux móvil (build); Android
+//! tiene su gemelo en PmpCodec.kt. Los tests de paridad usan los vectores
+//! dorados de protocol/vectors/: los tres codecs decodifican/generan los
+//! mismos bytes.
+#![forbid(unsafe_code)]
 
 pub const MAGIC: u32 = 0x3150_4D50; // "PMP1" en LE
 pub const TYPE_INPUT: u8 = 0x01;
@@ -8,13 +12,16 @@ pub const TYPE_PONG: u8 = 0x03;
 pub const INPUT_LEN: usize = 72;
 pub const PING_LEN: usize = 20;
 
+/// Puerto por defecto del receptor (TCP control y UDP telemetría).
+pub const DEFAULT_PORT: u16 = 26761;
+
 pub const DISCOVER: &[u8] = b"PMPDISCOVER1";
 pub const HERE_PREFIX: &[u8] = b"PMPHERE1 ";
 
-/// flags bit0: el quaternion es válido (el móvil tiene GAME_ROTATION_VECTOR)
+/// flags bit0: el quaternion es válido (el móvil tiene rotation vector / fusión)
 pub const FLAG_QUAT_VALID: u8 = 1 << 0;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct InputPacket {
     pub flags: u8,
     pub session_id: u32,
@@ -32,14 +39,21 @@ pub struct InputPacket {
 // Bits de botones (PROTOCOL.md 4.2)
 pub const BTN_A: u32 = 1 << 0;
 pub const BTN_B: u32 = 1 << 1;
-#[allow(dead_code)]
 pub const BTN_DPAD_UP: u32 = 1 << 2;
-#[allow(dead_code)]
 pub const BTN_DPAD_DOWN: u32 = 1 << 3;
-#[allow(dead_code)]
 pub const BTN_DPAD_LEFT: u32 = 1 << 4;
-#[allow(dead_code)]
 pub const BTN_DPAD_RIGHT: u32 = 1 << 5;
+pub const BTN_PLUS: u32 = 1 << 6;
+pub const BTN_MINUS: u32 = 1 << 7;
+pub const BTN_HOME: u32 = 1 << 8;
+pub const BTN_ONE: u32 = 1 << 9;
+pub const BTN_TWO: u32 = 1 << 10;
+pub const BTN_MEDIA_VOL_UP: u32 = 1 << 11;
+pub const BTN_MEDIA_VOL_DOWN: u32 = 1 << 12;
+pub const BTN_MEDIA_MUTE: u32 = 1 << 13;
+pub const BTN_MEDIA_PLAY_PAUSE: u32 = 1 << 14;
+pub const BTN_MEDIA_NEXT: u32 = 1 << 15;
+pub const BTN_MEDIA_PREV: u32 = 1 << 16;
 
 #[derive(Debug, PartialEq)]
 pub enum Packet {
@@ -87,6 +101,32 @@ pub fn parse(buf: &[u8]) -> Option<Packet> {
     }
 }
 
+/// INPUT de 72 bytes (PROTOCOL.md §4.1).
+pub fn build_input(p: &InputPacket) -> [u8; INPUT_LEN] {
+    let mut out = [0u8; INPUT_LEN];
+    out[0..4].copy_from_slice(&MAGIC.to_le_bytes());
+    out[4] = TYPE_INPUT;
+    out[5] = p.flags;
+    // 6..8 reservado = 0
+    out[8..12].copy_from_slice(&p.session_id.to_le_bytes());
+    out[12..16].copy_from_slice(&p.seq.to_le_bytes());
+    out[16..24].copy_from_slice(&p.t_sensor_us.to_le_bytes());
+    for (i, v) in p.quat.iter().enumerate() {
+        out[24 + i * 4..28 + i * 4].copy_from_slice(&v.to_le_bytes());
+    }
+    for (i, v) in p.gyro.iter().enumerate() {
+        out[40 + i * 4..44 + i * 4].copy_from_slice(&v.to_le_bytes());
+    }
+    for (i, v) in p.accel.iter().enumerate() {
+        out[52 + i * 4..56 + i * 4].copy_from_slice(&v.to_le_bytes());
+    }
+    out[64..68].copy_from_slice(&p.buttons.to_le_bytes());
+    out[68] = p.recenter_count;
+    out[69] = p.battery_pct;
+    out[70..72].copy_from_slice(&p.touch_scroll_dy.to_le_bytes());
+    out
+}
+
 fn header(ty: u8, session_id: u32, out: &mut Vec<u8>) {
     out.extend_from_slice(&MAGIC.to_le_bytes());
     out.push(ty);
@@ -121,9 +161,22 @@ mod tests {
             .collect()
     }
 
+    fn vector(name: &str) -> Vec<u8> {
+        match name {
+            "input_neutral" => from_hex(include_str!("../../protocol/vectors/input_neutral.hex")),
+            "input_motion" => from_hex(include_str!("../../protocol/vectors/input_motion.hex")),
+            "input_buttons_all" => {
+                from_hex(include_str!("../../protocol/vectors/input_buttons_all.hex"))
+            }
+            "ping" => from_hex(include_str!("../../protocol/vectors/ping.hex")),
+            "pong" => from_hex(include_str!("../../protocol/vectors/pong.hex")),
+            _ => unreachable!(),
+        }
+    }
+
     #[test]
     fn vector_input_neutral() {
-        let buf = from_hex(include_str!("../../../protocol/vectors/input_neutral.hex"));
+        let buf = vector("input_neutral");
         assert_eq!(buf.len(), INPUT_LEN);
         let Packet::Input(p) = parse(&buf).unwrap() else {
             panic!("no es INPUT")
@@ -143,8 +196,7 @@ mod tests {
 
     #[test]
     fn vector_input_motion() {
-        let buf = from_hex(include_str!("../../../protocol/vectors/input_motion.hex"));
-        let Packet::Input(p) = parse(&buf).unwrap() else {
+        let Packet::Input(p) = parse(&vector("input_motion")).unwrap() else {
             panic!("no es INPUT")
         };
         assert_eq!(p.seq, 8);
@@ -160,8 +212,7 @@ mod tests {
 
     #[test]
     fn vector_input_buttons_all() {
-        let buf = from_hex(include_str!("../../../protocol/vectors/input_buttons_all.hex"));
-        let Packet::Input(p) = parse(&buf).unwrap() else {
+        let Packet::Input(p) = parse(&vector("input_buttons_all")).unwrap() else {
             panic!("no es INPUT")
         };
         assert_eq!(p.seq, 9);
@@ -173,8 +224,21 @@ mod tests {
     }
 
     #[test]
+    fn build_reproduce_los_vectores_byte_a_byte() {
+        // parse → build debe devolver EXACTAMENTE el vector: el emisor Linux
+        // genera lo mismo que el Kotlin de Android
+        for name in ["input_neutral", "input_motion", "input_buttons_all"] {
+            let buf = vector(name);
+            let Packet::Input(p) = parse(&buf).unwrap() else {
+                panic!("no es INPUT")
+            };
+            assert_eq!(build_input(&p).as_slice(), buf.as_slice(), "{name}");
+        }
+    }
+
+    #[test]
     fn vector_ping_pong() {
-        let ping = from_hex(include_str!("../../../protocol/vectors/ping.hex"));
+        let ping = vector("ping");
         assert_eq!(
             parse(&ping).unwrap(),
             Packet::Ping {
@@ -184,7 +248,7 @@ mod tests {
         );
         assert_eq!(build_ping(0xAABBCCDD, 0x0102030405060708), ping);
 
-        let pong = from_hex(include_str!("../../../protocol/vectors/pong.hex"));
+        let pong = vector("pong");
         assert_eq!(
             parse(&pong).unwrap(),
             Packet::Pong {
@@ -198,5 +262,14 @@ mod tests {
     #[test]
     fn discover() {
         assert_eq!(parse(b"PMPDISCOVER1").unwrap(), Packet::Discover);
+    }
+
+    #[test]
+    fn basura_no_parsea() {
+        assert_eq!(parse(b""), None);
+        assert_eq!(parse(&[0u8; 72]), None);
+        let mut short = build_input(&InputPacket::default()).to_vec();
+        short.pop();
+        assert_eq!(parse(&short), None);
     }
 }

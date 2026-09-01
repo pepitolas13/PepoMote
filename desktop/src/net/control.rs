@@ -58,8 +58,20 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         let _ = send(&mut writer, &json!({"m":"err","code":"bad_version","msg":"Actualiza PepoMote"}));
         return;
     }
-    if hello["token"].as_str() != Some(pairing.token.as_str()) {
-        let _ = send(&mut writer, &json!({"m":"err","code":"bad_token","msg":"Vuelve a escanear el QR"}));
+    // Token (QR) o, para móviles sin cámara, el código de 4 dígitos que se
+    // muestra bajo el QR: en ese caso el `ok` lleva el token definitivo.
+    let token_ok = hello["token"].as_str() == Some(pairing.token.as_str());
+    let code_ok = !token_ok
+        && hello["code"]
+            .as_str()
+            .is_some_and(|c| shared.lock().unwrap().pair_code.try_accept(c.trim()));
+    if !token_ok && !code_ok {
+        let (code, msg) = if hello["code"].is_string() {
+            ("bad_code", "Código incorrecto o caducado: mira el nuevo bajo el QR del PC")
+        } else {
+            ("bad_token", "Vuelve a escanear el QR")
+        };
+        let _ = send(&mut writer, &json!({"m":"err","code":code,"msg":msg}));
         return;
     }
 
@@ -97,11 +109,12 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         s.last_error = None;
         s.mode
     };
-    let _ = send(
-        &mut writer,
-        &json!({"m":"ok","session_id":session_id,"udp_port":pairing.port,
-                "mode":mode_str(mode),"slot":slot}),
-    );
+    let mut ok = json!({"m":"ok","session_id":session_id,"udp_port":pairing.port,
+                        "mode":mode_str(mode),"slot":slot,"name":pairing.name});
+    if code_ok {
+        ok["token"] = json!(pairing.token);
+    }
+    let _ = send(&mut writer, &ok);
     crate::sound::connect_chime();
     crate::dolphin::maybe_auto_configure(shared);
 

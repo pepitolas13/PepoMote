@@ -1,4 +1,5 @@
-pub mod codec;
+/// Codec compartido con el emisor Linux móvil (crate `pmp`).
+pub use pmp as codec;
 pub mod control;
 pub mod discovery;
 pub mod telemetry;

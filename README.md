@@ -11,6 +11,7 @@
 | Piece | Platform | File |
 |---|---|---|
 | Sender | Android 8.0+ | `PepoMote.apk` |
+| Sender | Linux phones: Mobian, postmarketOS… (aarch64) | `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receiver | Windows 10/11 | `PepoMote.exe` — single portable file |
 | Receiver | Linux, X11 & Wayland | `PepoMote-x86_64.AppImage` |
 
@@ -21,6 +22,8 @@
 **PC (Linux)** — download the AppImage and, from the repo, run `packaging/linux/install.sh PepoMote-x86_64.AppImage` (installs the uinput udev rule — needed to move the cursor — and a launcher entry). Log out and back in once.
 
 **Phone** — install `PepoMote.apk` (enable "install from unknown sources"). Open it, tap **Conectar**, scan the QR shown on your PC. Paired forever.
+
+**Linux phone** (Mobian, postmarketOS…) — `packaging/linux-mobile/install.sh <package>`, then open it like any app: **Conectar** → pick your PC → type the 4-digit code shown under the QR. See [docs/MOBILE-LINUX.md](docs/MOBILE-LINUX.md).
 
 ## Play Wii games
 
