@@ -25,6 +25,10 @@ object LinkState {
     @Volatile
     var sendMode: ((String) -> Unit)? = null
 
+    /** Modo a aplicar en cuanto se complete la próxima conexión. */
+    @Volatile
+    var pendingMode: String? = null
+
     internal fun publish(state: UiLink) {
         _flow.value = state
     }

@@ -85,6 +85,10 @@ class LinkForegroundService : Service() {
                     engine.start()
                     LinkState.sendMode = { m -> control?.sendMode(m) }
                     LinkState.publish(UiLink.Connected(pairing.pcName, mode, null, 0f))
+                    LinkState.pendingMode?.let { m ->
+                        LinkState.pendingMode = null
+                        control?.sendMode(m)
+                    }
                     updateNotification("Conectado a ${pairing.pcName}")
                 }
 

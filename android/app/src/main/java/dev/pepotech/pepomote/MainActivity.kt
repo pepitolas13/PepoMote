@@ -93,8 +93,19 @@ private fun Root() {
             },
             onController = { screen = Screen.Controller },
             onDolphin = {
-                LinkState.sendMode?.invoke("dolphin")
-                screen = Screen.Controller
+                if (link is UiLink.Connected) {
+                    LinkState.sendMode?.invoke("dolphin")
+                    screen = Screen.Controller
+                } else if (PairStore.load(context) != null) {
+                    LinkState.pendingMode = "dolphin"
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    LinkForegroundService.start(context)
+                    screen = Screen.Controller
+                } else {
+                    screen = Screen.Pair
+                }
             },
             onNewPairing = { screen = Screen.Pair }
         )

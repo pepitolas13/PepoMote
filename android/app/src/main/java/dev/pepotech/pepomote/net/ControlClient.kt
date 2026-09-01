@@ -7,6 +7,8 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** Canal de control TCP (PROTOCOL.md §3): hello/ok/err, ping 1 Hz, mode. */
 class ControlClient(
@@ -28,6 +30,16 @@ class ControlClient(
     private var running = true
     private var socket: Socket? = null
     private var writer: BufferedWriter? = null
+
+    /**
+     * TODA escritura al socket pasa por este hilo. Llamar a sendMode() desde
+     * la UI escribía red en el hilo principal: Android lanza
+     * NetworkOnMainThreadException y el mensaje se perdía en silencio.
+     * El ejecutor único además serializa las escrituras (sin @Synchronized).
+     */
+    private val outbound = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "pepomote-control-out").apply { isDaemon = true }
+    }
 
     private val thread = Thread({
         try {
@@ -94,23 +106,31 @@ class ControlClient(
         sendJson(JSONObject().put("m", "mode").put("mode", mode))
     }
 
-    @Synchronized
     private fun sendJson(obj: JSONObject) {
+        val text = obj.toString()
         try {
-            writer?.apply {
-                write(obj.toString())
-                write("\n")
-                flush()
+            outbound.execute {
+                try {
+                    writer?.apply {
+                        write(text)
+                        write("\n")
+                        flush()
+                    }
+                } catch (_: Exception) {
+                }
             }
         } catch (_: Exception) {
+            // ejecutor ya cerrado
         }
     }
 
     fun close() {
         running = false
+        sendJson(JSONObject().put("m", "bye"))
+        outbound.shutdown()
         try {
-            sendJson(JSONObject().put("m", "bye"))
-        } catch (_: Exception) {
+            outbound.awaitTermination(300, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
         }
         pinger.interrupt()
         try {
