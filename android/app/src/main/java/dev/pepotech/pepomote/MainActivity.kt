@@ -58,22 +58,24 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Volumen-abajo = gatillo B mientras el mando está abierto: tacto físico
-     * real con latencia táctil cero. Configurable en Ajustes.
+     * Botones físicos de volumen mientras el mando está abierto: subir = A,
+     * bajar = gatillo B. Tacto real con latencia cero. Configurable en Ajustes.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN &&
-            currentScreen == Screen.Controller &&
-            AppPrefs.volDownIsB(this)
-        ) {
+        val bit = when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> ButtonState.A
+            KeyEvent.KEYCODE_VOLUME_DOWN -> ButtonState.B
+            else -> return super.dispatchKeyEvent(event)
+        }
+        if (currentScreen == Screen.Controller && AppPrefs.volDownIsB(this)) {
             when (event.action) {
                 KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) {
-                    ButtonState.set(ButtonState.B, true)
-                    UiSounds.blip()
+                    ButtonState.set(bit, true)
+                    if (bit == ButtonState.A) UiSounds.pop() else UiSounds.blip()
                     window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 }
 
-                KeyEvent.ACTION_UP -> ButtonState.set(ButtonState.B, false)
+                KeyEvent.ACTION_UP -> ButtonState.set(bit, false)
             }
             return true
         }

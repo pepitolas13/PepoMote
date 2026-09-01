@@ -60,9 +60,9 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Volumen-abajo = gatillo B", style = MaterialTheme.typography.titleMedium)
+                    Text("Botones de volumen = A / B", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "El botón físico de bajar volumen actúa como B mientras el mando está abierto: tacto real, latencia cero",
+                        "Con el mando abierto: subir volumen = A, bajar = gatillo B. Botones físicos, latencia cero",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
