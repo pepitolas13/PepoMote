@@ -18,6 +18,12 @@ object ButtonState {
     const val HOME = 1 shl 8
     const val ONE = 1 shl 9
     const val TWO = 1 shl 10
+    const val MEDIA_VOL_UP = 1 shl 11
+    const val MEDIA_VOL_DOWN = 1 shl 12
+    const val MEDIA_MUTE = 1 shl 13
+    const val MEDIA_PLAY_PAUSE = 1 shl 14
+    const val MEDIA_NEXT = 1 shl 15
+    const val MEDIA_PREV = 1 shl 16
 
     private val mask = AtomicInteger(0)
     private val recenter = AtomicInteger(0)

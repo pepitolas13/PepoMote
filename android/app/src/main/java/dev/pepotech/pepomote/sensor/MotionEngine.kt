@@ -106,7 +106,8 @@ class MotionEngine(
             buttons = ButtonState.current(),
             recenterCount = ButtonState.recenterCount(),
             batteryPct = battery(),
-            touchScrollDy = ButtonState.drainScroll()
+            touchScrollDy = ButtonState.drainScroll(),
+            flags = if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0
         )
         onPacket(packet)
     }

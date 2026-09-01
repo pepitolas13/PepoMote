@@ -11,9 +11,28 @@ pub enum MouseButton {
     Right,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KeyCode {
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    Enter,
+    Escape,
+    VolumeUp,
+    VolumeDown,
+    Mute,
+    PlayPause,
+    NextTrack,
+    PrevTrack,
+}
+
 pub trait Injector: Send {
     fn move_rel(&mut self, dx: i32, dy: i32);
+    /// Coordenadas normalizadas 0..1 sobre la pantalla primaria.
+    fn move_abs(&mut self, nx: f32, ny: f32);
     fn button(&mut self, btn: MouseButton, down: bool);
+    fn key(&mut self, key: KeyCode, down: bool);
     fn wheel(&mut self, delta: i32);
 }
 

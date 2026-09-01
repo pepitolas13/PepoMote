@@ -1,15 +1,40 @@
-//! Hilo caliente: UDP INPUT → puntero. También responde el broadcast de
-//! descubrimiento y mide RTT con PING/PONG (PROTOCOL.md §4).
+//! Hilo caliente: UDP INPUT → puntero + botones. También responde el
+//! broadcast de descubrimiento y mide RTT con PING/PONG (PROTOCOL.md §4).
 
 use super::codec::{self, Packet};
 use super::SharedSession;
-use crate::input::{self, MouseButton};
+use crate::input::{self, KeyCode, MouseButton};
 use crate::pairing::PairingInfo;
-use crate::pointer::PointerEngine;
+use crate::pointer::{PointerEngine, PointerOutput};
 use crate::state::{Mode, SharedState};
 use serde_json::json;
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
+
+/// Mapeo bit de botón → acción en modo puntero (PROTOCOL.md §4.2).
+enum Action {
+    Mouse(MouseButton),
+    Key(KeyCode),
+}
+
+const BUTTON_MAP: [(u32, Action); 15] = [
+    (1 << 0, Action::Mouse(MouseButton::Left)),   // A
+    (1 << 1, Action::Mouse(MouseButton::Right)),  // B
+    (1 << 2, Action::Key(KeyCode::ArrowUp)),
+    (1 << 3, Action::Key(KeyCode::ArrowDown)),
+    (1 << 4, Action::Key(KeyCode::ArrowLeft)),
+    (1 << 5, Action::Key(KeyCode::ArrowRight)),
+    (1 << 6, Action::Key(KeyCode::VolumeUp)),     // Plus
+    (1 << 7, Action::Key(KeyCode::VolumeDown)),   // Minus
+    (1 << 9, Action::Key(KeyCode::Enter)),        // Uno
+    (1 << 10, Action::Key(KeyCode::Escape)),      // Dos
+    (1 << 11, Action::Key(KeyCode::VolumeUp)),
+    (1 << 12, Action::Key(KeyCode::VolumeDown)),
+    (1 << 13, Action::Key(KeyCode::Mute)),
+    (1 << 14, Action::Key(KeyCode::PlayPause)),
+    (1 << 15, Action::Key(KeyCode::NextTrack)),
+];
+// bit 16 (prev) no cabe en el array const sin duplicar tipos; se trata aparte.
 
 pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
     let socket = match UdpSocket::bind(("0.0.0.0", pairing.port)) {
@@ -30,13 +55,14 @@ pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
         }
     };
 
+    let aspect = screen_aspect();
+    let screen_w = screen_width();
     let mut engine = PointerEngine::new();
     let start = Instant::now();
     let now_us = |s: Instant| s.elapsed().as_micros() as u64;
 
     let mut buf = [0u8; 128];
     let mut prev_buttons: u32 = 0;
-    // Estadísticas por ventana de 1 s
     let mut win_start = Instant::now();
     let mut win_packets: u32 = 0;
     let mut win_first_t: Option<u64> = None;
@@ -44,7 +70,6 @@ pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
     let mut last_ping = Instant::now();
 
     loop {
-        // Ping periódico al móvil para el RTT del HUD
         if last_ping.elapsed() > Duration::from_millis(500) {
             last_ping = Instant::now();
             let target = session
@@ -57,7 +82,6 @@ pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
             }
         }
 
-        // Ventana de estadísticas
         if win_start.elapsed() >= Duration::from_secs(1) {
             let secs = win_start.elapsed().as_secs_f32();
             let hz = match (win_first_t, win_packets) {
@@ -78,7 +102,7 @@ pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
 
         let (len, from) = match socket.recv_from(&mut buf) {
             Ok(r) => r,
-            Err(_) => continue, // timeout u otro: seguimos
+            Err(_) => continue,
         };
 
         match codec::parse(&buf[..len]) {
@@ -96,7 +120,6 @@ pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
                 shared.lock().unwrap().rtt_ms = Some(rtt_ms);
             }
             Some(Packet::Input(p)) => {
-                // Validar sesión y seq
                 {
                     let mut guard = session.lock().unwrap();
                     let Some(sess) = guard.as_mut() else { continue };
@@ -104,7 +127,6 @@ pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
                         continue;
                     }
                     if let Some(last) = sess.last_seq {
-                        // descarta duplicados/desordenados (ventana de wrap)
                         if p.seq.wrapping_sub(last) == 0 || p.seq.wrapping_sub(last) > u32::MAX / 2
                         {
                             continue;
@@ -119,25 +141,36 @@ pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
                     win_first_t = Some(p.t_sensor_us);
                 }
                 win_last_t = p.t_sensor_us;
-                shared.lock().unwrap().battery_pct = p.battery_pct;
 
-                let mode = shared.lock().unwrap().mode;
+                let (mode, config) = {
+                    let mut s = shared.lock().unwrap();
+                    s.battery_pct = p.battery_pct;
+                    (s.mode, s.config)
+                };
+
                 if mode == Mode::Pointer {
-                    // h1: movimiento relativo con gyro crudo
-                    let (dx, dy) = engine.apply(p.gyro, p.t_sensor_us);
-                    if dx != 0 || dy != 0 {
-                        injector.move_rel(dx, dy);
+                    match engine.apply(&p, config.sens_deg, aspect, config.abs_mode, screen_w) {
+                        PointerOutput::Abs { nx, ny } => injector.move_abs(nx, ny),
+                        PointerOutput::Rel { dx, dy } => injector.move_rel(dx, dy),
+                        PointerOutput::None => {}
                     }
                     if p.touch_scroll_dy != 0 {
                         injector.wheel(p.touch_scroll_dy as i32 * 4);
                     }
-                    // Flancos de botones
                     let changed = p.buttons ^ prev_buttons;
-                    if changed & codec::BTN_A != 0 {
-                        injector.button(MouseButton::Left, p.buttons & codec::BTN_A != 0);
-                    }
-                    if changed & codec::BTN_B != 0 {
-                        injector.button(MouseButton::Right, p.buttons & codec::BTN_B != 0);
+                    if changed != 0 {
+                        for (bit, action) in BUTTON_MAP.iter() {
+                            if changed & bit != 0 {
+                                let down = p.buttons & bit != 0;
+                                match action {
+                                    Action::Mouse(b) => injector.button(*b, down),
+                                    Action::Key(k) => injector.key(*k, down),
+                                }
+                            }
+                        }
+                        if changed & (1 << 16) != 0 {
+                            injector.key(KeyCode::PrevTrack, p.buttons & (1 << 16) != 0);
+                        }
                     }
                 }
                 prev_buttons = p.buttons;
@@ -145,4 +178,38 @@ pub fn run(shared: SharedState, session: SharedSession, pairing: PairingInfo) {
             None => {}
         }
     }
+}
+
+#[cfg(windows)]
+fn screen_width() -> f32 {
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN};
+    let w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+    if w > 0 {
+        w as f32
+    } else {
+        1920.0
+    }
+}
+
+#[cfg(windows)]
+fn screen_aspect() -> f32 {
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    let (w, h) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+    if w > 0 && h > 0 {
+        w as f32 / h as f32
+    } else {
+        16.0 / 9.0
+    }
+}
+
+#[cfg(not(windows))]
+fn screen_width() -> f32 {
+    1920.0
+}
+
+#[cfg(not(windows))]
+fn screen_aspect() -> f32 {
+    // uinput normaliza al tamaño real de pantalla; el aspecto solo escala
+    // la sensibilidad vertical. 16:9 como aproximación razonable.
+    16.0 / 9.0
 }

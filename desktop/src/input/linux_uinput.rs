@@ -1,37 +1,93 @@
-use super::{Injector, MouseButton};
+use super::{Injector, KeyCode, MouseButton};
 use evdev::uinput::{VirtualDevice, VirtualDeviceBuilder};
-use evdev::{AttributeSet, EventType, InputEvent, Key, RelativeAxisType};
+use evdev::{
+    AbsInfo, AbsoluteAxisType, AttributeSet, EventType, InputEvent, Key, RelativeAxisType,
+    UinputAbsSetup,
+};
 
+const ABS_MAX: i32 = 32767;
+
+/// Tres dispositivos virtuales:
+/// - ratón relativo (REL_X/Y, rueda, botones) — clics y modo relativo
+/// - "pen" absoluto (ABS_X/Y + BTN_TOOL_PEN) — posicionamiento absoluto,
+///   funciona igual en X11 y Wayland en todos los compositores
+/// - teclado (flechas, Enter/Esc, multimedia)
 pub struct UinputInjector {
-    dev: VirtualDevice,
+    mouse: VirtualDevice,
+    pen: VirtualDevice,
+    keys: VirtualDevice,
+    pen_active: bool,
 }
 
 impl UinputInjector {
     pub fn new() -> Result<Self, String> {
-        let mut keys = AttributeSet::<Key>::new();
-        keys.insert(Key::BTN_LEFT);
-        keys.insert(Key::BTN_RIGHT);
-
+        let mut buttons = AttributeSet::<Key>::new();
+        buttons.insert(Key::BTN_LEFT);
+        buttons.insert(Key::BTN_RIGHT);
         let mut rel = AttributeSet::<RelativeAxisType>::new();
         rel.insert(RelativeAxisType::REL_X);
         rel.insert(RelativeAxisType::REL_Y);
         rel.insert(RelativeAxisType::REL_WHEEL);
-
-        let dev = VirtualDeviceBuilder::new()
-            .map_err(explain_uinput_err)?
+        let mouse = VirtualDeviceBuilder::new()
+            .map_err(explain)?
             .name("PepoMote Pointer")
             .with_relative_axes(&rel)
-            .map_err(explain_uinput_err)?
-            .with_keys(&keys)
-            .map_err(explain_uinput_err)?
+            .map_err(explain)?
+            .with_keys(&buttons)
+            .map_err(explain)?
             .build()
-            .map_err(explain_uinput_err)?;
+            .map_err(explain)?;
 
-        Ok(Self { dev })
+        let mut pen_keys = AttributeSet::<Key>::new();
+        pen_keys.insert(Key::BTN_TOOL_PEN);
+        let abs_info = AbsInfo::new(0, 0, ABS_MAX, 0, 0, 0);
+        let pen = VirtualDeviceBuilder::new()
+            .map_err(explain)?
+            .name("PepoMote Pen")
+            .with_absolute_axis(&UinputAbsSetup::new(AbsoluteAxisType::ABS_X, abs_info))
+            .map_err(explain)?
+            .with_absolute_axis(&UinputAbsSetup::new(AbsoluteAxisType::ABS_Y, abs_info))
+            .map_err(explain)?
+            .with_keys(&pen_keys)
+            .map_err(explain)?
+            .build()
+            .map_err(explain)?;
+
+        let mut kb = AttributeSet::<Key>::new();
+        for k in [
+            Key::KEY_UP,
+            Key::KEY_DOWN,
+            Key::KEY_LEFT,
+            Key::KEY_RIGHT,
+            Key::KEY_ENTER,
+            Key::KEY_ESC,
+            Key::KEY_VOLUMEUP,
+            Key::KEY_VOLUMEDOWN,
+            Key::KEY_MUTE,
+            Key::KEY_PLAYPAUSE,
+            Key::KEY_NEXTSONG,
+            Key::KEY_PREVIOUSSONG,
+        ] {
+            kb.insert(k);
+        }
+        let keys = VirtualDeviceBuilder::new()
+            .map_err(explain)?
+            .name("PepoMote Keys")
+            .with_keys(&kb)
+            .map_err(explain)?
+            .build()
+            .map_err(explain)?;
+
+        Ok(Self {
+            mouse,
+            pen,
+            keys,
+            pen_active: false,
+        })
     }
 }
 
-fn explain_uinput_err(e: std::io::Error) -> String {
+fn explain(e: std::io::Error) -> String {
     if e.kind() == std::io::ErrorKind::PermissionDenied {
         "sin permiso para /dev/uinput — ejecuta packaging/linux/install.sh y vuelve a iniciar sesión".into()
     } else {
@@ -41,9 +97,27 @@ fn explain_uinput_err(e: std::io::Error) -> String {
 
 impl Injector for UinputInjector {
     fn move_rel(&mut self, dx: i32, dy: i32) {
-        let _ = self.dev.emit(&[
+        let _ = self.mouse.emit(&[
             InputEvent::new(EventType::RELATIVE, RelativeAxisType::REL_X.0, dx),
             InputEvent::new(EventType::RELATIVE, RelativeAxisType::REL_Y.0, dy),
+        ]);
+    }
+
+    fn move_abs(&mut self, nx: f32, ny: f32) {
+        let x = (nx * ABS_MAX as f32).round() as i32;
+        let y = (ny * ABS_MAX as f32).round() as i32;
+        if !self.pen_active {
+            // El pen entra "en rango": hover, sin clic
+            let _ = self.pen.emit(&[InputEvent::new(
+                EventType::KEY,
+                Key::BTN_TOOL_PEN.code(),
+                1,
+            )]);
+            self.pen_active = true;
+        }
+        let _ = self.pen.emit(&[
+            InputEvent::new(EventType::ABSOLUTE, AbsoluteAxisType::ABS_X.0, x),
+            InputEvent::new(EventType::ABSOLUTE, AbsoluteAxisType::ABS_Y.0, y),
         ]);
     }
 
@@ -52,18 +126,39 @@ impl Injector for UinputInjector {
             MouseButton::Left => Key::BTN_LEFT,
             MouseButton::Right => Key::BTN_RIGHT,
         };
-        let _ = self.dev.emit(&[InputEvent::new(
+        let _ = self.mouse.emit(&[InputEvent::new(
             EventType::KEY,
             key.code(),
             if down { 1 } else { 0 },
         )]);
     }
 
+    fn key(&mut self, key: KeyCode, down: bool) {
+        let k = match key {
+            KeyCode::ArrowUp => Key::KEY_UP,
+            KeyCode::ArrowDown => Key::KEY_DOWN,
+            KeyCode::ArrowLeft => Key::KEY_LEFT,
+            KeyCode::ArrowRight => Key::KEY_RIGHT,
+            KeyCode::Enter => Key::KEY_ENTER,
+            KeyCode::Escape => Key::KEY_ESC,
+            KeyCode::VolumeUp => Key::KEY_VOLUMEUP,
+            KeyCode::VolumeDown => Key::KEY_VOLUMEDOWN,
+            KeyCode::Mute => Key::KEY_MUTE,
+            KeyCode::PlayPause => Key::KEY_PLAYPAUSE,
+            KeyCode::NextTrack => Key::KEY_NEXTSONG,
+            KeyCode::PrevTrack => Key::KEY_PREVIOUSSONG,
+        };
+        let _ = self.keys.emit(&[InputEvent::new(
+            EventType::KEY,
+            k.code(),
+            if down { 1 } else { 0 },
+        )]);
+    }
+
     fn wheel(&mut self, delta: i32) {
-        // REL_WHEEL va en "muescas": ~120 px de tira táctil = 1 muesca
         let notches = delta / 120;
         if notches != 0 {
-            let _ = self.dev.emit(&[InputEvent::new(
+            let _ = self.mouse.emit(&[InputEvent::new(
                 EventType::RELATIVE,
                 RelativeAxisType::REL_WHEEL.0,
                 notches,

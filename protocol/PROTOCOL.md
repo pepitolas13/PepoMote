@@ -46,7 +46,7 @@ Latido: `ping` TCP cada 1 s si no hay tráfico. Sesión muerta a los 5 s sin nad
 |---|---|---|---|
 | 0 | 4 | u32 | magic `0x31504D50` (ASCII "PMP1") |
 | 4 | 1 | u8 | tipo = `0x01` |
-| 5 | 1 | u8 | flags (reservado, 0) |
+| 5 | 1 | u8 | flags: bit0 = quaternion válido (el móvil tiene GAME_ROTATION_VECTOR); resto reservado 0 |
 | 6 | 2 | u16 | reservado (0) |
 | 8 | 4 | u32 | `session_id` (del `ok`) |
 | 12 | 4 | u32 | `seq` monótono con wrap; el receptor descarta paquetes con `seq` ≤ último visto (ventana de wrap 2³¹) |

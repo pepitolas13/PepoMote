@@ -80,6 +80,9 @@ impl eframe::App for PepoMoteApp {
                         LinkStatus::Connected => ui_connected(ui, &snap),
                     }
 
+                    ui.add_space(10.0);
+                    self.ui_settings(ui);
+
                     if let Some(err) = &snap.error {
                         ui.add_space(10.0);
                         ui.label(RichText::new(err).size(12.0).color(theme::ERROR));
@@ -97,6 +100,40 @@ impl eframe::App for PepoMoteApp {
 }
 
 impl PepoMoteApp {
+    fn ui_settings(&mut self, ui: &mut egui::Ui) {
+        let mut config = self.shared.lock().unwrap().config;
+        let before = (config.sens_deg, config.abs_mode);
+
+        egui::CollapsingHeader::new(
+            RichText::new("Ajustes").size(14.0).color(theme::TEXT_DIM),
+        )
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Sensibilidad").size(13.0).color(theme::TEXT_DIM));
+                ui.add(
+                    egui::Slider::new(&mut config.sens_deg, 15.0..=60.0)
+                        .suffix("°")
+                        .fixed_decimals(0),
+                );
+            });
+            ui.label(
+                RichText::new("Grados de giro para cruzar la pantalla (menos = más rápido)")
+                    .size(11.0)
+                    .color(theme::TEXT_DIM),
+            );
+            ui.add_space(4.0);
+            ui.checkbox(
+                &mut config.abs_mode,
+                RichText::new("Apuntado absoluto (desactívalo para juegos)").size(13.0),
+            );
+        });
+
+        if (config.sens_deg, config.abs_mode) != before {
+            config.save();
+            self.shared.lock().unwrap().config = config;
+        }
+    }
+
     fn ui_waiting(&self, ui: &mut egui::Ui) {
         draw_qr_card(ui, &self.qr_modules, self.qr_width);
         ui.add_space(14.0);

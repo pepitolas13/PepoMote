@@ -11,8 +11,12 @@ pub const PING_LEN: usize = 20;
 pub const DISCOVER: &[u8] = b"PMPDISCOVER1";
 pub const HERE_PREFIX: &[u8] = b"PMPHERE1 ";
 
+/// flags bit0: el quaternion es válido (el móvil tiene GAME_ROTATION_VECTOR)
+pub const FLAG_QUAT_VALID: u8 = 1 << 0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InputPacket {
+    pub flags: u8,
     pub session_id: u32,
     pub seq: u32,
     pub t_sensor_us: u64,
@@ -57,6 +61,7 @@ pub fn parse(buf: &[u8]) -> Option<Packet> {
         TYPE_INPUT if buf.len() == INPUT_LEN => {
             let f32_at = |off: usize| f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
             Some(Packet::Input(InputPacket {
+                flags: buf[5],
                 session_id: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
                 seq: u32::from_le_bytes(buf[12..16].try_into().unwrap()),
                 t_sensor_us: u64::from_le_bytes(buf[16..24].try_into().unwrap()),
@@ -123,6 +128,7 @@ mod tests {
         let Packet::Input(p) = parse(&buf).unwrap() else {
             panic!("no es INPUT")
         };
+        assert_eq!(p.flags, 0);
         assert_eq!(p.session_id, 0xAABBCCDD);
         assert_eq!(p.seq, 7);
         assert_eq!(p.t_sensor_us, 1_000_000);

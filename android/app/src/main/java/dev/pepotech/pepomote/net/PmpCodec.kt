@@ -18,6 +18,9 @@ object PmpCodec {
     val DISCOVER = "PMPDISCOVER1".toByteArray(Charsets.US_ASCII)
     const val HERE_PREFIX = "PMPHERE1 "
 
+    /** flags bit0: el quaternion es válido (hay GAME_ROTATION_VECTOR). */
+    const val FLAG_QUAT_VALID = 1
+
     fun encodeInput(
         sessionId: Int,
         seq: Int,
@@ -28,12 +31,13 @@ object PmpCodec {
         buttons: Int,
         recenterCount: Int,
         batteryPct: Int,
-        touchScrollDy: Int
+        touchScrollDy: Int,
+        flags: Int = 0
     ): ByteArray {
         val buf = ByteBuffer.allocate(INPUT_LEN).order(ByteOrder.LITTLE_ENDIAN)
         buf.putInt(MAGIC)
         buf.put(TYPE_INPUT)
-        buf.put(0) // flags
+        buf.put((flags and 0xFF).toByte())
         buf.putShort(0) // reservado
         buf.putInt(sessionId)
         buf.putInt(seq)
