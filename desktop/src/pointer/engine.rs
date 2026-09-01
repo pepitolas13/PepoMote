@@ -108,6 +108,9 @@ pub struct PointerEngine {
     filter: Filter2D,
     frozen: bool,
     last_emitted: Option<(f32, f32)>, // grados (yaw, pitch) relativos
+    /// Puente anti-salto del descongelado: se fija a (held − filtrado) al
+    /// liberar (salto cero) y se disuelve exponencialmente con el movimiento.
+    offset: (f32, f32),
     last_t_us: Option<u64>,
     // fallback relativo
     acc_x: f32,
@@ -124,6 +127,7 @@ impl PointerEngine {
             filter: Filter2D::new(1.0, 0.08),
             frozen: false,
             last_emitted: None,
+            offset: (0.0, 0.0),
             last_t_us: None,
             acc_x: 0.0,
             acc_y: 0.0,
@@ -171,6 +175,7 @@ impl PointerEngine {
             self.ref_angles = Some((yaw_w, pitch_w));
             self.filter.reset();
             self.frozen = false;
+            self.offset = (0.0, 0.0);
             self.last_emitted = Some((0.0, 0.0));
             return if abs_mode {
                 PointerOutput::Abs { nx: 0.5, ny: 0.5 }
@@ -187,21 +192,50 @@ impl PointerEngine {
         let (yaw_f, pitch_f, speed) = self.filter.filter(yaw, pitch, dt);
 
         let (prev_yaw, prev_pitch) = self.last_emitted.unwrap_or((yaw_f, pitch_f));
-        let dev = ((yaw_f - prev_yaw).powi(2) + (pitch_f - prev_pitch).powi(2)).sqrt();
+
         if self.frozen {
+            // ¿Cuánto se ha alejado la orientación real del punto congelado?
+            let dev_y = yaw_f + self.offset.0 - prev_yaw;
+            let dev_p = pitch_f + self.offset.1 - prev_pitch;
+            let dev = (dev_y * dev_y + dev_p * dev_p).sqrt();
             if speed > FREEZE_EXIT_DEG_S || dev > FREEZE_ESCAPE_DEG {
+                // Liberar SIN salto: el offset absorbe la diferencia exacta y
+                // el movimiento continúa desde el punto congelado.
                 self.frozen = false;
+                self.offset = (prev_yaw - yaw_f, prev_pitch - pitch_f);
+            } else {
+                return self.emit(prev_yaw, prev_pitch, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, prev_yaw, prev_pitch);
             }
-        } else if speed < FREEZE_ENTER_DEG_S && dev < FREEZE_ESCAPE_DEG {
-            self.frozen = true;
         }
 
-        let (out_yaw, out_pitch) = if self.frozen {
-            (prev_yaw, prev_pitch)
-        } else {
-            self.last_emitted = Some((yaw_f, pitch_f));
-            (yaw_f, pitch_f)
-        };
+        // Libre: el puente se disuelve dentro del propio movimiento (más
+        // deprisa cuanto más rápido te mueves — imperceptible).
+        let k = (-dt * (4.0 + speed * 0.5)).exp();
+        self.offset.0 *= k;
+        self.offset.1 *= k;
+
+        let out_yaw = yaw_f + self.offset.0;
+        let out_pitch = pitch_f + self.offset.1;
+
+        if speed < FREEZE_ENTER_DEG_S {
+            self.frozen = true;
+        }
+        self.last_emitted = Some((out_yaw, out_pitch));
+        self.emit(out_yaw, out_pitch, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, prev_yaw, prev_pitch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit(
+        &mut self,
+        out_yaw: f32,
+        out_pitch: f32,
+        sens_deg: f32,
+        aspect_w_over_h: f32,
+        abs_mode: bool,
+        screen_w_px: f32,
+        prev_yaw: f32,
+        prev_pitch: f32,
+    ) -> PointerOutput {
 
         if abs_mode {
             // Sin recorte a la pantalla primaria: con varios monitores el cursor
@@ -365,6 +399,40 @@ mod tests {
         let expected = 0.5 + 10.0 / 35.0;
         assert!((nx - expected).abs() < 0.01, "nx={nx} esperado={expected}");
         assert!((ny - 0.5).abs() < 0.01, "ny={ny} debería seguir centrado");
+    }
+
+    #[test]
+    fn descongelar_sin_salto() {
+        // Parar (congela) y reanudar despacio: el cursor debe fluir SIN
+        // teletransporte. Antes del puente, al superar el escape de 0.35°
+        // saltaba ~0.01 en nx de un sample al siguiente.
+        let mut e = PointerEngine::new();
+        e.apply(&packet(arr(qrot_z(0.0)), 0, 0, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0);
+        // ir a -5° y quedarse quieto hasta congelar
+        let mut t = 0u64;
+        for _ in 0..400 {
+            t += 5_000;
+            e.apply(&packet(arr(qrot_z(-5.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0);
+        }
+        // rampa lenta a 3°/s: recoger salidas y medir el salto máximo
+        let mut last_nx: Option<f32> = None;
+        let mut max_jump = 0.0f32;
+        for i in 0..300 {
+            t += 5_000;
+            let deg = -5.0 - 3.0 * (i as f32 * 0.005);
+            if let PointerOutput::Abs { nx, .. } =
+                e.apply(&packet(arr(qrot_z(deg)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0)
+            {
+                if let Some(prev) = last_nx {
+                    max_jump = max_jump.max((nx - prev).abs());
+                }
+                last_nx = Some(nx);
+            }
+        }
+        assert!(
+            max_jump < 0.003,
+            "salto máximo por sample = {max_jump} (teletransporte)"
+        );
     }
 
     #[test]
