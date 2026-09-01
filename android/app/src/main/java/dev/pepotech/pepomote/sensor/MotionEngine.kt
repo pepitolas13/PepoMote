@@ -35,6 +35,7 @@ class MotionEngine(
     private val accel = FloatArray(3)
     private var seq = 0
     private var hasRotationVector = false
+    private var lastSendNs = 0L
 
     private var batteryPct = 100
     private var batteryReadAtMs = 0L
@@ -89,7 +90,12 @@ class MotionEngine(
                 gyro[1] = event.values[1]
                 gyro[2] = event.values[2]
                 trackHz(event.timestamp)
-                sendPacket(event.timestamp)
+                // Tope de 250 Hz del protocolo: móviles con gyro a 400-500 Hz
+                // saturan el Wi-Fi y provocan ráfagas/pérdidas (cursor errático)
+                if (event.timestamp - lastSendNs >= 3_900_000L) {
+                    lastSendNs = event.timestamp
+                    sendPacket(event.timestamp)
+                }
             }
         }
     }

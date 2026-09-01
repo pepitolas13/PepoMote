@@ -92,8 +92,10 @@ impl PointerEngine {
         Self {
             q_ref: None,
             last_recenter: None,
-            f_yaw: OneEuro::new(1.0, 0.02),
-            f_pitch: OneEuro::new(1.0, 0.02),
+            // beta alto = el filtro se abre en movimientos rápidos (sin lag ni
+            // saltos); la estabilidad en reposo la da mincutoff + deadzone
+            f_yaw: OneEuro::new(1.0, 0.08),
+            f_pitch: OneEuro::new(1.0, 0.08),
             last_emitted: None,
             last_t_us: None,
             acc_x: 0.0,
@@ -168,8 +170,11 @@ impl PointerEngine {
         };
 
         if abs_mode {
-            let nx = (0.5 + out_yaw / sens_deg).clamp(0.0, 1.0);
-            let ny = (0.5 - (out_pitch / sens_deg) * aspect_w_over_h).clamp(0.0, 1.0);
+            // Sin recorte a la pantalla primaria: con varios monitores el cursor
+            // debe poder salir. Cada inyector recorta a su espacio real; aquí
+            // solo un clamp de cordura.
+            let nx = (0.5 + out_yaw / sens_deg).clamp(-2.0, 3.0);
+            let ny = (0.5 - (out_pitch / sens_deg) * aspect_w_over_h).clamp(-2.0, 3.0);
             PointerOutput::Abs { nx, ny }
         } else {
             // Modo relativo con orientación absoluta: delta contra lo último emitido

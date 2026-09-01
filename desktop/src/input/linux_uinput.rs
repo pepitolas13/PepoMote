@@ -104,8 +104,9 @@ impl Injector for UinputInjector {
     }
 
     fn move_abs(&mut self, nx: f32, ny: f32) {
-        let x = (nx * ABS_MAX as f32).round() as i32;
-        let y = (ny * ABS_MAX as f32).round() as i32;
+        // El espacio del pen ya cubre todo el escritorio: recorte a 0..1
+        let x = (nx.clamp(0.0, 1.0) * ABS_MAX as f32).round() as i32;
+        let y = (ny.clamp(0.0, 1.0) * ABS_MAX as f32).round() as i32;
         if !self.pen_active {
             // El pen entra "en rango": hover, sin clic
             let _ = self.pen.emit(&[InputEvent::new(

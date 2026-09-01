@@ -79,8 +79,8 @@ impl Injector for WinInjector {
             if vw <= 0.0 || vh <= 0.0 {
                 return;
             }
-            let ax = ((px - vx) / vw * 65535.0).round() as i32;
-            let ay = ((py - vy) / vh * 65535.0).round() as i32;
+            let ax = (((px - vx) / vw * 65535.0).round() as i32).clamp(0, 65535);
+            let ay = (((py - vy) / vh * 65535.0).round() as i32).clamp(0, 65535);
             self.send_mouse(
                 ax,
                 ay,
