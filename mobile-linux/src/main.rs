@@ -45,7 +45,10 @@ fn main() -> eframe::Result {
     if args.iter().any(|a| a == "--sensors") {
         print!("{}", sensor::inventory());
         match sensor::open(false) {
-            Ok(src) => println!("=> {}", src.describe()),
+            Ok(src) => {
+                println!("=> {}", src.describe());
+                println!("   {}", sensor::sample_summary(src, std::time::Duration::from_millis(1500)));
+            }
             Err(e) => println!("=> {e}"),
         }
         std::process::exit(0);

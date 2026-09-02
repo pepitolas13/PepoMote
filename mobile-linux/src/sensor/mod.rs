@@ -92,8 +92,77 @@ pub fn inventory() -> String {
     out
 }
 
+/// Lee `dur` de muestras de una fuente ya abierta y resume: nº de muestras,
+/// frecuencia real y medias de accel (gravedad: plano boca arriba => z ≈ +9.8)
+/// y gyro (en reposo ≈ 0). Diagnóstico de `--sensors`.
+pub fn sample_summary(src: Box<dyn Source>, dur: std::time::Duration) -> String {
+    use std::sync::atomic::Ordering;
+    use std::sync::mpsc::{channel, RecvTimeoutError};
+    let (tx, rx) = channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop2 = stop.clone();
+    let worker = std::thread::spawn(move || src.run(tx, stop2));
+    let deadline = Instant::now() + dur;
+    let (mut n, mut acc, mut gyr) = (0u32, [0f64; 3], [0f64; 3]);
+    let (mut t_first, mut t_last) = (0u64, 0u64);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(left) {
+            Ok(smp) => {
+                if n == 0 {
+                    t_first = smp.t_us;
+                }
+                t_last = smp.t_us;
+                n += 1;
+                for i in 0..3 {
+                    acc[i] += smp.accel[i] as f64;
+                    gyr[i] += smp.gyro[i] as f64;
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => break,
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    stop.store(true, Ordering::Relaxed);
+    drop(rx);
+    let _ = worker.join();
+    if n == 0 {
+        return format!("muestras en {:.1} s: NINGUNA (la fuente abre pero no entrega datos)", dur.as_secs_f32());
+    }
+    let span_s = if n > 1 { (t_last.saturating_sub(t_first)) as f64 / 1e6 } else { 0.0 };
+    let hz = if span_s > 0.0 { (n - 1) as f64 / span_s } else { 0.0 };
+    let k = n as f64;
+    format!(
+        "muestras en {:.1} s: {n} ({hz:.0} Hz según sus timestamps) · accel media [{:.2} {:.2} {:.2}] m/s² (|g|={:.2}) · gyro media [{:.3} {:.3} {:.3}] rad/s",
+        dur.as_secs_f32(),
+        acc[0] / k,
+        acc[1] / k,
+        acc[2] / k,
+        ((acc[0] / k).powi(2) + (acc[1] / k).powi(2) + (acc[2] / k).powi(2)).sqrt(),
+        gyr[0] / k,
+        gyr[1] / k,
+        gyr[2] / k
+    )
+}
+
 /// Reloj monotónico en µs para `t_sensor_us` (el receptor solo usa deltas).
 pub fn now_us() -> u64 {
     static START: OnceLock<Instant> = OnceLock::new();
     START.get_or_init(Instant::now).elapsed().as_micros() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resumen_de_muestras_con_fuente_simulada() {
+        let out = sample_summary(Box::new(fake::Fake::new()), std::time::Duration::from_millis(300));
+        assert!(out.starts_with("muestras en 0.3 s: "), "{out}");
+        assert!(!out.contains("NINGUNA"), "{out}");
+        assert!(out.contains("Hz"), "{out}");
+    }
 }

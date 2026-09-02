@@ -69,7 +69,28 @@ Dos caminos, en este orden:
    ~200 Hz y usa los timestamps del propio DSP. Requiere el SLPI arrancado
    (firmware del dispositivo + `hexagonrpcd`, lo normal en postmarketOS).
 
-`PepoMote-Mobile --sensors` enseña qué ve la app por los dos caminos.
+`PepoMote-Mobile --sensors` enseña qué ve la app por los dos caminos y, si
+alguno funciona, lee 1,5 s de muestras: frecuencia real y vector de gravedad
+(con el móvil plano boca arriba debe salir `z ≈ +9.8`).
+
+### Qualcomm SSC/SLPI (postmarketOS)
+
+En postmarketOS los paquetes de dispositivo SDM845 (OnePlus 6/6T, SHIFT6mq…)
+ya traen todo: `firmware-*-sensors` (registro de sensores copiado de Android
+en `/usr/share/qcom/<soc>/<Vendor>/<device>/sensors/`) y el servicio
+`hexagonrpcd-sdsp`, que sirve esos ficheros al DSP por FastRPC. Con eso el
+SLPI arranca y anuncia el servicio QMI `400` (SSC) en el bus QRTR. Si
+`--sensors` dice que el bus no lo anuncia:
+
+```bash
+cat /sys/class/remoteproc/remoteproc*/name /sys/class/remoteproc/remoteproc*/state
+sudo rc-service hexagonrpcd-sdsp status
+sudo rc-service hexagonrpcd-sdsp restart
+```
+
+`slpi` debe estar en `running` y `hexagonrpcd` corriendo; tras reiniciarlo,
+el SSC tarda unos segundos en estar listo. El acceso al bus QRTR no requiere
+root.
 
 ### IIO
 

@@ -499,10 +499,14 @@ mod qrtr {
                 return Err(io::Error::last_os_error());
             }
             let mut sock = Sock { fd, node: 0, port: 0 };
-            // puerto automático (sin privilegios)
+            // El kernel rechaza (EINVAL) un bind cuyo nodo no sea el local
+            // (1 en kernels modernos): se lo preguntamos antes con getsockname.
+            let me = sock.name().map_err(|e| io::Error::new(e.kind(), format!("getsockname: {e}")))?;
+            sock.node = me.node;
+            // puerto efímero automático (sin privilegios)
             let addr = SockaddrQrtr {
                 family: AF_QIPCRTR as u16,
-                node: 0,
+                node: me.node,
                 port: 0,
             };
             let rc = unsafe {
@@ -513,18 +517,28 @@ mod qrtr {
                 )
             };
             if rc < 0 {
-                return Err(io::Error::last_os_error());
+                let e = io::Error::last_os_error();
+                return Err(io::Error::new(e.kind(), format!("bind(nodo {}, puerto 0): {e}", me.node)));
             }
-            let mut me = addr;
-            let mut len = std::mem::size_of::<SockaddrQrtr>() as libc::socklen_t;
-            let rc = unsafe { libc::getsockname(fd, &mut me as *mut SockaddrQrtr as *mut libc::sockaddr, &mut len) };
-            if rc < 0 {
-                return Err(io::Error::last_os_error());
-            }
+            let me = sock.name().map_err(|e| io::Error::new(e.kind(), format!("getsockname: {e}")))?;
             sock.node = me.node;
             sock.port = me.port;
             sock.set_timeout(Duration::from_millis(500))?;
             Ok(sock)
+        }
+
+        fn name(&self) -> io::Result<SockaddrQrtr> {
+            let mut me = SockaddrQrtr {
+                family: 0,
+                node: 0,
+                port: 0,
+            };
+            let mut len = std::mem::size_of::<SockaddrQrtr>() as libc::socklen_t;
+            let rc = unsafe { libc::getsockname(self.fd, &mut me as *mut SockaddrQrtr as *mut libc::sockaddr, &mut len) };
+            if rc < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(me)
         }
 
         pub fn set_timeout(&self, d: Duration) -> io::Result<()> {
@@ -596,8 +610,18 @@ mod qrtr {
             }
         }
 
-        /// Busca en el servidor de nombres los servidores de `service`.
+        /// Busca en el servidor de nombres los servidores de `service`: (nodo, puerto).
         pub fn lookup(&self, service: u32, timeout: Duration) -> io::Result<Vec<(u32, u32)>> {
+            Ok(self
+                .lookup_raw(service, timeout)?
+                .into_iter()
+                .filter(|s| s.service == service)
+                .map(|s| (s.node, s.port))
+                .collect())
+        }
+
+        /// Como `lookup`, con todos los datos; `service == 0` lista el bus entero.
+        pub fn lookup_raw(&self, service: u32, timeout: Duration) -> io::Result<Vec<Server>> {
             let mut pkt = Vec::with_capacity(20);
             pkt.extend_from_slice(&QRTR_TYPE_NEW_LOOKUP.to_le_bytes());
             pkt.extend_from_slice(&service.to_le_bytes());
@@ -618,18 +642,131 @@ mod qrtr {
                     continue;
                 }
                 let svc = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+                let instance = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
                 let node = u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]);
                 let sport = u32::from_le_bytes([buf[16], buf[17], buf[18], buf[19]]);
                 if svc == 0 && node == 0 && sport == 0 {
                     break; // fin de la lista
                 }
-                if svc == service {
-                    found.push((node, sport));
-                }
+                found.push(Server {
+                    service: svc,
+                    instance,
+                    node,
+                    port: sport,
+                });
             }
             Ok(found)
         }
     }
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct Server {
+        pub service: u32,
+        pub instance: u32,
+        pub node: u32,
+        pub port: u32,
+    }
+}
+
+/// Busca (hasta 4 niveles) un directorio `sensors/registry` bajo `root`:
+/// hexagonrpcd sirve ahí al SLPI los ficheros de registro copiados de Android
+/// (convención `/usr/share/qcom/<soc>/<Vendor>/<device>/sensors/registry`).
+#[cfg(target_os = "linux")]
+fn find_sensor_registry(root: &std::path::Path, depth: u32) -> Option<std::path::PathBuf> {
+    let cand = root.join("sensors").join("registry");
+    if cand.is_dir() {
+        return Some(cand);
+    }
+    if depth == 0 {
+        return None;
+    }
+    let rd = std::fs::read_dir(root).ok()?;
+    let mut dirs: Vec<std::path::PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    dirs.sort();
+    dirs.into_iter().find_map(|d| find_sensor_registry(&d, depth - 1))
+}
+
+/// Estado de la cadena que hace falta para que el SLPI anuncie el SSC:
+/// remoteprocs (slpi debe estar `running`), hexagonrpcd (sirve al DSP los
+/// ficheros de registro de sensores por FastRPC), nodos /dev/fastrpc*,
+/// directorio de registro y lista de servicios del bus QRTR.
+#[cfg(target_os = "linux")]
+pub fn slpi_status() -> String {
+    let mut out = String::new();
+    // remoteprocs
+    let mut rprocs: Vec<String> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir("/sys/class/remoteproc") {
+        for e in rd.flatten() {
+            let p = e.path();
+            let name = std::fs::read_to_string(p.join("name")).unwrap_or_default();
+            let state = std::fs::read_to_string(p.join("state")).unwrap_or_default();
+            let name = name.trim();
+            let short = name.rsplit('.').next().unwrap_or(name).replace("remoteproc-", "");
+            rprocs.push(format!("{short}={}", state.trim()));
+        }
+    }
+    rprocs.sort();
+    out.push_str("  remoteproc: ");
+    if rprocs.is_empty() {
+        out.push_str("ninguno (¿kernel sin remoteproc/PAS?)");
+    } else {
+        out.push_str(&rprocs.join(" · "));
+    }
+    out.push('\n');
+    // hexagonrpcd
+    let proc_running = |prefix: &str| {
+        std::fs::read_dir("/proc")
+            .map(|rd| {
+                rd.flatten().any(|e| {
+                    std::fs::read_to_string(e.path().join("comm"))
+                        .map(|c| c.trim().starts_with(prefix))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    };
+    let mut fastrpc: Vec<String> = std::fs::read_dir("/dev")
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| e.file_name().to_str().map(|s| s.to_owned()))
+                .filter(|n| n.starts_with("fastrpc"))
+                .collect()
+        })
+        .unwrap_or_default();
+    fastrpc.sort();
+    let registry = ["/usr/share/qcom", "/var/lib/qcom"]
+        .iter()
+        .find_map(|d| find_sensor_registry(std::path::Path::new(d), 4));
+    out.push_str(&format!(
+        "  hexagonrpcd: {} · /dev/fastrpc*: {} · registro sensores: {}\n",
+        if proc_running("hexagonrpcd") { "corriendo" } else { "NO corre" },
+        if fastrpc.is_empty() { "ninguno".to_owned() } else { fastrpc.join(",") },
+        registry.map(|p| p.display().to_string()).unwrap_or_else(|| "no encontrado".to_owned())
+    ));
+    // bus QRTR
+    match qrtr::Sock::open() {
+        Err(e) => out.push_str(&format!("  QRTR: socket: {e}\n")),
+        Ok(sock) => match sock.lookup_raw(0, Duration::from_secs(1)) {
+            Err(e) => out.push_str(&format!("  QRTR: búsqueda: {e}\n")),
+            Ok(list) => {
+                let mut svcs: Vec<String> = list
+                    .iter()
+                    .map(|s| format!("{}:{}@{}:{}", s.service, s.instance, s.node, s.port))
+                    .collect();
+                svcs.sort();
+                svcs.dedup();
+                let ssc = list.iter().any(|s| s.service == QMI_SERVICE_SSC);
+                out.push_str(&format!(
+                    "  QRTR: {} servicios (svc:inst@nodo:puerto; SSC {}={}): {}\n",
+                    svcs.len(),
+                    QMI_SERVICE_SSC,
+                    if ssc { "sí" } else { "NO" },
+                    svcs.join(" ")
+                ));
+            }
+        },
+    }
+    out
 }
 
 // ----------------------------------------------------------------- cliente
@@ -646,16 +783,25 @@ pub struct Ssc {
     pub info: String,
 }
 
+/// Qué hace falta para que el SLPI anuncie el SSC (postmarketOS).
+#[cfg(target_os = "linux")]
+const SLPI_HINT: &str = "Hace falta: remoteproc slpi en `running` (firmware slpi.mbn) y hexagonrpcd corriendo \
+(postmarketOS: sudo apk add hexagonrpcd && sudo rc-update add hexagonrpcd-sdsp && sudo rc-service hexagonrpcd-sdsp start)";
+
 #[cfg(target_os = "linux")]
 impl Ssc {
     /// Conecta con el SSC y localiza gyro + accel. Bloqueante (≤ ~6 s).
     pub fn open() -> Result<Self, String> {
-        let sock = qrtr::Sock::open().map_err(|e| format!("socket QRTR: {e} (¿kernel sin CONFIG_QRTR?)"))?;
+        let sock = qrtr::Sock::open().map_err(|e| format!("socket QRTR: {e}{}", if e.raw_os_error() == Some(libc::EAFNOSUPPORT) { " (kernel sin CONFIG_QRTR)" } else { "" }))?;
         let servers = sock
             .lookup(QMI_SERVICE_SSC, Duration::from_secs(2))
             .map_err(|e| format!("búsqueda QRTR: {e}"))?;
         let Some(&server) = servers.first() else {
-            return Err("el bus QRTR no anuncia el servicio SSC (0x190): ¿está el SLPI arrancado (hexagonrpcd, firmware)?".into());
+            return Err(format!(
+                "el bus QRTR no anuncia el servicio SSC ({QMI_SERVICE_SSC}): el SLPI no está operativo.\n{}  {}",
+                slpi_status(),
+                SLPI_HINT
+            ));
         };
         let mut ssc = Ssc {
             sock,
@@ -874,7 +1020,13 @@ pub fn probe() -> String {
                 s.disable(a);
                 format!("SSC (Qualcomm SLPI por QRTR): OK · {}{}", s.describe(), if s.info.is_empty() { String::new() } else { format!("\n  {}", s.info.trim_end().replace('\n', "\n  ")) })
             }
-            Err(e) => format!("SSC (Qualcomm SLPI por QRTR): {e}"),
+            Err(e) => {
+                if e.contains("remoteproc:") {
+                    format!("SSC (Qualcomm SLPI por QRTR): {e}")
+                } else {
+                    format!("SSC (Qualcomm SLPI por QRTR): {e}\n{}", slpi_status().trim_end())
+                }
+            }
         }
     }
     #[cfg(not(target_os = "linux"))]
