@@ -18,13 +18,6 @@ pulsa **Instalar** (lo abre "Software"). Aparece "PepoMote" en el lanzador,
 con la regla del sensor ya instalada. Si tu Mobian no abre .deb al tocarlos:
 `sudo apt install ~/Downloads/pepomote-mobile_*_arm64.deb`.
 
-**postmarketOS (Phosh o Plasma Mobile) y cualquier móvil con tienda de apps Flatpak: sin terminal.**
-Descarga en el navegador del móvil `PepoMote-Mobile-aarch64.flatpak` de la
-[última release](https://github.com/pepitolas13/PepoMote/releases/latest), tócalo y pulsa
-**Instalar** (GNOME Software o Discover). La primera vez baja también el runtime de
-Flathub (unos 300 MB). Dentro del sandbox el IMU se lee a la frecuencia por
-defecto del driver; para la máxima, el .deb o el tar.gz con su regla udev.
-
 **Cualquier otra distro**, un solo comando en el terminal (detecta glibc o musl
 y descarga el paquete que toca de la última release):
 

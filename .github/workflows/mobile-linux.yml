@@ -61,14 +61,6 @@ jobs:
         with:
           name: PepoMote-Mobile-deb
           path: dist/pepomote-mobile*arm64.deb
-      - name: Flatpak bundle (postmarketOS y tiendas)
-        run: |
-          sudo apt-get install -y flatpak flatpak-builder
-          bash packaging/linux-mobile/flatpak.sh aarch64
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PepoMote-Mobile-flatpak
-          path: dist/PepoMote-Mobile-aarch64.flatpak
 
   # postmarketOS = Alpine = musl: hay que compilar CONTRA musl. Contenedor
   # Alpine sobre el runner ARM (nativo), sin acciones JS dentro del contenedor.

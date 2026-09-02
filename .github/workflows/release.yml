@@ -58,17 +58,12 @@ jobs:
         run: bash packaging/linux-mobile/appimage.sh aarch64
       - name: Debian package (Mobian)
         run: bash packaging/linux-mobile/deb.sh arm64
-      - name: Flatpak bundle (postmarketOS y tiendas)
-        run: |
-          sudo apt-get install -y flatpak flatpak-builder
-          bash packaging/linux-mobile/flatpak.sh aarch64
       - uses: actions/upload-artifact@v4
         with:
           name: mobile
           path: |
             dist/PepoMote-Mobile-aarch64.AppImage
             dist/pepomote-mobile*arm64.deb
-            dist/PepoMote-Mobile-aarch64.flatpak
 
   mobile_musl:
     runs-on: ubuntu-24.04-arm
@@ -135,7 +130,7 @@ jobs:
       - name: SHA256SUMS
         run: |
           sha256sum PepoMote.exe PepoMote-x86_64.AppImage PepoMote.apk \
-            PepoMote-Mobile-aarch64.AppImage $(ls pepomote-mobile*arm64.deb PepoMote-Mobile-aarch64.flatpak PepoMote-Mobile-aarch64-musl.tar.gz 2>/dev/null) > SHA256SUMS.txt
+            PepoMote-Mobile-aarch64.AppImage $(ls pepomote-mobile*arm64.deb PepoMote-Mobile-aarch64-musl.tar.gz 2>/dev/null) > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -144,7 +139,6 @@ jobs:
             PepoMote.apk
             PepoMote-Mobile-aarch64.AppImage
             pepomote-mobile*arm64.deb
-            PepoMote-Mobile-aarch64.flatpak
             PepoMote-Mobile-aarch64-musl.tar.gz
             SHA256SUMS.txt
           generate_release_notes: true
