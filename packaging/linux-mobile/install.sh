@@ -65,6 +65,34 @@ case "$PKG" in
 esac
 chmod +x "$BIN"
 
+# Lanzador con diagnóstico: guarda los errores de arranque en
+# ~/.config/pepotech/PepoMote/launch.log y, si la app muere nada más
+# arrancar (GPU sin OpenGL usable, típico en algunos móviles), reintenta con
+# render por software (llvmpipe) para que abra igual.
+RUN="$DEST/run.sh"
+cat > "$RUN" <<RUNSH
+#!/bin/sh
+LOG="\$HOME/.config/pepotech/PepoMote/launch.log"
+mkdir -p "\$(dirname "\$LOG")"
+BIN="$BIN"
+{
+    echo "== \$(date) arranque: \$BIN \$*"
+    env | grep -E '^(WAYLAND_DISPLAY|DISPLAY|XDG_SESSION_TYPE|XDG_RUNTIME_DIR)=' 
+} >> "\$LOG" 2>&1
+start=\$(date +%s)
+"\$BIN" "\$@" 2>> "\$LOG"
+rc=\$?
+if [ "\$rc" -ne 0 ] && [ \$(( \$(date +%s) - start )) -lt 8 ]; then
+    echo "== salida \$rc en menos de 8 s: reintento con render por software" >> "\$LOG"
+    LIBGL_ALWAYS_SOFTWARE=1 "\$BIN" "\$@" 2>> "\$LOG"
+    rc=\$?
+fi
+echo "== fin, código \$rc" >> "\$LOG"
+exit \$rc
+RUNSH
+chmod +x "$RUN"
+BIN="$RUN"
+
 # Recursos: primero los que vienen dentro del paquete; si no, los del repo
 res() {
     if [ -f "$DEST/$1" ]; then echo "$DEST/$1"
@@ -99,4 +127,5 @@ fi
 
 echo
 echo "Listo: abre 'PepoMote' desde el lanzador de aplicaciones."
+echo "Si no abre: cat ~/.config/pepotech/PepoMote/launch.log  (ahí queda el error)"
 echo "Primera vez: Conectar → elige tu PC → teclea el código de 4 dígitos que hay bajo el QR del receptor."
