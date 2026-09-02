@@ -71,37 +71,37 @@ pub struct Step {
 pub const STEPS: [Step; 6] = [
     Step {
         title: "1 · Plano boca arriba",
-        text: "Deja el móvil plano sobre la mesa con la pantalla hacia arriba y pulsa Listo.",
+        text: "Deja el móvil plano sobre la mesa, con la pantalla hacia arriba, y pulsa Listo.",
         kind: Kind::Pose,
         axis: 2,
     },
     Step {
         title: "2 · De pie",
-        text: "Ponlo de pie sobre su borde inferior, con la pantalla mirándote (como para leer). Sujétalo quieto y pulsa Listo.",
+        text: "Ponlo de pie, apoyado en el borde de abajo (el del USB), con la pantalla hacia ti, como si lo estuvieras leyendo. Sujétalo quieto y pulsa Listo.",
         kind: Kind::Pose,
         axis: 1,
     },
     Step {
         title: "3 · Sobre el lado izquierdo",
-        text: "Apóyalo sobre su borde IZQUIERDO, con la pantalla mirándote. Quieto, y pulsa Listo.",
+        text: "Túmbalo de canto sobre su lado IZQUIERDO, con la pantalla hacia ti: queda apaisado, con la cámara hacia tu izquierda. Quieto, y pulsa Listo.",
         kind: Kind::Pose,
         axis: 0,
     },
     Step {
         title: "4 · Levanta el borde superior",
-        text: "Déjalo plano. Al pulsar Listo tienes 2 segundos: levanta el borde SUPERIOR (el de la cámara) unos 45° y vuelve a bajarlo.",
+        text: "Déjalo plano. Al pulsar Listo tienes 2 segundos: levanta el borde de ARRIBA (el de la cámara) unos 45° y vuelve a bajarlo, como si el móvil asintiera.",
         kind: Kind::Motion,
         axis: 0,
     },
     Step {
         title: "5 · Levanta el borde izquierdo",
-        text: "Plano otra vez. Al pulsar Listo, en 2 segundos: levanta el borde IZQUIERDO unos 45° y bájalo.",
+        text: "Plano otra vez. Al pulsar Listo tienes 2 segundos: levanta el lado IZQUIERDO unos 45° (se ladea hacia la derecha) y bájalo.",
         kind: Kind::Motion,
         axis: 1,
     },
     Step {
         title: "6 · Gira como un volante",
-        text: "Plano sobre la mesa. Al pulsar Listo, en 2 segundos: gíralo hacia la IZQUIERDA (antihorario) un cuarto de vuelta sin levantarlo.",
+        text: "Plano sobre la mesa. Al pulsar Listo tienes 2 segundos: sin levantarlo, gíralo un cuarto de vuelta hacia la IZQUIERDA, como un volante.",
         kind: Kind::Motion,
         axis: 2,
     },

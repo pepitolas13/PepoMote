@@ -171,11 +171,23 @@ fn encode_uid(uid: (u64, u64)) -> Vec<u8> {
 }
 
 /// SscClientRequest { uid=1, msg_id=2 fixed32, config=3 {processor=1, suspend_mode=2}, request=4 {msg=2 bytes} }
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn encode_client_request(uid: (u64, u64), msg_id: u32, payload: Option<&[u8]>) -> Vec<u8> {
+    encode_client_request_ext(uid, msg_id, payload, None)
+}
+
+/// Como `encode_client_request`, con `request.batching = 1 { batch_period = 1 }`
+/// (sns_std_request.batch_spec): 0 = sin agrupar, cada muestra según sale.
+pub fn encode_client_request_ext(uid: (u64, u64), msg_id: u32, payload: Option<&[u8]>, batch_period_us: Option<u32>) -> Vec<u8> {
     let mut config = Vec::new();
     pb::put_varint_field(&mut config, 1, PROCESSOR_APSS);
     pb::put_varint_field(&mut config, 2, SUSPEND_WAKEUP);
     let mut body = Vec::new();
+    if let Some(bp) = batch_period_us {
+        let mut batching = Vec::new();
+        pb::put_varint_field(&mut batching, 1, bp.into());
+        pb::put_bytes(&mut body, 1, &batching);
+    }
     if let Some(p) = payload {
         pb::put_bytes(&mut body, 2, p);
     }
@@ -862,8 +874,12 @@ impl Ssc {
     /// Envía una petición al sensor y espera su acuse QMI (las indicaciones
     /// que lleguen entre medias se guardan).
     fn request(&mut self, uid: (u64, u64), msg_id: u32, payload: Option<&[u8]>) -> Result<(), String> {
+        self.request_ext(uid, msg_id, payload, None)
+    }
+
+    fn request_ext(&mut self, uid: (u64, u64), msg_id: u32, payload: Option<&[u8]>, batch_period_us: Option<u32>) -> Result<(), String> {
         let txn = self.next_txn();
-        let proto = encode_client_request(uid, msg_id, payload);
+        let proto = encode_client_request_ext(uid, msg_id, payload, batch_period_us);
         let frame = control_request(txn, &proto);
         self.sock
             .send_to(self.server.0, self.server.1, &frame)
@@ -946,6 +962,15 @@ impl Ssc {
     }
 
     fn enable(&mut self, uid: (u64, u64), rate: f32) -> Result<(), String> {
+        // Primero pidiendo explícitamente sin agrupar (batch_period 0): el
+        // puntero quiere cada muestra al salir, no ráfagas. Si el DSP no lo
+        // acepta, la petición de siempre.
+        if self
+            .request_ext(uid, MSG_ENABLE_CONTINUOUS, Some(&encode_enable(rate)), Some(0))
+            .is_ok()
+        {
+            return Ok(());
+        }
         self.request(uid, MSG_ENABLE_CONTINUOUS, Some(&encode_enable(rate)))
             .map_err(|e| format!("activar streaming a {rate} Hz: {e}"))
     }
@@ -1056,6 +1081,17 @@ impl Source for Ssc {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn peticion_con_batching_explicito() {
+        let base = encode_client_request((1, 2), 513, Some(&[0x0d, 0, 0, 0x48, 0x43]));
+        let ext = encode_client_request_ext((1, 2), 513, Some(&[0x0d, 0, 0, 0x48, 0x43]), Some(0));
+        assert_eq!(base, encode_client_request_ext((1, 2), 513, Some(&[0x0d, 0, 0, 0x48, 0x43]), None));
+        // request=4 { batching=1 { batch_period=1: 0 }, msg=2 {...} }
+        let body_tag = ext.iter().rposition(|&b| b == 0x22).unwrap();
+        assert_eq!(&ext[body_tag..body_tag + 6], &[0x22, ext[body_tag + 1], 0x0a, 0x02, 0x08, 0x00]);
+        assert_eq!(ext.len(), base.len() + 4);
+    }
 
     #[test]
     fn protobuf_ida_y_vuelta() {

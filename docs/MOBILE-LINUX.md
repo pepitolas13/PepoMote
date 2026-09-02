@@ -85,6 +85,22 @@ siguientes (Inicio lo muestra como `ejes accel +-+ gyro +++`). `--sensors`
 también lo enseña. Para volver al estado original: el botón «Borrar
 calibración» dentro de la pantalla.
 
+### Deriva y suavidad
+
+Ni IIO ni el SSC entregan el giroscopio calibrado (Android lo hace en su HAL),
+así que un gyro en reposo marca unas décimas de grado por segundo y el puntero
+se iría solo hacia un lado. La app estima ese bias sola: cuando el móvil está
+quieto medio segundo (gyro y acelerómetro sin varianza), la media del gyro es
+el bias, se adopta y luego se refina despacio. Basta con dejar el móvil quieto
+un segundo al empezar; si deriva, déjalo sobre la mesa un momento.
+
+Algunas fuentes entregan las muestras a ráfagas (el DSP de Qualcomm agrupa
+varias): la fusión no lo nota porque usa los timestamps del sensor, pero el
+puntero absoluto saltaría a cada ráfaga. La salida al receptor va a ritmo fijo
+(250 Hz) e interpolada con el reloj de pared, con un retardo igual a la peor
+ráfaga reciente (0 si la entrega es regular, máximo 80 ms). `--sensors`
+enseña cómo llega la entrega (hueco máximo y porcentaje en ráfaga).
+
 ### Qualcomm SSC/SLPI (postmarketOS)
 
 En postmarketOS los paquetes de dispositivo SDM845 (OnePlus 6/6T, SHIFT6mq…)

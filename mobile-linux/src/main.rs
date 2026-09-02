@@ -4,11 +4,13 @@
 //! app Android. Emparejamiento por código de 4 dígitos (sin cámara).
 
 mod app;
+mod bias;
 mod buttons;
 mod calib;
 mod discovery;
 mod fusion;
 mod link;
+mod pacing;
 mod sensor;
 mod store;
 mod ui;

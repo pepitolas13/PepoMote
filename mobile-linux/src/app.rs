@@ -636,6 +636,11 @@ impl MobileApp {
         let mut leave = false;
         ui.add_space(8.0);
         ui.label(RichText::new("Calibrar sensores").size(26.0).strong().color(theme::TEXT));
+        ui.label(
+            RichText::new("Tres posturas quietas y tres gestos: así sé hacia dónde mira cada eje de tus sensores.")
+                .size(12.0)
+                .color(theme::TEXT_DIM),
+        );
         if let Some(axes) = c.done {
             ui.add_space(12.0);
             ui.label(RichText::new("Listo. Calibración guardada:").size(16.0).color(theme::TEXT));

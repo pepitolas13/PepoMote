@@ -5,7 +5,9 @@
 
 use crate::buttons::Buttons;
 use crate::discovery;
+use crate::bias::GyroBias;
 use crate::fusion::Madgwick;
+use crate::pacing::{Pacer, State};
 use crate::sensor::{self, Sample, Source};
 use crate::store::{self, Pairing};
 use serde_json::{json, Value};
@@ -378,57 +380,99 @@ fn packet_loop(
     sensor_hz: Arc<AtomicU32>,
 ) {
     let mut fusion = Madgwick::new(0.1);
+    let mut bias = GyroBias::new();
+    let mut pacer = Pacer::new();
+    let epoch = Instant::now();
+    let wall_us = |now: Instant| now.duration_since(epoch).as_micros() as u64;
     let mut seq: u32 = 0;
     let mut last_t_us: Option<u64> = None;
-    let mut last_sent = Instant::now() - MIN_PACKET_GAP;
+    let mut next_send = Instant::now();
+    let mut last_sent = Instant::now();
+    let mut last_sample_at: Option<Instant> = None;
     let mut last_ping = Instant::now();
     let mut battery = Battery::new();
     let mut hz_window = Instant::now();
     let mut hz_count: u32 = 0;
+    let mut bias_logged = false;
+    let mut delay_logged: u64 = 0;
 
     while !stop.load(Ordering::Relaxed) {
-        let sample = match rx.recv_timeout(Duration::from_secs(1)) {
-            Ok(s) => s,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                // sin muestras: keepalive 1 Hz con lo último (PROTOCOL.md §4.1)
-                sensor_hz.store(0f32.to_bits(), Ordering::Relaxed);
-                Sample {
-                    t_us: sensor::now_us(),
-                    gyro: [0.0; 3],
-                    accel: [0.0; 3],
+        // 1) Muestras: se procesan todas las que lleguen hasta que toque enviar
+        let wait = next_send.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(wait) {
+            Ok(sample) => {
+                let now = Instant::now();
+                last_sample_at = Some(now);
+                let dt = last_t_us
+                    .map(|t| sample.t_us.saturating_sub(t) as f32 / 1e6)
+                    .filter(|dt| (1e-5..0.25).contains(dt))
+                    .unwrap_or(0.005);
+                last_t_us = Some(sample.t_us);
+                let gyro = bias.correct(sample.t_us, sample.gyro, sample.accel);
+                fusion.update(gyro, sample.accel, dt);
+                pacer.push(
+                    State {
+                        t_us: sample.t_us,
+                        quat: fusion.quat(),
+                        gyro,
+                        accel: sample.accel,
+                    },
+                    wall_us(now),
+                );
+                hz_count += 1;
+                if hz_window.elapsed() >= Duration::from_secs(1) {
+                    sensor_hz.store((hz_count as f32 / hz_window.elapsed().as_secs_f32()).to_bits(), Ordering::Relaxed);
+                    hz_window = Instant::now();
+                    hz_count = 0;
+                    // diagnóstico en mobile.log: bias adoptado y ráfagas detectadas
+                    if !bias_logged && bias.settled() {
+                        bias_logged = true;
+                        let b = bias.bias();
+                        crate::app::log_line(&format!("bias gyro asentado: [{:.4} {:.4} {:.4}] rad/s", b[0], b[1], b[2]));
+                    }
+                    let d = pacer.delay_us();
+                    if d.abs_diff(delay_logged) >= 5_000 {
+                        delay_logged = d;
+                        crate::app::log_line(&format!("entrega del sensor a ráfagas: reproducción con {} ms de retardo", d / 1000));
+                    }
                 }
+                continue;
             }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
-        };
-
-        let dt = last_t_us
-            .map(|t| sample.t_us.saturating_sub(t) as f32 / 1e6)
-            .filter(|dt| (1e-5..0.25).contains(dt))
-            .unwrap_or(0.005);
-        last_t_us = Some(sample.t_us);
-        fusion.update(sample.gyro, sample.accel, dt);
-
-        hz_count += 1;
-        if hz_window.elapsed() >= Duration::from_secs(1) {
-            sensor_hz.store((hz_count as f32 / hz_window.elapsed().as_secs_f32()).to_bits(), Ordering::Relaxed);
-            hz_window = Instant::now();
-            hz_count = 0;
         }
 
-        if last_sent.elapsed() < MIN_PACKET_GAP {
+        // 2) Envío a ritmo fijo (tope del protocolo), interpolado con el
+        //    reloj de pared: las ráfagas del sensor no llegan al receptor
+        let now = Instant::now();
+        if now < next_send {
             continue;
         }
-        last_sent = Instant::now();
+        next_send = now + MIN_PACKET_GAP;
+        let idle = last_sample_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(1));
+        if idle {
+            // sin muestras: keepalive 1 Hz con lo último (PROTOCOL.md §4.1)
+            sensor_hz.store(0f32.to_bits(), Ordering::Relaxed);
+            if last_sent.elapsed() < Duration::from_secs(1) {
+                continue;
+            }
+        }
+        let st = pacer.output(wall_us(now)).unwrap_or(State {
+            t_us: sensor::now_us(),
+            quat: fusion.quat(),
+            gyro: [0.0; 3],
+            accel: [0.0; 3],
+        });
+        last_sent = now;
         seq = seq.wrapping_add(1);
-        let now = Instant::now();
         let packet = pmp::InputPacket {
             flags: pmp::FLAG_QUAT_VALID,
             session_id,
             seq,
-            t_sensor_us: sample.t_us,
-            quat: fusion.quat(),
-            gyro: sample.gyro,
-            accel: sample.accel,
+            t_sensor_us: st.t_us,
+            quat: st.quat,
+            gyro: st.gyro,
+            accel: st.accel,
             buttons: buttons.wire_at(now),
             recenter_count: buttons.recenter_count(),
             battery_pct: battery.pct(),
