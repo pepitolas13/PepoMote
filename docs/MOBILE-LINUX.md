@@ -57,7 +57,21 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
 - **Mando**: solo botones, sin cambiar el modo.
 - La cabecera enseña RTT y la frecuencia real del sensor.
 
-## Sensores (IIO)
+## Sensores
+
+Dos caminos, en este orden:
+
+1. **IIO** (PinePhone/Pro, Librem 5 y todo móvil cuyo kernel exponga el IMU).
+2. **Qualcomm SSC/SLPI** (Snapdragon 845 y posteriores: OnePlus 6/6T, SHIFT6mq,
+   Poco F1…): en esos móviles el IMU cuelga del DSP de sensores y Linux no ve
+   nada en IIO. La app habla con el DSP directamente por QRTR/QMI (el mismo
+   protocolo que usa libssc para la rotación de pantalla), pide gyro y accel a
+   ~200 Hz y usa los timestamps del propio DSP. Requiere el SLPI arrancado
+   (firmware del dispositivo + `hexagonrpcd`, lo normal en postmarketOS).
+
+`PepoMote-Mobile --sensors` enseña qué ve la app por los dos caminos.
+
+### IIO
 
 La app busca en `/sys/bus/iio/devices` un dispositivo con `in_anglvel_*_raw`
 (giroscopio) y `in_accel_*_raw` (acelerómetro), aplica escala, offset y la

@@ -1,9 +1,11 @@
-//! Fuentes de muestras de movimiento: IIO (el móvil de verdad) o simulada
-//! (pruebas sin hardware). Cada una corre su propio bucle y empuja muestras
-//! por un canal; el hilo de paquetes las fusiona y las manda.
+//! Fuentes de muestras de movimiento: IIO (PinePhone, Librem 5, …),
+//! Qualcomm SSC/SLPI (SDM845 y posteriores: OnePlus 6/6T, SHIFT6mq, Poco
+//! F1, …) o simulada (pruebas sin hardware). Cada una corre su propio bucle
+//! y empuja muestras por un canal; el hilo de paquetes las fusiona y las manda.
 
 pub mod fake;
 pub mod iio;
+pub mod ssc;
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -29,12 +31,22 @@ pub fn open(fake: bool) -> Result<Box<dyn Source>, String> {
     if fake {
         return Ok(Box::new(fake::Fake::new()));
     }
-    iio::Imu::find(Path::new(iio::SYSFS)).map(|i| Box::new(i) as Box<dyn Source>)
+    // 1) IIO (el kernel expone el IMU); 2) Qualcomm SSC/SLPI (el IMU cuelga
+    // del DSP de sensores y Linux no ve nada en IIO)
+    let iio_err = match iio::Imu::find(Path::new(iio::SYSFS)) {
+        Ok(i) => return Ok(Box::new(i)),
+        Err(e) => e,
+    };
+    match ssc::Ssc::open() {
+        Ok(s) => Ok(Box::new(s)),
+        Err(ssc_err) => Err(format!("IIO: {iio_err}\nSSC: {ssc_err}")),
+    }
 }
 
 /// Todo lo que el sistema expone que huela a sensor de movimiento: IIO,
-/// dispositivos `input` con nombre de gyro/accel, y si iio-sensor-proxy está
-/// corriendo (en modo buffer bloquea las lecturas _raw del dispositivo).
+/// dispositivos `input` con nombre de gyro/accel, si iio-sensor-proxy está
+/// corriendo (en modo buffer bloquea las lecturas _raw del dispositivo) y el
+/// resultado de sondear el SSC de Qualcomm.
 pub fn inventory() -> String {
     let mut out = String::from("IIO (/sys/bus/iio/devices):\n");
     out.push_str(&iio::inventory(Path::new(iio::SYSFS)));
@@ -75,6 +87,8 @@ pub fn inventory() -> String {
         })
         .unwrap_or(false);
     out.push_str(if proxy { "iio-sensor-proxy: corriendo\n" } else { "iio-sensor-proxy: no\n" });
+    out.push_str(&ssc::probe());
+    out.push('\n');
     out
 }
 
