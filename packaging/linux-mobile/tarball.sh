@@ -12,6 +12,13 @@ STAGE="$OUT/PepoMote-Mobile"
 PKG="$ROOT/packaging/linux-mobile"
 
 [[ -f "$BIN" ]] || { echo "Compila antes: cd mobile-linux && cargo build --release"; exit 1; }
+# Tiene que ser un ejecutable DINÁMICO: el musl estático no puede dlopen
+# (Wayland, EGL) y muere al arrancar sin abrir ventana.
+if ! readelf -l "$BIN" | grep -q INTERP; then
+    echo "ERROR: $BIN es estático (sin intérprete). Compila con RUSTFLAGS=\"-C target-feature=-crt-static\""
+    exit 1
+fi
+echo "Enlazado dinámico OK: $(readelf -l "$BIN" | grep -o 'ld-musl[^]]*')"
 
 rm -rf "$STAGE"
 mkdir -p "$STAGE" "$OUT"

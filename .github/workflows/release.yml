@@ -80,6 +80,9 @@ jobs:
             apk add --no-cache build-base curl
             curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
             export PATH="$HOME/.cargo/bin:$PATH"
+            # DINÁMICO: el musl estático (por defecto en Rust) no puede hacer dlopen
+            # y winit carga libwayland-client/libEGL así → la app moría al arrancar
+            export RUSTFLAGS="-C target-feature=-crt-static"
             cargo build --release'
       - name: Tarball
         run: bash packaging/linux-mobile/tarball.sh aarch64-musl
