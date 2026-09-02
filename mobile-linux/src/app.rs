@@ -143,8 +143,11 @@ impl MobileApp {
                 self.screen = Screen::Controller;
             }
             Err(e) => {
+                // Sin sensores no hay mando: a Inicio, donde se ve el motivo
+                // (antes se quedaba en la pantalla del código, en silencio)
                 self.sensor_desc = format!("sin sensores: {e}");
                 self.error = Some(e);
+                self.screen = Screen::Home;
             }
         }
     }

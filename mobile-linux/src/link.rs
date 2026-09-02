@@ -149,7 +149,7 @@ pub fn pair(host: &str, port: u16, code: &str, fallback_name: &str) -> Result<Pa
         .map_err(|e| format!("No llego a {host}:{port}: {e}"))?;
     let _ = s.set_nodelay(true);
     let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
-    let hello = json!({"m":"hello","pv":1,"code":code.trim(),"name":device_name(),"model":"Linux móvil"});
+    let hello = json!({"m":"hello","pv":1,"code":code.trim(),"probe":true,"name":device_name(),"model":"Linux móvil"});
     let mut line = hello.to_string();
     line.push('\n');
     s.write_all(line.as_bytes()).map_err(|e| e.to_string())?;

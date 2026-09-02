@@ -1,6 +1,6 @@
 [package]
 name = "pepomote"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "PepoMote receiver — turns your Android phone into a Wii-style pointer/controller for your PC"

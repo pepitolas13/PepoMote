@@ -1,6 +1,6 @@
 [package]
 name = "pmp"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "PepoMote Protocol (PMP v1) codec — shared by the receiver and the Linux mobile sender"

@@ -2297,7 +2297,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pepomote-mobile"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "directories",
  "eframe",
@@ -2364,7 +2364,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "pmp"
-version = "1.1.0"
+version = "1.1.1"
 
 [[package]]
 name = "png"

@@ -39,7 +39,7 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
 ## Emparejar (una sola vez)
 
 1. Abre PepoMote en el PC (muestra el QR y, debajo, **"Sin cámara: código
-   1234"**; el código cambia cada 2 minutos y es de un solo uso).
+   1234"**; el código vale 5 minutos y es de un solo uso).
 2. En el móvil: **Conectar** → aparece tu PC en la lista (búsqueda por
    broadcast en tu Wi-Fi) → tócalo → teclea el código. Si no aparece,
    **Escribir IP a mano** con la IP:puerto que hay bajo el QR.

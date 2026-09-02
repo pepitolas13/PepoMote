@@ -18,7 +18,7 @@ El receptor genera un token aleatorio de 128 bits (hex, 32 chars) y lo persiste.
 pepomote://pair?v=1&host=<ip>&port=<tcp>&t=<token_hex32>&name=<url-encoded>
 ```
 
-Alternativa sin cámara (el emisor Linux móvil la usa siempre): el receptor muestra bajo el QR un código de 4 dígitos temporal (TTL 120 s, **un solo uso**; se regenera además tras 5 intentos fallidos); el móvil lo envía en el `hello` como `code` (sin `token`) sobre un receptor descubierto o tecleado; el receptor responde `ok` incluyendo `token` definitivo, que el móvil persiste. Código malo o caducado → `err bad_code`. El `ok` lleva también `name` (nombre del PC).
+Alternativa sin cámara (el emisor Linux móvil la usa siempre): el receptor muestra bajo el QR un código de 4 dígitos temporal (TTL 5 min, **un solo uso**; se regenera además tras 5 intentos fallidos); el móvil lo envía en el `hello` como `code` (sin `token`) sobre un receptor descubierto o tecleado; el receptor responde `ok` incluyendo `token` definitivo, que el móvil persiste. Código malo o caducado → `err bad_code`. El `ok` lleva también `name` (nombre del PC). Si el `hello` lleva `"probe":true` es solo una sonda de emparejamiento: el receptor responde `ok` (con `token` y `name`) y cierra, sin asignar slot ni avisar de conexión; el móvil conecta después de verdad con el token.
 
 El token no es criptografía seria: identifica y evita conexiones accidentales en la LAN. Modelo de amenaza documentado en `docs/SECURITY.md`.
 

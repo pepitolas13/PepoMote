@@ -75,6 +75,17 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         return;
     }
 
+    // Sonda de emparejamiento (el móvil Linux al teclear el código): solo
+    // quiere el token. Sin plaza, sin campanitas, sin tocar Dolphin.
+    if hello["probe"].as_bool() == Some(true) {
+        let _ = send(
+            &mut writer,
+            &json!({"m":"ok","probe":true,"name":pairing.name,"token":pairing.token,
+                    "mode":mode_str(shared.lock().unwrap().mode)}),
+        );
+        return;
+    }
+
     let session_id: u32 = rand::thread_rng().gen();
     let slot = {
         let mut guard = sessions.lock().unwrap();

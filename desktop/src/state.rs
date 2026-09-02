@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Código de emparejamiento de 4 dígitos para móviles sin cámara (Linux
-/// móvil), PROTOCOL.md §2. Caduca a los 120 s, es de un solo uso y se
+/// móvil), PROTOCOL.md §2. Caduca a los 5 min, es de un solo uso y se
 /// regenera tras 5 fallos: 10 000 combinaciones no se pueden probar por la
 /// LAN sin que el código cambie mucho antes.
 pub struct PairCode {
@@ -14,7 +14,7 @@ pub struct PairCode {
 }
 
 impl PairCode {
-    pub const TTL: Duration = Duration::from_secs(120);
+    pub const TTL: Duration = Duration::from_secs(300);
     const MAX_FAILURES: u8 = 5;
 
     pub fn new() -> Self {
