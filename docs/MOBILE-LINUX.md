@@ -73,6 +73,18 @@ Dos caminos, en este orden:
 alguno funciona, lee 1,5 s de muestras: frecuencia real y vector de gravedad
 (con el móvil plano boca arriba debe salir `z ≈ +9.8`).
 
+### Calibrar los ejes (puntero al revés o a tirones)
+
+Cada camino entrega los ejes con su propia convención y a veces uno viene
+invertido: el puntero sube cuando bajas el móvil, o va a tirones porque el
+giroscopio y el acelerómetro se contradicen y la fusión los pelea. En
+**Inicio → Calibrar sensores** hay seis pasos guiados (tres posturas quietas y
+tres gestos de dos segundos); la app deduce el signo de cada eje, lo guarda en
+`~/.config/pepotech/PepoMote/axes.json` y lo aplica en todas las conexiones
+siguientes (Inicio lo muestra como `ejes accel +-+ gyro +++`). `--sensors`
+también lo enseña. Para volver al estado original: el botón «Borrar
+calibración» dentro de la pantalla.
+
 ### Qualcomm SSC/SLPI (postmarketOS)
 
 En postmarketOS los paquetes de dispositivo SDM845 (OnePlus 6/6T, SHIFT6mq…)

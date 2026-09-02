@@ -1,5 +1,7 @@
-//! Emparejamiento persistido: ~/.config/pepotech/PepoMote/pairing.json.
+//! Persistencia en ~/.config/pepotech/PepoMote/: emparejamiento
+//! (pairing.json) y calibración de ejes del sensor (axes.json).
 
+use crate::calib::Axes;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -11,9 +13,34 @@ pub struct Pairing {
     pub pc_name: String,
 }
 
+fn config_file(name: &str) -> Option<PathBuf> {
+    directories::ProjectDirs::from("dev", "pepotech", "PepoMote").map(|d| d.config_dir().join(name))
+}
+
 fn path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("dev", "pepotech", "PepoMote")
-        .map(|d| d.config_dir().join("pairing.json"))
+    config_file("pairing.json")
+}
+
+pub fn load_axes() -> Option<Axes> {
+    config_file("axes.json")
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+
+pub fn save_axes(a: &Axes) {
+    let Some(path) = config_file("axes.json") else { return };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(s) = serde_json::to_string_pretty(a) {
+        let _ = std::fs::write(path, s);
+    }
+}
+
+pub fn clear_axes() {
+    if let Some(p) = config_file("axes.json") {
+        let _ = std::fs::remove_file(p);
+    }
 }
 
 pub fn load() -> Option<Pairing> {

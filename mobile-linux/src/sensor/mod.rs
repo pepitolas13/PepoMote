@@ -8,10 +8,10 @@ pub mod iio;
 pub mod ssc;
 
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {
@@ -41,6 +41,48 @@ pub fn open(fake: bool) -> Result<Box<dyn Source>, String> {
         Ok(s) => Ok(Box::new(s)),
         Err(ssc_err) => Err(format!("IIO: {iio_err}\nSSC: {ssc_err}")),
     }
+}
+
+/// Fuente con la calibración de ejes aplicada (signos por eje, ver `calib`).
+pub struct Corrected {
+    inner: Box<dyn Source>,
+    axes: crate::calib::Axes,
+}
+
+impl Source for Corrected {
+    fn run(self: Box<Self>, tx: Sender<Sample>, stop: Arc<AtomicBool>) {
+        let Corrected { inner, axes } = *self;
+        let (itx, irx) = std::sync::mpsc::channel();
+        let inner_stop = Arc::new(AtomicBool::new(false));
+        let inner_stop2 = inner_stop.clone();
+        let worker = std::thread::spawn(move || inner.run(itx, inner_stop2));
+        while !stop.load(Ordering::Relaxed) {
+            match irx.recv_timeout(Duration::from_millis(200)) {
+                Ok(s) => {
+                    if tx.send(axes.apply(s)).is_err() {
+                        break;
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        inner_stop.store(true, Ordering::Relaxed);
+        let _ = worker.join();
+    }
+
+    fn describe(&self) -> String {
+        format!("{} · ejes {}", self.inner.describe(), self.axes.describe())
+    }
+}
+
+/// `open` más la calibración de ejes guardada (si la hay y no es identidad).
+pub fn open_corrected(fake: bool) -> Result<Box<dyn Source>, String> {
+    let inner = open(fake)?;
+    Ok(match crate::store::load_axes() {
+        Some(axes) if !axes.is_identity() => Box::new(Corrected { inner, axes }),
+        _ => inner,
+    })
 }
 
 /// Todo lo que el sistema expone que huela a sensor de movimiento: IIO,
@@ -105,6 +147,8 @@ pub fn sample_summary(src: Box<dyn Source>, dur: std::time::Duration) -> String 
     let deadline = Instant::now() + dur;
     let (mut n, mut acc, mut gyr) = (0u32, [0f64; 3], [0f64; 3]);
     let (mut t_first, mut t_last) = (0u64, 0u64);
+    // entrega: ¿llegan de una en una o en ráfagas (batching del DSP)?
+    let (mut last_arrival, mut max_gap_ms, mut burst) = (None::<Instant>, 0f64, 0u32);
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
@@ -112,6 +156,14 @@ pub fn sample_summary(src: Box<dyn Source>, dur: std::time::Duration) -> String 
         }
         match rx.recv_timeout(left) {
             Ok(smp) => {
+                if let Some(p) = last_arrival {
+                    let g = p.elapsed().as_secs_f64() * 1e3;
+                    max_gap_ms = max_gap_ms.max(g);
+                    if g < 0.3 {
+                        burst += 1;
+                    }
+                }
+                last_arrival = Some(Instant::now());
                 if n == 0 {
                     t_first = smp.t_us;
                 }
@@ -135,8 +187,9 @@ pub fn sample_summary(src: Box<dyn Source>, dur: std::time::Duration) -> String 
     let span_s = if n > 1 { (t_last.saturating_sub(t_first)) as f64 / 1e6 } else { 0.0 };
     let hz = if span_s > 0.0 { (n - 1) as f64 / span_s } else { 0.0 };
     let k = n as f64;
+    let burst_pct = if n > 1 { burst * 100 / (n - 1) } else { 0 };
     format!(
-        "muestras en {:.1} s: {n} ({hz:.0} Hz según sus timestamps) · accel media [{:.2} {:.2} {:.2}] m/s² (|g|={:.2}) · gyro media [{:.3} {:.3} {:.3}] rad/s",
+        "muestras en {:.1} s: {n} ({hz:.0} Hz según sus timestamps) · entrega: hueco máx {max_gap_ms:.0} ms, {burst_pct}% en ráfaga · accel media [{:.2} {:.2} {:.2}] m/s² (|g|={:.2}) · gyro media [{:.3} {:.3} {:.3}] rad/s",
         dur.as_secs_f32(),
         acc[0] / k,
         acc[1] / k,

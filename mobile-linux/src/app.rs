@@ -2,6 +2,7 @@
 //! Misma lógica de navegación que MainActivity en Android.
 
 use crate::buttons::Buttons;
+use crate::calib::{self, Axes};
 use crate::discovery::{self, Receiver};
 use crate::link::{self, Link, Status};
 use crate::sensor;
@@ -11,6 +12,7 @@ use crate::ui::controller::{Action, ControllerUi};
 use crate::ui::keypad::{keypad, Key};
 use egui::{RichText, Vec2};
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -38,6 +40,22 @@ enum Screen {
     Manual,
     Code,
     Controller,
+    Calibrate,
+}
+
+/// Calibración de ejes en curso: fuente cruda en su hilo, paso actual y lo
+/// deducido hasta ahora.
+struct Calib {
+    rx: mpsc::Receiver<sensor::Sample>,
+    stop: Arc<AtomicBool>,
+    step: usize,
+    /// Captura en curso: (inicio, duración, muestras)
+    capture: Option<(Instant, Duration, Vec<sensor::Sample>)>,
+    accel: [Option<i8>; 3],
+    gyro: [Option<i8>; 3],
+    msg: Option<String>,
+    done: Option<Axes>,
+    last: Option<sensor::Sample>,
 }
 
 pub struct MobileApp {
@@ -68,10 +86,11 @@ pub struct MobileApp {
     diag: String,
     diag_touches: u32,
     diag_pointer: u32,
+    calib: Option<Calib>,
 }
 
 fn describe_sensors(fake: bool) -> String {
-    match sensor::open(fake) {
+    match sensor::open_corrected(fake) {
         Ok(s) => s.describe(),
         Err(e) => format!("sin sensores: {e}"),
     }
@@ -99,6 +118,7 @@ impl MobileApp {
             diag: String::new(),
             diag_touches: 0,
             diag_pointer: 0,
+            calib: None,
             discovered: Vec::new(),
             scan_rx: None,
             last_scan: None,
@@ -135,7 +155,7 @@ impl MobileApp {
             self.screen = Screen::Pair;
             return;
         };
-        match sensor::open(self.fake) {
+        match sensor::open_corrected(self.fake) {
             Ok(source) => {
                 self.buttons.release_all();
                 self.link = Some(Link::connect(pairing, self.buttons.clone(), source, mode.map(|m| m.to_owned())));
@@ -342,6 +362,13 @@ impl MobileApp {
             ui.add_space(6.0);
         }
         ui.label(RichText::new(format!("Sensores: {}", self.sensor_desc)).size(11.0).color(theme::TEXT_DIM));
+        if ui
+            .add(egui::Button::new(RichText::new("Calibrar sensores").size(13.0).color(theme::TEXT)).fill(theme::CARD))
+            .on_hover_text("Si el puntero va al revés o a tirones: seis posturas guiadas y listo")
+            .clicked()
+        {
+            self.start_calibration();
+        }
         ui.label(RichText::new(&self.diag).size(11.0).color(theme::TEXT_DIM));
         ui.label(
             RichText::new(format!("v{} · pv1 · Linux móvil", env!("CARGO_PKG_VERSION")))
@@ -526,9 +553,178 @@ impl MobileApp {
     }
 }
 
+impl MobileApp {
+    fn start_calibration(&mut self) {
+        self.close_link();
+        match sensor::open(self.fake) {
+            Ok(src) => {
+                let (tx, rx) = mpsc::channel::<sensor::Sample>();
+                let stop = Arc::new(AtomicBool::new(false));
+                let stop2 = stop.clone();
+                let _ = std::thread::Builder::new()
+                    .name("pepomote-calib".into())
+                    .spawn(move || src.run(tx, stop2));
+                self.calib = Some(Calib {
+                    rx,
+                    stop,
+                    step: 0,
+                    capture: None,
+                    accel: [None; 3],
+                    gyro: [None; 3],
+                    msg: None,
+                    done: None,
+                    last: None,
+                });
+                self.error = None;
+                self.screen = Screen::Calibrate;
+            }
+            Err(e) => {
+                self.error = Some(format!("No puedo abrir los sensores para calibrar: {e}"));
+                self.screen = Screen::Home;
+            }
+        }
+    }
+
+    fn stop_calibration(&mut self) {
+        if let Some(c) = self.calib.take() {
+            c.stop.store(true, Ordering::Relaxed);
+        }
+        self.sensor_desc = describe_sensors(self.fake);
+        self.screen = Screen::Home;
+    }
+
+    fn ui_calibrate(&mut self, ui: &mut egui::Ui) {
+        let Some(c) = self.calib.as_mut() else {
+            self.screen = Screen::Home;
+            return;
+        };
+        while let Ok(s) = c.rx.try_recv() {
+            c.last = Some(s);
+            if let Some((_, _, buf)) = c.capture.as_mut() {
+                buf.push(s);
+            }
+        }
+        if c.capture.as_ref().is_some_and(|(start, dur, _)| start.elapsed() >= *dur) {
+            let (_, _, buf) = c.capture.take().unwrap();
+            let step = &calib::STEPS[c.step];
+            let res = match step.kind {
+                calib::Kind::Pose => calib::pose_sign(calib::mean_accel(&buf), step.axis),
+                calib::Kind::Motion => calib::motion_sign(calib::integrate_deg(&buf), step.axis),
+            };
+            match res {
+                Ok(sign) => {
+                    match step.kind {
+                        calib::Kind::Pose => c.accel[step.axis] = Some(sign),
+                        calib::Kind::Motion => c.gyro[step.axis] = Some(sign),
+                    }
+                    c.msg = None;
+                    c.step += 1;
+                    if c.step >= calib::STEPS.len() {
+                        let axes = Axes {
+                            accel: c.accel.map(|s| s.unwrap_or(1)),
+                            gyro: c.gyro.map(|s| s.unwrap_or(1)),
+                        };
+                        store::save_axes(&axes);
+                        log_line(&format!("calibración de ejes guardada: {}", axes.describe()));
+                        c.done = Some(axes);
+                    }
+                }
+                Err(e) => c.msg = Some(e),
+            }
+        }
+
+        let mut leave = false;
+        ui.add_space(8.0);
+        ui.label(RichText::new("Calibrar sensores").size(26.0).strong().color(theme::TEXT));
+        if let Some(axes) = c.done {
+            ui.add_space(12.0);
+            ui.label(RichText::new("Listo. Calibración guardada:").size(16.0).color(theme::TEXT));
+            ui.label(RichText::new(axes.describe()).size(20.0).strong().color(theme::OK));
+            ui.label(
+                RichText::new(if axes.is_identity() {
+                    "Todos los ejes ya venían bien."
+                } else {
+                    "Los ejes marcados con - se invierten a partir de ahora."
+                })
+                .size(13.0)
+                .color(theme::TEXT_DIM),
+            );
+            ui.add_space(16.0);
+            if ui
+                .add_sized(Vec2::new(ui.available_width(), 56.0), egui::Button::new(RichText::new("Volver").size(18.0)).fill(theme::BLUE))
+                .clicked()
+            {
+                leave = true;
+            }
+        } else {
+            let step = &calib::STEPS[c.step];
+            ui.label(RichText::new(format!("Paso {} de {}", c.step + 1, calib::STEPS.len())).size(13.0).color(theme::TEXT_DIM));
+            ui.add_space(10.0);
+            ui.label(RichText::new(step.title).size(20.0).strong().color(theme::TEXT));
+            ui.add_space(6.0);
+            ui.label(RichText::new(step.text).size(16.0).color(theme::TEXT));
+            ui.add_space(14.0);
+            let left = c
+                .capture
+                .as_ref()
+                .map(|(s, d, _)| (d.as_secs_f32() - s.elapsed().as_secs_f32()).max(0.0));
+            let label = match left {
+                Some(t) => format!(
+                    "{}… {t:.1} s",
+                    if step.kind == calib::Kind::Motion { "¡Ya! Mueve" } else { "Midiendo" }
+                ),
+                None => "Listo".to_owned(),
+            };
+            let btn = ui.add_enabled(
+                left.is_none() && c.last.is_some(),
+                egui::Button::new(RichText::new(label).size(20.0).strong().color(theme::TEXT))
+                    .min_size(Vec2::new(ui.available_width(), 64.0))
+                    .fill(theme::BLUE),
+            );
+            if btn.clicked() {
+                let dur = match step.kind {
+                    calib::Kind::Pose => Duration::from_millis(800),
+                    calib::Kind::Motion => Duration::from_millis(2200),
+                };
+                c.capture = Some((Instant::now(), dur, Vec::new()));
+                c.msg = None;
+            }
+            if let Some(m) = &c.msg {
+                ui.add_space(8.0);
+                ui.label(RichText::new(m).size(14.0).color(theme::ERROR));
+            }
+            ui.add_space(12.0);
+            match c.last {
+                Some(s) => ui.label(
+                    RichText::new(format!(
+                        "accel [{:.1} {:.1} {:.1}] m/s²   gyro [{:.2} {:.2} {:.2}] rad/s",
+                        s.accel[0], s.accel[1], s.accel[2], s.gyro[0], s.gyro[1], s.gyro[2]
+                    ))
+                    .size(11.0)
+                    .color(theme::TEXT_DIM),
+                ),
+                None => ui.label(RichText::new("Esperando muestras del sensor…").size(12.0).color(theme::WARN)),
+            };
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.button(RichText::new("Cancelar").size(15.0)).clicked() {
+                    leave = true;
+                }
+                if ui.button(RichText::new("Borrar calibración").size(15.0)).clicked() {
+                    store::clear_axes();
+                    leave = true;
+                }
+            });
+        }
+        if leave {
+            self.stop_calibration();
+        }
+    }
+}
+
 impl eframe::App for MobileApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.request_repaint_after(Duration::from_millis(100));
+        ctx.request_repaint_after(Duration::from_millis(if self.screen == Screen::Calibrate { 30 } else { 100 }));
         self.poll_link();
         self.update_diag(ctx);
 
@@ -540,6 +736,7 @@ impl eframe::App for MobileApp {
                 Screen::Manual => self.ui_manual(ui),
                 Screen::Code => self.ui_code(ui),
                 Screen::Controller => self.ui_controller(ui),
+                Screen::Calibrate => self.ui_calibrate(ui),
             });
     }
 }

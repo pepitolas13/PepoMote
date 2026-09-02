@@ -5,6 +5,7 @@
 
 mod app;
 mod buttons;
+mod calib;
 mod discovery;
 mod fusion;
 mod link;
@@ -44,6 +45,10 @@ fn main() -> eframe::Result {
     // --sensors → inventario de sensores del sistema (diagnóstico) y salir
     if args.iter().any(|a| a == "--sensors") {
         print!("{}", sensor::inventory());
+        match store::load_axes() {
+            Some(a) => println!("Ejes calibrados (se aplican al conectar): {}", a.describe()),
+            None => println!("Ejes: sin calibrar (Inicio → Calibrar sensores si el puntero va al revés)"),
+        }
         match sensor::open(false) {
             Ok(src) => {
                 println!("=> {}", src.describe());
