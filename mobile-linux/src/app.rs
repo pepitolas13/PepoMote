@@ -143,10 +143,12 @@ impl MobileApp {
                 self.screen = Screen::Controller;
             }
             Err(e) => {
-                // Sin sensores no hay mando: a Inicio, donde se ve el motivo
-                // (antes se quedaba en la pantalla del código, en silencio)
+                // Sin sensores no hay mando: a Inicio, con el motivo y el
+                // inventario de lo que el sistema expone (para saber qué falta)
+                let inv = sensor::inventory();
+                log_line(&format!("sensores: {e}\n{inv}"));
                 self.sensor_desc = format!("sin sensores: {e}");
-                self.error = Some(e);
+                self.error = Some(format!("{e}\n\n{inv}"));
                 self.screen = Screen::Home;
             }
         }

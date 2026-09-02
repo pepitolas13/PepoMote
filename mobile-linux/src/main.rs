@@ -41,6 +41,15 @@ fn main() -> eframe::Result {
         }
     }
 
+    // --sensors → inventario de sensores del sistema (diagnóstico) y salir
+    if args.iter().any(|a| a == "--sensors") {
+        print!("{}", sensor::inventory());
+        match sensor::open(false) {
+            Ok(src) => println!("=> {}", src.describe()),
+            Err(e) => println!("=> {e}"),
+        }
+        std::process::exit(0);
+    }
     let fake = args.iter().any(|a| a == "--fake-sensors");
     // --autoconnect [pointer|dolphin] → directo al mando, conectado (lanzadores)
     let autoconnect = args

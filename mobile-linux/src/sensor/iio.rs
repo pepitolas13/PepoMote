@@ -152,6 +152,53 @@ fn configure_rate(dir: &Path, kind: &str) -> Option<f32> {
     None
 }
 
+/// Inventario legible de /sys/bus/iio/devices: nombre, canales `in_*_raw`,
+/// buffer, y si la lectura de gyro/accel FUNCIONA (EBUSY = otro proceso,
+/// normalmente iio-sensor-proxy, tiene el dispositivo en modo buffer).
+pub fn inventory(base: &Path) -> String {
+    let mut out = String::new();
+    let Ok(rd) = std::fs::read_dir(base) else {
+        return format!("{}: no existe (sin subsistema IIO)\n", base.display());
+    };
+    let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    dirs.sort();
+    if dirs.is_empty() {
+        out.push_str("IIO: sin dispositivos\n");
+    }
+    for d in dirs {
+        let name = read_attr(&d, "name").unwrap_or_default();
+        let mut chans: Vec<String> = std::fs::read_dir(&d)
+            .map(|r| {
+                r.flatten()
+                    .filter_map(|e| e.file_name().to_str().map(String::from))
+                    .filter(|n| n.starts_with("in_") && n.ends_with("_raw"))
+                    .map(|n| n.trim_start_matches("in_").trim_end_matches("_raw").to_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        chans.sort();
+        let buffer_on = read_attr(&d, "buffer/enable").as_deref() == Some("1");
+        let dev = d.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_owned();
+        let mut reads = String::new();
+        for kind in ["anglvel", "accel"] {
+            let p = d.join(format!("in_{kind}_x_raw"));
+            if p.exists() {
+                match std::fs::read_to_string(&p) {
+                    Ok(v) => reads.push_str(&format!(" · {kind}: {}", v.trim())),
+                    Err(e) => reads.push_str(&format!(" · {kind}: ERROR {e}")),
+                }
+            }
+        }
+        out.push_str(&format!(
+            "{dev} [{name}]: {}{}{}\n",
+            if chans.is_empty() { "sin canales _raw".to_owned() } else { chans.join(" ") },
+            if buffer_on { " · BUFFER ACTIVO" } else { "" },
+            reads
+        ));
+    }
+    out
+}
+
 impl Imu {
     /// Busca gyro y acelerómetro en `base` (el mismo dispositivo o dos).
     pub fn find(base: &Path) -> Result<Self, String> {
