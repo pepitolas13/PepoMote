@@ -58,4 +58,7 @@ chmod 0755 "$STAGE/DEBIAN/postinst"
 
 DEB="$OUT/pepomote-mobile_${VER}_${ARCH}.deb"
 dpkg-deb --build --root-owner-group "$STAGE" "$DEB"
-echo "OK: $DEB"
+# Copia con nombre estable: el enlace .../releases/latest/download/pepomote-mobile_arm64.deb
+# no cambia entre versiones (vale para un QR impreso)
+cp "$DEB" "$OUT/pepomote-mobile_${ARCH}.deb"
+echo "OK: $DEB (+ pepomote-mobile_${ARCH}.deb)"

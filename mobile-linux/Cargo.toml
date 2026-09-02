@@ -1,6 +1,6 @@
 [package]
 name = "pepomote-mobile"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "PepoMote sender for Linux phones (Mobian, postmarketOS…) — your phone as a Wii-style pointer and controller for your PC"

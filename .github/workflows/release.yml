@@ -63,7 +63,7 @@ jobs:
           name: mobile
           path: |
             dist/PepoMote-Mobile-aarch64.AppImage
-            dist/pepomote-mobile_*_arm64.deb
+            dist/pepomote-mobile*arm64.deb
 
   mobile_musl:
     runs-on: ubuntu-24.04-arm
@@ -130,7 +130,7 @@ jobs:
       - name: SHA256SUMS
         run: |
           sha256sum PepoMote.exe PepoMote-x86_64.AppImage PepoMote.apk \
-            PepoMote-Mobile-aarch64.AppImage $(ls pepomote-mobile_*_arm64.deb PepoMote-Mobile-aarch64-musl.tar.gz 2>/dev/null) > SHA256SUMS.txt
+            PepoMote-Mobile-aarch64.AppImage $(ls pepomote-mobile*arm64.deb PepoMote-Mobile-aarch64-musl.tar.gz 2>/dev/null) > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -138,7 +138,7 @@ jobs:
             PepoMote-x86_64.AppImage
             PepoMote.apk
             PepoMote-Mobile-aarch64.AppImage
-            pepomote-mobile_*_arm64.deb
+            pepomote-mobile*arm64.deb
             PepoMote-Mobile-aarch64-musl.tar.gz
             SHA256SUMS.txt
           generate_release_notes: true

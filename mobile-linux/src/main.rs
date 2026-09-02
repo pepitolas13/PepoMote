@@ -47,10 +47,18 @@ fn main() -> eframe::Result {
         .iter()
         .position(|a| a == "--autoconnect")
         .map(|i| args.get(i + 1).cloned().unwrap_or_else(|| "pointer".into()));
+    let fullscreen = args.iter().any(|a| a == "--fullscreen");
+    app::log_line(&format!("arranque v{} args={:?}", env!("CARGO_PKG_VERSION"), args));
     let options = eframe::NativeOptions {
+        // Ventana de MÓVIL: maximizada (el compositor decide el tamaño real),
+        // sin decoraciones de escritorio y sin tamaño mínimo. Un tamaño fijo
+        // mayor que la pantalla dejaba la ventana desbordada: se veía solo un
+        // trozo en blanco y los botones quedaban fuera de alcance.
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([420.0, 880.0])
-            .with_min_inner_size([320.0, 560.0])
+            .with_inner_size([360.0, 640.0])
+            .with_maximized(true)
+            .with_fullscreen(fullscreen)
+            .with_decorations(false)
             .with_title("PepoMote")
             // app_id = nombre del .desktop: así Phosh/Plasma Mobile asocian
             // la ventana a su icono y nombre en el lanzador

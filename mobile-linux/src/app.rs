@@ -10,9 +10,26 @@ use crate::theme;
 use crate::ui::controller::{Action, ControllerUi};
 use crate::ui::keypad::{keypad, Key};
 use egui::{RichText, Vec2};
+use std::io::Write;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Log de diagnóstico: ~/.config/pepotech/PepoMote/mobile.log (tamaño de
+/// pantalla, escala, toques…). Para saber qué ve la app en un móvil real.
+pub fn log_line(msg: &str) {
+    let Some(d) = directories::ProjectDirs::from("dev", "pepotech", "PepoMote") else { return };
+    let dir = d.config_dir();
+    let _ = std::fs::create_dir_all(dir);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("mobile.log")) {
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "{t} {msg}");
+    }
+    eprintln!("[pepomote] {msg}");
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -47,6 +64,10 @@ pub struct MobileApp {
     error: Option<String>,
     /// Qué sensor hay (se mira al arrancar y al fallar una conexión, no por frame).
     sensor_desc: String,
+    /// Diagnóstico: lo que la app ve de la pantalla y de la entrada táctil.
+    diag: String,
+    diag_touches: u32,
+    diag_pointer: u32,
 }
 
 fn describe_sensors(fake: bool) -> String {
@@ -75,6 +96,9 @@ impl MobileApp {
             buttons: Arc::new(Buttons::new()),
             fake,
             sensor_desc: describe_sensors(fake),
+            diag: String::new(),
+            diag_touches: 0,
+            diag_pointer: 0,
             discovered: Vec::new(),
             scan_rx: None,
             last_scan: None,
@@ -212,6 +236,35 @@ impl MobileApp {
         }
     }
 
+    /// Tamaño lógico, escala y eventos táctiles/puntero vistos: en pantalla
+    /// (Inicio) y en el log cuando cambian.
+    fn update_diag(&mut self, ctx: &egui::Context) {
+        let (touches, pointer) = ctx.input(|i| {
+            let t = i.events.iter().filter(|e| matches!(e, egui::Event::Touch { .. })).count() as u32;
+            let p = i.events.iter().filter(|e| matches!(e, egui::Event::PointerButton { .. })).count() as u32;
+            (t, p)
+        });
+        self.diag_touches += touches;
+        self.diag_pointer += pointer;
+        let r = ctx.screen_rect();
+        let line = format!(
+            "Pantalla {:.0}×{:.0} pt · escala {:.2} · toques {} · clics {}",
+            r.width(),
+            r.height(),
+            ctx.pixels_per_point(),
+            self.diag_touches,
+            self.diag_pointer
+        );
+        if line != self.diag {
+            // solo cambios de geometría/escala al log (no cada toque)
+            let geom = |s: &str| s.split(" · toques").next().unwrap_or("").to_owned();
+            if geom(&line) != geom(&self.diag) {
+                log_line(&line);
+            }
+            self.diag = line;
+        }
+    }
+
     // ---- pantallas ----
 
     fn ui_home(&mut self, ui: &mut egui::Ui) {
@@ -284,6 +337,7 @@ impl MobileApp {
             ui.add_space(6.0);
         }
         ui.label(RichText::new(format!("Sensores: {}", self.sensor_desc)).size(11.0).color(theme::TEXT_DIM));
+        ui.label(RichText::new(&self.diag).size(11.0).color(theme::TEXT_DIM));
         ui.label(
             RichText::new(format!("v{} · pv1 · Linux móvil", env!("CARGO_PKG_VERSION")))
                 .size(11.0)
@@ -471,6 +525,7 @@ impl eframe::App for MobileApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_millis(100));
         self.poll_link();
+        self.update_diag(ctx);
 
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(16.0))
