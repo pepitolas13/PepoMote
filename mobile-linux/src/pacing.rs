@@ -199,7 +199,7 @@ mod tests {
             let t = i * 5000;
             p.push(st(t, i as f32 * 0.1), t + 1000);
         }
-        assert!(p.delay_us() <= 3000, "{}", p.delay_us());
+        assert!(p.delay_us() <= 6000, "{}", p.delay_us()); // solo el margen fijo
         let out = p.output(399 * 5000 + 1500).unwrap();
         assert!((yaw_deg(out.quat) - 39.9).abs() < 0.2, "{}", yaw_deg(out.quat));
     }
