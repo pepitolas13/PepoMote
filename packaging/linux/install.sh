@@ -20,6 +20,23 @@ sudo udevadm trigger /dev/uinput 2>/dev/null || true
 sudo modprobe uinput 2>/dev/null || true
 echo 'uinput' | sudo tee /etc/modules-load.d/pepomote.conf >/dev/null
 
+PORT="${PEPOMOTE_PORT:-26761}"
+echo "==> Firewall: abriendo el puerto $PORT (TCP+UDP) si hay uno activo"
+if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q "^Status: active\|^Estado: activo"; then
+    sudo ufw allow "$PORT/tcp" comment 'PepoMote' >/dev/null
+    sudo ufw allow "$PORT/udp" comment 'PepoMote' >/dev/null
+    # mDNS: solo hace falta para el autodescubrimiento; el QR funciona sin él
+    sudo ufw allow 5353/udp comment 'mDNS (PepoMote)' >/dev/null || true
+    echo "    ufw: puertos abiertos"
+elif command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
+    sudo firewall-cmd --permanent --add-port="$PORT/tcp" --add-port="$PORT/udp" >/dev/null
+    sudo firewall-cmd --permanent --add-service=mdns >/dev/null 2>&1 || true
+    sudo firewall-cmd --reload >/dev/null
+    echo "    firewalld: puertos abiertos"
+else
+    echo "    sin ufw/firewalld activos — nada que abrir"
+fi
+
 echo "==> Instalando el AppImage en ~/.local/bin"
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications" "$HOME/.local/share/icons/hicolor/256x256/apps"
 install -m 0755 "$APPIMAGE" "$HOME/.local/bin/PepoMote"

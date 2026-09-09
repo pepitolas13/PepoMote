@@ -6,18 +6,53 @@ Se completa con cada hito. Esqueleto:
 
 1. Móvil y PC en la misma red (el Wi-Fi de invitados NO vale: aísla clientes).
 2. Firewall de Windows: permite PepoMote en redes privadas (pregunta en el primer arranque).
-3. Si el mDNS está roto en tu router, PepoMote prueba solo el broadcast; si tampoco, teclea la IP:puerto que muestra el receptor bajo el QR.
-4. Último recurso: hotspot del móvil + PC conectado a él. Funciona siempre.
+3. Firewall de Linux: muchas distros (CachyOS, Fedora, openSUSE…) traen ufw o
+   firewalld activados y descartan TODO lo entrante — el receptor arranca
+   perfecto pero ningún paquete del móvil llega. El receptor lo detecta solo:
+   en el primer arranque pide tu contraseña en el diálogo del sistema y abre
+   el puerto él mismo; si cancelaste, queda el botón «Reparar ahora» en la
+   ventana. `packaging/linux/install.sh` hace lo mismo por script. A mano:
+   - ufw: `sudo ufw allow 26761/tcp && sudo ufw allow 26761/udp`
+   - firewalld: `sudo firewall-cmd --permanent --add-port=26761/tcp --add-port=26761/udp && sudo firewall-cmd --reload`
+4. Si el mDNS está roto en tu router, PepoMote prueba solo el broadcast; si tampoco, teclea la IP:puerto que muestra el receptor bajo el QR.
+5. Último recurso: hotspot del móvil + PC conectado a él. Funciona siempre.
 
 ## Linux: "sin permiso para /dev/uinput"
 
-Ejecuta `packaging/linux/install.sh` (instala la regla udev) y cierra sesión y vuelve a entrar. La regla `uaccess` da acceso al usuario de la sesión activa, sin grupos ni root.
+Pulsa **«Reparar ahora»** en la ventana del receptor (o deja que el diálogo
+del primer arranque haga lo suyo): instala la regla udev y da acceso al
+instante, sin cerrar sesión. Manualmente: `packaging/linux/install.sh` (regla
+`uaccess`: acceso para el usuario de la sesión activa, sin grupos ni root).
 
 ## El cursor no va donde apunto / se mueve "acumulando"
 
 Mira en Ajustes de la ventana del PC si "Apuntado absoluto" está desactivado:
 en modo relativo el cursor se desplaza con el giro en vez de ir a donde
 apuntas (pensado para juegos). Actívalo para el uso normal.
+
+## Varios monitores: a qué pantallas apunta
+
+Por defecto ("Todas las pantallas" en Ajustes), el apuntado absoluto cubre
+TODO el escritorio: el cursor llega a cualquiera de tus monitores según hacia
+dónde apuntes. Al recentrar, el cursor vuelve al centro del conjunto.
+
+Si juegas en un monitor y quieres apuntado más preciso, en Ajustes →
+"Apuntado absoluto en" elige *Solo <ese monitor>*: el rango de giro se dedica
+entero a esa pantalla (y el cursor se queda en ella). La app detecta los
+monitores sola (se conecten o desconecten en caliente) y usa la disposición
+real del escritorio (Wayland xdg-output o X11 xrandr).
+
+Nota: con los monitores en "L" o "T" quedan zonas sin pantalla dentro del
+rectángulo que las envuelve; si apuntas a una de esas zonas, el cursor cae en
+el borde de la pantalla más próxima (lo coloca el escritorio, no PepoMote).
+
+## En Dolphin el móvil entra como "Jugador 2" y no puedo activar Dolphin
+
+Pasaba al reconectar (Wi-Fi que cae, app al segundo plano) con la sesión
+anterior aún "viva" en el PC: el móvil recuperaba plaza como Jugador 2 y el
+modo Dolphin solo lo activa el Jugador 1. Ya se arregla solo: al reconectar,
+el receptor desaloja la sesión fantasma del mismo móvil y le devuelve su
+plaza. Si lo ves en una versión vieja, reinicia el receptor del PC.
 
 ## El cursor va a tirones
 

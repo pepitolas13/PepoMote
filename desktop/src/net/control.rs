@@ -2,14 +2,19 @@
 //! Un hilo por conexión: hasta MAX_PLAYERS móviles a la vez, cada uno con su
 //! slot (Jugador 1 = slot 0). El modo puntero/dolphin solo lo cambia el slot 0.
 
-use super::{lowest_free_slot, Session, Sessions};
+use super::{ghosts_of, lowest_free_slot, Session, Sessions};
 use crate::pairing::PairingInfo;
 use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{IpAddr, TcpListener, TcpStream};
 use std::time::Duration;
+
+/// PEPOMOTE_DEBUG=1: traza del canal de control (hello/slot/modo/bye).
+fn debug() -> bool {
+    std::env::var_os("PEPOMOTE_DEBUG").is_some()
+}
 
 pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo) {
     let listener = match TcpListener::bind(("0.0.0.0", pairing.port)) {
@@ -35,6 +40,10 @@ pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo) {
 fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing: &PairingInfo) {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let peer_ip: IpAddr = stream
+        .peer_addr()
+        .map(|a| a.ip())
+        .unwrap_or(IpAddr::from([0, 0, 0, 0]));
     let mut writer = match stream.try_clone() {
         Ok(w) => w,
         Err(_) => return,
@@ -86,9 +95,18 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         return;
     }
 
+    let device_name = hello["name"].as_str().unwrap_or("Móvil").to_owned();
+    let device_model = hello["model"].as_str().unwrap_or("").to_owned();
+
     let session_id: u32 = rand::thread_rng().gen();
-    let slot = {
+    let (slot, evicted_slots) = {
         let mut guard = sessions.lock().unwrap();
+        // Reconexión del mismo móvil: fuera su sesión fantasma, y así
+        // recupera su plaza (Jugador 1 sigue siendo Jugador 1).
+        let evicted: Vec<u8> = ghosts_of(&guard, peer_ip, &device_name)
+            .into_iter()
+            .filter_map(|id| guard.remove(&id).map(|s| s.slot))
+            .collect();
         let Some(slot) = lowest_free_slot(&guard) else {
             drop(guard);
             let _ = send(&mut writer, &json!({"m":"err","code":"busy","msg":"Ya hay 4 mandos conectados"}));
@@ -101,18 +119,27 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 slot,
                 last_seq: None,
                 phone_udp: None,
+                peer: peer_ip,
+                device: device_name.clone(),
             },
         );
-        slot
+        (slot, evicted)
     };
+    if debug() {
+        eprintln!(
+            "[control] hello de {device_name} ({peer_ip}) → slot {slot}{}",
+            if evicted_slots.is_empty() { String::new() } else { format!(" (fantasma desalojada en slot {evicted_slots:?})") }
+        );
+    }
 
-    let device_name = hello["name"].as_str().unwrap_or("Móvil").to_owned();
-    let device_model = hello["model"].as_str().unwrap_or("").to_owned();
     let mode = {
         let mut s = shared.lock().unwrap();
+        for e in &evicted_slots {
+            s.players[*e as usize] = None;
+        }
         s.status = LinkStatus::Connected;
         s.players[slot as usize] = Some(PlayerInfo {
-            name: device_name,
+            name: device_name.clone(),
             model: device_model,
             battery_pct: 0,
             rtt_ms: None,
@@ -152,10 +179,16 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         _ => Mode::Pointer,
                     };
                     shared.lock().unwrap().mode = new_mode;
+                    if debug() {
+                        eprintln!("[control] {device_name}: modo → {}", mode_str(new_mode));
+                    }
                     let _ = send(&mut writer, &json!({"m":"mode","mode":mode_str(new_mode)}));
                     crate::dolphin::maybe_auto_configure(shared);
                 } else {
                     let cur = shared.lock().unwrap().mode;
+                    if debug() {
+                        eprintln!("[control] {device_name} (slot {slot}) pidió modo: solo decide el Jugador 1, sigue {}", mode_str(cur));
+                    }
                     let _ = send(&mut writer, &json!({"m":"mode","mode":mode_str(cur)}));
                 }
             }
@@ -167,8 +200,18 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         }
     }
 
-    // Limpieza de ESTA sesión
-    sessions.lock().unwrap().remove(&session_id);
+    // Limpieza de ESTA sesión. Si otra conexión del mismo móvil ya la
+    // desalojó, la plaza es suya: no tocar nada.
+    let still_mine = sessions.lock().unwrap().remove(&session_id).is_some();
+    if debug() {
+        eprintln!(
+            "[control] {device_name} (slot {slot}) se va{}",
+            if still_mine { "" } else { " — ya desalojada por su reconexión" }
+        );
+    }
+    if !still_mine {
+        return;
+    }
     let empty = {
         let mut s = shared.lock().unwrap();
         s.players[slot as usize] = None;

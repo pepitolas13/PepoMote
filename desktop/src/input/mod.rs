@@ -40,6 +40,10 @@ pub trait Injector: Send {
     fn cursor_pos(&mut self) -> Option<(f32, f32)> {
         None
     }
+    /// Linux multi-monitor: rect [x0, y0, w, h] (0..1) de la pantalla de
+    /// apuntado dentro del escritorio completo que cubre el dispositivo
+    /// absoluto. Windows ya apunta a la primaria: no hace nada.
+    fn set_screen(&mut self, _target: [f32; 4]) {}
 }
 
 #[cfg(windows)]

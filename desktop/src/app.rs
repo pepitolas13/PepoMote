@@ -14,6 +14,9 @@ pub struct PepoMoteApp {
     ip_checked: Instant,
     /// Ajustes cambiados en la UI pendientes de escribir a disco.
     config_dirty: bool,
+    /// Linux: hay pkexec para el botón "Reparar ahora" (se mira una vez).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pkexec_ok: bool,
 }
 
 impl PepoMoteApp {
@@ -28,6 +31,10 @@ impl PepoMoteApp {
             autostart: crate::autostart::is_enabled(),
             ip_checked: Instant::now(),
             config_dirty: false,
+            #[cfg(target_os = "linux")]
+            pkexec_ok: crate::fixes::pkexec_available(),
+            #[cfg(not(target_os = "linux"))]
+            pkexec_ok: false,
         }
     }
 
@@ -59,6 +66,10 @@ struct Snapshot {
     dsu_clients: usize,
     dolphin_status: Option<String>,
     error: Option<String>,
+    firewall_hint: Option<String>,
+    uinput_denied: bool,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    fixing: bool,
 }
 
 impl eframe::App for PepoMoteApp {
@@ -86,6 +97,9 @@ impl eframe::App for PepoMoteApp {
                 dsu_clients: s.dsu_clients,
                 dolphin_status: s.dolphin_cfg_status.clone(),
                 error: s.last_error.clone(),
+                firewall_hint: s.firewall_hint.clone(),
+                uinput_denied: s.uinput_denied,
+                fixing: s.fixing,
             }
         };
 
@@ -126,6 +140,8 @@ impl eframe::App for PepoMoteApp {
                             ui.add_space(10.0);
                             self.ui_settings(ui);
 
+                            self.ui_repair(ui, &snap);
+
                             if let Some(err) = &snap.error {
                                 ui.add_space(10.0);
                                 ui.label(RichText::new(err).size(12.0).color(theme::ERROR));
@@ -146,6 +162,48 @@ impl eframe::App for PepoMoteApp {
 }
 
 impl PepoMoteApp {
+    /// Linux: aviso de firewall/uinput con reparación de un clic (pkexec).
+    /// En Windows nunca hay nada que pintar (los flags jamás se activan).
+    fn ui_repair(&self, ui: &mut egui::Ui, snap: &Snapshot) {
+        if snap.firewall_hint.is_none() && !snap.uinput_denied {
+            return;
+        }
+        ui.add_space(10.0);
+        if let Some(hint) = &snap.firewall_hint {
+            ui.label(RichText::new(hint).size(12.0).color(theme::WARN));
+        }
+        if snap.uinput_denied {
+            ui.label(
+                RichText::new("Sin permiso para mover el cursor (/dev/uinput).")
+                    .size(12.0)
+                    .color(theme::WARN),
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            ui.add_space(4.0);
+            if snap.fixing {
+                ui.label(
+                    RichText::new("Aplicando… responde al diálogo de contraseña")
+                        .size(12.0)
+                        .color(theme::TEXT_DIM),
+                );
+            } else if self.pkexec_ok {
+                if ui
+                    .button(RichText::new("🔧 Reparar ahora").size(14.0))
+                    .clicked()
+                {
+                    crate::fixes::fix_all(self.shared.clone(), self.pairing.port);
+                }
+                ui.label(
+                    RichText::new("Un diálogo del sistema pedirá tu contraseña una sola vez")
+                        .size(11.0)
+                        .color(theme::TEXT_DIM),
+                );
+            }
+        }
+    }
+
     fn ui_qr(&self, ui: &mut egui::Ui, size: f32, caption: &str) {
         draw_qr_card(ui, &self.qr_modules, self.qr_width, size);
         ui.add_space(8.0);
@@ -193,8 +251,8 @@ impl PepoMoteApp {
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
-        let mut config = self.shared.lock().unwrap().config;
-        let before = (config.sens_deg, config.abs_mode, config.auto_dolphin);
+        let mut config = self.shared.lock().unwrap().config.clone();
+        let before = config.clone();
 
         egui::CollapsingHeader::new(
             RichText::new("Ajustes").size(14.0).color(theme::TEXT_DIM),
@@ -223,6 +281,35 @@ impl PepoMoteApp {
                 &mut config.auto_dolphin,
                 RichText::new("Configurar Dolphin automáticamente (multijugador)").size(13.0),
             );
+            // Linux con varios monitores: a cuál apunta el móvil
+            #[cfg(target_os = "linux")]
+            {
+                let screens = self.shared.lock().unwrap().screens.clone();
+                if screens.len() > 1 {
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Apuntado absoluto en").size(13.0).color(theme::TEXT_DIM));
+                        let current = if config.screen.is_empty() {
+                            "Todas las pantallas".to_owned()
+                        } else {
+                            config.screen.clone()
+                        };
+                        egui::ComboBox::from_id_salt("pantalla_apuntado")
+                            .selected_text(current)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut config.screen, String::new(), "Todas las pantallas");
+                                for (name, w, h) in &screens {
+                                    ui.selectable_value(&mut config.screen, name.clone(), format!("Solo {name} ({w}×{h})"));
+                                }
+                            });
+                    });
+                    ui.label(
+                        RichText::new("Todas = el cursor llega a los tres monitores. Una sola = apuntado preciso para jugar.")
+                            .size(11.0)
+                            .color(theme::TEXT_DIM),
+                    );
+                }
+            }
             ui.add_space(4.0);
             let before_auto = self.autostart;
             ui.checkbox(
@@ -237,10 +324,10 @@ impl PepoMoteApp {
             }
         });
 
-        if (config.sens_deg, config.abs_mode, config.auto_dolphin) != before {
+        if config != before {
             // En caliente para el puntero ya; a disco cuando sueltes el
             // slider (arrastrarlo escribía el archivo en cada frame)
-            self.shared.lock().unwrap().config = config;
+            self.shared.lock().unwrap().config = config.clone();
             self.config_dirty = true;
         }
         if self.config_dirty && !ui.input(|i| i.pointer.any_down()) {

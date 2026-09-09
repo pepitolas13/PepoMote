@@ -9,16 +9,31 @@ const ABS_MAX: i32 = 32767;
 
 /// Tres dispositivos virtuales:
 /// - ratón relativo (REL_X/Y, rueda, botones) — clics y modo relativo
-/// - "pen" absoluto (ABS_X/Y + BTN_TOOL_PEN) — posicionamiento absoluto,
-///   funciona igual en X11 y Wayland en todos los compositores
+/// - ratón ABSOLUTO (ABS_X/Y + botones, la receta de las tabletas de
+///   QEMU/VMware) — posicionamiento absoluto. OJO: un "pen" de tableta
+///   (BTN_TOOL_PEN) NO vale: KWin/libinput lo ignoran por completo; el
+///   ratón absoluto pasa por el fallback de libinput y funciona en X11 y
+///   Wayland en todos los compositores (verificado en KWin 6)
 /// - teclado (flechas, Enter/Esc, multimedia)
 pub struct UinputInjector {
     mouse: VirtualDevice,
-    pen: VirtualDevice,
+    abs: VirtualDevice,
     keys: VirtualDevice,
-    pen_active: bool,
     /// Resto de rueda por debajo de una muesca (120 = una muesca).
     wheel_acc: i32,
+    /// Pantalla de apuntado dentro del escritorio completo ([x0,y0,w,h] 0..1).
+    target: [f32; 4],
+}
+
+/// (nx, ny) de la pantalla objetivo → valor ABS del dispositivo, que cubre
+/// el escritorio entero.
+fn map_abs(nx: f32, ny: f32, target: [f32; 4]) -> (i32, i32) {
+    let x = target[0] + nx.clamp(0.0, 1.0) * target[2];
+    let y = target[1] + ny.clamp(0.0, 1.0) * target[3];
+    (
+        (x.clamp(0.0, 1.0) * ABS_MAX as f32).round() as i32,
+        (y.clamp(0.0, 1.0) * ABS_MAX as f32).round() as i32,
+    )
 }
 
 impl UinputInjector {
@@ -41,17 +56,17 @@ impl UinputInjector {
             .build()
             .map_err(explain)?;
 
-        let mut pen_keys = AttributeSet::<Key>::new();
-        pen_keys.insert(Key::BTN_TOOL_PEN);
+        // Sin botones de ratón, udev no lo clasifica como puntero y el
+        // compositor lo descarta: van aunque nunca se pulsen desde aquí.
         let abs_info = AbsInfo::new(0, 0, ABS_MAX, 0, 0, 0);
-        let pen = VirtualDeviceBuilder::new()
+        let abs = VirtualDeviceBuilder::new()
             .map_err(explain)?
-            .name("PepoMote Pen")
+            .name("PepoMote Absolute Pointer")
             .with_absolute_axis(&UinputAbsSetup::new(AbsoluteAxisType::ABS_X, abs_info))
             .map_err(explain)?
             .with_absolute_axis(&UinputAbsSetup::new(AbsoluteAxisType::ABS_Y, abs_info))
             .map_err(explain)?
-            .with_keys(&pen_keys)
+            .with_keys(&buttons)
             .map_err(explain)?
             .build()
             .map_err(explain)?;
@@ -83,17 +98,17 @@ impl UinputInjector {
 
         Ok(Self {
             mouse,
-            pen,
+            abs,
             keys,
-            pen_active: false,
             wheel_acc: 0,
+            target: [0.0, 0.0, 1.0, 1.0],
         })
     }
 }
 
 fn explain(e: std::io::Error) -> String {
     if e.kind() == std::io::ErrorKind::PermissionDenied {
-        "sin permiso para /dev/uinput — ejecuta packaging/linux/install.sh y vuelve a iniciar sesión".into()
+        "sin permiso para /dev/uinput — pulsa «Reparar ahora» (o ejecuta packaging/linux/install.sh)".into()
     } else {
         format!("uinput: {e}")
     }
@@ -101,6 +116,10 @@ fn explain(e: std::io::Error) -> String {
 
 impl Injector for UinputInjector {
     fn move_rel(&mut self, dx: i32, dy: i32) {
+        #[cfg(debug_assertions)]
+        if std::env::var_os("PEPOMOTE_DEBUG").is_some() {
+            eprintln!("[rel] dx={dx} dy={dy}");
+        }
         let _ = self.mouse.emit(&[
             InputEvent::new(EventType::RELATIVE, RelativeAxisType::REL_X.0, dx),
             InputEvent::new(EventType::RELATIVE, RelativeAxisType::REL_Y.0, dy),
@@ -108,22 +127,21 @@ impl Injector for UinputInjector {
     }
 
     fn move_abs(&mut self, nx: f32, ny: f32) {
-        // El espacio del pen ya cubre todo el escritorio: recorte a 0..1
-        let x = (nx.clamp(0.0, 1.0) * ABS_MAX as f32).round() as i32;
-        let y = (ny.clamp(0.0, 1.0) * ABS_MAX as f32).round() as i32;
-        if !self.pen_active {
-            // El pen entra "en rango": hover, sin clic
-            let _ = self.pen.emit(&[InputEvent::new(
-                EventType::KEY,
-                Key::BTN_TOOL_PEN.code(),
-                1,
-            )]);
-            self.pen_active = true;
+        // El dispositivo cubre todo el escritorio: la posición va dentro
+        // del rect de la pantalla de apuntado
+        let (x, y) = map_abs(nx, ny, self.target);
+        #[cfg(debug_assertions)]
+        if std::env::var_os("PEPOMOTE_DEBUG").is_some() {
+            eprintln!("[abs] nx={nx:.3} ny={ny:.3} target={:.3?} -> dev({x},{y})", self.target);
         }
-        let _ = self.pen.emit(&[
+        let _ = self.abs.emit(&[
             InputEvent::new(EventType::ABSOLUTE, AbsoluteAxisType::ABS_X.0, x),
             InputEvent::new(EventType::ABSOLUTE, AbsoluteAxisType::ABS_Y.0, y),
         ]);
+    }
+
+    fn set_screen(&mut self, target: [f32; 4]) {
+        self.target = target;
     }
 
     fn button(&mut self, btn: MouseButton, down: bool) {
@@ -182,5 +200,30 @@ impl Injector for UinputInjector {
             ));
         }
         let _ = self.mouse.emit(&events);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn el_apuntado_cae_dentro_de_la_pantalla_objetivo() {
+        // Escritorio 3968×2232 con la pantalla de juego en (1920,1080) 2048×1152
+        // (el caso real: tres monitores en L)
+        let t = [1920.0 / 3968.0, 1080.0 / 2232.0, 2048.0 / 3968.0, 1152.0 / 2232.0];
+        let (cx, cy) = map_abs(0.5, 0.5, t);
+        // centro de la pantalla objetivo = (2944, 1656) del escritorio
+        assert_eq!(cx, (2944.0 / 3968.0 * ABS_MAX as f32).round() as i32);
+        assert_eq!(cy, (1656.0 / 2232.0 * ABS_MAX as f32).round() as i32);
+        // esquinas: nunca se sale de la pantalla objetivo aunque nx se pase
+        let (x0, y0) = map_abs(-1.0, -1.0, t);
+        assert_eq!((x0, y0), map_abs(0.0, 0.0, t));
+        let (x1, y1) = map_abs(2.0, 2.0, t);
+        assert_eq!((x1, y1), map_abs(1.0, 1.0, t));
+        assert_eq!(x1, ABS_MAX);
+        assert_eq!(y1, ABS_MAX);
+        // una sola pantalla: identidad
+        assert_eq!(map_abs(0.25, 0.75, [0.0, 0.0, 1.0, 1.0]), (8192, 24575));
     }
 }

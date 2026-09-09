@@ -48,7 +48,10 @@ impl Filter2D {
         Self {
             mincutoff,
             beta,
-            dcutoff: 1.0,
+            // 2 Hz (vs el 1 Hz canónico): el estimador de velocidad responde
+            // al arranque de un flick en ~80 ms en vez de ~160 — menos
+            // infra-recorrido — sin dejar pasar el jitter de reposo
+            dcutoff: 2.0,
             lp_x: LowPass::new(),
             lp_y: LowPass::new(),
             lp_dx: LowPass::new(),

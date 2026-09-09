@@ -54,16 +54,22 @@ pub fn run(
     };
     let _ = socket.set_read_timeout(Some(Duration::from_millis(100)));
 
-    let mut injector = match input::new_injector() {
-        Ok(i) => i,
-        Err(e) => {
-            shared.lock().unwrap().last_error = Some(format!("Inyección de entrada: {e}"));
-            return;
-        }
-    };
+    // El inyector puede no nacer a la primera (/dev/uinput sin permiso): el
+    // resto del receptor sigue vivo (Dolphin no lo necesita) y se reintenta
+    // en el bucle — la auto-reparación da permiso sin reiniciar la app.
+    let mut injector: Option<Box<dyn input::Injector>> = None;
+    let mut injector_retry = Instant::now() - Duration::from_secs(60);
 
-    let aspect = screen_aspect();
-    let screen_w = screen_width();
+    // En Linux, el hilo de pantallas (screens::watch) publica el mapeo del
+    // apuntado en shared.pointing; aquí solo se lee (barato) y se aplica al
+    // inyector cuando cambia. Nunca se llama a la detección en este hilo
+    // caliente: un roundtrip Wayland lento no puede congelar el cursor.
+    #[allow(unused_mut)]
+    let mut aspect = screen_aspect();
+    #[allow(unused_mut)]
+    let mut screen_w = screen_width();
+    #[cfg(target_os = "linux")]
+    let mut last_norm: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
     let mut engine = PointerEngine::new();
     let start = Instant::now();
     let now_us = |s: Instant| s.elapsed().as_micros() as u64;
@@ -83,6 +89,48 @@ pub fn run(
     let mut last_ping = Instant::now();
 
     loop {
+        if injector.is_none() && injector_retry.elapsed() >= Duration::from_secs(2) {
+            injector_retry = Instant::now();
+            match input::new_injector() {
+                Ok(i) => {
+                    injector = Some(i);
+                    // inyector nuevo: que reciba la pantalla de apuntado ya
+                    #[cfg(target_os = "linux")]
+                    {
+                        last_norm = [-1.0, -1.0, -1.0, -1.0]; // forzar re-aplicar
+                    }
+                    let mut s = shared.lock().unwrap();
+                    s.uinput_denied = false;
+                    if s.last_error.as_deref().is_some_and(|e| e.starts_with("Inyección")) {
+                        s.last_error = None;
+                    }
+                }
+                Err(e) => {
+                    let mut s = shared.lock().unwrap();
+                    s.uinput_denied = true;
+                    s.last_error = Some(format!("Inyección de entrada: {e}"));
+                }
+            }
+        }
+
+        // Linux: aplicar el mapeo de pantalla que publica screens::watch (el
+        // dispositivo absoluto cubre TODO el escritorio; esto lo dirige a la
+        // pantalla elegida, o a todas). Solo se re-aplica cuando cambia.
+        #[cfg(target_os = "linux")]
+        {
+            let pointing = shared.lock().unwrap().pointing;
+            if let Some((norm, asp, sw)) = pointing {
+                aspect = asp;
+                screen_w = sw;
+                if norm != last_norm {
+                    last_norm = norm;
+                    if let Some(inj) = injector.as_deref_mut() {
+                        inj.set_screen(norm);
+                    }
+                }
+            }
+        }
+
         // Ping de RTT a TODOS los jugadores
         if last_ping.elapsed() > Duration::from_millis(500) {
             last_ping = Instant::now();
@@ -102,7 +150,9 @@ pub fn run(
             };
             if j1_gone {
                 engine_session = None;
-                release_all(injector.as_mut(), &mut held);
+                if let Some(inj) = injector.as_deref_mut() {
+                    release_all(inj, &mut held);
+                }
             }
         }
 
@@ -180,17 +230,19 @@ pub fn run(
                     win_last_t = p.t_sensor_us;
                 }
 
-                let (mode, config) = {
+                let (mode, sens_deg, abs_mode) = {
                     let mut s = shared.lock().unwrap();
                     if let Some(pl) = s.players[slot as usize].as_mut() {
                         pl.battery_pct = p.battery_pct;
                     }
-                    (s.mode, s.config)
+                    (s.mode, s.config.sens_deg, s.config.abs_mode)
                 };
 
                 if mode == Mode::Dolphin {
                     // Cambio a Dolphin con algo sostenido: soltarlo en el SO
-                    release_all(injector.as_mut(), &mut held);
+                    if let Some(inj) = injector.as_deref_mut() {
+                        release_all(inj, &mut held);
+                    }
                     // Todos los jugadores al DSU, cada uno en su slot, INLINE
                     if let Some(dsu) = &dsu {
                         dsu.push(
@@ -207,23 +259,26 @@ pub fn run(
                     }
                 } else if slot == 0 {
                     // Modo puntero: el SO tiene UN cursor y es del Jugador 1
+                    let Some(inj) = injector.as_deref_mut() else {
+                        continue; // sin uinput aún: se está reintentando
+                    };
                     if engine_session != Some(p.session_id) {
                         engine_session = Some(p.session_id);
                         engine = PointerEngine::new();
-                        release_all(injector.as_mut(), &mut held);
-                        injector.move_abs(0.5, 0.5);
+                        release_all(inj, &mut held);
+                        inj.move_abs(0.5, 0.5);
                     }
 
-                    engine.set_cursor_hint(injector.cursor_pos());
-                    match engine.apply(&p, config.sens_deg, aspect, config.abs_mode, screen_w) {
-                        PointerOutput::Abs { nx, ny } => injector.move_abs(nx, ny),
-                        PointerOutput::Rel { dx, dy } => injector.move_rel(dx, dy),
+                    engine.set_cursor_hint(inj.cursor_pos());
+                    match engine.apply(&p, sens_deg, aspect, abs_mode, screen_w) {
+                        PointerOutput::Abs { nx, ny } => inj.move_abs(nx, ny),
+                        PointerOutput::Rel { dx, dy } => inj.move_rel(dx, dy),
                         PointerOutput::None => {}
                     }
                     if p.touch_scroll_dy != 0 {
-                        injector.wheel(p.touch_scroll_dy as i32 * 4);
+                        inj.wheel(p.touch_scroll_dy as i32 * 4);
                     }
-                    apply_buttons(injector.as_mut(), &mut held, p.buttons);
+                    apply_buttons(inj, &mut held, p.buttons);
                 }
                 // slot > 0 en modo puntero: se ignora (apunta el Jugador 1)
             }

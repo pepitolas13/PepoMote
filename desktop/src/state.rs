@@ -88,7 +88,7 @@ fn default_true() -> bool {
 }
 
 /// Ajustes persistentes (settings.json en el directorio de config).
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     /// Grados de giro para cruzar el ancho de la pantalla (15-60).
     pub sens_deg: f32,
@@ -97,6 +97,14 @@ pub struct Config {
     /// Configurar Dolphin solo (mandos multijugador) al conectar/desconectar.
     #[serde(default = "default_true")]
     pub auto_dolphin: bool,
+    /// Linux: ya se ofreció la auto-reparación (firewall/uinput) una vez.
+    /// Evita re-abrir el diálogo de contraseña en cada arranque si se canceló.
+    #[serde(default)]
+    pub fix_attempted: bool,
+    /// Linux multi-monitor: nombre de la pantalla de apuntado ("" = automática:
+    /// la primaria, o la mayor).
+    #[serde(default)]
+    pub screen: String,
 }
 
 impl Default for Config {
@@ -105,6 +113,8 @@ impl Default for Config {
             sens_deg: 40.0,
             abs_mode: true,
             auto_dolphin: true,
+            fix_attempted: false,
+            screen: String::new(),
         }
     }
 }
@@ -155,6 +165,19 @@ pub struct Shared {
     /// Resultado del último intento de configurar Dolphin (para la UI).
     pub dolphin_cfg_status: Option<String>,
     pub last_error: Option<String>,
+    /// Aviso de firewall Linux bloqueando el puerto (None = todo bien).
+    pub firewall_hint: Option<String>,
+    /// Linux: /dev/uinput denegado (telemetría reintenta cada pocos segundos).
+    pub uinput_denied: bool,
+    /// Hay un diálogo de reparación (pkexec) abierto ahora mismo.
+    pub fixing: bool,
+    /// Linux: monitores detectados (nombre, ancho, alto lógicos) para el
+    /// selector de pantalla de apuntado.
+    pub screens: Vec<(String, i32, i32)>,
+    /// Linux: mapeo de apuntado ya resuelto por el hilo de pantallas —
+    /// (rect_norm [x0,y0,w,h], aspect, ancho_px) para la config actual. None
+    /// = sin datos aún: el inyector usa todo el escritorio (identidad).
+    pub pointing: Option<([f32; 4], f32, f32)>,
     pub pair_code: PairCode,
 }
 
@@ -170,6 +193,11 @@ impl Shared {
             dsu_clients: 0,
             dolphin_cfg_status: None,
             last_error: None,
+            firewall_hint: None,
+            uinput_denied: false,
+            fixing: false,
+            screens: Vec::new(),
+            pointing: None,
             pair_code: PairCode::new(),
         }
     }

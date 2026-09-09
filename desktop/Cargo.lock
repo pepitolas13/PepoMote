@@ -3085,6 +3085,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tray-icon",
+ "wayland-client",
+ "wayland-protocols",
  "windows 0.58.0",
  "winresource",
 ]

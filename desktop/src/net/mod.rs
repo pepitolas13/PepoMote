@@ -20,6 +20,21 @@ pub struct Session {
     pub slot: u8,
     pub last_seq: Option<u32>,
     pub phone_udp: Option<SocketAddr>,
+    /// Identidad del móvil (IP + nombre): si vuelve a conectar con esta
+    /// sesión aún viva, es una reconexión y la fantasma se desaloja.
+    pub peer: std::net::IpAddr,
+    pub device: String,
+}
+
+/// Sesiones de ESTE mismo móvil que siguen vivas (reconexión tras caída de
+/// Wi-Fi, app en segundo plano…). Sin desalojarlas, el móvil entraría como
+/// Jugador 2: sin puntero y sin poder cambiar a Dolphin hasta que caducaran.
+pub fn ghosts_of(sessions: &HashMap<u32, Session>, peer: std::net::IpAddr, device: &str) -> Vec<u32> {
+    sessions
+        .values()
+        .filter(|s| s.peer == peer && s.device == device)
+        .map(|s| s.id)
+        .collect()
 }
 
 /// session_id → Session (hasta MAX_PLAYERS a la vez).
@@ -70,7 +85,27 @@ mod tests {
             slot,
             last_seq: None,
             phone_udp: None,
+            peer: std::net::IpAddr::from([192, 168, 1, 10 + slot]),
+            device: format!("Movil{slot}"),
         }
+    }
+
+    #[test]
+    fn el_mismo_movil_que_reconecta_desaloja_su_fantasma() {
+        let mut m = HashMap::new();
+        m.insert(1, sess(1, 0));
+        m.insert(2, sess(2, 1));
+        // misma IP y nombre que la sesión 1: es ella reconectando
+        let ghosts = ghosts_of(&m, std::net::IpAddr::from([192, 168, 1, 10]), "Movil0");
+        assert_eq!(ghosts, vec![1]);
+        // otro móvil (misma IP pero otro nombre, u otra IP): nada que desalojar
+        assert!(ghosts_of(&m, std::net::IpAddr::from([192, 168, 1, 10]), "Otro").is_empty());
+        assert!(ghosts_of(&m, std::net::IpAddr::from([192, 168, 1, 99]), "Movil0").is_empty());
+        for id in ghosts {
+            m.remove(&id);
+        }
+        // y recupera SU plaza (la 0), no la siguiente libre
+        assert_eq!(lowest_free_slot(&m), Some(0));
     }
 
     #[test]

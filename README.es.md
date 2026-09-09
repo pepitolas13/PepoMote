@@ -19,7 +19,7 @@
 
 **PC (Windows)** — descarga `PepoMote.exe` y ábrelo. Sin instalador. SmartScreen puede avisar porque el binario no está firmado: *Más información → Ejecutar de todas formas* (verifica `SHA256SUMS.txt` si dudas). Cuando el firewall pregunte, permite en *redes privadas*.
 
-**PC (Linux)** — descarga el AppImage y, desde el repo, ejecuta `packaging/linux/install.sh PepoMote-x86_64.AppImage` (instala la regla udev de uinput — necesaria para mover el cursor — y el lanzador). Cierra sesión y vuelve a entrar una vez.
+**PC (Linux)** — descarga el AppImage, dale permiso de ejecución y ábrelo. Si algo necesita configuración del sistema (permisos de uinput para el cursor, o un firewall descartando en silencio el tráfico del móvil — muchas distros traen uno activado), PepoMote lo detecta y te pide la contraseña de administrador **una sola vez** en el diálogo del sistema, y lo arregla él solo — sin terminal ni cerrar sesión. ¿Prefieres instalación con lanzador? `packaging/linux/install.sh PepoMote-x86_64.AppImage` hace la misma configuración de golpe.
 
 **Móvil** — instala `PepoMote.apk` (permite "orígenes desconocidos"). Ábrela, toca **Conectar** y escanea el QR del PC. Emparejado para siempre.
 

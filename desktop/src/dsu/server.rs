@@ -61,10 +61,19 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
     let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
     let mut buf = [0u8; 128];
     let mut last_sweep = Instant::now();
+    // PEPOMOTE_DEBUG=1: traza de cada petición DSU (¿Dolphin nos habla?)
+    let debug = std::env::var_os("PEPOMOTE_DEBUG").is_some();
 
     loop {
         if let Ok((len, from)) = socket.recv_from(&mut buf) {
-            if let Some((msg_type, payload)) = parse_request(&buf[..len]) {
+            let parsed = parse_request(&buf[..len]);
+            if debug {
+                match parsed {
+                    Some((t, p)) => eprintln!("[dsu] {from} tipo={t:#x} payload={:02x?}", &p[..p.len().min(8)]),
+                    None => eprintln!("[dsu] {from} paquete no válido ({len} bytes): {:02x?}", &buf[..len.min(20)]),
+                }
+            }
+            if let Some((msg_type, payload)) = parsed {
                 match msg_type {
                     MSG_VERSION => {
                         let mut out = Vec::with_capacity(22);

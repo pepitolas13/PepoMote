@@ -4,6 +4,12 @@ mod app;
 mod autostart;
 mod dolphin;
 mod dsu;
+#[cfg(target_os = "linux")]
+mod firewall;
+#[cfg(target_os = "linux")]
+mod fixes;
+#[cfg(target_os = "linux")]
+mod screens;
 mod icon;
 mod input;
 mod net;
@@ -29,6 +35,11 @@ fn main() -> eframe::Result {
 
     let dsu = dsu::start(shared.clone());
     net::start(shared.clone(), pairing.clone(), dsu);
+
+    #[cfg(target_os = "linux")]
+    firewall::watch(shared.clone(), pairing.port);
+    #[cfg(target_os = "linux")]
+    screens::watch(shared.clone());
 
     #[cfg(windows)]
     if std::env::var_os("PEPOMOTE_NO_TRAY").is_none() {

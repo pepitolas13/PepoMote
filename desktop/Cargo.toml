@@ -37,6 +37,10 @@ windows = { version = "0.58", features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 evdev = "0.12"
+# Disposición de monitores en Wayland (xdg-output): el ratón absoluto de
+# uinput cubre TODO el escritorio y hay que mapearlo a la pantalla de juego
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
 
 [profile.release]
 opt-level = 3
