@@ -23,7 +23,7 @@
 
 **Móvil** — instala `PepoMote.apk` (permite "orígenes desconocidos"). Ábrela, toca **Conectar** y escanea el QR del PC. Emparejado para siempre.
 
-**Móvil con Linux** (Mobian, postmarketOS…) — `packaging/linux-mobile/install.sh <paquete>` y ábrela como una app más: **Conectar** → tu PC en la lista → el código de 4 dígitos que hay bajo el QR. Ver [docs/MOBILE-LINUX.md](docs/MOBILE-LINUX.md).
+**Móvil con Linux** (Mobian, postmarketOS…) — Mobian: descarga `pepomote-mobile_*_arm64.deb` en el móvil, tócalo y pulsa **Instalar**. Cualquier otra distro, un comando en el terminal: `wget -qO- https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh | sh`. Después ábrela como una app más: **Conectar** → tu PC en la lista → el código de 4 dígitos que hay bajo el QR. Ver [docs/MOBILE-LINUX.md](docs/MOBILE-LINUX.md).
 
 ## Jugar a la Wii
 

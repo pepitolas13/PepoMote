@@ -66,13 +66,13 @@ esac
 chmod +x "$BIN"
 
 # Lanzador con diagnóstico: guarda los errores de arranque en
-# ~/.config/pepotech/PepoMote/launch.log y, si la app muere nada más
+# ~/.config/pepomote/launch.log y, si la app muere nada más
 # arrancar (GPU sin OpenGL usable, típico en algunos móviles), reintenta con
 # render por software (llvmpipe) para que abra igual.
 RUN="$DEST/run.sh"
 cat > "$RUN" <<RUNSH
 #!/bin/sh
-LOG="\$HOME/.config/pepotech/PepoMote/launch.log"
+LOG="\$HOME/.config/pepomote/launch.log"
 mkdir -p "\$(dirname "\$LOG")"
 BIN="$BIN"
 {
@@ -127,5 +127,5 @@ fi
 
 echo
 echo "Listo: abre 'PepoMote' desde el lanzador de aplicaciones."
-echo "Si no abre: cat ~/.config/pepotech/PepoMote/launch.log  (ahí queda el error)"
+echo "Si no abre: cat ~/.config/pepomote/launch.log  (ahí queda el error)"
 echo "Primera vez: Conectar → elige tu PC → teclea el código de 4 dígitos que hay bajo el QR del receptor."

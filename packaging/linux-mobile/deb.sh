@@ -34,7 +34,7 @@ Section: games
 Priority: optional
 Architecture: $ARCH
 Installed-Size: $SIZE_KB
-Depends: libc6, libwayland-client0, libxkbcommon0, libegl1, libgl1
+Depends: libc6, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libegl1, libgl1
 Maintainer: PepoTech <pepitolas13@users.noreply.github.com>
 Homepage: https://github.com/pepitolas13/PepoMote
 Description: PepoMote sender for Linux phones (Mobian, Debian...)

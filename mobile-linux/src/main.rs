@@ -9,6 +9,7 @@ mod buttons;
 mod calib;
 mod discovery;
 mod fusion;
+mod inhibit;
 mod link;
 mod pacing;
 mod sensor;

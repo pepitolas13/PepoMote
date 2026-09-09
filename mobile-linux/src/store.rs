@@ -1,4 +1,4 @@
-//! Persistencia en ~/.config/pepotech/PepoMote/: emparejamiento
+//! Persistencia en ~/.config/pepomote/: emparejamiento
 //! (pairing.json) y calibración de ejes del sensor (axes.json).
 
 use crate::calib::Axes;

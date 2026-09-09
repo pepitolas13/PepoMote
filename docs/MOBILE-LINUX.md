@@ -43,7 +43,7 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
 2. En el móvil: **Conectar** → aparece tu PC en la lista (búsqueda por
    broadcast en tu Wi-Fi) → tócalo → teclea el código. Si no aparece,
    **Escribir IP a mano** con la IP:puerto que hay bajo el QR.
-3. Listo: el móvil guarda el emparejamiento (`~/.config/pepotech/PepoMote/pairing.json`)
+3. Listo: el móvil guarda el emparejamiento (`~/.config/pepomote/pairing.json`)
    y a partir de ahí conecta de un toque. Si el PC cambia de IP, la app lo
    vuelve a encontrar por nombre sola.
 
@@ -80,7 +80,7 @@ invertido: el puntero sube cuando bajas el móvil, o va a tirones porque el
 giroscopio y el acelerómetro se contradicen y la fusión los pelea. En
 **Inicio → Calibrar sensores** hay seis pasos guiados (tres posturas quietas y
 tres gestos de dos segundos); la app deduce el signo de cada eje, lo guarda en
-`~/.config/pepotech/PepoMote/axes.json` y lo aplica en todas las conexiones
+`~/.config/pepomote/axes.json` y lo aplica en todas las conexiones
 siguientes (Inicio lo muestra como `ejes accel +-+ gyro +++`). `--sensors`
 también lo enseña. Para volver al estado original: el botón «Borrar
 calibración» dentro de la pantalla.
@@ -144,10 +144,27 @@ verás la frecuencia real en la cabecera del mando.
 - **Ubuntu Touch no está soportado**: sus móviles (Halium) no exponen los
   sensores por IIO sino por el HAL de Android, y Lomiri solo instala apps Qt
   en paquetes click. Es otro proyecto.
-- La pantalla se apaga con el tiempo de bloqueo del sistema (no hay
-  "mantener encendida" desde la app): súbelo mientras juegas.
+- Mientras hay conexión la app mantiene la pantalla encendida y evita la
+  suspensión en Phosh / GNOME Mobile (`gnome-session-inhibit`). En otros
+  escritorios solo evita la suspensión (`systemd-inhibit` o `elogind-inhibit`)
+  y la pantalla se apaga con el tiempo de bloqueo del sistema: súbelo mientras
+  juegas. `mobile.log` dice cuál de los tres ha usado.
 - Las teclas físicas de volumen las gestiona el escritorio, no la app.
 - Sin sonidos ni vibración (por ahora).
+
+## Si algo falla
+
+Todo lo de la app vive en `~/.config/pepomote/`:
+
+- `mobile.log`: lo que ve la app (pantalla y escala, sensores encontrados,
+  bias del gyro, ráfagas, calibración, inhibidor de pantalla). Es lo primero
+  que mirar.
+- `launch.log`: solo si instalaste con `install.sh`; errores de arranque y el
+  reintento con render por software.
+- `pairing.json` y `axes.json`: emparejamiento y calibración. Borrarlos =
+  empezar de cero.
+- `PepoMote-Mobile --sensors` en un terminal: inventario de sensores por los
+  dos caminos y 1,5 s de muestras reales.
 
 ## Compilar
 

@@ -4,6 +4,7 @@
 use crate::buttons::Buttons;
 use crate::calib::{self, Axes};
 use crate::discovery::{self, Receiver};
+use crate::inhibit::Inhibit;
 use crate::link::{self, Link, Status};
 use crate::sensor;
 use crate::store::{self, Pairing};
@@ -17,7 +18,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Log de diagnóstico: ~/.config/pepotech/PepoMote/mobile.log (tamaño de
+/// Log de diagnóstico: ~/.config/pepomote/mobile.log (tamaño de
 /// pantalla, escala, toques…). Para saber qué ve la app en un móvil real.
 pub fn log_line(msg: &str) {
     let Some(d) = directories::ProjectDirs::from("dev", "pepotech", "PepoMote") else { return };
@@ -87,6 +88,8 @@ pub struct MobileApp {
     diag_touches: u32,
     diag_pointer: u32,
     calib: Option<Calib>,
+    /// Pantalla encendida y sin suspensión mientras dura la conexión.
+    inhibit: Option<Inhibit>,
 }
 
 fn describe_sensors(fake: bool) -> String {
@@ -119,6 +122,7 @@ impl MobileApp {
             diag_touches: 0,
             diag_pointer: 0,
             calib: None,
+            inhibit: None,
             discovered: Vec::new(),
             scan_rx: None,
             last_scan: None,
@@ -179,6 +183,7 @@ impl MobileApp {
             l.disconnect();
         }
         self.buttons.release_all();
+        self.inhibit = None;
     }
 
     fn poll_link(&mut self) {
@@ -187,6 +192,7 @@ impl MobileApp {
             Status::Failed { msg, .. } => {
                 self.error = Some(msg);
                 self.link = None;
+                self.inhibit = None;
                 if self.screen == Screen::Controller {
                     self.screen = Screen::Home;
                 }
@@ -197,10 +203,21 @@ impl MobileApp {
                     // "Pulsar la diana" al conectar: centra el cursor con el
                     // móvil ya en la mano (igual que en Android)
                     self.recenter_at = Some(Instant::now() + Duration::from_millis(400));
+                    // y la pantalla no se apaga en mitad de la partida
+                    self.inhibit = Inhibit::start();
+                    log_line(&match &self.inhibit {
+                        Some(i) => format!("pantalla encendida mientras dure la conexión ({})", i.tool),
+                        None => "sin inhibidor de pantalla (ni gnome-session-inhibit ni systemd/elogind-inhibit): la pantalla se apaga con el tiempo del sistema".to_owned(),
+                    });
+                } else if self.inhibit.as_mut().is_some_and(|i| !i.alive()) {
+                    // el inhibidor se ha ido (sesión cerrada, polkit…): que conste
+                    let tool = self.inhibit.take().map(|i| i.tool).unwrap_or("?");
+                    log_line(&format!("el inhibidor de pantalla ({tool}) ha terminado solo; la pantalla vuelve al tiempo del sistema"));
                 }
             }
             Status::Disconnected => {
                 self.link = None;
+                self.inhibit = None;
                 self.was_connected = false;
             }
             Status::Connecting => {}

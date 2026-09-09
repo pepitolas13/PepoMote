@@ -158,7 +158,8 @@ const MSG_MEASUREMENT: u32 = 1025;
 const PROCESSOR_APSS: u64 = 1;
 const SUSPEND_WAKEUP: u64 = 0;
 const ATTR_SAMPLE_RATE: u64 = 6;
-const ATTR_MOUNT_MATRIX: u64 = 20;
+/// PLACEMENT: rotación 3×3 (+ traslación) con la que va montado el chip; solo se registra.
+const ATTR_MOUNT_MATRIX: u64 = 19;
 /// Reloj del DSP (QTimer): 19,2 MHz.
 const QTIMER_HZ: f64 = 19_200_000.0;
 const MAX_RATE_HZ: f32 = 250.0;
@@ -1169,7 +1170,7 @@ mod tests {
 
     #[test]
     fn atributos_frecuencias_y_matriz() {
-        // attr { id=6, value_array { v{f=100} v{f=200} v{f=400} } }, attr { id=20, value_array { 9 floats } }
+        // attr { id=6, value_array { v{f=100} v{f=200} v{f=400} } }, attr { id=19, value_array { 9 floats } }
         fn value_f(f: f32) -> Vec<u8> {
             let mut v = Vec::new();
             pb::put_float(&mut v, 3, f);
@@ -1187,7 +1188,7 @@ mod tests {
             pb::put_bytes(&mut arr2, 1, &value_f(f));
         }
         let mut a2 = Vec::new();
-        pb::put_varint_field(&mut a2, 1, 20);
+        pb::put_varint_field(&mut a2, 1, 19);
         pb::put_bytes(&mut a2, 2, &arr2);
         let mut resp = Vec::new();
         pb::put_bytes(&mut resp, 1, &a1);
@@ -1195,7 +1196,7 @@ mod tests {
         let attrs = decode_attr_response(&resp);
         assert_eq!(attrs[0].0, 6);
         assert_eq!(attrs[0].1, vec![AttrVal::Float(100.0), AttrVal::Float(200.0), AttrVal::Float(400.0)]);
-        assert_eq!(attrs[1].0, 20);
+        assert_eq!(attrs[1].0, 19);
         assert_eq!(attrs[1].1.len(), 9);
         assert_eq!(pick_rate(&[100.0, 200.0, 400.0]), Some(200.0));
         assert_eq!(pick_rate(&[400.0, 800.0]), Some(400.0));
