@@ -29,9 +29,10 @@ import dev.pepotech.pepomote.ui.theme.PepoColors
 /**
  * Mando apaisado estilo "de lado" (NES): cruceta a la izquierda, 1 y 2
  * grandes a la derecha. Para juegos 2D en Dolphin con el Wiimote de lado.
+ * `showChips`: selector Puntero/Dolphin, mismas condiciones que en vertical.
  */
 @Composable
-fun ControllerLandscapeScreen(link: UiLink, onDisconnect: () -> Unit) {
+fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
     val view = LocalView.current
     DisposableEffect(Unit) {
         view.keepScreenOn = true
@@ -61,6 +62,10 @@ fun ControllerLandscapeScreen(link: UiLink, onDisconnect: () -> Unit) {
                 },
                 style = MaterialTheme.typography.bodyMedium
             )
+            // Selector Puntero/Dolphin también de lado (solo el Jugador 1)
+            if (link is UiLink.Connected && showChips && link.slot == 0) {
+                ModeChips(current = link.mode)
+            }
             TextButton(onClick = onDisconnect) {
                 Text("Salir", color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
             }
@@ -75,18 +80,19 @@ fun ControllerLandscapeScreen(link: UiLink, onDisconnect: () -> Unit) {
             PadCross(sizeDp = 190.dp)
         }
 
-        // − / + centro
+        // − / + / A centro (un 20 % más grandes que en la primera versión:
+        // de lado se pulsan con el pulgar y quedaban pequeños)
         Column(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                RoundButton("−", 44.dp, ButtonState.MINUS, textSize = 16)
-                RoundButton("+", 44.dp, ButtonState.PLUS, textSize = 16)
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                RoundButton("−", 53.dp, ButtonState.MINUS, textSize = 19)
+                RoundButton("+", 53.dp, ButtonState.PLUS, textSize = 19)
             }
-            RoundButton("A", 52.dp, ButtonState.A, textSize = 18)
+            RoundButton("A", 62.dp, ButtonState.A, textSize = 22)
         }
 
         // 1 y 2 grandes a la derecha (los botones de acción del modo NES)

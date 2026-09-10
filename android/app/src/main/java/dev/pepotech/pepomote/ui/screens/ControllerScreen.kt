@@ -184,9 +184,10 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
     }
 }
 
-/** Selector de modo: Puntero (controla el PC) / Dolphin (Wiimote virtual). */
+/** Selector de modo: Puntero (controla el PC) / Dolphin (Wiimote virtual).
+ *  Lo comparten el mando vertical y el apaisado. */
 @Composable
-private fun ModeChips(current: String) {
+internal fun ModeChips(current: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         ModeChip("Puntero", selected = current != "dolphin") {
             dev.pepotech.pepomote.service.LinkState.sendMode?.invoke("pointer")

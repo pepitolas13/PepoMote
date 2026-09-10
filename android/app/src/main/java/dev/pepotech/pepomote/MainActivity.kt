@@ -216,17 +216,14 @@ private fun Root(activity: MainActivity) {
                 LinkForegroundService.stop(context)
                 activity.currentScreen = Screen.Home
             }
+            // Selector Puntero/Dolphin: solo entrando por Conectar/Mando y con
+            // el ajuste activo. Por Dolphin: pantalla solo-Dolphin. Igual en
+            // vertical y de lado.
+            val showChips = !activity.controllerDolphinOnly && AppPrefs.showDolphinChips(context)
             if (landscape) {
-                ControllerLandscapeScreen(link = link, onDisconnect = onDisconnect)
+                ControllerLandscapeScreen(link = link, showChips = showChips, onDisconnect = onDisconnect)
             } else {
-                ControllerScreen(
-                    link = link,
-                    // Selector Puntero/Dolphin: solo entrando por Conectar/Mando
-                    // y con el ajuste activo. Por Dolphin: pantalla solo-Dolphin.
-                    showChips = !activity.controllerDolphinOnly &&
-                        AppPrefs.showDolphinChips(context),
-                    onDisconnect = onDisconnect
-                )
+                ControllerScreen(link = link, showChips = showChips, onDisconnect = onDisconnect)
             }
         }
     }
