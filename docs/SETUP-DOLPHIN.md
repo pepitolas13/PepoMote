@@ -6,9 +6,9 @@ Conecta el segundo móvil escaneando el MISMO QR: entra como Jugador 2. Con
 Dolphin CERRADO y el modo Dolphin activo, PepoMote deja Dolphin listo por ti:
 selecciona **Emular el adaptador Bluetooth de la Wii** (con "Acceder
 directamente a un adaptador de Bluetooth" el juego se cierra al arrancar),
-escribe los cuatro mandos Wiimote 1-4 con el mapeo PepoMote (Jugador N =
-móvil N por orden de conexión, así el que entre después ya tiene el suyo) y
-registra el servidor DSU. Deja copia `.pepomote.bak` de cada archivo que
+escribe un mando emulado por móvil conectado (Wiimote N = móvil N por orden
+de conexión) con el mapeo PepoMote, deja los demás en «Ninguno» (un mando de
+más aparece en pantalla en los juegos y molesta) y registra el servidor DSU. Deja copia `.pepomote.bak` de cada archivo que
 toca. Abre Dolphin y a jugar: cada móvil es su propio Wiimote. Si Dolphin
 estaba abierto, la ventana de PepoMote te lo avisa: ciérralo y pulsa
 "Configurar Dolphin". El automatismo se puede apagar en Ajustes. Los pasos

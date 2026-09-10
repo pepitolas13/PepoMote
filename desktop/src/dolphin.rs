@@ -1,9 +1,10 @@
 //! Auto-configuración de Dolphin para multijugador: deja el adaptador
 //! Bluetooth EMULADO en Dolphin.ini (con el acceso directo a un adaptador
 //! real, Dolphin ignora los mandos emulados y el juego se cierra al arrancar),
-//! escribe las secciones [Wiimote1..4] de WiimoteNew.ini (Source=1 + mapeo
-//! DSU validado en h3: los cuatro mandos listos, entren los móviles cuando
-//! entren) y registra el servidor en DSUClient.ini. Nunca escribe con Dolphin
+//! escribe en WiimoteNew.ini tantos mandos emulados como móviles conectados
+//! ([Wiimote1..N] con Source=1 + mapeo DSU validado en h3) y deja los demás
+//! en Source=0: un mando emulado de más aparece en pantalla en los juegos y
+//! molesta. Registra el servidor en DSUClient.ini. Nunca escribe con Dolphin
 //! abierto (su config se sobreescribe al salir) y siempre deja backup
 //! .pepomote.bak.
 
@@ -248,18 +249,42 @@ pub fn ensure_emulated_adapter(cfg_dir: &Path) -> Result<(), String> {
     write_if_changed(&path, &original, serialize_ini(&ini))
 }
 
-/// [Wiimote1..n] con nuestro mapeo; el resto de secciones, intactas.
+/// [Wiimote1..n] con nuestro mapeo (Source=1) y [Wiimote n+1..4] con
+/// Source=0 (Ninguno): exactamente un mando por móvil. En los slots que se
+/// apagan solo se toca la clave Source; el resto de sus líneas (un mapeo
+/// manual, por ejemplo) se conserva. Las demás secciones, intactas.
 pub fn write_wiimotes(cfg_dir: &Path, n_players: usize) -> Result<(), String> {
     let path = cfg_dir.join("WiimoteNew.ini");
     let original = std::fs::read_to_string(&path).unwrap_or_default();
     let mut ini = parse_ini(&original);
-    for slot in 0..n_players.min(crate::net::MAX_PLAYERS) {
+    let n = n_players.min(crate::net::MAX_PLAYERS);
+    for slot in 0..n {
         let body: Vec<String> = MAPPING
             .replace("{DEV}", &slot.to_string())
             .lines()
             .map(|l| l.to_owned())
             .collect();
         set_section(&mut ini, &format!("Wiimote{}", slot + 1), body);
+    }
+    for slot in n..crate::net::MAX_PLAYERS {
+        let name = format!("Wiimote{}", slot + 1);
+        let mut body: Vec<String> = ini
+            .sections
+            .iter()
+            .find(|(s, _)| *s == name)
+            .map(|(_, b)| b.clone())
+            .unwrap_or_default();
+        let mut found = false;
+        for l in body.iter_mut() {
+            if ini_key(l) == Some("Source") {
+                *l = "Source = 0".to_owned();
+                found = true;
+            }
+        }
+        if !found {
+            body.insert(0, "Source = 0".to_owned());
+        }
+        set_section(&mut ini, &name, body);
     }
     write_if_changed(&path, &original, serialize_ini(&ini))
 }
@@ -326,23 +351,22 @@ fn write_profiles(cfg_dir: &Path, n_players: usize) {
 }
 
 /// Configura todos los Dolphin encontrados: adaptador Bluetooth emulado,
-/// servidor DSU y los CUATRO mandos (Jugador N = móvil N por orden de
-/// conexión). Así un segundo móvil que entre con Dolphin ya abierto tiene su
-/// Wiimote listo sin cerrar el emulador. `n_players` solo informa.
+/// servidor DSU y un mando emulado por móvil conectado (Jugador N = móvil N
+/// por orden de conexión); los slots restantes quedan en Ninguno.
 pub fn configure(n_players: usize) -> Result<String, String> {
     let dirs = config_dirs();
     if dirs.is_empty() {
         return Err("No encuentro la configuración de Dolphin en este equipo".into());
     }
-    let slots = crate::net::MAX_PLAYERS;
+    let n = n_players.clamp(1, crate::net::MAX_PLAYERS);
     for dir in &dirs {
         ensure_emulated_adapter(dir)?;
         ensure_dsu_server(dir)?;
-        write_wiimotes(dir, slots)?;
-        write_profiles(dir, slots);
+        write_wiimotes(dir, n)?;
+        write_profiles(dir, crate::net::MAX_PLAYERS);
     }
     Ok(format!(
-        "Dolphin configurado: adaptador emulado y mandos 1-{slots} ({n_players} móvil(es) conectado(s)){}",
+        "Dolphin configurado: adaptador emulado y {n} mando(s){}",
         if dirs.len() > 1 {
             format!(" en {} instalaciones", dirs.len())
         } else {
@@ -414,10 +438,18 @@ mod tests {
         assert!(out.contains("Device = DSUClient/0/PepoMote"));
         assert!(out.contains("[Wiimote2]"));
         assert!(out.contains("Device = DSUClient/1/PepoMote"));
-        // lo ajeno, intacto
-        assert!(out.contains("[Wiimote3]"));
-        assert!(out.contains("Device = Real/Cosa"));
-        assert!(out.contains("[BalanceBoard]"));
+        // slots sin móvil: Source = 0 (ningún mando de más en pantalla),
+        // conservando las demás líneas; lo ajeno, intacto
+        assert!(out.contains("[Wiimote3]
+Device = Real/Cosa
+Source = 0
+"), "{out}");
+        assert!(out.contains("[Wiimote4]
+Source = 0
+"), "{out}");
+        assert!(out.contains("[BalanceBoard]
+Source = 0
+"));
         // backup creado
         assert!(dir.join("WiimoteNew.ini.pepomote.bak").exists());
 
@@ -454,6 +486,44 @@ mod tests {
         write_wiimotes(&dir, 2).unwrap();
         let m2 = std::fs::metadata(&path).unwrap().modified().unwrap();
         assert_eq!(m1, m2, "un INI idéntico no debe tocar el disco");
+    }
+
+    #[test]
+    fn un_mando_por_movil_y_los_demas_apagados() {
+        let dir = tmp_dir("uno-por-movil");
+        // dos móviles: Wiimote1 y 2 emulados, 3 y 4 en Ninguno
+        write_wiimotes(&dir, 2).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(out.contains("[Wiimote1]
+Device = DSUClient/0/PepoMote
+Source = 1
+"));
+        assert!(out.contains("[Wiimote2]
+Device = DSUClient/1/PepoMote
+Source = 1
+"));
+        assert!(out.contains("[Wiimote3]
+Source = 0
+"), "{out}");
+        assert!(out.contains("[Wiimote4]
+Source = 0
+"), "{out}");
+        // se va el segundo móvil: su mando se apaga (el mapeo queda para la próxima)
+        write_wiimotes(&dir, 1).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(out.contains("[Wiimote1]
+Device = DSUClient/0/PepoMote
+Source = 1
+"));
+        assert!(out.contains("[Wiimote2]
+Device = DSUClient/1/PepoMote
+Source = 0
+"), "{out}");
+        assert_eq!(out.matches("Source = 1").count(), 1);
+        // vuelve: se reactiva
+        write_wiimotes(&dir, 2).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert_eq!(out.matches("Source = 1").count(), 2);
     }
 
     #[test]
