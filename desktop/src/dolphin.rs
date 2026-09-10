@@ -1,7 +1,11 @@
-//! Auto-configuración de Dolphin para multijugador: escribe las secciones
-//! [Wiimote1..N] de WiimoteNew.ini (Source=1 + mapeo DSU validado en h3) y
-//! registra el servidor en DSUClient.ini. Nunca escribe con Dolphin abierto
-//! (su config se sobreescribe al salir) y siempre deja backup .pepomote.bak.
+//! Auto-configuración de Dolphin para multijugador: deja el adaptador
+//! Bluetooth EMULADO en Dolphin.ini (con el acceso directo a un adaptador
+//! real, Dolphin ignora los mandos emulados y el juego se cierra al arrancar),
+//! escribe las secciones [Wiimote1..4] de WiimoteNew.ini (Source=1 + mapeo
+//! DSU validado en h3: los cuatro mandos listos, entren los móviles cuando
+//! entren) y registra el servidor en DSUClient.ini. Nunca escribe con Dolphin
+//! abierto (su config se sobreescribe al salir) y siempre deja backup
+//! .pepomote.bak.
 
 use crate::state::{Mode, SharedState};
 use std::path::{Path, PathBuf};
@@ -214,6 +218,36 @@ fn write_if_changed(path: &Path, original: &str, new: String) -> Result<(), Stri
     std::fs::write(path, new).map_err(|e| e.to_string())
 }
 
+/// Dolphin.ini: [BluetoothPassthrough] Enabled = False, es decir, "Emular el
+/// adaptador Bluetooth de la Wii" en el diálogo de mandos. Con "Acceder
+/// directamente a un adaptador de Bluetooth" marcado, Dolphin busca un
+/// adaptador USB real, deshabilita los Wiimotes emulados y el juego se cierra
+/// nada más arrancar. El resto de la sección (VID, PID, LinkKeys) y del
+/// archivo se conservan.
+pub fn ensure_emulated_adapter(cfg_dir: &Path) -> Result<(), String> {
+    let path = cfg_dir.join("Dolphin.ini");
+    let original = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut ini = parse_ini(&original);
+    let mut body: Vec<String> = ini
+        .sections
+        .iter()
+        .find(|(n, _)| n == "BluetoothPassthrough")
+        .map(|(_, b)| b.clone())
+        .unwrap_or_default();
+    let mut found = false;
+    for l in body.iter_mut() {
+        if ini_key(l) == Some("Enabled") {
+            *l = "Enabled = False".to_owned();
+            found = true;
+        }
+    }
+    if !found {
+        body.insert(0, "Enabled = False".to_owned());
+    }
+    set_section(&mut ini, "BluetoothPassthrough", body);
+    write_if_changed(&path, &original, serialize_ini(&ini))
+}
+
 /// [Wiimote1..n] con nuestro mapeo; el resto de secciones, intactas.
 pub fn write_wiimotes(cfg_dir: &Path, n_players: usize) -> Result<(), String> {
     let path = cfg_dir.join("WiimoteNew.ini");
@@ -291,20 +325,24 @@ fn write_profiles(cfg_dir: &Path, n_players: usize) {
     }
 }
 
-/// Configura todos los Dolphin encontrados para n_players mandos.
+/// Configura todos los Dolphin encontrados: adaptador Bluetooth emulado,
+/// servidor DSU y los CUATRO mandos (Jugador N = móvil N por orden de
+/// conexión). Así un segundo móvil que entre con Dolphin ya abierto tiene su
+/// Wiimote listo sin cerrar el emulador. `n_players` solo informa.
 pub fn configure(n_players: usize) -> Result<String, String> {
     let dirs = config_dirs();
     if dirs.is_empty() {
         return Err("No encuentro la configuración de Dolphin en este equipo".into());
     }
+    let slots = crate::net::MAX_PLAYERS;
     for dir in &dirs {
+        ensure_emulated_adapter(dir)?;
         ensure_dsu_server(dir)?;
-        write_wiimotes(dir, n_players)?;
-        write_profiles(dir, n_players);
+        write_wiimotes(dir, slots)?;
+        write_profiles(dir, slots);
     }
     Ok(format!(
-        "Dolphin configurado para {} mando(s){}",
-        n_players,
+        "Dolphin configurado: adaptador emulado y mandos 1-{slots} ({n_players} móvil(es) conectado(s)){}",
         if dirs.len() > 1 {
             format!(" en {} instalaciones", dirs.len())
         } else {
@@ -416,6 +454,63 @@ mod tests {
         write_wiimotes(&dir, 2).unwrap();
         let m2 = std::fs::metadata(&path).unwrap().modified().unwrap();
         assert_eq!(m1, m2, "un INI idéntico no debe tocar el disco");
+    }
+
+    #[test]
+    fn adaptador_emulado_se_fuerza_y_lo_demas_se_conserva() {
+        let dir = tmp_dir("bt");
+        std::fs::write(
+            dir.join("Dolphin.ini"),
+            "[Core]
+WiimoteContinuousScanning = False
+[BluetoothPassthrough]
+Enabled = True
+VID = -1
+PID = -1
+LinkKeys = 
+[Interface]
+Language = 0
+",
+        )
+        .unwrap();
+        ensure_emulated_adapter(&dir).unwrap();
+        let out = std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap();
+        assert!(out.contains("[BluetoothPassthrough]
+Enabled = False
+VID = -1
+PID = -1
+"), "{out}");
+        assert!(!out.contains("Enabled = True"));
+        assert!(out.contains("[Core]
+WiimoteContinuousScanning = False
+"));
+        assert!(out.contains("[Interface]
+Language = 0
+"));
+        assert!(dir.join("Dolphin.ini.pepomote.bak").exists());
+        // idempotente
+        ensure_emulated_adapter(&dir).unwrap();
+        assert_eq!(out, std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap());
+    }
+
+    #[test]
+    fn adaptador_emulado_sin_seccion_ni_archivo() {
+        let dir = tmp_dir("bt-nuevo");
+        ensure_emulated_adapter(&dir).unwrap();
+        let out = std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap();
+        assert_eq!(out, "[BluetoothPassthrough]
+Enabled = False
+");
+        // sección presente pero sin la clave: se añade sin tocar el resto
+        std::fs::write(dir.join("Dolphin.ini"), "[BluetoothPassthrough]
+VID = 1234
+").unwrap();
+        ensure_emulated_adapter(&dir).unwrap();
+        let out = std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap();
+        assert_eq!(out, "[BluetoothPassthrough]
+Enabled = False
+VID = 1234
+");
     }
 
     #[test]
