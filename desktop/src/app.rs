@@ -328,10 +328,18 @@ impl PepoMoteApp {
                     .color(theme::TEXT_DIM),
             );
             ui.add_space(4.0);
-            ui.checkbox(
-                &mut config.abs_mode,
-                RichText::new("Apuntado absoluto (desactívalo para juegos)").size(13.0),
-            );
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut config.abs_mode, RichText::new("Apuntado absoluto").size(13.0));
+                info_icon(
+                    ui,
+                    "Activado: el cursor está donde apunta el móvil, y vuelve al mismo sitio si vuelves a apuntar \
+                     igual (la altura la fija la gravedad; el giro, el último recentrado). El recorrido es exacto: \
+                     Windows no le aplica su aceleración de ratón.\n\n\
+                     Desactivado (relativo): como un ratón, solo cuentan los desplazamientos, con la aceleración \
+                     del sistema si la tienes activada. Es el modo para juegos que capturan el ratón.\n\n\
+                     En movimiento los dos son idénticos (1:1 con el giroscopio). Home recentra en los dos.",
+                );
+            });
             ui.add_space(4.0);
             ui.checkbox(
                 &mut config.auto_dolphin,
@@ -428,6 +436,23 @@ impl PepoMoteApp {
             self.config_dirty = false;
         }
     }
+}
+
+/// Circulito con una «i»: al pasar el ratón por encima enseña `text`.
+fn info_icon(ui: &mut egui::Ui, text: &str) {
+    let size = 15.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), egui::Sense::hover());
+    let color = if resp.hovered() { theme::BLUE } else { theme::TEXT_DIM };
+    let painter = ui.painter();
+    painter.circle_stroke(rect.center(), size / 2.0 - 1.0, Stroke::new(1.3_f32, color));
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "i",
+        egui::FontId::proportional(11.0),
+        color,
+    );
+    resp.on_hover_text(text);
 }
 
 fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
