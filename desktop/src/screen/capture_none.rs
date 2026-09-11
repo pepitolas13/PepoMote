@@ -13,3 +13,22 @@ impl Capturer {
         Ok(Capture::NoWindow("La doble pantalla no está disponible en este sistema".into()))
     }
 }
+
+/// Sin ventanas que esconder.
+pub struct Minder;
+
+impl Minder {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn hide(&mut self) -> bool {
+        false
+    }
+
+    pub fn release(&mut self) {}
+}
+
+pub fn type_text(_text: &str) -> bool {
+    false
+}

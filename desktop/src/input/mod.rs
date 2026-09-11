@@ -25,6 +25,37 @@ pub enum KeyCode {
     PlayPause,
     NextTrack,
     PrevTrack,
+    Backspace,
+    Space,
+    Shift,
+    /// Tecla de un carácter ASCII (letra minúscula, dígito o signo) en la
+    /// posición de un teclado QWERTY; las mayúsculas van con `Shift`.
+    Char(char),
+}
+
+/// Texto → pulsaciones (tecla, con Shift). Lo que no tiene tecla ASCII se
+/// salta (Windows teclea cualquier carácter por otro camino).
+pub fn text_keys(text: &str) -> Vec<(KeyCode, bool)> {
+    let mut out = Vec::new();
+    for c in text.chars() {
+        match c {
+            '\n' => out.push((KeyCode::Enter, false)),
+            '\r' => {}
+            '\u{8}' | '\u{7f}' => out.push((KeyCode::Backspace, false)),
+            ' ' => out.push((KeyCode::Space, false)),
+            'a'..='z' | '0'..='9' => out.push((KeyCode::Char(c), false)),
+            'A'..='Z' => out.push((KeyCode::Char(c.to_ascii_lowercase()), true)),
+            '-' | '=' | '.' | ',' | '\'' | ';' | '/' | '[' | ']' | '`' | '\\' => out.push((KeyCode::Char(c), false)),
+            '_' => out.push((KeyCode::Char('-'), true)),
+            '+' => out.push((KeyCode::Char('='), true)),
+            '!' => out.push((KeyCode::Char('1'), true)),
+            '?' => out.push((KeyCode::Char('/'), true)),
+            ':' => out.push((KeyCode::Char(';'), true)),
+            '"' => out.push((KeyCode::Char('\''), true)),
+            _ => {}
+        }
+    }
+    out
 }
 
 pub trait Injector: Send {
@@ -34,6 +65,19 @@ pub trait Injector: Send {
     fn button(&mut self, btn: MouseButton, down: bool);
     fn key(&mut self, key: KeyCode, down: bool);
     fn wheel(&mut self, delta: i32);
+    /// Teclea un texto en la ventana con el foco (Intro = `\n`, borrar = `\u{8}`).
+    fn type_text(&mut self, text: &str) {
+        for (key, shift) in text_keys(text) {
+            if shift {
+                self.key(KeyCode::Shift, true);
+            }
+            self.key(key, true);
+            self.key(key, false);
+            if shift {
+                self.key(KeyCode::Shift, false);
+            }
+        }
+    }
     /// Posición actual del cursor, normalizada a la pantalla primaria
     /// (puede salirse de 0..1 con varios monitores). None si el SO no
     /// permite leerla (Wayland).
@@ -59,4 +103,28 @@ pub fn new_injector() -> Result<Box<dyn Injector>, String> {
 #[cfg(not(any(windows, target_os = "linux")))]
 pub fn new_injector() -> Result<Box<dyn Injector>, String> {
     Err("plataforma sin soporte de inyección".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn texto_a_teclas() {
+        assert_eq!(
+            text_keys("Link 2\n"),
+            vec![
+                (KeyCode::Char('l'), true),
+                (KeyCode::Char('i'), false),
+                (KeyCode::Char('n'), false),
+                (KeyCode::Char('k'), false),
+                (KeyCode::Space, false),
+                (KeyCode::Char('2'), false),
+                (KeyCode::Enter, false),
+            ]
+        );
+        assert_eq!(text_keys("\u{8}"), vec![(KeyCode::Backspace, false)]);
+        assert_eq!(text_keys("ñ\r"), vec![], "sin tecla ASCII: se salta");
+        assert_eq!(text_keys("!?"), vec![(KeyCode::Char('1'), true), (KeyCode::Char('/'), true)]);
+    }
 }

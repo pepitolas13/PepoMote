@@ -29,7 +29,9 @@ en el entorno:
   pantalla del GamePad): sesión mala rechazada, apertura, tramas. Con Cemu
   abierto y su ventana GamePad View a la vista (por ejemplo
   `Cemu.exe -g <juego.wux>`) recibe imágenes reales y guarda la última;
-  sin Cemu comprueba que llegan estado y keepalive.
+  sin Cemu comprueba que llegan estado y keepalive. Al final manda `text`
+  (teclado del móvil para el teclado en pantalla de Cemu) y comprueba que la
+  sesión sigue viva.
 - `python cemu_live.py [idle|buttons|sticks|touch|all]` — móvil simulado contra
   el receptor NORMAL (token real por `PEPOMOTE_TOKEN`), para ver en Cemu el
   mando moviéndose. Un archivo `cemu_live.cmd` junto al script cambia el patrón.

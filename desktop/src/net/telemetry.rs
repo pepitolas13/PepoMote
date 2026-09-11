@@ -135,6 +135,16 @@ pub fn run(
             }
         }
 
+        // Texto pendiente de teclear (teclado de Cemu desde el móvil)
+        let pending: Vec<String> = std::mem::take(&mut shared.lock().unwrap().text_queue);
+        if !pending.is_empty() {
+            if let Some(inj) = injector.as_deref_mut() {
+                for t in &pending {
+                    inj.type_text(t);
+                }
+            }
+        }
+
         // Ping de RTT a TODOS los jugadores
         if last_ping.elapsed() > Duration::from_millis(500) {
             last_ping = Instant::now();

@@ -346,6 +346,9 @@ pub struct Shared {
     pub cemu_cfg_status: Option<String>,
     /// Doble pantalla: estado de la captura de la ventana GamePad View.
     pub cemu_screen_status: Option<String>,
+    /// Texto que un móvil quiere teclear en el PC (teclado en pantalla de
+    /// Cemu) y que el inyector del SO aún no ha escrito.
+    pub text_queue: Vec<String>,
     pub last_error: Option<String>,
     /// Aviso de firewall Linux bloqueando el puerto (None = todo bien).
     pub firewall_hint: Option<String>,
@@ -376,6 +379,7 @@ impl Shared {
             dolphin_cfg_status: None,
             cemu_cfg_status: None,
             cemu_screen_status: None,
+            text_queue: Vec::new(),
             last_error: None,
             firewall_hint: None,
             uinput_denied: false,

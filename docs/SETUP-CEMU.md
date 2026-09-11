@@ -68,10 +68,15 @@ y tocarla es tocar la pantalla del GamePad. Funciona así:
 1. PepoMote deja `open_pad = true` en el `settings.xml` de Cemu al configurarlo:
    Cemu abre su ventana **GamePad View** (la segunda pantalla) al arrancar. Si
    la cierras, se vuelve a abrir en *Options → Separate GamePad view* (o al
-   reconfigurar con Cemu cerrado). Puedes hacerla pequeña, taparla o mandarla
-   a otro monitor: la captura no depende de que se vea. Minimizada no se
-   puede capturar: si la minimizas, PepoMote la vuelve a abrir al fondo (sin
-   robarte el foco) mientras el móvil pida la pantalla.
+   reconfigurar con Cemu cerrado).
+   **En el PC no la verás**: mientras haya un móvil en modo Wii U, PepoMote la
+   mantiene escondida detrás de la ventana de Cemu (dentro de su rectángulo,
+   justo debajo en el orden de ventanas, sin botón en la barra de tareas ni
+   en Alt+Tab), porque la captura necesita que la ventana exista y esté en
+   pantalla, no que se vea: tapada se captura entera; fuera de la pantalla,
+   transparente o minimizada no. Si la minimizas, la vuelve a abrir al fondo
+   sin robarte el foco. Cuando el móvil se va, vuelve a la barra de tareas
+   (sigue detrás de Cemu: muévela si la quieres ver).
 2. El receptor captura esa ventana solo mientras el móvil GamePad la pide
    (hasta 30 fps, JPEG, la resolución nativa del GamePad como máximo) con
    Windows.Graphics.Capture (lo mismo que usa OBS para las ventanas con GPU;
@@ -83,6 +88,18 @@ y tocarla es tocar la pantalla del GamePad. Funciona así:
 
 Linux: la captura es de X11, que vale también para XWayland. Con Cemu nativo
 en Wayland no hay ventana X que capturar: lanza Cemu con `GDK_BACKEND=x11`.
+
+## Teclado: escribir el nombre del jugador y demás
+
+Cuando un juego pide texto (el nombre en *Zelda: The Wind Waker HD*, un
+mensaje en Miiverse…), Cemu enseña su teclado en pantalla, y ese teclado
+**no reacciona a la pantalla táctil**: en Cemu solo se maneja con el teclado
+del PC. Por eso el móvil tiene, en modo Wii U (GamePad, Pro o Mando de Wii),
+un botón **Teclado** que abre un cuadro de texto: escribe con el teclado del
+móvil y pulsa **Aceptar** (escribe y confirma), **Escribir** (escribe sin
+confirmar) o **Borrar** (borra un carácter en Cemu). El receptor manda las
+teclas a la ventana de Cemu; en Linux las escribe con el teclado virtual de
+PepoMote, así que Cemu debe tener el foco.
 
 ## Movimiento apaisado
 
@@ -108,7 +125,9 @@ copiarlo a `controllerProfiles/`.
 
 - **Controller 1 aparece desconectado en Cemu**: ¿modo Wii U activo en el
   móvil? ¿«Cemu (Wii U): 1 cliente(s) DSU» en la ventana del PC? El móvil tiene
-  que estar conectado (Cemu reintenta solo, sin reiniciar).
+  que estar conectado (Cemu reintenta solo, sin reiniciar). Si el PC dice
+  «0 cliente(s) DSU» con Cemu abierto, PepoMote se reinició después de abrir
+  Cemu: cierra Cemu y vuelve a abrirlo.
 - **«Cemu está abierto: ciérralo…»**: PepoMote no escribe con Cemu abierto
   (al salir, Cemu sobreescribiría la configuración). Ciérralo, pulsa
   **Configurar Cemu** y vuelve a abrirlo.
@@ -120,5 +139,10 @@ copiarlo a `controllerProfiles/`.
   aplica con Cemu cerrado; reinicia Cemu.
 - **En el móvil no aparece la pantalla del GamePad**: el hueco central dice el
   motivo. Comprueba que Cemu tiene abierta la ventana GamePad View (Options →
-  Separate GamePad view); minimizada, PepoMote la restaura al fondo él solo;
-  en Wayland, `GDK_BACKEND=x11`.
+  Separate GamePad view; escondida detrás de Cemu es lo normal); minimizada,
+  PepoMote la restaura al fondo él solo; en Wayland, `GDK_BACKEND=x11`.
+- **El teclado en pantalla de Cemu no hace caso a los toques**: es así en Cemu
+  (solo teclas). Usa el botón **Teclado** del móvil.
+- **No encuentro la ventana GamePad View en el PC**: está detrás de la de Cemu
+  mientras juegas con el móvil, a propósito. Al desconectar el móvil vuelve
+  a la barra de tareas.

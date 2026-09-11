@@ -66,16 +66,32 @@ lo pisó otro programa (mira Opciones → Configuración de mandos: Controller 1
 debe ser Wii U GamePad con DSUController «Controller 1»). Detalles en
 `docs/SETUP-CEMU.md`.
 
+## «Cemu (Wii U): 0 cliente(s) DSU» con Cemu abierto
+
+Si PepoMote se cerró o se reinició mientras Cemu estaba abierto, Cemu deja de
+preguntar por los mandos DSU y no vuelve a intentarlo: cierra Cemu y ábrelo
+otra vez (con PepoMote ya en marcha). Lo mismo si ves que el juego no responde
+al móvil aunque el PC diga «Modo Wii U».
+
 ## El móvil no enseña la pantalla del GamePad (doble pantalla)
 
 El hueco central del GamePad dice el motivo: «Cemu no está abierto» o «Abre la
 vista del GamePad en Cemu (Options → Separate GamePad view)». Minimizada no se
 puede capturar: PepoMote la restaura al fondo (sin robar el foco) mientras el
-móvil pida la pantalla.
+móvil pida la pantalla. Que no la veas en el PC es lo normal: con un móvil en
+modo Wii U la ventana se queda escondida detrás de la de Cemu (sin botón en la
+barra de tareas), porque la pantalla es para el móvil.
 PepoMote deja `open_pad = true` en el settings.xml de Cemu al configurarlo, así
 que la ventana GamePad View se abre sola al arrancar Cemu; si la cerraste,
 vuelve a abrirla desde ese menú. En Linux la captura es X11 (vale XWayland):
 con Cemu nativo en Wayland, lánzalo con `GDK_BACKEND=x11`.
+
+## El teclado en pantalla de Cemu no reacciona al táctil
+
+Es cosa de Cemu: su teclado en pantalla (nombre del jugador, mensajes…) solo
+acepta teclas del PC, no toques. Pulsa el botón **Teclado** del móvil (modo
+Wii U), escribe y **Aceptar**. En Linux, el texto entra por el teclado virtual
+de PepoMote: la ventana de Cemu tiene que tener el foco.
 
 ## El GamePad gira al revés (Wii U apaisado)
 

@@ -38,6 +38,7 @@ fn main() -> eframe::Result {
     let dsu = dsu::start(shared.clone());
     let hub = screen::ScreenHub::new(shared.clone());
     net::start(shared.clone(), pairing.clone(), dsu, hub);
+    screen::start_minder(shared.clone());
 
     #[cfg(target_os = "linux")]
     firewall::watch(shared.clone(), pairing.port);

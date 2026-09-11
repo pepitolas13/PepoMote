@@ -62,8 +62,10 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
   no gira la pantalla (Phosh sin rotación automática), la app pinta el mando
   girado para que lo sostengas apaisado; el ajuste **Giro** (izquierda /
   derecha) dice hacia dónde queda el borde superior del móvil y orienta los
-  sensores. Chip **Mando Wii** para ser un mando de Wii dentro de Cemu. Ver
-  `docs/SETUP-CEMU.md`.
+  sensores. Chip **Mando Wii** para ser un mando de Wii dentro de Cemu. La
+  zona central enseña la pantalla del GamePad que manda Cemu, y el botón
+  **Teclado** escribe en el teclado en pantalla de Cemu (que no acepta
+  toques). Ver `docs/SETUP-CEMU.md`.
 - La cabecera enseña RTT y la frecuencia real del sensor.
 
 ## Sensores

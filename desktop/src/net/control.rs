@@ -296,6 +296,25 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                     let _ = send(&writer, &json!({"m":"pad","pad":pad_str(shared, slot)}));
                 }
             }
+            Some("text") => {
+                // Teclado del móvil → teclado en pantalla de Cemu (no acepta
+                // toques, solo teclas): a la ventana de Cemu en modo Wii U;
+                // si no se la encuentra, o en otros modos, al SO (ventana con
+                // el foco) desde el hilo de telemetría
+                if let Some(t) = msg["text"].as_str().filter(|t| !t.is_empty()) {
+                    let wiiu = shared.lock().unwrap().mode == Mode::Cemu;
+                    let to_os = if wiiu {
+                        // sin camino directo a la ventana (Linux): al SO, pero
+                        // solo con Cemu abierto (que tendrá el foco)
+                        !crate::screen::type_text(t) && cfg!(target_os = "linux") && crate::cemu::running_exe().0
+                    } else {
+                        true
+                    };
+                    if to_os {
+                        shared.lock().unwrap().text_queue.push(t.to_owned());
+                    }
+                }
+            }
             Some("config") => {
                 let _ = send(&writer, &msg);
             }

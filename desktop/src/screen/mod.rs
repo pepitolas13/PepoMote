@@ -19,7 +19,7 @@ mod capture;
 #[path = "capture_none.rs"]
 mod capture;
 
-use crate::state::SharedState;
+use crate::state::{Mode, SharedState};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -43,6 +43,7 @@ pub struct RawFrame {
 pub enum Capture {
     Frame(RawFrame),
     /// La ventana no ha cambiado desde la última captura (captura por eventos).
+    #[cfg_attr(not(windows), allow(dead_code))]
     Unchanged,
     /// No hay ventana que capturar, con el motivo legible para el móvil.
     NoWindow(String),
@@ -55,7 +56,7 @@ pub enum Capture {
 pub fn is_uniform(f: &RawFrame) -> bool {
     let mut bins = [0u32; 4096];
     let mut total = 0u32;
-    for p in f.bgra.chunks_exact(4).step_by(29) {
+    for p in f.bgra.as_chunks::<4>().0.iter().step_by(29) {
         let key = ((p[0] as usize >> 4) << 8) | ((p[1] as usize >> 4) << 4) | (p[2] as usize >> 4);
         bins[key] += 1;
         total += 1;
@@ -270,6 +271,63 @@ pub fn encode_jpeg(bgra: &[u8], w: u32, h: u32, quality: u8) -> Result<Vec<u8>, 
     Ok(out)
 }
 
+// ---------------------------------------------------------------------------
+// Ventana escondida en el PC y teclado
+// ---------------------------------------------------------------------------
+
+/// Dónde esconder la GamePad View dentro del rectángulo (izq, arriba, dcha,
+/// abajo) de la ventana principal de Cemu: centrada, con margen, y encogida
+/// (misma proporción) si no cabe con su tamaño natural. Devuelve (x, y,
+/// ancho, alto); None si la principal es demasiado pequeña.
+pub fn tuck_rect(main: [i32; 4], natural: (i32, i32)) -> Option<[i32; 4]> {
+    const MARGIN: i32 = 24;
+    let avail_w = main[2] - main[0] - 2 * MARGIN;
+    let avail_h = main[3] - main[1] - 2 * MARGIN;
+    if avail_w < 160 || avail_h < 90 || natural.0 <= 0 || natural.1 <= 0 {
+        return None;
+    }
+    let scale = (avail_w as f32 / natural.0 as f32).min(avail_h as f32 / natural.1 as f32).min(1.0);
+    let w = ((natural.0 as f32 * scale) as i32).max(1);
+    let h = ((natural.1 as f32 * scale) as i32).max(1);
+    Some([main[0] + MARGIN + (avail_w - w) / 2, main[1] + MARGIN + (avail_h - h) / 2, w, h])
+}
+
+/// ¿`inner` (izq, arriba, dcha, abajo) está dentro de `outer`, con unos
+/// píxeles de tolerancia por los bordes invisibles de las ventanas?
+pub fn rect_inside(inner: [i32; 4], outer: [i32; 4]) -> bool {
+    const TOL: i32 = 4;
+    inner[0] >= outer[0] - TOL && inner[1] >= outer[1] - TOL && inner[2] <= outer[2] + TOL && inner[3] <= outer[3] + TOL
+}
+
+/// Hilo que, mientras haya móviles en modo Wii U, mantiene la ventana
+/// GamePad View de Cemu escondida detrás de la principal (la segunda pantalla
+/// se ve en el móvil, no en el PC) y la devuelve a la normalidad al salir.
+pub fn start_minder(shared: SharedState) {
+    let _ = std::thread::Builder::new().name("pad-minder".into()).spawn(move || {
+        let mut minder = capture::Minder::new();
+        loop {
+            let active = {
+                let s = shared.lock().unwrap_or_else(|e| e.into_inner());
+                s.mode == Mode::Cemu && s.players.iter().any(|p| p.is_some())
+            };
+            let hidden = if active {
+                minder.hide()
+            } else {
+                minder.release();
+                false
+            };
+            std::thread::sleep(Duration::from_millis(if hidden { 1500 } else { 500 }));
+        }
+    });
+}
+
+/// Teclea `text` en Cemu (su teclado en pantalla no acepta toques, solo
+/// teclas). `\n` = Intro, `\u{8}` = borrar. false si no se encontró la
+/// ventana de Cemu (el que llama lo manda entonces al SO).
+pub fn type_text(text: &str) -> bool {
+    capture::type_text(text)
+}
+
 fn capture_loop(hub: Arc<ScreenHub>) {
     let mut cap = capture::Capturer::new();
     let mut prev: Option<RawFrame> = None;
@@ -348,6 +406,31 @@ fn capture_loop(hub: Arc<ScreenHub>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escondite_dentro_de_la_principal() {
+        // cabe entera: centrada con margen
+        let r = tuck_rect([100, 100, 1500, 900], (870, 519)).unwrap();
+        assert_eq!(r[2..], [870, 519]);
+        assert!(rect_inside([r[0], r[1], r[0] + r[2], r[1] + r[3]], [100, 100, 1500, 900]));
+        assert_eq!(r[0] - 100, 1500 - (r[0] + r[2]), "centrada en horizontal");
+        // no cabe: se encoge manteniendo la proporción
+        let r = tuck_rect([0, 0, 640, 480], (870, 519)).unwrap();
+        assert!(r[2] <= 640 - 48 && r[3] <= 480 - 48);
+        assert!((r[2] as f32 / r[3] as f32 - 870.0 / 519.0).abs() < 0.02);
+        assert!(rect_inside([r[0], r[1], r[0] + r[2], r[1] + r[3]], [0, 0, 640, 480]));
+        // principal minúscula: nada que hacer
+        assert!(tuck_rect([0, 0, 200, 100], (870, 519)).is_none());
+        assert!(tuck_rect([0, 0, 800, 600], (0, 0)).is_none());
+    }
+
+    #[test]
+    fn dentro_con_tolerancia() {
+        assert!(rect_inside([10, 10, 100, 100], [0, 0, 200, 200]));
+        assert!(rect_inside([-3, 0, 203, 200], [0, 0, 200, 200]), "bordes invisibles");
+        assert!(!rect_inside([-10, 0, 100, 100], [0, 0, 200, 200]));
+        assert!(!rect_inside([0, 0, 100, 260], [0, 0, 200, 200]));
+    }
 
     fn frame(w: u32, h: u32) -> RawFrame {
         let mut bgra = vec![0u8; (w * h * 4) as usize];

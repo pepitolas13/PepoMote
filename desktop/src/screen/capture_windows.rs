@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, POINT, RECT};
+use windows::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{
     ClientToScreen, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GdiFlush, GetDC, ReleaseDC,
@@ -25,10 +25,13 @@ use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClientRect, GetMenu, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow,
-    IsWindowVisible, SetWindowPos, ShowWindow, HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SW_SHOWNOACTIVATE,
+    EnumChildWindows, EnumWindows, GetClientRect, GetMenu, GetWindow, GetWindowLongW, GetWindowRect,
+    GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, IsZoomed, PostMessageW,
+    SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, GW_HWNDPREV, HWND_BOTTOM, SWP_HIDEWINDOW,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, WM_CHAR,
+    WM_KEYDOWN, WM_KEYUP, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 use windows_capture::capture::{CaptureControl, Context, GraphicsCaptureApiHandler};
 use windows_capture::frame::Frame;
@@ -386,28 +389,216 @@ unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
     BOOL(1)
 }
 
-/// La ventana «GamePad View» de Cemu: una ventana visible del proceso
-/// Cemu.exe cuyo título contiene «GamePad» («GamePad View - FPS: 60.00»
-/// mientras juega); si la traducción no lo lleva, la ventana de Cemu que no
-/// tiene barra de menú (la principal sí).
-pub fn find_pad_window() -> Option<HWND> {
+/// Ventanas visibles de nivel superior del proceso Cemu.exe: (ventana, título).
+fn cemu_toplevels() -> Vec<(HWND, String)> {
     let mut list: Vec<(HWND, String, u32)> = Vec::new();
     unsafe {
         let _ = EnumWindows(Some(enum_cb), LPARAM(&mut list as *mut _ as isize));
     }
     let mut pid_cache: std::collections::HashMap<u32, bool> = std::collections::HashMap::new();
-    let cemu: Vec<&(HWND, String, u32)> = list
-        .iter()
+    list.into_iter()
         .filter(|(_, _, pid)| {
             *pid_cache
                 .entry(*pid)
                 .or_insert_with(|| exe_name(*pid).is_some_and(|n| n.starts_with("cemu") && n.ends_with(".exe")))
         })
-        .collect();
-    if let Some((h, _, _)) = cemu.iter().find(|(_, t, _)| t.to_lowercase().contains("gamepad")) {
-        return Some(*h);
+        .map(|(h, t, _)| (h, t))
+        .collect()
+}
+
+/// Las dos ventanas de Cemu: (GamePad View, principal).
+///
+/// La GamePad View es la ventana cuyo título contiene «GamePad» («GamePad
+/// View - FPS: 60.00» mientras juega); si la traducción no lo lleva, la que
+/// no tiene barra de menú. La principal es la que empieza por «Cemu» (con el
+/// juego cargado: «Cemu 2.6 - FPS: … - Nombre del juego»), si no la que tiene
+/// barra de menú.
+fn cemu_windows() -> (Option<HWND>, Option<HWND>) {
+    let wins = cemu_toplevels();
+    let has_menu = |h: &HWND| unsafe { !GetMenu(*h).0.is_null() };
+    let pad = wins
+        .iter()
+        .find(|(_, t)| t.to_lowercase().contains("gamepad"))
+        .or_else(|| wins.iter().find(|(h, _)| !has_menu(h)))
+        .map(|(h, _)| *h);
+    let main = wins
+        .iter()
+        .filter(|(h, _)| Some(*h) != pad)
+        .find(|(_, t)| t.to_lowercase().starts_with("cemu"))
+        .or_else(|| wins.iter().filter(|(h, _)| Some(*h) != pad).find(|(h, _)| has_menu(h)))
+        .map(|(h, _)| *h);
+    (pad, main)
+}
+
+/// La ventana «GamePad View» de Cemu.
+pub fn find_pad_window() -> Option<HWND> {
+    cemu_windows().0
+}
+
+// ---------------------------------------------------------------------------
+// Ventana escondida en el PC
+// ---------------------------------------------------------------------------
+
+/// Tamaño exterior natural de la GamePad View (854×480 de área cliente más
+/// marco y barra de título); si Cemu la abre más grande se respeta.
+const NATURAL_W: i32 = 854 + 16;
+const NATURAL_H: i32 = 480 + 39;
+
+/// ¿`upper` está por encima de `lower` en el orden Z? (se sube desde `lower`)
+fn is_above(upper: HWND, lower: HWND) -> bool {
+    let mut h = lower;
+    for _ in 0..4096 {
+        h = match unsafe { GetWindow(h, GW_HWNDPREV) } {
+            Ok(h) if !h.0.is_null() => h,
+            _ => return false,
+        };
+        if h == upper {
+            return true;
+        }
     }
-    cemu.iter()
-        .find(|(h, _, _)| unsafe { GetMenu(*h).0.is_null() })
-        .map(|(h, _, _)| *h)
+    false
+}
+
+/// Oculta y vuelve a mostrar sin tocar el orden Z ni el foco (la barra de
+/// tareas solo relee los estilos de la ventana al mostrarla).
+unsafe fn reshow(hwnd: HWND) {
+    let _ = SetWindowPos(hwnd, HWND::default(), 0, 0, 0, 0, SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    let _ = SetWindowPos(hwnd, HWND::default(), 0, 0, 0, 0, SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+/// Esconde la GamePad View de Cemu mientras un móvil hace de GamePad: dentro
+/// del rectángulo de la ventana principal, justo debajo de ella en el orden Z
+/// y fuera de la barra de tareas y de Alt+Tab (WS_EX_TOOLWINDOW). La captura
+/// sigue: Windows.Graphics.Capture compone la ventana aunque esté tapada
+/// (fuera de la pantalla, transparente o minimizada no: medido).
+pub struct Minder {
+    /// Ventana a la que se le quitó la barra de tareas (para devolvérsela).
+    styled: Option<HWND>,
+    /// Tamaño exterior natural de la ventana (antes de encogerla para que quepa).
+    natural: Option<(HWND, i32, i32)>,
+}
+
+impl Minder {
+    pub fn new() -> Self {
+        Self { styled: None, natural: None }
+    }
+
+    /// Un paso: deja la ventana escondida si se puede. true si lo está.
+    pub fn hide(&mut self) -> bool {
+        let (Some(pad), Some(main)) = cemu_windows() else {
+            self.styled = None;
+            self.natural = None;
+            return false;
+        };
+        unsafe {
+            if IsIconic(main).as_bool() {
+                // Cemu minimizado: el usuario está a otra cosa; no se toca
+                return false;
+            }
+            if IsIconic(pad).as_bool() || IsZoomed(pad).as_bool() {
+                let _ = ShowWindow(pad, SW_SHOWNOACTIVATE);
+            }
+            if self.styled != Some(pad) {
+                let ex = GetWindowLongW(pad, GWL_EXSTYLE) as u32;
+                if ex & WS_EX_TOOLWINDOW.0 == 0 {
+                    SetWindowLongW(pad, GWL_EXSTYLE, ((ex | WS_EX_TOOLWINDOW.0) & !WS_EX_APPWINDOW.0) as i32);
+                    reshow(pad);
+                }
+                self.styled = Some(pad);
+            }
+            let (mut m, mut p) = (RECT::default(), RECT::default());
+            if GetWindowRect(main, &mut m).is_err() || GetWindowRect(pad, &mut p).is_err() {
+                return false;
+            }
+            let natural = match self.natural {
+                Some((h, w, hh)) if h == pad => (w, hh),
+                _ => {
+                    let n = ((p.right - p.left).max(NATURAL_W), (p.bottom - p.top).max(NATURAL_H));
+                    self.natural = Some((pad, n.0, n.1));
+                    n
+                }
+            };
+            let main_rc = [m.left, m.top, m.right, m.bottom];
+            let Some(want) = super::tuck_rect(main_rc, natural) else {
+                return false;
+            };
+            if !super::rect_inside([p.left, p.top, p.right, p.bottom], main_rc) || !is_above(main, pad) {
+                let _ = SetWindowPos(pad, main, want[0], want[1], want[2], want[3], SWP_NOACTIVATE);
+            }
+            true
+        }
+    }
+
+    /// Al salir del modo Wii U: la ventana vuelve a la barra de tareas (se
+    /// queda donde está).
+    pub fn release(&mut self) {
+        let Some(pad) = self.styled.take() else {
+            return;
+        };
+        self.natural = None;
+        unsafe {
+            if !IsWindow(pad).as_bool() {
+                return;
+            }
+            let ex = GetWindowLongW(pad, GWL_EXSTYLE) as u32;
+            if ex & WS_EX_TOOLWINDOW.0 != 0 {
+                SetWindowLongW(pad, GWL_EXSTYLE, (ex & !WS_EX_TOOLWINDOW.0) as i32);
+                reshow(pad);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Teclado: texto del móvil al teclado en pantalla de Cemu
+// ---------------------------------------------------------------------------
+
+unsafe extern "system" fn child_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let list = &mut *(lparam.0 as *mut Vec<(HWND, i64)>);
+    if IsWindowVisible(hwnd).as_bool() {
+        let mut rc = RECT::default();
+        if GetClientRect(hwnd, &mut rc).is_ok() {
+            list.push((hwnd, rc.right as i64 * rc.bottom as i64));
+        }
+    }
+    BOOL(1)
+}
+
+/// El lienzo de render de una ventana de Cemu (donde van las teclas): su
+/// hijo visible más grande.
+fn canvas_of(frame: HWND) -> Option<HWND> {
+    let mut kids: Vec<(HWND, i64)> = Vec::new();
+    unsafe {
+        let _ = EnumChildWindows(frame, Some(child_cb), LPARAM(&mut kids as *mut _ as isize));
+    }
+    kids.into_iter().max_by_key(|(_, area)| *area).map(|(h, _)| h)
+}
+
+/// Teclea en Cemu: WM_CHAR al lienzo de la GamePad View (o al de la
+/// principal). Su teclado en pantalla solo atiende a teclas (13 = aceptar,
+/// 8 = borrar, el resto texto), no a toques. false si no hay Cemu a la vista.
+pub fn type_text(text: &str) -> bool {
+    let (pad, main) = cemu_windows();
+    let Some(canvas) = pad.and_then(canvas_of).or_else(|| main.and_then(canvas_of)) else {
+        return false;
+    };
+    unsafe {
+        // Un keydown que Cemu no procesa: wxWidgets descarta el WM_CHAR que
+        // sigue a un keydown «procesado» (p. ej. F11 sin WM_CHAR después)
+        let _ = PostMessageW(canvas, WM_KEYDOWN, WPARAM(VK_SHIFT.0 as usize), LPARAM(0));
+        let _ = PostMessageW(canvas, WM_KEYUP, WPARAM(VK_SHIFT.0 as usize), LPARAM(0xC000_0000u32 as isize));
+        for c in text.chars() {
+            let c = match c {
+                '\n' => '\r',
+                '\u{7f}' => '\u{8}',
+                '\r' => continue,
+                c => c,
+            };
+            let mut units = [0u16; 2];
+            for u in c.encode_utf16(&mut units) {
+                let _ = PostMessageW(canvas, WM_CHAR, WPARAM(*u as usize), LPARAM(1));
+            }
+        }
+    }
+    true
 }

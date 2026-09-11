@@ -2,7 +2,8 @@
 pone modo Wii U, abre el canal `screen` y recibe tramas durante unos
 segundos; guarda el último JPEG para verlo. Con Cemu abierto y su ventana
 GamePad View a la vista llegan imágenes reales; sin Cemu, solo tramas de
-estado (y se comprueba que lo diga).
+estado (y se comprueba que lo diga). Al final manda `text` (teclado del
+móvil) y comprueba que la sesión sigue viva.
 Uso: python e2e_screen.py <segundos> <salida.jpg>
 Entorno: PEPOMOTE_PORT (26761), PEPOMOTE_PAIR_CODE=1234 en el receptor,
 o PEPOMOTE_TOKEN para usar el token real."""
@@ -112,10 +113,23 @@ if frames:
     print(f"fps medios: {frames / max(elapsed, 1e-6):.1f}, tamaño medio {sum(sizes) // len(sizes)} B, máx {max(sizes)} B")
     check(last[:2] == b"\xff\xd8" and last[-2:] == b"\xff\xd9", "el último JPEG está bien formado (SOI/EOI)")
     open(OUT, "wb").write(last); print("guardado", OUT)
-    check(frames >= SECONDS * 5, f"ritmo razonable (≥5 fps): {frames / max(elapsed, 1e-6):.1f} fps")
+    # La captura va por eventos: con la pantalla del GamePad quieta llegan
+    # pocas imágenes (y está bien); con movimiento, 20-30 fps.
+    check(frames >= 2, f"llegan imágenes ({frames / max(elapsed, 1e-6):.1f} fps; con la pantalla quieta pueden ser pocas)")
 else:
     check(any("Cemu" in s or "GamePad" in s for s in status), "sin ventana: el receptor explica por qué (estado)")
     check(keep >= 1 or len(status) >= 1, "sin imágenes el canal sigue vivo (keepalive/estado)")
+# teclado del móvil → teclado en pantalla de Cemu: el receptor acepta `text`
+# (con Cemu abierto se lo teclea a su ventana; sin Cemu, en Windows lo
+# descarta) y la sesión sigue viva
+s1.sendall((json.dumps({"m": "text", "text": "e2e\n"}) + "\n").encode())
+s1.sendall(b'{"m":"text","text":""}\n{"m":"text"}\n')
+s1.sendall(b'{"m":"ping","t":77}\n')
+pong = None
+for _ in range(8):  # el latido del script también manda pings (t=1)
+    pong = readmsg(f1, "pong")
+    if pong is None or pong.get("t") == 77: break
+check(pong is not None and pong.get("t") == 77, f"tras `text` la sesión sigue viva (pong {pong})")
 try:
     s1.sendall(b'{"m":"bye"}\n'); s1.close()
 except OSError:

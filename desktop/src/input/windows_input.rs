@@ -3,9 +3,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
     MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE,
     MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL,
-    MOUSEINPUT, MOUSE_EVENT_FLAGS, VIRTUAL_KEY, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_MEDIA_NEXT_TRACK,
-    VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK, VK_RETURN, VK_RIGHT, VK_UP, VK_VOLUME_DOWN,
-    VK_VOLUME_MUTE, VK_VOLUME_UP,
+    VkKeyScanW, KEYEVENTF_UNICODE, MOUSEINPUT, MOUSE_EVENT_FLAGS, VIRTUAL_KEY, VK_BACK, VK_DOWN,
+    VK_ESCAPE, VK_LEFT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK, VK_RETURN,
+    VK_RIGHT, VK_SHIFT, VK_SPACE, VK_UP, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, SM_CXSCREEN, SM_CXVIRTUALSCREEN, SM_CYSCREEN, SM_CYVIRTUALSCREEN,
@@ -127,8 +127,57 @@ impl Injector for WinInjector {
             KeyCode::PlayPause => VK_MEDIA_PLAY_PAUSE,
             KeyCode::NextTrack => VK_MEDIA_NEXT_TRACK,
             KeyCode::PrevTrack => VK_MEDIA_PREV_TRACK,
+            KeyCode::Backspace => VK_BACK,
+            KeyCode::Space => VK_SPACE,
+            KeyCode::Shift => VK_SHIFT,
+            // tecla virtual del carácter en la disposición actual (byte bajo)
+            KeyCode::Char(c) => VIRTUAL_KEY((unsafe { VkKeyScanW(c as u16) } & 0xFF) as u16),
         };
         self.send_key(vk, down);
+    }
+
+    /// Texto tal cual (cualquier carácter, vía KEYEVENTF_UNICODE) a la
+    /// ventana con el foco.
+    fn type_text(&mut self, text: &str) {
+        for c in text.chars() {
+            match c {
+                '\n' => {
+                    self.send_key(VK_RETURN, true);
+                    self.send_key(VK_RETURN, false);
+                }
+                '\r' => {}
+                '\u{8}' | '\u{7f}' => {
+                    self.send_key(VK_BACK, true);
+                    self.send_key(VK_BACK, false);
+                }
+                _ => {
+                    let mut units = [0u16; 2];
+                    for u in c.encode_utf16(&mut units) {
+                        for up in [false, true] {
+                            let input = INPUT {
+                                r#type: INPUT_KEYBOARD,
+                                Anonymous: INPUT_0 {
+                                    ki: KEYBDINPUT {
+                                        wVk: VIRTUAL_KEY(0),
+                                        wScan: *u,
+                                        dwFlags: if up {
+                                            KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+                                        } else {
+                                            KEYEVENTF_UNICODE
+                                        },
+                                        time: 0,
+                                        dwExtraInfo: 0,
+                                    },
+                                },
+                            };
+                            unsafe {
+                                SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn wheel(&mut self, delta: i32) {

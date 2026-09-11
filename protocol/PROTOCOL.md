@@ -34,6 +34,7 @@ Una línea UTF-8 = un mensaje JSON terminado en `\n`. El móvil conecta y envía
 | `mode` | ambas | `{"m":"mode","mode":"pointer"\|"dolphin"\|"cemu"}` | eco `mode` como confirmación; el PC lo difunde además a las otras sesiones cuando cambia |
 | `pad` | ambas | `{"m":"pad","pad":"wiimote"\|"gamepad"}` (modo Wii U: ser Mando de Wii o GamePad/Pro) | eco `pad` con el tipo efectivo (`gamepad`, `pro`, `wiimote`); el PC lo envía además sin que se lo pidan a cualquier móvil cuyo tipo cambie (J2 pasa a `gamepad` si J1 se va; a un Nunchuk le dice `wiimote` cuando su jugador es Mando de Wii y está en uso, `nunchuk` si no) |
 | `notice` | PC→móvil | `{"m":"notice","text":"..."}` aviso legible (p. ej. «Cemu está abierto: ciérralo…») | — (se muestra unos segundos) |
+| `text` | móvil→PC | `{"m":"text","text":"..."}` texto para teclear en el PC (`\n` = Intro, `\u0008` = borrar). En modo `cemu` va al teclado en pantalla de Cemu, que solo atiende a teclas (Windows: mensajes de tecla a su ventana; Linux: teclado virtual, solo con Cemu abierto); en los demás modos, a la ventana con el foco | — (un receptor anterior a 1.3 lo ignora) |
 | `config` | ambas | `{"m":"config","sensor_hz":u16?,"sens_deg":f32?,...}` solo claves presentes | eco `config` |
 | `ping` | ambas | `{"m":"ping","t":u64}` | `{"m":"pong","t":<mismo t>}` |
 | `bye` | ambas | `{"m":"bye"}` | cerrar |
