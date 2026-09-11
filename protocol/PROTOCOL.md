@@ -32,7 +32,7 @@ Una línea UTF-8 = un mensaje JSON terminado en `\n`. El móvil conecta y envía
 | `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer","slot":0,"role":"wiimote","player":1,"name":"<PC>","modes":["pointer","dolphin","cemu"],"pad":"gamepad"\|"pro"\|"wiimote"\|"nunchuk"}` | — |
 | `err` | PC→móvil | `{"m":"err","code":"bad_token"\|"bad_code"\|"bad_version"\|"busy","msg":"..."}` | cerrar |
 | `mode` | ambas | `{"m":"mode","mode":"pointer"\|"dolphin"\|"cemu"}` | eco `mode` como confirmación; el PC lo difunde además a las otras sesiones cuando cambia |
-| `pad` | ambas | `{"m":"pad","pad":"wiimote"\|"gamepad"}` (modo Wii U: ser Mando Wii o GamePad/Pro) | eco `pad` con el tipo efectivo (`gamepad`, `pro`, `wiimote`; `nunchuk` en un Nunchuk) |
+| `pad` | ambas | `{"m":"pad","pad":"wiimote"\|"gamepad"}` (modo Wii U: ser Mando de Wii o GamePad/Pro) | eco `pad` con el tipo efectivo (`gamepad`, `pro`, `wiimote`); el PC lo envía además sin que se lo pidan a cualquier móvil cuyo tipo cambie (J2 pasa a `gamepad` si J1 se va; a un Nunchuk le dice `wiimote` cuando su jugador es Mando de Wii y está en uso, `nunchuk` si no) |
 | `notice` | PC→móvil | `{"m":"notice","text":"..."}` aviso legible (p. ej. «Cemu está abierto: ciérralo…») | — (se muestra unos segundos) |
 | `config` | ambas | `{"m":"config","sensor_hz":u16?,"sens_deg":f32?,...}` solo claves presentes | eco `config` |
 | `ping` | ambas | `{"m":"ping","t":u64}` | `{"m":"pong","t":<mismo t>}` |

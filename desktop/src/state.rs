@@ -278,6 +278,27 @@ pub fn pad_kind(players: &[Option<PlayerInfo>], slot: u8) -> Option<PadKind> {
     cemu_layout(players).iter().find(|c| c.dsu_slot == slot).map(|c| c.kind)
 }
 
+/// Lo que se le dice a cada móvil en `ok.pad` / eco `pad`: su tipo de mando
+/// en Cemu; a un Nunchuk, `wiimote` si su jugador es Mando de Wii (está en
+/// uso) y `nunchuk` si no (en Wii U no tiene a quién acompañar).
+pub fn effective_pad(players: &[Option<PlayerInfo>], slot: u8) -> &'static str {
+    let layout = cemu_layout(players);
+    match players.get(slot as usize).and_then(|p| p.as_ref()).map(|p| p.role) {
+        Some(Role::Nunchuk) => {
+            if layout.iter().any(|c| c.nunchuk_slot == Some(slot)) {
+                "wiimote"
+            } else {
+                "nunchuk"
+            }
+        }
+        _ => layout
+            .iter()
+            .find(|c| c.dsu_slot == slot)
+            .map(|c| c.kind.as_str())
+            .unwrap_or("gamepad"),
+    }
+}
+
 /// Jugadores en orden: (slot del Wiimote, slot del Nunchuk asociado).
 pub fn player_layout(players: &[Option<PlayerInfo>]) -> Vec<(u8, Option<u8>)> {
     let wiimotes: Vec<u8> = (0..players.len())
@@ -421,6 +442,10 @@ mod tests {
         assert_eq!(pad_kind(&p, 0), Some(PadKind::GamePad));
         assert_eq!(pad_kind(&p, 1), Some(PadKind::Pro));
         assert_eq!(pad_kind(&p, 3), None, "el Nunchuk no tiene tipo propio");
+        assert_eq!(effective_pad(&p, 0), "gamepad");
+        assert_eq!(effective_pad(&p, 1), "pro");
+        assert_eq!(effective_pad(&p, 3), "nunchuk", "sin uso: J1 es GamePad");
+        assert_eq!(effective_pad(&p, 2), "gamepad", "slot vacío: valor por defecto");
         // J1 pide Mando Wii: se lleva el Nunchuk y J2 sigue siendo Pro (no GamePad)
         let mut p = p;
         p[0].as_mut().unwrap().pad_wii = true;
@@ -431,6 +456,12 @@ mod tests {
                 CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None },
             ]
         );
+        assert_eq!(effective_pad(&p, 0), "wiimote");
+        assert_eq!(effective_pad(&p, 3), "wiimote", "el Nunchuk ya está en uso");
+        // se va J1: J2 pasa a ser el GamePad (su móvil debe enterarse por `pad`)
+        p[0] = None;
+        assert_eq!(effective_pad(&p, 1), "gamepad");
+        assert_eq!(effective_pad(&p, 3), "nunchuk");
         // solo un Nunchuk: nada que configurar
         let p = [None, None, None, player(Role::Nunchuk)];
         assert!(cemu_layout(&p).is_empty());

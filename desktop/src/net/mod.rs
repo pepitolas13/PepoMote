@@ -31,6 +31,20 @@ pub struct Session {
     /// Canal de control de esta sesión, para avisarle desde fuera de su hilo
     /// (difusión de `mode` y `notice`). None solo en tests.
     pub writer: Option<Arc<Mutex<TcpStream>>>,
+    /// Último `pad` (tipo de mando en Cemu) que se le dijo a este móvil, para
+    /// avisarle solo cuando cambia (J2 pasa a GamePad si J1 se va, el
+    /// Nunchuk entra en uso cuando su jugador elige Mando de Wii…).
+    pub last_pad: Option<&'static str>,
+}
+
+/// Escribe una línea JSON en el canal de control de una sesión.
+pub fn send_line(writer: &Arc<Mutex<TcpStream>>, v: &serde_json::Value) {
+    use std::io::Write;
+    let mut line = v.to_string();
+    line.push('\n');
+    if let Ok(mut w) = writer.lock() {
+        let _ = w.write_all(line.as_bytes());
+    }
 }
 
 /// Sesiones vivas, accesibles desde los módulos de configuración
@@ -47,13 +61,8 @@ pub fn broadcast(v: &serde_json::Value, except: Option<u32>) {
         .filter(|s| Some(s.id) != except)
         .filter_map(|s| s.writer.clone())
         .collect();
-    let mut line = v.to_string();
-    line.push('\n');
     for w in writers {
-        use std::io::Write;
-        if let Ok(mut w) = w.lock() {
-            let _ = w.write_all(line.as_bytes());
-        }
+        send_line(&w, v);
     }
 }
 
@@ -133,6 +142,7 @@ mod tests {
             role: Role::Wiimote,
             pad_wii: false,
             writer: None,
+            last_pad: None,
         }
     }
 

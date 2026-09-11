@@ -114,11 +114,16 @@ impl Dsu {
 }
 
 pub fn start(shared: SharedState) -> Option<Arc<Dsu>> {
-    let socket = match UdpSocket::bind(("127.0.0.1", server::DSU_PORT)) {
+    // Solo para los e2e en el propio equipo: un receptor de prueba junto al real
+    let port = std::env::var("PEPOMOTE_DSU_PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(server::DSU_PORT);
+    let socket = match UdpSocket::bind(("127.0.0.1", port)) {
         Ok(s) => s,
         Err(e) => {
             shared.lock().unwrap().last_error =
-                Some(format!("DSU: no puedo escuchar en {}: {e}", server::DSU_PORT));
+                Some(format!("DSU: no puedo escuchar en {port}: {e}"));
             return None;
         }
     };

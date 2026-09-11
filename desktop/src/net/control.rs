@@ -3,9 +3,9 @@
 //! slot (Jugador 1 = slot 0). El modo puntero/dolphin/cemu solo lo cambia el
 //! slot 0; cuando cambia se difunde a los demás móviles.
 
-use super::{broadcast, free_slot, ghosts_of, Session, Sessions};
+use super::{broadcast, free_slot, ghosts_of, send_line, Session, Sessions};
 use crate::pairing::PairingInfo;
-use crate::state::{pad_kind, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState};
+use crate::state::{effective_pad, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -44,17 +44,32 @@ pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo) {
 type Writer = Arc<Mutex<TcpStream>>;
 
 /// Nombre del tipo de mando Wii U de la sesión del `slot` (`ok.pad` / eco `pad`).
-fn pad_str(shared: &SharedState, slot: u8, role: Role) -> &'static str {
-    if role == Role::Nunchuk {
-        return "nunchuk";
-    }
-    pad_kind(&shared.lock().unwrap().players, slot)
-        .map(|k| k.as_str())
-        .unwrap_or("gamepad")
+fn pad_str(shared: &SharedState, slot: u8) -> &'static str {
+    effective_pad(&shared.lock().unwrap().players, slot)
 }
 
-/// Disparo de la autoconfiguración de emuladores (cada una se filtra por modo).
-fn auto_configure(shared: &SharedState) {
+/// El reparto de Cemu cambia con cada entrada, salida o elección de Mando de
+/// Wii: a cada móvil cuyo `pad` efectivo haya cambiado se le manda (J2 pasa
+/// a GamePad si J1 se va; el Nunchuk entra en uso, o deja de estarlo).
+fn push_pad_states(shared: &SharedState, sessions: &Sessions) {
+    let players = shared.lock().unwrap().players.clone();
+    let mut guard = sessions.lock().unwrap();
+    for s in guard.values_mut() {
+        let pad = effective_pad(&players, s.slot);
+        if s.last_pad == Some(pad) {
+            continue;
+        }
+        s.last_pad = Some(pad);
+        if let Some(w) = &s.writer {
+            send_line(w, &json!({"m":"pad","pad":pad}));
+        }
+    }
+}
+
+/// Disparo de la autoconfiguración de emuladores (cada una se filtra por modo)
+/// y aviso a los móviles de su tipo de mando si cambió.
+fn auto_configure(shared: &SharedState, sessions: &Sessions) {
+    push_pad_states(shared, sessions);
     crate::dolphin::maybe_auto_configure(shared);
     crate::cemu::maybe_auto_configure(shared);
 }
@@ -150,6 +165,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 role,
                 pad_wii,
                 writer: Some(writer.clone()),
+                last_pad: None,
             },
         );
         (slot, evicted)
@@ -181,18 +197,22 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         (s.mode, player_number(&s.players, slot))
     };
     let modes: Vec<&str> = Mode::ALL.iter().map(|m| m.as_str()).collect();
+    let pad = pad_str(shared, slot);
+    if let Some(sess) = sessions.lock().unwrap().get_mut(&session_id) {
+        sess.last_pad = Some(pad);
+    }
     let mut ok = json!({"m":"ok","session_id":session_id,"udp_port":pairing.port,
                         "mode":mode.as_str(),"slot":slot,"name":pairing.name,
                         "role":if role == Role::Nunchuk { "nunchuk" } else { "wiimote" },
                         "player":player,
                         "modes":modes,
-                        "pad":pad_str(shared, slot, role)});
+                        "pad":pad});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }
     let _ = send(&writer, &ok);
     crate::sound::connect_chime();
-    auto_configure(shared);
+    auto_configure(shared, sessions);
 
     // Bucle de control hasta que este móvil se vaya
     loop {
@@ -228,7 +248,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         // Los demás móviles cambian de pantalla con el modo
                         broadcast(&reply, Some(session_id));
                     }
-                    auto_configure(shared);
+                    auto_configure(shared, sessions);
                 } else {
                     let cur = shared.lock().unwrap().mode;
                     if debug() {
@@ -251,19 +271,22 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                             _ => false,
                         }
                     };
+                    let effective = pad_str(shared, slot);
                     if let Some(sess) = sessions.lock().unwrap().get_mut(&session_id) {
                         sess.pad_wii = wants_wii;
+                        sess.last_pad = Some(effective);
                     }
-                    let effective = pad_str(shared, slot, role);
                     if debug() {
                         eprintln!("[control] {device_name} (slot {slot}) pad → {effective}");
                     }
                     let _ = send(&writer, &json!({"m":"pad","pad":effective}));
                     if changed {
+                        // el Nunchuk del jugador (y nadie más) cambia de estado
+                        push_pad_states(shared, sessions);
                         crate::cemu::maybe_auto_configure(shared);
                     }
                 } else {
-                    let _ = send(&writer, &json!({"m":"pad","pad":"nunchuk"}));
+                    let _ = send(&writer, &json!({"m":"pad","pad":pad_str(shared, slot)}));
                 }
             }
             Some("config") => {
@@ -299,7 +322,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     };
     crate::sound::disconnect_chime();
     if !empty {
-        auto_configure(shared);
+        auto_configure(shared, sessions);
     }
 }
 
