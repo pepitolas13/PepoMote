@@ -69,10 +69,14 @@ y tocarla es tocar la pantalla del GamePad. Funciona así:
    Cemu abre su ventana **GamePad View** (la segunda pantalla) al arrancar. Si
    la cierras, se vuelve a abrir en *Options → Separate GamePad view* (o al
    reconfigurar con Cemu cerrado). Puedes hacerla pequeña, taparla o mandarla
-   a otro monitor: la captura no depende de que se vea.
+   a otro monitor: la captura no depende de que se vea. Minimizada no se
+   puede capturar: si la minimizas, PepoMote la vuelve a abrir al fondo (sin
+   robarte el foco) mientras el móvil pida la pantalla.
 2. El receptor captura esa ventana solo mientras el móvil GamePad la pide
-   (hasta 30 fps, JPEG, la resolución nativa del GamePad como máximo) y la
-   ventana del PC dice «Pantalla del GamePad: N fps».
+   (hasta 30 fps, JPEG, la resolución nativa del GamePad como máximo) con
+   Windows.Graphics.Capture (lo mismo que usa OBS para las ventanas con GPU;
+   en un Windows 10 antiguo cae a `PrintWindow`) y la ventana del PC dice
+   «Pantalla del GamePad: N fps».
 3. En el móvil, la zona táctil pasa a ser la pantalla. Si no hay imagen, el
    propio hueco dice por qué («Cemu no está abierto», «Abre la vista del
    GamePad en Cemu…»).
@@ -116,4 +120,5 @@ copiarlo a `controllerProfiles/`.
   aplica con Cemu cerrado; reinicia Cemu.
 - **En el móvil no aparece la pantalla del GamePad**: el hueco central dice el
   motivo. Comprueba que Cemu tiene abierta la ventana GamePad View (Options →
-  Separate GamePad view) y que no está minimizada; en Wayland, `GDK_BACKEND=x11`.
+  Separate GamePad view); minimizada, PepoMote la restaura al fondo él solo;
+  en Wayland, `GDK_BACKEND=x11`.

@@ -42,8 +42,90 @@ pub struct RawFrame {
 /// Resultado de una captura.
 pub enum Capture {
     Frame(RawFrame),
+    /// La ventana no ha cambiado desde la última captura (captura por eventos).
+    Unchanged,
     /// No hay ventana que capturar, con el motivo legible para el móvil.
     NoWindow(String),
+}
+
+/// ¿Fotograma de (casi) un solo color? Histograma de una muestra de píxeles
+/// (color cuantizado a 4 bits por canal): uniforme si un color se lleva el
+/// 96 %. Se mira el color dominante y no el primer píxel porque las esquinas
+/// redondeadas de Windows 11 son negras en una ventana toda gris.
+pub fn is_uniform(f: &RawFrame) -> bool {
+    let mut bins = [0u32; 4096];
+    let mut total = 0u32;
+    for p in f.bgra.chunks_exact(4).step_by(29) {
+        let key = ((p[0] as usize >> 4) << 8) | ((p[1] as usize >> 4) << 4) | (p[2] as usize >> 4);
+        bins[key] += 1;
+        total += 1;
+    }
+    if total == 0 {
+        return true;
+    }
+    let max = bins.iter().copied().max().unwrap_or(0);
+    max * 100 >= total * 96
+}
+
+/// Filtro de capturas fallidas: con la ventana Vulkan de Cemu, tanto
+/// PrintWindow como Windows.Graphics.Capture entregan de vez en cuando el
+/// fondo gris de la ventana sin el juego, mezclado con fotogramas buenos (a
+/// veces varios seguidos). Un fotograma uniforme solo pasa cuando llevamos
+/// un rato (CONFIRM) sin ver ninguno bueno —una pantalla en negro/blanco de
+/// verdad, con ese retraso— o si el anterior aceptado ya era uniforme.
+pub struct BlankFilter {
+    created: Instant,
+    last_good: Option<Instant>,
+    /// Color de fondo de las ventanas del sistema (COLOR_BTNFACE): el de los
+    /// fotogramas fallidos, que son la ventana de Cemu sin el juego.
+    background: [u8; 3],
+}
+
+impl Default for BlankFilter {
+    fn default() -> Self {
+        Self { created: Instant::now(), last_good: None, background: window_background() }
+    }
+}
+
+/// Fondo de ventana del sistema, en BGR.
+fn window_background() -> [u8; 3] {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Graphics::Gdi::{GetSysColor, COLOR_BTNFACE};
+        let c = unsafe { GetSysColor(COLOR_BTNFACE) }; // 0x00BBGGRR
+        return [((c >> 16) & 255) as u8, ((c >> 8) & 255) as u8, (c & 255) as u8];
+    }
+    #[allow(unreachable_code)]
+    [240, 240, 240]
+}
+
+impl BlankFilter {
+    /// Un uniforme de otro color (negro de carga, blanco de un fundido) pasa
+    /// tras este tiempo sin fotogramas buenos.
+    const CONFIRM: Duration = Duration::from_millis(400);
+    /// El gris de la ventana vacía solo pasa si Cemu lleva así un buen rato
+    /// (sin juego cargado): mientras haya juego es siempre un fallo de captura.
+    const CONFIRM_BACKGROUND: Duration = Duration::from_secs(3);
+
+    pub fn accept(&mut self, f: &RawFrame) -> bool {
+        self.accept_at(f, Instant::now())
+    }
+
+    fn is_background(&self, f: &RawFrame) -> bool {
+        let center = ((f.h / 2) * f.w + f.w / 2) as usize * 4;
+        f.bgra.get(center..center + 3).is_some_and(|p| {
+            (0..3).all(|i| (p[i] as i32 - self.background[i] as i32).abs() <= 4)
+        })
+    }
+
+    pub fn accept_at(&mut self, f: &RawFrame, now: Instant) -> bool {
+        if !is_uniform(f) {
+            self.last_good = Some(now);
+            return true;
+        }
+        let confirm = if self.is_background(f) { Self::CONFIRM_BACKGROUND } else { Self::CONFIRM };
+        now.saturating_duration_since(self.last_good.unwrap_or(self.created)) >= confirm
+    }
 }
 
 /// JPEG listo para enviar.
@@ -196,6 +278,7 @@ fn capture_loop(hub: Arc<ScreenHub>) {
     let mut fps_window = Instant::now();
     let mut fps_count = 0u32;
     let mut last_dims = (0u32, 0u32);
+    let mut blank = BlankFilter::default();
 
     while hub.clients.load(Ordering::SeqCst) > 0 {
         let t0 = Instant::now();
@@ -206,7 +289,7 @@ fn capture_loop(hub: Arc<ScreenHub>) {
                     .is_some_and(|p| p.w == frame.w && p.h == frame.h && p.bgra == frame.bgra);
                 // hay imagen: al móvil no se le manda ningún estado
                 hub.set_status(String::new());
-                if !same {
+                if !same && blank.accept(&frame) {
                     let (w, h, data) = fit(
                         &frame,
                         hub.max_w.load(Ordering::Relaxed),
@@ -225,17 +308,10 @@ fn capture_loop(hub: Arc<ScreenHub>) {
                     }
                     prev = Some(frame);
                 }
-                if fps_window.elapsed() >= Duration::from_secs(1) {
-                    let fps = fps_count as f32 / fps_window.elapsed().as_secs_f32();
-                    hub.set_ui_status(format!(
-                        "Pantalla del GamePad: {fps:.0} fps · {}×{} → {} móvil(es)",
-                        last_dims.0,
-                        last_dims.1,
-                        hub.clients()
-                    ));
-                    fps_window = Instant::now();
-                    fps_count = 0;
-                }
+            }
+            Ok(Capture::Unchanged) => {
+                // captura por eventos: nada nuevo desde la última vez
+                hub.set_status(String::new());
             }
             Ok(Capture::NoWindow(reason)) => {
                 prev = None;
@@ -247,6 +323,17 @@ fn capture_loop(hub: Arc<ScreenHub>) {
                 hub.set_status(e);
                 std::thread::sleep(Duration::from_secs(1));
             }
+        }
+        if last_dims != (0, 0) && fps_window.elapsed() >= Duration::from_secs(1) {
+            let fps = fps_count as f32 / fps_window.elapsed().as_secs_f32();
+            hub.set_ui_status(format!(
+                "Pantalla del GamePad: {fps:.0} fps · {}×{} → {} móvil(es)",
+                last_dims.0,
+                last_dims.1,
+                hub.clients()
+            ));
+            fps_window = Instant::now();
+            fps_count = 0;
         }
         let spent = t0.elapsed();
         if spent < period {
@@ -294,6 +381,57 @@ mod tests {
         assert_eq!(data.len(), (853 * 480 * 4) as usize);
         let (w, h, _) = fit(&big, 427, 480);
         assert_eq!((w, h), (427, 240), "manda el ancho");
+    }
+
+    #[test]
+    fn capturas_en_blanco_aisladas_se_descartan() {
+        let game = frame(64, 36);
+        let white = RawFrame { w: 64, h: 36, bgra: vec![255u8; 64 * 36 * 4] };
+        assert!(!is_uniform(&game));
+        assert!(is_uniform(&white));
+        // el fondo gris de una ventana de Windows 11 con las esquinas
+        // redondeadas en negro: uniforme (lo que fallaba con PrintWindow/WGC)
+        let mut gray = RawFrame { w: 854, h: 480, bgra: vec![240u8; 854 * 480 * 4] };
+        for y in 0..12usize {
+            for x in 0..12usize {
+                for (cx, cy) in [(x, y), (853 - x, y), (x, 479 - y), (853 - x, 479 - y)] {
+                    let i = (cy * 854 + cx) * 4;
+                    gray.bgra[i] = 0;
+                    gray.bgra[i + 1] = 0;
+                    gray.bgra[i + 2] = 0;
+                }
+            }
+        }
+        assert!(is_uniform(&gray), "gris con esquinas negras");
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let bg = [240, 240, 240];
+        let mut f = BlankFilter { created: t0, last_good: None, background: bg };
+        assert!(f.accept_at(&game, at(0)));
+        assert!(!f.accept_at(&white, at(33)), "blanco suelto entre dos buenos: fuera");
+        assert!(f.accept_at(&game, at(66)));
+        // varios blancos seguidos pero poco después de un bueno: fuera todos
+        assert!(!f.accept_at(&white, at(100)));
+        assert!(!f.accept_at(&white, at(133)));
+        assert!(!f.accept_at(&white, at(166)));
+        assert!(f.accept_at(&game, at(200)));
+        // 400 ms sin nada bueno: es una pantalla en blanco de verdad
+        assert!(!f.accept_at(&white, at(500)));
+        assert!(f.accept_at(&white, at(601)), "uniforme sostenido: pasa");
+        assert!(f.accept_at(&white, at(634)), "y sigue pasando mientras dure");
+        assert!(f.accept_at(&game, at(700)));
+        assert!(!f.accept_at(&white, at(733)), "vuelta al juego: el siguiente blanco suelto se descarta otra vez");
+        // el gris de la ventana vacía (fondo del sistema) es un fallo de captura
+        // aunque la pantalla lleve segundos quieta: solo pasa tras 3 s sin juego
+        assert!(f.accept_at(&game, at(1000)));
+        assert!(!f.accept_at(&gray, at(2500)), "gris de ventana 1,5 s después del último bueno: fuera");
+        assert!(!f.accept_at(&gray, at(3900)));
+        assert!(f.accept_at(&gray, at(4100)), "3 s sin juego: Cemu sin juego cargado, se enseña");
+        // arrancar en negro (carga) también exige los 400 ms
+        let black = RawFrame { w: 64, h: 36, bgra: vec![0u8; 64 * 36 * 4] };
+        let mut g = BlankFilter { created: t0, last_good: None, background: bg };
+        assert!(!g.accept_at(&black, at(100)));
+        assert!(g.accept_at(&black, at(450)));
     }
 
     #[test]

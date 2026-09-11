@@ -38,7 +38,9 @@ windows = { version = "0.58", features = [
     "Win32_System_Threading",
     "Win32_Graphics_Gdi",
     "Win32_Storage_Xps",
+    "Win32_Graphics_Dwm",
 ] }
+windows-capture = "2.0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 evdev = "0.12"

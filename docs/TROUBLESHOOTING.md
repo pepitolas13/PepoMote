@@ -68,8 +68,10 @@ debe ser Wii U GamePad con DSUController «Controller 1»). Detalles en
 
 ## El móvil no enseña la pantalla del GamePad (doble pantalla)
 
-El hueco central del GamePad dice el motivo: «Cemu no está abierto», «Abre la
-vista del GamePad en Cemu (Options → Separate GamePad view)» o «…minimizada».
+El hueco central del GamePad dice el motivo: «Cemu no está abierto» o «Abre la
+vista del GamePad en Cemu (Options → Separate GamePad view)». Minimizada no se
+puede capturar: PepoMote la restaura al fondo (sin robar el foco) mientras el
+móvil pida la pantalla.
 PepoMote deja `open_pad = true` en el settings.xml de Cemu al configurarlo, así
 que la ventana GamePad View se abre sola al arrancar Cemu; si la cerraste,
 vuelve a abrirla desde ese menú. En Linux la captura es X11 (vale XWayland):

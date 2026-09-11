@@ -128,7 +128,7 @@ El móvil que hace de GamePad recibe la pantalla del GamePad de Cemu (la ventana
 3. Después, solo tramas binarias del receptor al móvil: `"PMPS"` (4 bytes) · `tipo` u8 · `longitud` u32 LE · carga. Tipo 1 = imagen JPEG; tipo 2 = estado en texto UTF-8 («Cemu no está abierto», «Abre la vista del GamePad en Cemu…»); tipo 3 = keepalive sin carga (cada 2 s si no hay nada que mandar).
 4. Control de flujo: tras pintar cada imagen el móvil envía un byte `0x01`; el receptor no manda la siguiente hasta recibirlo (una imagen en vuelo: el ritmo se adapta al Wi-Fi y al móvil, la latencia no se acumula) y siempre manda la captura más reciente. Sin confirmación en 10 s el receptor cierra; sin nada en 6 s el móvil reconecta.
 
-El receptor captura solo mientras hay algún móvil suscrito, a 30 fps como máximo y descartando fotogramas idénticos; la captura es de la ventana (Windows: `PrintWindow` con contenido DWM; Linux: X11/XWayland con Composite — con Cemu nativo en Wayland no hay ventana X que capturar).
+El receptor captura solo mientras hay algún móvil suscrito, a 30 fps como máximo y descartando fotogramas idénticos; la captura es de la ventana (Windows: Windows.Graphics.Capture, recortada al área cliente, con `PrintWindow` de respaldo; Linux: X11/XWayland con Composite — con Cemu nativo en Wayland no hay ventana X que capturar). Una captura uniforme (toda blanca o negra) aislada entre dos buenas se descarta: es un fallo de captura, no una imagen.
 
 ## 5. Versionado
 
