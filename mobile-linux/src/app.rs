@@ -73,6 +73,22 @@ struct PadRequest {
     since: Instant,
 }
 
+/// Códigos con los que el PC rechaza el emparejamiento guardado: solo
+/// emparejar de nuevo (el código bajo su QR) lo arregla, así que en vez de
+/// un error suelto en el inicio se abre Conectar con la explicación.
+fn needs_new_pairing(code: &str) -> bool {
+    matches!(code, "bad_token" | "bad_code")
+}
+
+/// Explicación para la pantalla Conectar cuando el PC ya no reconoce el móvil.
+fn re_pair_reason(pc_name: Option<&str>) -> String {
+    let pc = pc_name.map(str::trim).filter(|n| !n.is_empty()).unwrap_or("Tu PC");
+    format!(
+        "{pc} ya no reconoce este móvil: su emparejamiento ha cambiado (PepoMote reinstalado o restablecido en el PC). \
+         Elige tu PC y teclea el código nuevo que hay bajo su QR."
+    )
+}
+
 const NOTICE_OLD_PC: &str = "El PC necesita PepoMote 1.3 para Wii U";
 const NOTICE_ONLY_P1: &str = "Solo el Jugador 1 cambia el modo";
 /// Sin eco de `mode` en este tiempo, la intención Wii U se da por fallida.
@@ -177,6 +193,9 @@ pub struct MobileApp {
     manual: String,
     pair_rx: Option<mpsc::Receiver<Result<Pairing, String>>>,
     pair_error: Option<String>,
+    /// Por qué está abierta Conectar: el PC rechazó el emparejamiento guardado
+    /// (`bad_token`) y se explica ahí mismo. None = emparejamiento normal.
+    pair_reason: Option<String>,
     // Mando / Nunchuk / GamePad
     controller: ControllerUi,
     nunchuk: NunchukUi,
@@ -259,6 +278,7 @@ impl MobileApp {
             manual: String::new(),
             pair_rx: None,
             pair_error: None,
+            pair_reason: None,
             controller: ControllerUi::new(),
             nunchuk: NunchukUi::new(),
             gamepad: GamePadUi::new(),
@@ -462,15 +482,25 @@ impl MobileApp {
         let status = l.status();
         let now = Instant::now();
         match &status {
-            Status::Failed { msg, .. } => {
-                self.error = Some(msg.clone());
+            Status::Failed { code, msg } => {
                 self.close_screen();
                 self.link = None;
                 self.inhibit = None;
                 self.intent = Intent::None;
                 self.pad_pending = None;
-                if matches!(self.screen, Screen::Controller | Screen::Nunchuk | Screen::GamePad) {
-                    self.screen = Screen::Home;
+                if needs_new_pairing(code) {
+                    // El PC ya no reconoce el emparejamiento: a Conectar con
+                    // la explicación, en vez de un error suelto en el inicio
+                    self.error = None;
+                    self.pair_reason = Some(re_pair_reason(self.pairing.as_ref().map(|p| p.pc_name.as_str())));
+                    self.discovered.clear();
+                    self.last_scan = None;
+                    self.screen = Screen::Pair;
+                } else {
+                    self.error = Some(msg.clone());
+                    if matches!(self.screen, Screen::Controller | Screen::Nunchuk | Screen::GamePad) {
+                        self.screen = Screen::Home;
+                    }
                 }
             }
             Status::Connecting | Status::Connected { .. } => {
@@ -554,6 +584,7 @@ impl MobileApp {
                 store::save(&p);
                 self.pairing = Some(p);
                 self.pair_rx = None;
+                self.pair_reason = None;
                 self.code.clear();
                 self.open_controller(Some("pointer"), false);
             }
@@ -667,6 +698,7 @@ impl MobileApp {
             Some(3) => {
                 self.discovered.clear();
                 self.last_scan = None;
+                self.pair_reason = None;
                 self.screen = Screen::Pair;
             }
             Some(4) => self.open_nunchuk(),
@@ -698,12 +730,17 @@ impl MobileApp {
     fn ui_pair(&mut self, ui: &mut egui::Ui) {
         self.poll_scan();
         ui.add_space(10.0);
-        ui.label(RichText::new("Conectar").size(28.0).strong().color(theme::TEXT));
+        let title = if self.pair_reason.is_some() { "Vuelve a emparejar" } else { "Conectar" };
+        ui.label(RichText::new(title).size(28.0).strong().color(theme::TEXT));
         ui.label(
             RichText::new("Abre PepoMote en tu PC. Elige tu PC y teclea el código de 4 dígitos que hay bajo su QR.")
                 .size(13.0)
                 .color(theme::TEXT_DIM),
         );
+        if let Some(reason) = &self.pair_reason {
+            ui.add_space(8.0);
+            ui.label(RichText::new(reason).size(13.0).color(theme::ERROR));
+        }
         ui.add_space(12.0);
         let msg = if self.discovered.is_empty() {
             if self.scan_rx.is_some() {
@@ -747,6 +784,7 @@ impl MobileApp {
         }
         ui.add_space(8.0);
         if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+            self.pair_reason = None;
             self.screen = Screen::Home;
         }
     }
@@ -1204,6 +1242,19 @@ mod tests {
 
     fn wiiu(now: Instant) -> Intent {
         Intent::WiiU { seq: 0, since: now }
+    }
+
+    #[test]
+    fn un_token_rechazado_manda_a_emparejar() {
+        assert!(needs_new_pairing("bad_token"));
+        assert!(needs_new_pairing("bad_code"));
+        for code in ["io", "busy", "bad_version", ""] {
+            assert!(!needs_new_pairing(code), "{code}");
+        }
+        assert!(re_pair_reason(Some("SALON-PC")).starts_with("SALON-PC ya no reconoce este móvil"));
+        assert!(re_pair_reason(Some(" SALON-PC ")).starts_with("SALON-PC ya no reconoce"));
+        assert!(re_pair_reason(None).starts_with("Tu PC ya no reconoce"));
+        assert!(re_pair_reason(Some("   ")).starts_with("Tu PC ya no reconoce"));
     }
 
     #[test]

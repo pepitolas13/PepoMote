@@ -26,6 +26,7 @@ import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.PairStore
+import dev.pepotech.pepomote.service.LinkFailure
 import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.PadScreen
@@ -62,6 +63,37 @@ class MainActivity : ComponentActivity() {
      * y se abre su pantalla.
      */
     internal var linkRole by mutableStateOf(LinkState.ROLE_WIIMOTE)
+
+    /**
+     * Por qué está abierta la pantalla Conectar: el PC rechazó el
+     * emparejamiento guardado (`bad_token`) y el escáner se ofrece ahí mismo
+     * con la explicación. null = emparejamiento normal (primera vez, Ajustes).
+     */
+    internal var pairReason by mutableStateOf<String?>(null)
+
+    /** A la pantalla Conectar (escáner QR), con explicación si viene de un rechazo. */
+    internal fun openPair(reason: String? = null) {
+        pairReason = reason
+        currentScreen = Screen.Pair
+    }
+
+    /**
+     * El enlace ha muerto con error (el servicio ya se ha parado). Si el PC no
+     * reconoce el emparejamiento, al escáner con la explicación: el rol y el
+     * modo pedidos se conservan y al escanear se sigue donde se estaba. Con
+     * cualquier otro error, aviso y vuelta al inicio (y el modo pedido se
+     * olvida, que no salte en una reconexión posterior).
+     */
+    internal fun onLinkFailed(failure: UiLink.Failed) {
+        LinkState.clearFailure()
+        if (LinkFailure.needsNewQr(failure.code)) {
+            openPair(LinkFailure.rePairReason(PairStore.load(this)?.pcName))
+        } else {
+            Toast.makeText(this, "Error: ${failure.msg}", Toast.LENGTH_LONG).show()
+            LinkState.pendingMode = null
+            currentScreen = Screen.Home
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,6 +141,10 @@ class MainActivity : ComponentActivity() {
             return
         }
         PairStore.save(this, pairing)
+        pairReason = null
+        // Lo pedido antes de tener que escanear (Wii U, Dolphin…) se vuelve a
+        // pedir: la intención se restaura y el modo va en cuanto llegue el ok
+        if (linkRole == LinkState.ROLE_WIIMOTE) LinkState.pendingMode?.let { LinkState.requestMode(it) }
         // Servicio ANTES del diálogo de permiso: pedirlo primero dejaba el
         // arranque del servicio compitiendo con el diálogo del sistema y el
         // primer emparejamiento fallaba en algunos OEMs.
@@ -216,7 +252,12 @@ private fun Root(activity: MainActivity) {
                         activity.currentScreen = Screen.Controller
                     }
 
-                    else -> activity.currentScreen = Screen.Pair
+                    // Sin emparejar: al escáner, y el modo pedido se aplica
+                    // al conectar tras el QR (Wii U abre el GamePad)
+                    else -> {
+                        LinkState.requestMode(mode)
+                        activity.openPair()
+                    }
                 }
             }
 
@@ -229,8 +270,15 @@ private fun Root(activity: MainActivity) {
                 onController = {
                     activity.controllerDolphinOnly = false
                     activity.linkRole = LinkState.ROLE_WIIMOTE
-                    if (linkIsNunchuk) LinkForegroundService.start(context)
-                    activity.currentScreen = Screen.Controller
+                    when {
+                        // Sin emparejar no hay mando que abrir: al escáner
+                        PairStore.load(context) == null -> activity.openPair()
+
+                        else -> {
+                            if (linkIsNunchuk) LinkForegroundService.start(context)
+                            activity.currentScreen = Screen.Controller
+                        }
+                    }
                 },
                 onDolphin = {
                     activity.controllerDolphinOnly = true
@@ -251,7 +299,7 @@ private fun Root(activity: MainActivity) {
                             activity.currentScreen = Screen.Nunchuk
                         }
 
-                        else -> activity.currentScreen = Screen.Pair
+                        else -> activity.openPair()
                     }
                 },
                 onNewPairing = { activity.currentScreen = Screen.Settings }
@@ -259,26 +307,27 @@ private fun Root(activity: MainActivity) {
         }
 
         Screen.Pair -> PairScreen(
+            reason = activity.pairReason,
             onScanQr = { scanQr() },
-            onBack = { activity.currentScreen = Screen.Home }
+            onBack = {
+                LinkState.pendingMode = null // lo pedido antes del QR ya no va
+                activity.currentScreen = Screen.Home
+            }
         )
 
         Screen.Settings -> SettingsScreen(
             onNewPairing = {
                 activity.linkRole = LinkState.ROLE_WIIMOTE // QR desde Ajustes: mando
-                activity.currentScreen = Screen.Pair
+                LinkState.pendingMode = null
+                activity.openPair()
             },
             onBack = { activity.currentScreen = Screen.Home }
         )
 
         Screen.Nunchuk -> {
-            // Mismo trato del error que en el mando: aviso y vuelta al inicio
+            // Mismo trato del error que en el mando (ver onLinkFailed)
             LaunchedEffect(link) {
-                (link as? UiLink.Failed)?.let { f ->
-                    Toast.makeText(context, "Error: ${f.msg}", Toast.LENGTH_LONG).show()
-                    LinkState.clearFailure()
-                    activity.currentScreen = Screen.Home
-                }
+                (link as? UiLink.Failed)?.let { activity.onLinkFailed(it) }
             }
             NunchukScreen(
                 link = link,
@@ -303,15 +352,12 @@ private fun ControllerRoute(activity: MainActivity, link: UiLink) {
     val context = LocalContext.current
     val intent by LinkState.intent.collectAsState()
 
-    // Error de conexión: aviso y vuelta al inicio como EFECTO (no en
-    // plena composición, que lo repetía) y el estado se limpia para
-    // que el próximo Conectar no rebote con el error viejo.
+    // Error de conexión como EFECTO (no en plena composición, que lo
+    // repetía): al escáner si el PC ya no reconoce el emparejamiento, o
+    // aviso y vuelta al inicio; el estado se limpia para que el próximo
+    // Conectar no rebote con el error viejo.
     LaunchedEffect(link) {
-        (link as? UiLink.Failed)?.let { f ->
-            Toast.makeText(context, "Error: ${f.msg}", Toast.LENGTH_LONG).show()
-            LinkState.clearFailure()
-            activity.currentScreen = Screen.Home
-        }
+        (link as? UiLink.Failed)?.let { activity.onLinkFailed(it) }
     }
 
     val onDisconnect = {

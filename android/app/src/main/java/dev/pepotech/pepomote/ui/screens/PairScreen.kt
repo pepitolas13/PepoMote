@@ -33,8 +33,14 @@ import dev.pepotech.pepomote.net.ReceiverInfo
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlinx.coroutines.delay
 
+/**
+ * Conectar: el escáner del QR del PC y los receptores vistos en la red.
+ * `reason` (no null) = se llega aquí porque el PC ya no reconoce el
+ * emparejamiento guardado: se explica arriba, en rojo, y el mismo botón de
+ * siempre lo arregla.
+ */
 @Composable
-fun PairScreen(onScanQr: () -> Unit, onBack: () -> Unit) {
+fun PairScreen(onScanQr: () -> Unit, onBack: () -> Unit, reason: String? = null) {
     var receivers by remember { mutableStateOf(listOf<ReceiverInfo>()) }
     var scanning by remember { mutableStateOf(true) }
 
@@ -55,11 +61,29 @@ fun PairScreen(onScanQr: () -> Unit, onBack: () -> Unit) {
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(24.dp))
-        Text("Conectar", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            if (reason != null) "Vuelve a escanear el QR" else "Conectar",
+            style = MaterialTheme.typography.headlineMedium
+        )
         Text(
             "Abre PepoMote en tu PC y escanea su QR",
             style = MaterialTheme.typography.bodyMedium
         )
+        if (reason != null) {
+            Spacer(Modifier.height(14.dp))
+            Card(
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+                border = BorderStroke(1.5.dp, PepoColors.Error),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Text(
+                    reason,
+                    style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
         Spacer(Modifier.height(20.dp))
 
         Button(

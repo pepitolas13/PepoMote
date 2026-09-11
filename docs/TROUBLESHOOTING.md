@@ -17,6 +17,23 @@ Se completa con cada hito. Esqueleto:
 4. Si el mDNS está roto en tu router, PepoMote prueba solo el broadcast; si tampoco, teclea la IP:puerto que muestra el receptor bajo el QR.
 5. Último recurso: hotspot del móvil + PC conectado a él. Funciona siempre.
 
+## «Vuelve a escanear el QR» al darle a Conectar
+
+El PC ya no reconoce el emparejamiento que guarda el móvil. El secreto del QR
+vive en `token.txt`, en la carpeta de configuración del receptor (Windows:
+`%APPDATA%\pepotech\PepoMote\config`; Linux: `~/.config/pepomote`), y ha
+cambiado: PepoMote reinstalado o restablecido, carpeta borrada, o el receptor
+lanzado con otra carpeta de configuración (`PEPOMOTE_CONFIG_DIR`). No hay nada
+que reparar: escanea el QR otra vez.
+
+- Android (desde 1.3.1): al fallar, la app abre ella misma la pantalla Conectar
+  con la explicación y el botón «Escanear QR del PC»; tras escanear sigue en lo
+  que ibas a abrir (Puntero, Dolphin, Wii U o Nunchuk). Antes había que ir a
+  Ajustes → «Vincular con otro PC».
+- Linux móvil: lo mismo con la pantalla Conectar (elige tu PC y teclea el
+  código nuevo de 4 dígitos que hay bajo el QR).
+- En el PC, la ventana de PepoMote dice qué móvil ha llegado con un QR antiguo.
+
 ## Linux: "sin permiso para /dev/uinput"
 
 Pulsa **«Reparar ahora»** en la ventana del receptor (o deja que el diálogo

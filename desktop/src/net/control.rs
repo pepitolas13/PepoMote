@@ -121,6 +121,12 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         let (code, msg) = if hello["code"].is_string() {
             ("bad_code", "Código incorrecto o caducado: mira el nuevo bajo el QR del PC")
         } else {
+            // Que el PC también lo diga: quien mira la ventana entiende por
+            // qué el móvil no entra (token.txt regenerado, PC reinstalado…)
+            let who = hello["name"].as_str().filter(|n| !n.trim().is_empty()).unwrap_or("Un móvil");
+            shared.lock().unwrap().last_error = Some(format!(
+                "{who} ({peer_ip}) trae un QR antiguo: en la app, Conectar → «Escanear QR del PC»"
+            ));
             ("bad_token", "Vuelve a escanear el QR")
         };
         let _ = send(&writer, &json!({"m":"err","code":code,"msg":msg}));
