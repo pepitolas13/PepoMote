@@ -80,7 +80,6 @@ pub fn replay_from_args() -> bool {
     match read_recording(path) {
         Ok(recs) => {
             let mut engine = PointerEngine::new();
-            engine.set_desktop(true); // la grabación es del cursor del escritorio
             // El cursor real que vería el receptor: la última posición emitida,
             // recortada a la pantalla (el SO no deja salir el cursor)
             let mut last_abs: Option<(f32, f32)> = None;

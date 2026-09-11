@@ -40,8 +40,15 @@ pub struct Filter2D {
     lp_y: LowPass,
     lp_dx: LowPass,
     lp_dy: LowPass,
+    /// Velocidad externa apenas suavizada (20 Hz): abre el cutoff al
+    /// instante en cuanto la mano arranca, sin el retardo de `dcutoff`.
+    lp_fx: LowPass,
+    lp_fy: LowPass,
     prev: Option<(f32, f32)>,
 }
+
+/// Suavizado de la velocidad que abre el filtro en `filter_with_rate` (Hz).
+const RATE_CUTOFF_FAST: f32 = 20.0;
 
 impl Filter2D {
     pub fn new(mincutoff: f32, beta: f32) -> Self {
@@ -56,16 +63,10 @@ impl Filter2D {
             lp_y: LowPass::new(),
             lp_dx: LowPass::new(),
             lp_dy: LowPass::new(),
+            lp_fx: LowPass::new(),
+            lp_fy: LowPass::new(),
             prev: None,
         }
-    }
-
-    /// Lleva la salida filtrada a (x, y) de golpe, sin tocar el estimador de
-    /// velocidad: lo que quedaba de cola no se pinta.
-    pub fn snap_to(&mut self, x: f32, y: f32) {
-        self.lp_x.y = Some(x);
-        self.lp_y.y = Some(y);
-        self.prev = Some((x, y));
     }
 
     pub fn reset(&mut self) {
@@ -73,20 +74,28 @@ impl Filter2D {
         self.lp_y = LowPass::new();
         self.lp_dx = LowPass::new();
         self.lp_dy = LowPass::new();
+        self.lp_fx = LowPass::new();
+        self.lp_fy = LowPass::new();
         self.prev = None;
     }
 
-    /// Como `filter`, pero la velocidad que abre el filtro (y que devuelve)
-    /// viene de fuera (el gyro: instantánea y sin el retardo de derivar), en
-    /// las mismas unidades por segundo. El suavizado de esa velocidad es el
-    /// mismo (dcutoff).
+    /// Como `filter`, pero la velocidad viene de fuera (el gyro: instantánea,
+    /// sin el retardo de derivar), en las mismas unidades por segundo. El
+    /// cutoff se abre con esa velocidad apenas suavizada (20 Hz), para que
+    /// el arranque de un gesto no se quede pegajoso; la velocidad devuelta
+    /// (para decidir la congelación) lleva el suavizado tranquilo de
+    /// `dcutoff`.
     pub fn filter_with_rate(&mut self, x: f32, y: f32, rate_x: f32, rate_y: f32, dt: f32) -> (f32, f32, f32) {
         self.prev = Some((x, y));
         let a_d = alpha(self.dcutoff, dt);
         let dx = self.lp_dx.filter(rate_x, a_d);
         let dy = self.lp_dy.filter(rate_y, a_d);
         let speed = (dx * dx + dy * dy).sqrt();
-        let a = alpha(self.mincutoff + self.beta * speed, dt);
+        let a_f = alpha(RATE_CUTOFF_FAST, dt);
+        let fx = self.lp_fx.filter(rate_x, a_f);
+        let fy = self.lp_fy.filter(rate_y, a_f);
+        let fast = (fx * fx + fy * fy).sqrt();
+        let a = alpha(self.mincutoff + self.beta * fast, dt);
         (self.lp_x.filter(x, a), self.lp_y.filter(y, a), speed)
     }
 

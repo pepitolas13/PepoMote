@@ -75,25 +75,6 @@ const BRIDGE_DISSOLVE_FRACTION: f32 = 0.12;
 /// ratón lo movió: se sigue desde donde está de verdad.
 const HINT_TOL: f32 = 0.01;
 
-// --- Rebote tras un flick (solo cursor del escritorio) ---
-// Tras un flick brusco (600-800°/s medidos) la mano rebota hacia atrás 3-7°
-// en menos de 100 ms y no lo nota: en un cursor de escritorio eso se ve como
-// «el cursor vuelve solo». Durante una ventana corta tras el flick, el
-// retroceso LENTO en sentido contrario (el rebote, que va decayendo) no se
-// pinta; un giro nuevo y rápido en sentido contrario (una intención) pasa
-// entero. En los juegos (puntero IR) no se toca nada: lo que hace la mano se
-// ve, como en la Wii.
-/// Velocidad mínima (°/s, paso filtrado) para que un gesto cuente como flick.
-const FLICK_PEAK_MIN_DEG_S: f32 = 250.0;
-/// El flick ha terminado cuando la velocidad cae por debajo de esta fracción
-/// de su pico; ahí empieza la ventana de asentamiento.
-const FLICK_END_FRACTION: f32 = 0.25;
-/// Duración de la ventana de asentamiento (µs): nadie re-apunta a propósito
-/// antes de un cuarto de segundo tras un flick (hay que ver dónde cayó).
-const FLICK_SETTLE_US: u64 = 250_000;
-/// Dentro de la ventana, un retroceso más rápido que esta fracción del pico
-/// es un gesto nuevo, no un rebote: pasa entero.
-const FLICK_REVERSE_FRACTION: f32 = 0.4;
 /// λ (1/s) del estimador de sesgo del gyro (solo aprende congelado: ahí el
 /// gyro debería leer cero y lo que lee es sesgo).
 const BIAS_LAMBDA: f32 = 0.7;
@@ -245,17 +226,6 @@ fn wrap180(deg: f32) -> f32 {
     x - 180.0
 }
 
-/// Flick en curso (subiendo hasta su pico) o asentándose (ventana).
-#[derive(Clone, Copy)]
-struct Flick {
-    /// Dirección del gesto (unitaria, en grados de yaw/pitch).
-    dir: (f32, f32),
-    /// Velocidad de pico (°/s).
-    peak: f32,
-    /// Fin de la ventana de asentamiento (µs del sensor), si ya ha empezado.
-    settle_until: Option<u64>,
-}
-
 pub struct PointerEngine {
     /// (yaw, pitch) del mundo capturados en el recentrado.
     ref_angles: Option<(f32, f32)>,
@@ -293,11 +263,6 @@ pub struct PointerEngine {
     last_quat: Option<(f32, f32)>,
     /// Sesgo estimado del gyro (rad/s, ejes del dispositivo).
     bias: [f32; 3],
-    /// Cursor del escritorio (true) o puntero IR de un juego (false): solo el
-    /// primero esconde el rebote tras un flick.
-    desktop: bool,
-    /// Flick en curso o asentándose.
-    flick: Option<Flick>,
     // fallback relativo
     acc_x: f32,
     acc_y: f32,
@@ -308,10 +273,14 @@ impl PointerEngine {
         Self {
             ref_angles: None,
             last_recenter: None,
-            // beta = cuánto se abre el filtro con la velocidad (menos lag en
-            // flicks); la estabilidad en reposo la da la congelación. 0.2:
-            // a 100°/s el cutoff sube a ~21 Hz — el flick no pierde recorrido
-            filter: Filter2D::new(1.0, 0.2),
+            // Filtro casi transparente. Con el gyro mandando, la señal ya
+            // llega limpia (jitter en reposo < 1 px con y sin filtro, medido
+            // en grabaciones reales); lo que sí cuesta es el retardo: con el
+            // ajuste antiguo (1 Hz, β 0,2) el cursor iba 30-50 px por detrás
+            // de la mano a velocidad normal y 170 px en un flick. Con 10 Hz y
+            // β 1 (a 60°/s el cutoff ya es 70 Hz) se queda en 6-12 px a
+            // cualquier velocidad: el cursor es la mano.
+            filter: Filter2D::new(10.0, 1.0),
             frozen: false,
             last_emitted: None,
             last_filtered: None,
@@ -327,68 +296,8 @@ impl PointerEngine {
             quat_rate: None,
             last_quat: None,
             bias: [0.0; 3],
-            desktop: false,
-            flick: None,
             acc_x: 0.0,
             acc_y: 0.0,
-        }
-    }
-
-    /// Cursor del escritorio: esconde el rebote de la mano tras un flick.
-    pub fn set_desktop(&mut self, on: bool) {
-        self.desktop = on;
-    }
-
-    /// Rebote tras un flick. Mientras dura el asentamiento, la componente de
-    /// retroceso del paso filtrado no se pinta: se queda en `shift` (el
-    /// apuntado sigue desde donde está). Devuelve true justo cuando termina
-    /// la ventana (el llamador absorbe entonces la cola del filtro).
-    fn settle_flick(&mut self, step: (f32, f32), dt: f32, t_us: u64) -> bool {
-        let len = step.0.hypot(step.1);
-        let speed = len / dt;
-        let dir = if len > 1e-9 { (step.0 / len, step.1 / len) } else { (0.0, 0.0) };
-        match self.flick.take() {
-            None => {
-                if speed > FLICK_PEAK_MIN_DEG_S {
-                    self.flick = Some(Flick { dir, peak: speed, settle_until: None });
-                }
-                false
-            }
-            Some(mut f) => match f.settle_until {
-                None => {
-                    if speed >= f.peak {
-                        f.peak = speed;
-                        f.dir = dir;
-                    } else if speed < f.peak * FLICK_END_FRACTION {
-                        f.settle_until = Some(t_us + FLICK_SETTLE_US);
-                    }
-                    self.flick = Some(f);
-                    false
-                }
-                Some(until) => {
-                    if t_us >= until {
-                        // asentado: a partir de aquí todo se pinta (y un
-                        // gesto rápido puede ser el siguiente flick)
-                        if speed > FLICK_PEAK_MIN_DEG_S {
-                            self.flick = Some(Flick { dir, peak: speed, settle_until: None });
-                        }
-                        return true;
-                    }
-                    if speed >= f.peak * FLICK_REVERSE_FRACTION {
-                        // giro nuevo y rápido: intención, pasa entero
-                        self.flick = Some(Flick { dir, peak: speed, settle_until: None });
-                        return false;
-                    }
-                    self.flick = Some(f);
-                    let back = -(step.0 * f.dir.0 + step.1 * f.dir.1);
-                    if back > 0.0 {
-                        // la componente de retroceso no se pinta
-                        self.shift.0 -= -f.dir.0 * back;
-                        self.shift.1 -= -f.dir.1 * back;
-                    }
-                    false
-                }
-            },
         }
     }
 
@@ -475,7 +384,6 @@ impl PointerEngine {
         self.frozen = false;
         self.offset = (0.0, 0.0);
         self.shift = (0.0, 0.0);
-        self.flick = None;
         self.raw_int = (0.0, 0.0);
         self.last_emitted = Some((0.0, 0.0));
         self.last_filtered = None;
@@ -549,12 +457,10 @@ impl PointerEngine {
         let (yaw_w, pitch_w, rate_yaw, rate_pitch) = self.track(p, q, qyaw, qpitch, dt);
 
         if recentered || self.ref_angles.is_none() {
+            // Recentrar lleva el cursor al centro también en modo relativo:
+            // es lo que pide el botón (los deltas siguen desde ahí)
             self.rebase(yaw_w, pitch_w);
-            return if abs_mode {
-                PointerOutput::Abs { nx: 0.5, ny: 0.5 }
-            } else {
-                PointerOutput::None
-            };
+            return PointerOutput::Abs { nx: 0.5, ny: 0.5 };
         }
 
         let (yaw_ref, pitch_ref) = self.ref_angles.unwrap();
@@ -578,18 +484,14 @@ impl PointerEngine {
                 // El salto de asentamiento es una corrección del móvil, no un
                 // giro: re-anclar DIRECTO al quat.
                 self.rebase(qyaw, qpitch);
-                return if abs_mode {
-                    PointerOutput::Abs { nx: 0.5, ny: 0.5 }
-                } else {
-                    PointerOutput::None
-                };
+                return PointerOutput::Abs { nx: 0.5, ny: 0.5 };
             }
         }
 
         let dt = dt.unwrap_or(0.005);
         // La velocidad que abre el filtro (y que decide congelar) sale del
         // gyro: instantánea, sin el retardo de derivar, y ajena al anclaje.
-        let (mut yaw_f, mut pitch_f, speed) = self.filter.filter_with_rate(yaw, pitch, rate_yaw, rate_pitch, dt);
+        let (yaw_f, pitch_f, speed) = self.filter.filter_with_rate(yaw, pitch, rate_yaw, rate_pitch, dt);
         let quat_speed = self.quat_rate.map_or(0.0, |(a, b)| a.hypot(b));
         let (lf_yaw, lf_pitch) = self.last_filtered.replace((yaw_f, pitch_f)).unwrap_or((yaw_f, pitch_f));
 
@@ -617,16 +519,6 @@ impl PointerEngine {
 
         // Libre: el puente se disuelve dentro del propio movimiento ordenado
         self.dissolve_bridge(yaw_f - lf_yaw, pitch_f - lf_pitch);
-        if self.desktop && self.settle_flick((yaw_f - lf_yaw, pitch_f - lf_pitch), dt, p.t_sensor_us) {
-            // Fin del asentamiento: lo que le quedaba de cola al filtro (el
-            // rebote que aún estaba «entrando») tampoco se pinta
-            self.shift.0 -= yaw - yaw_f;
-            self.shift.1 -= pitch - pitch_f;
-            self.filter.snap_to(yaw, pitch);
-            self.last_filtered = Some((yaw, pitch));
-            yaw_f = yaw;
-            pitch_f = pitch;
-        }
         if abs_mode {
             self.follow_real_cursor(sens_deg, aspect_w_over_h);
         }
@@ -1485,49 +1377,35 @@ mod tests {
         assert!((ny_settled - expected).abs() < 0.05, "bajada desde el borde: ny={ny_settled} esperado={expected} (último en movimiento {last_ny})");
     }
 
-    /// Flick de `flick_deg` de pitch en 20 muestras (≈ flick_deg·10 °/s) y
-    /// después un retroceso de `back_deg` en `back_steps` muestras, y reposo.
-    /// Devuelve (ny al acabar el flick, ny final tras el reposo).
-    fn flick_and_back(desktop: bool, flick_deg: f32, back_deg: f32, back_steps: u32) -> (f32, f32) {
+    #[test]
+    fn el_rebote_de_la_mano_se_ve_tal_cual() {
+        // Fidelidad 1:1 también tras un flick: si la mano rebota 4° hacia
+        // atrás, el cursor vuelve 4° (nada se esconde ni se frena).
         let mut e = PointerEngine::new();
-        e.set_desktop(desktop);
         let mut ph = Phone::new();
         let p = ph.make(qrot_x(0.0), 0);
         ap(&mut e, &p);
         ph.hold(&mut e, 200);
-        // el flick (sin simular el cursor del SO: aquí no hay bordes)
-        let (_, ny_flick) = ph.turn(&mut e, qrot_x(flick_deg), 20);
-        // el retroceso
-        ph.turn(&mut e, qrot_x(flick_deg - back_deg), back_steps);
+        ph.turn(&mut e, qrot_x(30.0), 20); // 600°/s
+        ph.turn(&mut e, qrot_x(26.0), 12); // rebote de 4° en 60 ms
         let (_, ny_end) = ph.hold(&mut e, 60);
-        (ny_flick, ny_end)
+        let expected = 0.5 - 26.0 / 35.0 * (16.0 / 9.0);
+        assert!((ny_end - expected).abs() < 0.03, "el cursor no siguió a la mano: ny={ny_end} esperado={expected}");
     }
 
     #[test]
-    fn el_rebote_tras_un_flick_no_devuelve_el_cursor() {
-        // Flick de 30° arriba en 100 ms (300°/s) y rebote de 4° en 60 ms
-        // (67°/s): el cursor se queda donde acabó el flick (±cola del filtro).
-        let (ny_flick, ny_end) = flick_and_back(true, 30.0, 4.0, 12);
-        let expected = 0.5 - 30.0 / 35.0 * (16.0 / 9.0);
-        // (la última muestra del flick aún lleva algo de cola del filtro)
-        assert!((ny_flick - expected).abs() < 0.1, "el flick no llegó: {ny_flick} vs {expected}");
-        assert!((ny_end - expected).abs() < 0.04, "el rebote movió el cursor: acabó en {ny_end}, el flick llegaba a {expected}");
-    }
-
-    #[test]
-    fn un_giro_rapido_tras_el_flick_si_pasa() {
-        // Flick de 30° arriba y, sin pausa, 30° abajo igual de rápido: es una
-        // intención (no un rebote) y el cursor tiene que hacer todo el camino.
-        let (_, ny_end) = flick_and_back(true, 30.0, 30.0, 20);
-        assert!((ny_end - 0.5).abs() < 0.06, "el giro deliberado no volvió: ny={ny_end}");
-    }
-
-    #[test]
-    fn en_los_juegos_el_rebote_se_ve() {
-        // Puntero IR (Wii): lo que hace la mano se ve, rebote incluido.
-        let (ny_flick, ny_end) = flick_and_back(false, 30.0, 4.0, 12);
-        let expected = 0.5 - 30.0 / 35.0 * (16.0 / 9.0) + 4.0 / 35.0 * (16.0 / 9.0);
-        assert!((ny_end - expected).abs() < 0.03, "IR: el rebote debería verse: {ny_flick} → {ny_end} (esperado {expected})");
+    fn recentrar_centra_tambien_en_relativo() {
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_z(0.0), 0);
+        assert_eq!(e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+        for _ in 0..20 {
+            let q = ph.q;
+            let p = ph.make(q, 0);
+            e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0);
+        }
+        let p = ph.make(qrot_z(-10.0), 1); // Home: nuevo recentrado
+        assert_eq!(e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
     }
 
     #[test]
