@@ -54,6 +54,29 @@ modo Dolphin solo lo activa el Jugador 1. Ya se arregla solo: al reconectar,
 el receptor desaloja la sesión fantasma del mismo móvil y le devuelve su
 plaza. Si lo ves en una versión vieja, reinicia el receptor del PC.
 
+## «El puerto 26760/26761 está ocupado»
+
+Otro programa tenía abierto el puerto del servidor DSU (26760: DS4Windows,
+BetterJoy, otro servidor cemuhook, o un PepoMote antiguo que se quedó
+colgado) o el del móvil (26761). Desde 1.3 PepoMote averigua qué proceso lo
+tiene, lo cierra y recupera el puerto; la ventana dice a quién ha cerrado
+(«Puerto UDP 26760 estaba ocupado por DS4Windows.exe: lo he cerrado…»). Si
+no puede (el otro programa va como administrador), te lo dice con su nombre:
+ciérralo tú y vuelve a abrir PepoMote. Si el mando iba «a la vez» a otro
+servidor DSU, Dolphin puede haber estado hablando con ese otro y no con
+PepoMote: al recuperar el puerto, reinicia Dolphin.
+
+## Dolphin enseña el mando desconectado aunque el PC diga «1 cliente(s) DSU»
+
+El DSU llega, pero el Wiimote emulado no está activo en ese Dolphin. Casi
+siempre es una de estas: el móvil no está en modo Dolphin; Dolphin estaba
+abierto cuando se configuró (ciérralo y ábrelo: desde 1.3 lo pendiente se
+escribe solo al cerrarse); es un juego de GameCube; o ese Dolphin es portable
+y guarda su configuración junto al exe: compara la carpeta que dice la
+ventana de PepoMote con Dolphin → Archivo → Abrir carpeta de usuario, y si no
+coinciden, Ajustes → Carpeta de Dolphin → Detectar. Detalle en
+`docs/SETUP-DOLPHIN.md`.
+
 ## Cemu no ve el mando (Wii U)
 
 Con el modo Wii U activo en el móvil, la ventana del PC debe decir «Cemu

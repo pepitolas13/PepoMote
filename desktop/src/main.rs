@@ -16,6 +16,7 @@ mod input;
 mod net;
 mod pairing;
 mod pointer;
+mod ports;
 mod screen;
 mod singleton;
 mod sound;
@@ -27,7 +28,7 @@ mod tray;
 fn main() -> eframe::Result {
     // --replay <grabación>: solo el motor del puntero sobre una grabación
     // (PEPOMOTE_RECORD), CSV por stdout, y fuera.
-    if pointer::record::replay_from_args() {
+    if pointer::record::replay_from_args() || dolphin::print_dirs_from_args() {
         return Ok(());
     }
 
@@ -45,6 +46,7 @@ fn main() -> eframe::Result {
     let hub = screen::ScreenHub::new(shared.clone());
     net::start(shared.clone(), pairing.clone(), dsu, hub);
     screen::start_minder(shared.clone());
+    dolphin::start_pending_watcher(shared.clone());
 
     #[cfg(target_os = "linux")]
     firewall::watch(shared.clone(), pairing.port);

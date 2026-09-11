@@ -10,7 +10,7 @@ use crate::state::{effective_pad, player_number, LinkStatus, Mode, PlayerInfo, R
 use rand::Rng;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
-use std::net::{IpAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,11 +20,10 @@ fn debug() -> bool {
 }
 
 pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo, hub: Arc<ScreenHub>) {
-    let listener = match TcpListener::bind(("0.0.0.0", pairing.port)) {
+    let listener = match crate::ports::bind_tcp(&shared, "0.0.0.0", pairing.port, "Móvil") {
         Ok(l) => l,
         Err(e) => {
-            shared.lock().unwrap().last_error =
-                Some(format!("No puedo escuchar en TCP {}: {e}", pairing.port));
+            shared.lock().unwrap().last_error = Some(e);
             return;
         }
     };

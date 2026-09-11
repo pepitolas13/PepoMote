@@ -137,6 +137,10 @@ pub struct Config {
     /// aprende al ver a Cemu abierto y se guarda para configurarlo cerrado.
     #[serde(default)]
     pub cemu_dir: String,
+    /// Carpeta de Dolphin (la del Dolphin.exe): un Dolphin portable guarda
+    /// su configuración ahí. "" = detectar sola; se aprende al verlo abierto.
+    #[serde(default)]
+    pub dolphin_dir: String,
     /// Linux: ya se ofreció la auto-reparación (firewall/uinput) una vez.
     /// Evita re-abrir el diálogo de contraseña en cada arranque si se canceló.
     #[serde(default)]
@@ -155,6 +159,7 @@ impl Default for Config {
             auto_dolphin: true,
             auto_cemu: true,
             cemu_dir: String::new(),
+            dolphin_dir: String::new(),
             fix_attempted: false,
             screen: String::new(),
         }
@@ -342,6 +347,11 @@ pub struct Shared {
     pub dsu_clients: usize,
     /// Resultado del último intento de configurar Dolphin (para la UI).
     pub dolphin_cfg_status: Option<String>,
+    /// El emulador estaba abierto: se configurará en cuanto se cierre.
+    pub dolphin_pending: bool,
+    pub cemu_pending: bool,
+    /// Un puerto estaba ocupado y se cerró al proceso que lo tenía (aviso).
+    pub port_notice: Option<String>,
     /// Resultado del último intento de configurar Cemu (para la UI).
     pub cemu_cfg_status: Option<String>,
     /// Doble pantalla: estado de la captura de la ventana GamePad View.
@@ -377,6 +387,9 @@ impl Shared {
             sensor_hz: 0.0,
             dsu_clients: 0,
             dolphin_cfg_status: None,
+            dolphin_pending: false,
+            cemu_pending: false,
+            port_notice: None,
             cemu_cfg_status: None,
             cemu_screen_status: None,
             text_queue: Vec::new(),

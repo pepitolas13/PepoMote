@@ -646,8 +646,12 @@ fn run_configure(shared: &SharedState, layout: &Layout) {
     };
     learn_dir(shared, dir);
     let msg = if running {
-        "Cemu está abierto: ciérralo y pulsa Configurar (o vuelve a abrirlo)".to_owned()
+        // Cemu sobreescribe sus perfiles al salir: se escribe en cuanto se
+        // cierre (vigilante de dolphin::start_pending_watcher)
+        shared.lock().unwrap().cemu_pending = true;
+        "Cemu está abierto: se configurará solo en cuanto lo cierres; luego ábrelo y a jugar".to_owned()
     } else {
+        shared.lock().unwrap().cemu_pending = false;
         let cfg = shared.lock().unwrap().config.clone();
         match configure(&cfg, layout) {
             Ok(m) => m,
@@ -670,6 +674,28 @@ pub fn maybe_auto_configure(shared: &SharedState) {
             run_configure(&shared, &layout);
         }
     });
+}
+
+/// Lo pendiente (Cemu estaba abierto) se aplica cuando ya está cerrado.
+pub fn apply_pending(shared: &SharedState) {
+    if running_exe().0 {
+        return;
+    }
+    let (auto, mode, layout) = {
+        let s = shared.lock().unwrap();
+        (s.config.auto_cemu, s.mode, cemu_layout(&s.players))
+    };
+    if auto && mode == Mode::Cemu && !layout.is_empty() {
+        run_configure(shared, &layout);
+        let mut s = shared.lock().unwrap();
+        if let Some(m) = s.cemu_cfg_status.as_mut() {
+            if m.starts_with("Cemu configurado:") {
+                *m = m.replacen("Cemu configurado:", "Cemu configurado al cerrarse, ábrelo y a jugar:", 1);
+            }
+        }
+    } else {
+        shared.lock().unwrap().cemu_pending = false;
+    }
 }
 
 /// Botón manual de la ventana.

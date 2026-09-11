@@ -10,7 +10,6 @@ use crate::pointer::{PointerEngine, PointerOutput};
 use crate::state::{Mode, Role, SharedState};
 use serde_json::json;
 use std::collections::HashMap;
-use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -45,11 +44,10 @@ pub fn run(
     pairing: PairingInfo,
     dsu: Option<Arc<Dsu>>,
 ) {
-    let socket = match UdpSocket::bind(("0.0.0.0", pairing.port)) {
+    let socket = match crate::ports::bind_udp(&shared, "0.0.0.0", pairing.port, "Móvil") {
         Ok(s) => s,
         Err(e) => {
-            shared.lock().unwrap().last_error =
-                Some(format!("No puedo escuchar en UDP {}: {e}", pairing.port));
+            shared.lock().unwrap().last_error = Some(e);
             return;
         }
     };

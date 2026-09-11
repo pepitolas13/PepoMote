@@ -68,6 +68,7 @@ struct Snapshot {
     cemu_status: Option<String>,
     cemu_screen: Option<String>,
     error: Option<String>,
+    port_notice: Option<String>,
     firewall_hint: Option<String>,
     uinput_denied: bool,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -101,6 +102,7 @@ impl eframe::App for PepoMoteApp {
                 cemu_status: s.cemu_cfg_status.clone(),
                 cemu_screen: s.cemu_screen_status.clone(),
                 error: s.last_error.clone(),
+                port_notice: s.port_notice.clone(),
                 firewall_hint: s.firewall_hint.clone(),
                 uinput_denied: s.uinput_denied,
                 fixing: s.fixing,
@@ -151,6 +153,10 @@ impl eframe::App for PepoMoteApp {
                             if let Some(err) = &snap.error {
                                 ui.add_space(10.0);
                                 ui.label(RichText::new(err).size(12.0).color(theme::ERROR));
+                            }
+                            if let Some(n) = &snap.port_notice {
+                                ui.add_space(6.0);
+                                ui.label(RichText::new(n).size(12.0).color(theme::WARN));
                             }
 
                             ui.add_space(12.0);
@@ -254,6 +260,14 @@ impl PepoMoteApp {
             };
             ui.label(RichText::new(msg).size(12.0).color(color));
         }
+        ui.label(
+            RichText::new(
+                "¿Dolphin enseña el mando desconectado? Modo Dolphin en el móvil, juego de Wii, y reinicia \
+                 Dolphin; la carpeta configurada tiene que ser la suya (Archivo → Abrir carpeta de usuario).",
+            )
+            .size(11.0)
+            .color(theme::TEXT_DIM),
+        );
     }
 
     fn ui_cemu(&self, ui: &mut egui::Ui, snap: &Snapshot) {
@@ -341,6 +355,22 @@ impl PepoMoteApp {
             });
             ui.label(
                 RichText::new("Solo hace falta si Cemu está en un sitio raro; se aprende sola al verlo abierto.")
+                    .size(11.0)
+                    .color(theme::TEXT_DIM),
+            );
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Carpeta de Dolphin").size(13.0).color(theme::TEXT_DIM));
+                ui.add(
+                    egui::TextEdit::singleline(&mut config.dolphin_dir)
+                        .desired_width(200.0)
+                        .hint_text("automática"),
+                );
+                if ui.button(RichText::new("Detectar").size(12.0)).clicked() {
+                    crate::dolphin::detect_now(&self.shared);
+                }
+            });
+            ui.label(
+                RichText::new("La del Dolphin.exe. Un Dolphin portable (RetroBat, LaunchBox…) guarda su configuración ahí; se aprende sola al verlo abierto.")
                     .size(11.0)
                     .color(theme::TEXT_DIM),
             );

@@ -10,9 +10,18 @@ escribe un mando emulado por móvil conectado (Wiimote N = móvil N por orden
 de conexión) con el mapeo PepoMote, deja los demás en «Ninguno» (un mando de
 más aparece en pantalla en los juegos y molesta) y registra el servidor DSU. Deja copia `.pepomote.bak` de cada archivo que
 toca. Abre Dolphin y a jugar: cada móvil es su propio Wiimote. Si Dolphin
-estaba abierto, la ventana de PepoMote te lo avisa: ciérralo y pulsa
-"Configurar Dolphin". El automatismo se puede apagar en Ajustes. Los pasos
-manuales de abajo solo hacen falta si prefieres mapear a mano.
+estaba abierto, PepoMote lo deja pendiente y lo escribe solo en cuanto lo
+cierras (Dolphin pisa su configuración al salir): ciérralo, ábrelo y listo.
+El automatismo se puede apagar en Ajustes. Los pasos manuales de abajo solo
+hacen falta si prefieres mapear a mano.
+
+Dónde escribe: en la carpeta de usuario que usa tu Dolphin, con la misma
+lógica que Dolphin (portable.txt junto al exe → registro → `Documentos\Dolphin
+Emulator` si existe → `AppData\Roaming\Dolphin Emulator`; en Linux
+`~/.config/dolphin-emu` o el Flatpak). La ventana del PC lo dice («carpeta:
+portable…», «AppData…»). Un Dolphin portable (RetroBat, LaunchBox, una
+carpeta suelta) se reconoce al verlo abierto; si no, pon la carpeta del
+`Dolphin.exe` en Ajustes → Carpeta de Dolphin → Detectar.
 
 Requisitos: Dolphin 5.0+ reciente (2023 en adelante), PepoMote en el PC y el
 móvil emparejado.
@@ -88,6 +97,17 @@ recentrar. Bolos: mantén B, balancea y suelta. Boxeo: puños con el móvil.
 
 ## Problemas típicos
 
+- **Dolphin enseña el mando desconectado (y el PC dice «1 cliente(s) DSU»)**:
+  el DSU llega pero el Wiimote emulado no está activo en ESE Dolphin. Por
+  orden: (1) el móvil tiene que estar en modo Dolphin; (2) cierra Dolphin y
+  vuelve a abrirlo (si estaba abierto al conectar, la configuración queda
+  pendiente y se escribe al cerrarse); (3) tiene que ser un juego de Wii, no
+  de GameCube; (4) mira qué carpeta dice haber configurado la ventana del PC
+  y compárala con Dolphin → Archivo → Abrir carpeta de usuario: si no es la
+  misma (Dolphin portable), Ajustes → Carpeta de Dolphin → Detectar, o
+  escribe la carpeta del Dolphin.exe a mano; (5) en Dolphin → Mandos, «Wii
+  Remote 1» debe estar en «Emulated Wii Remote» y el adaptador Bluetooth en
+  «Emular».
 - **Dolphin no lista el servidor**: ¿modo Dolphin activo en el móvil? ¿"1
   cliente(s) DSU" en la ventana? Reinicia Dolphin tras añadir el servidor.
 - **El puntero del menú deriva**: recentra (diana). Ajusta `Total Yaw/Pitch`

@@ -119,11 +119,12 @@ pub fn start(shared: SharedState) -> Option<Arc<Dsu>> {
         .ok()
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(server::DSU_PORT);
-    let socket = match UdpSocket::bind(("127.0.0.1", port)) {
+    // Otro servidor DSU (DS4Windows, BetterJoy, un PepoMote colgado) en el
+    // mismo puerto: se le cierra y se recupera el puerto
+    let socket = match crate::ports::bind_udp(&shared, "127.0.0.1", port, "DSU") {
         Ok(s) => s,
         Err(e) => {
-            shared.lock().unwrap().last_error =
-                Some(format!("DSU: no puedo escuchar en {port}: {e}"));
+            shared.lock().unwrap().last_error = Some(e);
             return None;
         }
     };
