@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -156,6 +157,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             .displayCutoutPadding()
     ) {
         val gap = 6.dp
+        val screenW = maxWidth
         val headerH = 38.dp
         val selectorH = 36.dp
         val bodyH = maxHeight - headerH - selectorH - gap * 3
@@ -194,6 +196,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         Column(Modifier.fillMaxSize()) {
             Header(
                 link, operative, headerH, screen,
+                width = screenW,
                 showFps = showFps,
                 onKeyboard = if (operative) {
                     { keyboardOpen = true }
@@ -262,15 +265,23 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         } else {
                             TouchScreen(touchW, touchH, screen)
                         }
+                        // La fila entera tiene que caber en el centro (móviles
+                        // estrechos): pastillas y círculos se encogen juntos
+                        val rowGap = if (centerW < 300.dp) 6.dp else 10.dp
+                        val pillW = if (pro) 0.dp else (centerW * 0.22f).coerceIn(44.dp, 66.dp)
+                        val pills = if (pro) 0 else 2
+                        val roundBtn = ((centerW - rowGap * (2 + pills) - pillW * pills) / 3f)
+                            .coerceAtMost(bottomRowH * 0.85f)
+                            .coerceAtLeast(28.dp)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(rowGap)
                         ) {
-                            if (!pro) ShoulderButton("TV/Pad", ButtonState.SCREEN, 66.dp, 30.dp, textSize = 12)
-                            RoundButton("−", bottomRowH * 0.85f, ButtonState.MINUS, textSize = 19)
-                            RoundButton("Home", bottomRowH * 0.85f, ButtonState.HOME, textSize = 12)
-                            RoundButton("+", bottomRowH * 0.85f, ButtonState.PLUS, textSize = 19)
-                            if (!pro) ShoulderButton("Soplar", ButtonState.MIC, 66.dp, 30.dp, textSize = 12)
+                            if (!pro) ShoulderButton("TV/Pad", ButtonState.SCREEN, pillW, 30.dp, textSize = 12)
+                            RoundButton("−", roundBtn, ButtonState.MINUS, textSize = 19)
+                            RoundButton("Home", roundBtn, ButtonState.HOME, textSize = 12)
+                            RoundButton("+", roundBtn, ButtonState.PLUS, textSize = 19)
+                            if (!pro) ShoulderButton("Soplar", ButtonState.MIC, pillW, 30.dp, textSize = 12)
                         }
                     }
 
@@ -341,10 +352,17 @@ private fun Header(
     operative: Boolean,
     height: Dp,
     screen: ScreenClient<Bitmap>?,
+    width: Dp,
     showFps: Boolean,
     onKeyboard: (() -> Unit)?,
     onDisconnect: () -> Unit
 ) {
+    // En móviles estrechos la cabecera no cabe entera: primero cae el nombre
+    // del PC, luego el nombre del mando y el RTT (los chips, el teclado y
+    // Salir se quedan siempre)
+    val showPc = width >= 640.dp
+    val showPad = width >= 560.dp
+    val showRtt = width >= 700.dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -355,17 +373,23 @@ private fun Header(
     ) {
         when (link) {
             is UiLink.Connected -> {
-                Text(
-                    link.pcName,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (showPc) {
+                    Text(
+                        link.pcName,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 160.dp)
+                    )
+                }
                 Text(
                     if (operative) buildString {
-                        append("J${link.player} · ")
-                        append(if (link.pad == LinkState.PAD_PRO) "Pro Controller" else "GamePad")
-                        link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
+                        append("J${link.player}")
+                        if (showPad) {
+                            append(" · ")
+                            append(if (link.pad == LinkState.PAD_PRO) "Pro Controller" else "GamePad")
+                        }
+                        if (showRtt) link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
                     } else "Activando Wii U…",
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1

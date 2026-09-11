@@ -5,9 +5,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.theme.PepoColors
@@ -39,6 +44,10 @@ private const val PAD_ECHO_TIMEOUT_MS = 2000L
  * Segmento activo relleno en azul; el pedido y aún sin eco, a medio tono
  * ("pendiente"). Jugadores 2-4: «Pro Controller» en vez de «GamePad».
  * Tocar envía `pad wiimote` / `pad gamepad`; la pantalla cambia con el eco.
+ *
+ * Se adapta al ancho: los dos segmentos se reparten el sitio a partes
+ * iguales y su texto se encoge hasta caber (nunca se corta); en pantallas
+ * estrechas «En Cemu soy:» pasa a una línea encima.
  */
 @Composable
 fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? = null) {
@@ -55,61 +64,76 @@ fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? 
         }
     }
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
-        ) {
-            Text(
-                "En Cemu soy:",
-                style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
-                maxLines = 1
-            )
-            val shape = RoundedCornerShape(20.dp)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val inlinePrefix = maxWidth >= 430.dp
+        val prefixW = if (inlinePrefix) 110.dp else 0.dp
+        val segmentsW = (maxWidth - prefixW - 24.dp).coerceIn(160.dp, if (compact) 330.dp else 360.dp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (!inlinePrefix) {
+                Text(
+                    "En Cemu soy:",
+                    style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.TextDim, fontSize = 11.sp),
+                    maxLines = 1
+                )
+            }
             Row(
-                modifier = Modifier
-                    .background(PepoColors.Card, shape)
-                    .border(1.5.dp, PepoColors.CardBorder, shape)
-                    .padding(3.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
             ) {
-                Segment(
-                    label = if (link.player == 1) "GamePad" else "Pro Controller",
-                    selected = !wiimote,
-                    pending = pending == LinkState.PAD_GAMEPAD,
-                    compact = compact
-                ) {
-                    if (wiimote) {
-                        pending = LinkState.PAD_GAMEPAD
-                        LinkState.sendPad?.invoke(LinkState.PAD_GAMEPAD)
-                    }
+                if (inlinePrefix) {
+                    Text(
+                        "En Cemu soy:",
+                        style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
+                        maxLines = 1
+                    )
                 }
-                Segment(
-                    label = "Mando de Wii",
-                    selected = wiimote,
-                    pending = pending == LinkState.PAD_WIIMOTE,
-                    compact = compact
+                val shape = RoundedCornerShape(20.dp)
+                Row(
+                    modifier = Modifier
+                        .width(segmentsW)
+                        .background(PepoColors.Card, shape)
+                        .border(1.5.dp, PepoColors.CardBorder, shape)
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    if (!wiimote) {
-                        pending = LinkState.PAD_WIIMOTE
-                        LinkState.sendPad?.invoke(LinkState.PAD_WIIMOTE)
+                    Segment(
+                        label = if (link.player == 1) "GamePad" else "Pro Controller",
+                        selected = !wiimote,
+                        pending = pending == LinkState.PAD_GAMEPAD,
+                        compact = compact
+                    ) {
+                        if (wiimote) {
+                            pending = LinkState.PAD_GAMEPAD
+                            LinkState.sendPad?.invoke(LinkState.PAD_GAMEPAD)
+                        }
+                    }
+                    Segment(
+                        label = "Mando de Wii",
+                        selected = wiimote,
+                        pending = pending == LinkState.PAD_WIIMOTE,
+                        compact = compact
+                    ) {
+                        if (!wiimote) {
+                            pending = LinkState.PAD_WIIMOTE
+                            LinkState.sendPad?.invoke(LinkState.PAD_WIIMOTE)
+                        }
                     }
                 }
             }
-        }
-        if (help != null) {
-            Text(
-                help,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 4.dp, start = 12.dp, end = 12.dp)
-            )
+            if (help != null) {
+                Text(
+                    help,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp, start = 12.dp, end = 12.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun Segment(label: String, selected: Boolean, pending: Boolean, compact: Boolean, onClick: () -> Unit) {
+private fun RowScope.Segment(label: String, selected: Boolean, pending: Boolean, compact: Boolean, onClick: () -> Unit) {
     val bg = when {
         selected -> PepoColors.Blue
         pending -> PepoColors.Glow
@@ -122,19 +146,22 @@ private fun Segment(label: String, selected: Boolean, pending: Boolean, compact:
     }
     Box(
         modifier = Modifier
+            .weight(1f)
             .background(bg, RoundedCornerShape(17.dp))
             .pointerInput(label) {
                 detectTapGestures(onTap = { onClick() })
             }
             .padding(
-                horizontal = if (compact) 12.dp else 16.dp,
+                horizontal = if (compact) 8.dp else 12.dp,
                 vertical = if (compact) 6.dp else 8.dp
-            )
+            ),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
+        FitText(
             label,
             style = MaterialTheme.typography.labelLarge.copy(color = fg),
-            maxLines = 1
+            maxSize = MaterialTheme.typography.labelLarge.fontSize,
+            minSize = 9.sp
         )
     }
 }
