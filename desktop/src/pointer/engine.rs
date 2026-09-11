@@ -1,4 +1,5 @@
-//! Motor de puntero h2: apuntado absoluto ANCLADO AL MUNDO.
+//! Motor de puntero h3: apuntado absoluto ANCLADO AL MUNDO; el gyro manda y
+//! el rotation vector solo ancla, en silencio.
 //!
 //! El quaternion (GAME_ROTATION_VECTOR) lleva el dispositivo al marco del
 //! mundo, cuyo eje Z es la gravedad. El eje de apuntado del móvil (device +Y)
@@ -6,6 +7,13 @@
 //! horizonte real, yaw = ángulo en el plano horizontal real. El ROLL del
 //! dispositivo no aparece en ninguna de las dos coordenadas → rotar el móvil
 //! mientras apuntas (Wii Sports) no afecta al cursor, ni rolado al recentrar.
+//!
+//! Quién mueve el cursor: el GYRO, integrado en ese marco del mundo. Es la
+//! verdad de cómo se mueve la mano, sin retraso y sin la inclinación falsa
+//! que el acelerómetro mete en el rotation vector durante un gesto. El quat
+//! solo ANCLA el estado interno cuando el móvil está quieto (cursor
+//! congelado), y lo hace en silencio: ninguna corrección mueve el cursor.
+//! Ver el bloque «El gyro manda, el quat ancla».
 //!
 //! Fallback: integración relativa del gyro para móviles sin rotation vector
 //! (flags bit0 = 0); ese camino sí es sensible al roll (ejes del dispositivo).
@@ -15,46 +23,61 @@ use crate::net::codec::{InputPacket, FLAG_QUAT_VALID};
 
 /// Congelación por velocidad con histéresis: clavado en reposo, continuo
 /// (sin cuantizar la trayectoria) en cuanto hay intención de movimiento.
+/// Entra cuando NI el gyro NI el quat ven movimiento (el sesgo del gyro no
+/// impide congelar; una corrección del quat tampoco); sale con el gyro (el
+/// que no tiene retraso).
 const FREEZE_ENTER_DEG_S: f32 = 0.6;
 const FREEZE_EXIT_DEG_S: f32 = 1.8;
-/// Escape por posición: aunque la velocidad medida sea baja (deriva muy lenta,
-/// entrada en escalón), si lo filtrado se aleja esto del punto congelado, se libera.
+/// Hasta esta velocidad del gyro (°/s) el quat puede desmentirlo («eso es
+/// sesgo, el móvil está quieto»); por encima, si el gyro dice que se mueve,
+/// se mueve, diga lo que diga el quat (que puede haberse quedado colgado).
+const FREEZE_BIAS_TOLERANCE_DEG_S: f32 = 4.0;
+/// Velocidad del quat (°/s) por debajo de la cual el móvil está quieto de
+/// verdad y lo que lee el gyro es sesgo (se aprende).
+const QUAT_STILL_DEG_S: f32 = 0.3;
+/// Escape por posición: movimiento lento por debajo de la histéresis. Se
+/// libera cuando el GYRO acumula esto desde que se congeló Y el quat lo
+/// confirma (`FREEZE_ESCAPE_QUAT_DEG`): así ni el sesgo del gyro (el quat no
+/// se mueve) ni una corrección del quat (el gyro no se mueve) descongelan.
 const FREEZE_ESCAPE_DEG: f32 = 0.35;
+const FREEZE_ESCAPE_QUAT_DEG: f32 = 0.18;
 
 /// Signos del fallback relativo (h1). Corrección SOLO aquí.
 const SIGN_X: f32 = -1.0;
 const SIGN_Y: f32 = -1.0;
 
-// --- Fusión complementaria ADAPTATIVA del receptor ---
+// --- El gyro manda, el quat ancla (en silencio) ---
 // El GAME_ROTATION_VECTOR del móvil es rocoso en REPOSO (anclado a la
 // gravedad, sin deriva), pero en un gesto RÁPIDO su acelerómetro mide
-// gravedad + aceleración del gesto y mete una inclinación FALSA: el cursor
-// "sube solo" y pierde recorrido. El gyro es al revés: fiel en el gesto,
-// pero su ruido/sesgo integrado deriva en reposo.
-//
-// La fusión pesa cada fuente según cuánto se mueve el móvil:
-//  - Reposo/lento: sigue FUERTE al quat (λ alto) → cero deriva del gyro; el
-//    cursor se queda clavado y el congelado lo suelta al ratón real.
-//  - Gesto rápido: apenas corrige (λ bajo) → manda el gyro, sin tilt espurio.
-// La velocidad de giro (‖gyro‖) elige el punto entre ambos, de forma
-// continua. Un acelerómetro contaminado sin apenas giro (traslación pura)
-// también baja la confianza en el quat.
-/// λ de corrección hacia el quat en REPOSO (1/s): τ≈1/λ. Alto = mata la
-/// deriva del gyro deprisa y clava el cursor.
-const FUSION_LAMBDA_REST: f32 = 12.0;
-/// λ de corrección en pleno gesto: casi no corrige, respeta el gyro.
-const FUSION_LAMBDA_MOVE: f32 = 0.3;
-/// ‖gyro‖ (rad/s) al que la confianza en el quat cae a la mitad (~20°/s):
-/// por debajo domina el quat (reposo), por encima el gyro (gesto).
-const FUSION_TRUST_RATE: f32 = 0.35;
-/// ‖gyro‖ sobre esto = gesto violento: forzar λ mínimo un tiempo (rad/s).
-const ANOMALY_RATE_RADS: f32 = 3.0;
-/// |‖accel‖ − g| sobre esto = acelerómetro contaminado (m/s²).
-const ANOMALY_ACCEL_MS2: f32 = 3.0;
-/// Tras un gesto violento, mantener λ mínimo esto: deja que el quat sane su
-/// inclinación falsa (su acelerómetro se recalma) antes de volver a seguirlo.
-const ANOMALY_HOLD_S: f32 = 0.2;
-const G_MS2: f32 = 9.81;
+// gravedad + aceleración del gesto y mete una inclinación FALSA que tarda
+// hasta segundos en sanar; además llega con algo de retraso respecto al
+// gyro. Si el cursor siguiera al quat durante o justo después de un gesto,
+// se iría a un sitio que la mano no ha mandado (tirón en otra dirección al
+// parar) y la velocidad iría a trompicones (cada corrección es un frenazo o
+// un acelerón). El gyro es lo contrario: fiel al gesto, pero su sesgo
+// integrado deriva en reposo. Por eso:
+//  - En movimiento NO se corrige nada: la trayectoria es 1:1 con el gyro
+//    (menos su sesgo, que se estima en reposo).
+//  - Congelado (móvil quieto): el estado interno converge al quat, en
+//    SILENCIO (congelado no se emite nada); al descongelar, el puente
+//    absorbe la diferencia y el cursor arranca de donde estaba, sin salto.
+//  - El puente (lo que ve el usuario menos el apuntado absoluto) se disuelve
+//    SOLO como una fracción del movimiento que ordena la mano, en la
+//    dirección de ese movimiento: se nota, como mucho, como un 12 % de
+//    ganancia de más o de menos durante un instante, nunca como un
+//    movimiento por su cuenta ni lateral.
+/// λ (1/s) con el que el estado converge al quat mientras está congelado.
+const ANCHOR_LAMBDA: f32 = 8.0;
+/// Fracción del movimiento ordenado que puede ir a disolver el puente.
+const BRIDGE_DISSOLVE_FRACTION: f32 = 0.12;
+/// λ (1/s) del estimador de sesgo del gyro (solo aprende congelado: ahí el
+/// gyro debería leer cero y lo que lee es sesgo).
+const BIAS_LAMBDA: f32 = 0.7;
+/// Sesgo máximo creíble (rad/s ≈ 6°/s): más que eso no es sesgo, es que el
+/// móvil se mueve aunque el quat aún no lo diga.
+const BIAS_MAX_RADS: f32 = 0.1;
+/// Cutoff (Hz) del suavizado de las velocidades que deciden la congelación.
+const RATE_CUTOFF_HZ: f32 = 2.0;
 /// h² mínimo del eje de apuntado: por debajo (|pitch| ≳ 81°) el yaw es
 /// indefinido (polo) y se congela para que no dé latigazos.
 const POLE_H2: f32 = 0.022;
@@ -71,6 +94,18 @@ fn soft_deadzone(v: f32, dz: f32) -> f32 {
         v + dz
     } else {
         0.0
+    }
+}
+
+/// Paso-bajo de primer orden con la constante de tiempo de `cutoff` Hz.
+fn lowpass(prev: Option<f32>, x: f32, cutoff: f32, dt: f32) -> f32 {
+    match prev {
+        Some(p) => {
+            let tau = 1.0 / (std::f32::consts::TAU * cutoff);
+            let a = 1.0 / (1.0 + tau / dt);
+            p + (x - p) * a
+        }
+        None => x,
     }
 }
 
@@ -157,6 +192,27 @@ impl Quat {
         let pitch = d[2].atan2(horiz).to_degrees();
         (yaw, pitch)
     }
+
+    /// d(yaw)/dt y d(pitch)/dt (°/s) de un giro `gyro` (rad/s, ejes del
+    /// dispositivo) proyectado al mundo con este marco: ḋ = ω × d. El tercer
+    /// valor es «polo»: apuntando casi vertical el yaw es indefinido.
+    fn world_rates(self, gyro: [f32; 3]) -> (f32, f32, bool) {
+        let d = self.pointing_dir_world();
+        let w = self.rotate(gyro);
+        let dd = [
+            w[1] * d[2] - w[2] * d[1],
+            w[2] * d[0] - w[0] * d[2],
+            w[0] * d[1] - w[1] * d[0],
+        ];
+        let h2 = d[0] * d[0] + d[1] * d[1];
+        let pole = h2 < POLE_H2;
+        let h2c = h2.max(1e-4);
+        let h = h2c.sqrt();
+        let dyaw = (d[1] * dd[0] - d[0] * dd[1]) / h2c;
+        let dh = (d[0] * dd[0] + d[1] * dd[1]) / h;
+        let dpitch = h * dd[2] - d[2] * dh; // denominador h²+d2² = ‖d‖² = 1
+        (if pole { 0.0 } else { dyaw.to_degrees() }, dpitch.to_degrees(), pole)
+    }
 }
 
 /// Envuelve una diferencia de ángulos a (-180, 180].
@@ -172,8 +228,10 @@ pub struct PointerEngine {
     filter: Filter2D,
     frozen: bool,
     last_emitted: Option<(f32, f32)>, // grados (yaw, pitch) relativos
-    /// Puente anti-salto del descongelado: se fija a (held − filtrado) al
-    /// liberar (salto cero) y se disuelve exponencialmente con el movimiento.
+    /// Último (yaw, pitch) filtrado: el paso de movimiento ordenado.
+    last_filtered: Option<(f32, f32)>,
+    /// Puente: lo que ve el usuario menos el apuntado absoluto filtrado. Se
+    /// fija al descongelar (salto cero) y solo se disuelve con el movimiento.
     offset: (f32, f32),
     /// t de la primera muestra: ventana de asentamiento del rotation vector.
     first_t_us: Option<u64>,
@@ -181,10 +239,17 @@ pub struct PointerEngine {
     /// descongelar, el puntero continúa desde donde el RATÓN lo dejó.
     cursor_hint: Option<(f32, f32)>,
     last_t_us: Option<u64>,
-    /// (yaw, pitch) fusionados del receptor: gyro a corto plazo, quat en calma.
+    /// (yaw, pitch) del mundo integrados del gyro; anclados al quat en reposo.
     fused: Option<(f32, f32)>,
-    /// Segundos que quedan de ventana de anomalía (gesto violento).
-    anomaly_hold: f32,
+    /// Congelado: giro del gyro acumulado desde que se congeló, y (yaw, pitch)
+    /// del quat en ese momento (escape por movimiento lento).
+    freeze_gyro: (f32, f32),
+    freeze_quat: (f32, f32),
+    /// Velocidad del quat suavizada (°/s por eje): «el quat ve movimiento».
+    quat_rate: Option<(f32, f32)>,
+    last_quat: Option<(f32, f32)>,
+    /// Sesgo estimado del gyro (rad/s, ejes del dispositivo).
+    bias: [f32; 3],
     // fallback relativo
     acc_x: f32,
     acc_y: f32,
@@ -201,80 +266,105 @@ impl PointerEngine {
             filter: Filter2D::new(1.0, 0.2),
             frozen: false,
             last_emitted: None,
+            last_filtered: None,
             offset: (0.0, 0.0),
             first_t_us: None,
             cursor_hint: None,
             last_t_us: None,
             fused: None,
-            anomaly_hold: 0.0,
+            freeze_gyro: (0.0, 0.0),
+            freeze_quat: (0.0, 0.0),
+            quat_rate: None,
+            last_quat: None,
+            bias: [0.0; 3],
             acc_x: 0.0,
             acc_y: 0.0,
         }
     }
 
-    /// Fusión complementaria: integra el gyro proyectado al mundo (verdad a
-    /// corto plazo) y converge hacia el quat solo en calma. Ver constantes
-    /// FUSION_*/ANOMALY_* arriba.
-    fn fuse(&mut self, p: &InputPacket, q: Quat, qyaw: f32, qpitch: f32, dt: Option<f32>) -> (f32, f32) {
+    /// Estado (yaw, pitch) del mundo y velocidades del gyro (°/s): el gyro
+    /// (sin sesgo) integrado siempre; congelado, además converge al quat en
+    /// silencio y aprende el sesgo. Ver el bloque «El gyro manda».
+    fn track(&mut self, p: &InputPacket, q: Quat, qyaw: f32, qpitch: f32, dt: Option<f32>) -> (f32, f32, f32, f32) {
         // Primera muestra o hueco grande (suspensión, pérdida): el quat es
         // la mejor verdad disponible.
         let Some(dt) = dt else {
             self.fused = Some((qyaw, qpitch));
-            self.anomaly_hold = 0.0;
-            return (qyaw, qpitch);
+            self.quat_rate = None;
+            self.last_quat = Some((qyaw, qpitch));
+            return (qyaw, qpitch, 0.0, 0.0);
         };
         let (mut fy, mut fp) = self.fused.unwrap_or((qyaw, qpitch));
 
-        let g = p.gyro;
-        let a = p.accel;
-        let gyro_mag = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt();
-        let acc_mag = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
-        // acc_mag ≈ 0 = emisor sin acelerómetro: ese gate no aplica
-        let accel_bad = acc_mag > 0.5 && (acc_mag - G_MS2).abs() > ANOMALY_ACCEL_MS2;
-        if gyro_mag > ANOMALY_RATE_RADS || accel_bad {
-            self.anomaly_hold = ANOMALY_HOLD_S;
-        } else {
-            self.anomaly_hold = (self.anomaly_hold - dt).max(0.0);
-        }
+        // Velocidad del quat (suavizada): decide, junto con el gyro, si el
+        // móvil está quieto de verdad
+        let (lqy, lqp) = self.last_quat.replace((qyaw, qpitch)).unwrap_or((qyaw, qpitch));
+        let (ry, rp) = (wrap180(qyaw - lqy) / dt, (qpitch - lqp) / dt);
+        let prev = self.quat_rate;
+        self.quat_rate = Some((
+            lowpass(prev.map(|r| r.0), ry, RATE_CUTOFF_HZ, dt),
+            lowpass(prev.map(|r| r.1), rp, RATE_CUTOFF_HZ, dt),
+        ));
 
-        // d(yaw)/dt y d(pitch)/dt desde el gyro en el mundo: ḋ = ω × d
-        let d = q.pointing_dir_world();
-        let w = q.rotate(g);
-        let dd = [
-            w[1] * d[2] - w[2] * d[1],
-            w[2] * d[0] - w[0] * d[2],
-            w[0] * d[1] - w[1] * d[0],
-        ];
-        let h2 = d[0] * d[0] + d[1] * d[1];
-        let pole = h2 < POLE_H2;
-        let h2c = h2.max(1e-4);
-        let h = h2c.sqrt();
-        let dyaw = (d[1] * dd[0] - d[0] * dd[1]) / h2c;
-        let dh = (d[0] * dd[0] + d[1] * dd[1]) / h;
-        let dpitch = h * dd[2] - d[2] * dh; // denominador h²+d2² = ‖d‖² = 1
-
-        if !pole {
-            fy += dyaw.to_degrees() * dt;
+        let quat_still = self.quat_rate.is_some_and(|(a, b)| a.hypot(b) < QUAT_STILL_DEG_S);
+        if self.frozen && quat_still {
+            // Quieto de verdad (el quat no se mueve): lo que lee el gyro es
+            // sesgo. Acotado: más que eso no es sesgo, es movimiento.
+            let l = 1.0 - (-dt * BIAS_LAMBDA).exp();
+            for i in 0..3 {
+                let target = p.gyro[i].clamp(-BIAS_MAX_RADS, BIAS_MAX_RADS);
+                self.bias[i] += (target - self.bias[i]) * l;
+            }
         }
-        fp += dpitch.to_degrees() * dt;
+        let gyro = [p.gyro[0] - self.bias[0], p.gyro[1] - self.bias[1], p.gyro[2] - self.bias[2]];
+        let (dyaw, dpitch, pole) = q.world_rates(gyro);
+        let (gy, gp) = (dyaw * dt, dpitch * dt);
+        fy += gy;
+        fp += gp;
 
-        // Confianza en el quat: 1 quieto, →0 en gesto (o accel contaminado).
-        // Elige λ entre reposo (mata deriva) y movimiento (respeta el gyro).
-        let trust = if self.anomaly_hold > 0.0 {
-            0.0
-        } else {
-            let r = gyro_mag / FUSION_TRUST_RATE;
-            1.0 / (1.0 + r * r)
-        };
-        let lambda = FUSION_LAMBDA_MOVE + (FUSION_LAMBDA_REST - FUSION_LAMBDA_MOVE) * trust;
-        let l = 1.0 - (-dt * lambda).exp();
-        if !pole {
-            fy += wrap180(qyaw - fy) * l;
+        if self.frozen {
+            self.freeze_gyro.0 += gy;
+            self.freeze_gyro.1 += gp;
+            // Anclaje silencioso al quat: congelado no se emite nada, y al
+            // descongelar el puente absorbe la diferencia
+            let l = 1.0 - (-dt * ANCHOR_LAMBDA).exp();
+            if !pole {
+                fy += wrap180(qyaw - fy) * l;
+            }
+            fp += (qpitch - fp) * l;
         }
-        fp += (qpitch - fp) * l;
 
         self.fused = Some((fy, fp));
-        (fy, fp)
+        (fy, fp, dyaw, dpitch)
+    }
+
+    /// El puente solo se disuelve con el movimiento que ordena la mano: como
+    /// mucho `BRIDGE_DISSOLVE_FRACTION` del paso, y solo su componente en la
+    /// dirección del paso (ganancia un poco mayor o menor; nunca lateral ni
+    /// por su cuenta).
+    fn dissolve_bridge(&mut self, step_yaw: f32, step_pitch: f32) {
+        let step = step_yaw.hypot(step_pitch);
+        if step < 1e-6 {
+            return;
+        }
+        let (ux, uy) = (step_yaw / step, step_pitch / step);
+        let along = self.offset.0 * ux + self.offset.1 * uy;
+        let allowed = BRIDGE_DISSOLVE_FRACTION * step;
+        let reduce = along.clamp(-allowed, allowed);
+        self.offset.0 -= ux * reduce;
+        self.offset.1 -= uy * reduce;
+    }
+
+    /// Recentrado o re-anclaje: todo a cero alrededor de (yaw, pitch).
+    fn rebase(&mut self, yaw: f32, pitch: f32) {
+        self.ref_angles = Some((yaw, pitch));
+        self.fused = Some((yaw, pitch));
+        self.filter.reset();
+        self.frozen = false;
+        self.offset = (0.0, 0.0);
+        self.last_emitted = Some((0.0, 0.0));
+        self.last_filtered = None;
+        self.freeze_gyro = (0.0, 0.0);
     }
 
     /// La telemetría informa de la posición real del cursor antes de cada
@@ -324,14 +414,10 @@ impl PointerEngine {
 
         let q = Quat::from_packet(p);
         let (qyaw, qpitch) = q.world_angles();
-        let (yaw_w, pitch_w) = self.fuse(p, q, qyaw, qpitch, dt);
+        let (yaw_w, pitch_w, rate_yaw, rate_pitch) = self.track(p, q, qyaw, qpitch, dt);
 
         if recentered || self.ref_angles.is_none() {
-            self.ref_angles = Some((yaw_w, pitch_w));
-            self.filter.reset();
-            self.frozen = false;
-            self.offset = (0.0, 0.0);
-            self.last_emitted = Some((0.0, 0.0));
+            self.rebase(yaw_w, pitch_w);
             return if abs_mode {
                 PointerOutput::Abs { nx: 0.5, ny: 0.5 }
             } else {
@@ -350,19 +436,14 @@ impl PointerEngine {
         let first_t = *self.first_t_us.get_or_insert(p.t_sensor_us);
         if p.t_sensor_us.saturating_sub(first_t) < 2_500_000 {
             let lim = sens_deg * 0.9;
-            // Se mira el QUAT crudo, no el fusionado: el salto de
+            // Se mira el QUAT crudo, no el integrado: el salto de
             // asentamiento aparece en el quat al instante (sin gyro).
             let qdev_yaw = wrap180(qyaw - yaw_ref);
             let qdev_pitch = qpitch - pitch_ref;
             if qdev_yaw.abs() > lim || qdev_pitch.abs() * aspect_w_over_h > lim {
                 // El salto de asentamiento es una corrección del móvil, no un
-                // giro: re-anclar DIRECTO al quat (la fusión saltaría lenta).
-                self.ref_angles = Some((qyaw, qpitch));
-                self.fused = Some((qyaw, qpitch));
-                self.filter.reset();
-                self.frozen = false;
-                self.offset = (0.0, 0.0);
-                self.last_emitted = Some((0.0, 0.0));
+                // giro: re-anclar DIRECTO al quat.
+                self.rebase(qyaw, qpitch);
                 return if abs_mode {
                     PointerOutput::Abs { nx: 0.5, ny: 0.5 }
                 } else {
@@ -372,16 +453,21 @@ impl PointerEngine {
         }
 
         let dt = dt.unwrap_or(0.005);
-        let (yaw_f, pitch_f, speed) = self.filter.filter(yaw, pitch, dt);
+        // La velocidad que abre el filtro (y que decide congelar) sale del
+        // gyro: instantánea, sin el retardo de derivar, y ajena al anclaje.
+        let (yaw_f, pitch_f, speed) = self.filter.filter_with_rate(yaw, pitch, rate_yaw, rate_pitch, dt);
+        let quat_speed = self.quat_rate.map_or(0.0, |(a, b)| a.hypot(b));
+        let (lf_yaw, lf_pitch) = self.last_filtered.replace((yaw_f, pitch_f)).unwrap_or((yaw_f, pitch_f));
 
         let (prev_yaw, prev_pitch) = self.last_emitted.unwrap_or((yaw_f, pitch_f));
 
         if self.frozen {
-            // ¿Cuánto se ha alejado la orientación real del punto congelado?
-            let dev_y = yaw_f + self.offset.0 - prev_yaw;
-            let dev_p = pitch_f + self.offset.1 - prev_pitch;
-            let dev = (dev_y * dev_y + dev_p * dev_p).sqrt();
-            if speed > FREEZE_EXIT_DEG_S || dev > FREEZE_ESCAPE_DEG {
+            // Movimiento lento por debajo de la histéresis: el gyro lo acumula
+            // y el quat lo confirma (ni sesgo ni corrección descongelan)
+            let gdev = self.freeze_gyro.0.hypot(self.freeze_gyro.1);
+            let qdev = wrap180(qyaw - self.freeze_quat.0).hypot(qpitch - self.freeze_quat.1);
+            let creeping = gdev > FREEZE_ESCAPE_DEG && qdev > FREEZE_ESCAPE_QUAT_DEG;
+            if speed > FREEZE_EXIT_DEG_S || creeping {
                 // Liberar SIN salto y desde donde esté el cursor DE VERDAD:
                 // si el ratón real lo movió mientras estábamos congelados, el
                 // puntero continúa desde ahí (convivencia con el mouse).
@@ -395,6 +481,9 @@ impl PointerEngine {
                 };
                 self.offset = (anchor_yaw - yaw_f, anchor_pitch - pitch_f);
                 self.last_emitted = Some((anchor_yaw, anchor_pitch));
+                let out = self.emit(anchor_yaw, anchor_pitch, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, prev_yaw, prev_pitch);
+                // (el paso de este mismo sample ya está en el puente)
+                return out;
             } else {
                 // Congelado = SILENCIO: ni un paquete de inyección. El ratón
                 // real queda libre mientras el móvil esté quieto.
@@ -402,17 +491,20 @@ impl PointerEngine {
             }
         }
 
-        // Libre: el puente se disuelve dentro del propio movimiento (más
-        // deprisa cuanto más rápido te mueves — imperceptible).
-        let k = (-dt * (4.0 + speed * 0.5)).exp();
-        self.offset.0 *= k;
-        self.offset.1 *= k;
+        // Libre: el puente se disuelve dentro del propio movimiento ordenado
+        self.dissolve_bridge(yaw_f - lf_yaw, pitch_f - lf_pitch);
 
         let out_yaw = yaw_f + self.offset.0;
         let out_pitch = pitch_f + self.offset.1;
 
-        if speed < FREEZE_ENTER_DEG_S {
+        // Quieto: el gyro no ve movimiento, o ve tan poco que puede ser su
+        // sesgo y el quat confirma que no hay nada
+        let still = speed < FREEZE_ENTER_DEG_S
+            || (speed < FREEZE_BIAS_TOLERANCE_DEG_S && quat_speed < FREEZE_ENTER_DEG_S);
+        if still {
             self.frozen = true;
+            self.freeze_gyro = (0.0, 0.0);
+            self.freeze_quat = (qyaw, qpitch);
         }
         self.last_emitted = Some((out_yaw, out_pitch));
         self.emit(out_yaw, out_pitch, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, prev_yaw, prev_pitch)
@@ -430,7 +522,6 @@ impl PointerEngine {
         prev_yaw: f32,
         prev_pitch: f32,
     ) -> PointerOutput {
-
         if abs_mode {
             // Sin recorte a la pantalla primaria: con varios monitores el cursor
             // debe poder salir. Cada inyector recorta a su espacio real; aquí
@@ -470,6 +561,8 @@ impl PointerEngine {
 mod tests {
     use super::*;
     use crate::net::codec::FLAG_QUAT_VALID;
+
+    const G_MS2: f32 = 9.81;
 
     const DT_US: u64 = 5_000;
 
@@ -1015,5 +1108,281 @@ mod tests {
         assert!((wrap180(190.0) + 170.0).abs() < 1e-4);
         assert!((wrap180(-190.0) - 170.0).abs() < 1e-4);
         assert!((wrap180(10.0) - 10.0).abs() < 1e-4);
+    }
+
+    /// Móvil realista: el quat llega `lag` muestras por detrás del gyro y,
+    /// en un gesto brusco, arrastra un pitch falso que sana en reposo con
+    /// una constante de tiempo de ~0,5 s (lo que hace un rotation vector de
+    /// verdad). Devuelve las salidas emitidas (t, nx, ny).
+    fn realistic_flick(yaw_deg: f32, flick_steps: u32, lag: usize, false_pitch: f32) -> (Vec<(u64, f32, f32)>, u64) {
+        let mut e = PointerEngine::new();
+        let mut t = 0u64;
+        let mut out = Vec::new();
+        let mut history: Vec<Quat> = Vec::new();
+        let dt = DT_US as f32 / 1e6;
+        let mut prev_true = qrot_z(0.0);
+        let mut push = |e: &mut PointerEngine, true_q: Quat, sent_q: Quat, t: u64, out: &mut Vec<(u64, f32, f32)>, prev_true: &mut Quat| {
+            let (axis, ang) = delta_axis_angle(*prev_true, true_q);
+            *prev_true = true_q;
+            let mut p = packet(arr(sent_q), 0, t, FLAG_QUAT_VALID);
+            let k = ang / dt;
+            p.gyro = [axis[0] * k, axis[1] * k, axis[2] * k];
+            if let PointerOutput::Abs { nx, ny } = ap(e, &p) {
+                out.push((t, nx, ny));
+            }
+        };
+        // reposo inicial (recentrado + congelado)
+        for _ in 0..200 {
+            t += DT_US;
+            history.push(qrot_z(0.0));
+            push(&mut e, qrot_z(0.0), qrot_z(0.0), t, &mut out, &mut prev_true);
+        }
+        // flick: yaw 0 → yaw_deg en flick_steps muestras, con el quat
+        // retrasado `lag` muestras y un pitch falso que crece con el gesto
+        for i in 1..=flick_steps {
+            t += DT_US;
+            let f = i as f32 / flick_steps as f32;
+            let true_q = qrot_z(yaw_deg * f);
+            let sent_true = qrot_z(yaw_deg * f).mul(qrot_x(false_pitch * f));
+            history.push(sent_true);
+            let sent = history[history.len().saturating_sub(1 + lag)];
+            push(&mut e, true_q, sent, t, &mut out, &mut prev_true);
+        }
+        let t_stop = t;
+        // la mano se para en seco; el quat termina de llegar y su pitch
+        // falso sana con τ = 0,5 s
+        for i in 1..=600u32 {
+            t += DT_US;
+            let heal = false_pitch * (-(i as f32) * dt / 0.5).exp();
+            let sent_true = qrot_z(yaw_deg).mul(qrot_x(heal));
+            history.push(sent_true);
+            let sent = history[history.len().saturating_sub(1 + lag)];
+            push(&mut e, qrot_z(yaw_deg), sent, t, &mut out, &mut prev_true);
+        }
+        (out, t_stop)
+    }
+
+    #[test]
+    fn tras_un_flick_el_cursor_no_se_mueve_por_su_cuenta() {
+        // El caso reportado: flick brusco y, al parar, el cursor se iba por
+        // donde no tocaba (el quat, con retraso y con inclinación falsa,
+        // tiraba de él). Ahora: al parar la mano, para el cursor. Se permite
+        // solo la cola del filtro en los primeros 40 ms.
+        let (out, t_stop) = realistic_flick(-20.0, 16, 3, 5.0);
+        let settled = out.iter().find(|(t, _, _)| *t >= t_stop + 40_000).expect("emite tras parar");
+        let (sx, sy) = (settled.1, settled.2);
+        let mut max_after = 0.0f32;
+        for (t, nx, ny) in &out {
+            if *t >= t_stop + 40_000 {
+                max_after = max_after.max((nx - sx).hypot(ny - sy));
+            }
+        }
+        assert!(max_after < 0.004, "tras parar, el cursor se movió {max_after} por su cuenta");
+        // vertical: el pitch falso del quat nunca mueve el cursor
+        let max_ny = out.iter().map(|(_, _, ny)| (ny - 0.5).abs()).fold(0.0, f32::max);
+        assert!(max_ny < 0.01, "el pitch falso del quat movió el cursor en vertical: {max_ny}");
+        // y el recorrido es el de la mano
+        let expected = 0.5 + 20.0 / 35.0;
+        assert!((sx - expected).abs() < 0.02, "recorrido: nx={sx} esperado={expected}");
+    }
+
+    #[test]
+    fn barrido_uniforme_sale_uniforme_aunque_el_quat_se_retrase() {
+        // A velocidad constante el cursor debe avanzar a velocidad constante:
+        // ni frenazos ni acelerones por correcciones (el quat llega 3 muestras
+        // tarde). Se mide el paso por muestra una vez pasado el arranque.
+        let mut e = PointerEngine::new();
+        let mut t = 0u64;
+        let dt = DT_US as f32 / 1e6;
+        let mut history: Vec<Quat> = Vec::new();
+        let mut prev_true = qrot_z(0.0);
+        let mut emit = |e: &mut PointerEngine, true_q: Quat, sent: Quat, t: u64, prev_true: &mut Quat| {
+            let (axis, ang) = delta_axis_angle(*prev_true, true_q);
+            *prev_true = true_q;
+            let mut p = packet(arr(sent), 0, t, FLAG_QUAT_VALID);
+            let k = ang / dt;
+            p.gyro = [axis[0] * k, axis[1] * k, axis[2] * k];
+            ap(e, &p)
+        };
+        for _ in 0..200 {
+            t += DT_US;
+            history.push(qrot_z(0.0));
+            emit(&mut e, qrot_z(0.0), qrot_z(0.0), t, &mut prev_true);
+        }
+        // barrido a 60°/s durante 0,5 s
+        let mut steps: Vec<f32> = Vec::new();
+        let mut last_nx: Option<f32> = None;
+        for i in 1..=100 {
+            t += DT_US;
+            let true_q = qrot_z(-0.3 * i as f32);
+            history.push(true_q);
+            let sent = history[history.len().saturating_sub(4)];
+            if let PointerOutput::Abs { nx, .. } = emit(&mut e, true_q, sent, t, &mut prev_true) {
+                if let Some(p) = last_nx {
+                    if i > 30 {
+                        steps.push(nx - p);
+                    }
+                }
+                last_nx = Some(nx);
+            }
+        }
+        let ideal = 0.3 / 35.0;
+        let (min, max) = steps.iter().fold((f32::MAX, f32::MIN), |(a, b), s| (a.min(*s), b.max(*s)));
+        assert!(
+            min > ideal * 0.92 && max < ideal * 1.08,
+            "paso por muestra irregular: {min}..{max} (ideal {ideal})"
+        );
+    }
+
+    #[test]
+    fn puente_grande_no_desvia_ni_mueve_por_su_cuenta() {
+        // El ratón real dejó el cursor 0,3 de pantalla más abajo; el móvil
+        // retoma moviéndose en HORIZONTAL. El puente no puede convertirse en
+        // un movimiento vertical (antes se disolvía con el tiempo: tirón
+        // hacia donde no apuntaba la mano).
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_z(0.0), 0);
+        ap(&mut e, &p);
+        ph.hold(&mut e, 400);
+        e.set_cursor_hint(Some((0.5, 0.8)));
+        let mut prev: Option<(f32, f32)> = None;
+        let mut max_dy = 0.0f32;
+        let mut first: Option<(f32, f32)> = None;
+        let mut last = (0.5, 0.5);
+        for i in 1..=200 {
+            let p = ph.make(qrot_z(-0.15 * i as f32), 0); // 30°/s
+            if let PointerOutput::Abs { nx, ny } = ap(&mut e, &p) {
+                if let Some((px, py)) = prev {
+                    max_dy = max_dy.max((ny - py).abs());
+                    assert!(nx >= px - 1e-4, "retrocedió en x: {px} → {nx}");
+                }
+                if first.is_none() {
+                    first = Some((nx, ny));
+                }
+                prev = Some((nx, ny));
+                last = (nx, ny);
+            }
+        }
+        let (fx, fy) = first.expect("emite");
+        assert!((fy - 0.8).abs() < 0.03, "debe arrancar donde dejó el ratón (y=0.8), fue {fy}");
+        assert!(max_dy < 1e-3, "movimiento vertical no ordenado: {max_dy} por muestra");
+        assert!((last.1 - fy).abs() < 0.01, "el cursor se fue en vertical: {} → {}", fy, last.1);
+        // ganancia horizontal dentro del ±12 % del puente
+        let travel = last.0 - fx;
+        let ideal = 30.0 / 35.0 * 0.85; // lo recorrido tras el arranque (aprox.)
+        assert!(travel > ideal * 0.85 && travel < 30.0 / 35.0 * 1.13, "ganancia fuera de rango: {travel}");
+    }
+
+    #[test]
+    fn sesgo_del_gyro_se_aprende_en_reposo_y_no_altera_la_ganancia() {
+        // Gyro con 2°/s de sesgo en yaw. Tras un reposo, un barrido de 20°
+        // debe recorrer 20° (no 20° ± lo que sume el sesgo) y el cursor no
+        // debe derivar en reposo.
+        let mut e = PointerEngine::new();
+        let bias = 2.0_f32.to_radians();
+        let mut t = 0u64;
+        let dt = DT_US as f32 / 1e6;
+        let mut prev_true = qrot_z(0.0);
+        let mut send = |e: &mut PointerEngine, true_q: Quat, t: u64, prev_true: &mut Quat| {
+            let (axis, ang) = delta_axis_angle(*prev_true, true_q);
+            *prev_true = true_q;
+            let mut p = packet(arr(true_q), 0, t, FLAG_QUAT_VALID);
+            let k = ang / dt;
+            p.gyro = [axis[0] * k, axis[1] * k, axis[2] * k + bias];
+            ap(e, &p)
+        };
+        let mut moved_at_rest = 0.0f32;
+        for _ in 0..600 {
+            t += DT_US;
+            if let PointerOutput::Abs { nx, ny } = send(&mut e, qrot_z(0.0), t, &mut prev_true) {
+                moved_at_rest = moved_at_rest.max((nx - 0.5).hypot(ny - 0.5));
+            }
+        }
+        assert!(moved_at_rest < 0.01, "derivó en reposo con sesgo: {moved_at_rest}");
+        let mut last = (0.5, 0.5);
+        for i in 1..=100 {
+            t += DT_US;
+            if let PointerOutput::Abs { nx, ny } = send(&mut e, qrot_z(-0.2 * i as f32), t, &mut prev_true) {
+                last = (nx, ny);
+            }
+        }
+        for _ in 0..30 {
+            t += DT_US;
+            if let PointerOutput::Abs { nx, ny } = send(&mut e, qrot_z(-20.0), t, &mut prev_true) {
+                last = (nx, ny);
+            }
+        }
+        let expected = 0.5 + 20.0 / 35.0;
+        assert!((last.0 - expected).abs() < 0.025, "recorrido con sesgo: nx={} esperado={expected}", last.0);
+    }
+
+    #[test]
+    fn el_quat_sanando_en_reposo_no_descongela() {
+        // Congelado, el quat corrige 3° de pitch despacio (2°/s) con el gyro
+        // a cero: ni se descongela ni se mueve el cursor.
+        let mut e = PointerEngine::new();
+        let mut t = 0u64;
+        for _ in 0..300 {
+            t += DT_US;
+            ap(&mut e, &packet(arr(qrot_z(0.0)), 0, t, FLAG_QUAT_VALID));
+        }
+        for i in 1..=300 {
+            t += DT_US;
+            let pitch = 3.0 * (i as f32 / 300.0);
+            let out = ap(&mut e, &packet(arr(qrot_x(pitch)), 0, t, FLAG_QUAT_VALID));
+            assert_eq!(out, PointerOutput::None, "muestra {i}: una corrección del quat movió el cursor: {out:?}");
+        }
+    }
+
+    #[test]
+    fn quat_colgado_no_para_el_cursor() {
+        // El rotation vector del móvil se queda congelado (fallo del sensor)
+        // mientras el gyro sigue midiendo un barrido a 40°/s: el cursor debe
+        // seguir al gyro y recorrer todo, no quedarse clavado.
+        let mut e = PointerEngine::new();
+        let mut t = 0u64;
+        let dt = DT_US as f32 / 1e6;
+        for _ in 0..200 {
+            t += DT_US;
+            ap(&mut e, &packet(arr(qrot_z(0.0)), 0, t, FLAG_QUAT_VALID));
+        }
+        let mut prev_true = qrot_z(0.0);
+        let mut last = 0.5f32;
+        for i in 1..=100 {
+            t += DT_US;
+            let true_q = qrot_z(-0.2 * i as f32);
+            let (axis, ang) = delta_axis_angle(prev_true, true_q);
+            prev_true = true_q;
+            let mut p = packet(arr(qrot_z(0.0)), 0, t, FLAG_QUAT_VALID); // quat colgado
+            let k = ang / dt;
+            p.gyro = [axis[0] * k, axis[1] * k, axis[2] * k];
+            if let PointerOutput::Abs { nx, .. } = ap(&mut e, &p) {
+                last = nx;
+            }
+        }
+        let expected = 0.5 + 20.0 / 35.0;
+        assert!((last - expected).abs() < 0.03, "con el quat colgado el cursor se quedó en {last} (esperado {expected})");
+    }
+
+    #[test]
+    fn movimiento_lento_si_descongela() {
+        // 1°/s de verdad (gyro y quat de acuerdo): por debajo de la
+        // histéresis de salida, pero el escape por posición lo libera.
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_z(0.0), 0);
+        ap(&mut e, &p);
+        ph.hold(&mut e, 400);
+        let mut moved = None;
+        for i in 1..=400 {
+            let p = ph.make(qrot_z(-0.005 * i as f32), 0);
+            if let PointerOutput::Abs { nx, .. } = ap(&mut e, &p) {
+                moved = Some((i, nx));
+                break;
+            }
+        }
+        let (i, _) = moved.expect("el movimiento lento debe descongelar");
+        assert!(i < 200, "tardó {i} muestras (1 s) en descongelar");
     }
 }

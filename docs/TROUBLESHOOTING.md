@@ -99,6 +99,21 @@ Android detecta solo hacia qué lado giraste el móvil. En un móvil Linux, el
 ajuste **Giro** de la pantalla del GamePad (izquierda / derecha) tiene que
 coincidir con el lado hacia el que queda el borde superior del móvil.
 
+## El cursor da un tirón al parar, o no va fluido
+
+Desde 1.3.0 el cursor lo mueve el giroscopio, 1:1 con la mano, y el rotation
+vector del móvil solo ancla la posición cuando el móvil está quieto, en
+silencio (ninguna corrección mueve el cursor). Si aun así notas algo raro,
+grábalo y mándalo: arranca el receptor con la variable de entorno
+`PEPOMOTE_RECORD=C:\ruta\gesto.bin`, repite el gesto, cierra el receptor y
+pasa el archivo por `PepoMote --replay gesto.bin` (saca un CSV con lo que
+llegó del móvil y lo que salió del motor, paquete a paquete).
+
+En **modo relativo** (Ajustes → apuntado absoluto desactivado) Windows aplica
+al cursor su aceleración de ratón: si quieres que el recorrido sea exacto,
+desactiva «Mejorar la precisión del puntero» en la configuración del ratón
+de Windows. El apuntado absoluto no pasa por esa aceleración.
+
 ## El cursor va a tirones
 
 - HUD del receptor: si el RTT sube de ~15 ms, es la red — pásate a 5 GHz o al hotspot del móvil.

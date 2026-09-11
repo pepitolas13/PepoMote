@@ -36,6 +36,11 @@ en el entorno:
   el receptor NORMAL (token real por `PEPOMOTE_TOKEN`), para ver en Cemu el
   mando moviéndose. Un archivo `cemu_live.cmd` junto al script cambia el patrón.
 
+Puntero: `PEPOMOTE_RECORD=<archivo>` en el receptor graba cada INPUT del
+Jugador 1 (llegada + paquete crudo) y `PepoMote --replay <archivo> [sens_deg]`
+lo pasa por el motor del puntero y saca un CSV (sensor, llegada, gyro, quat,
+salida) para analizar un gesto real fuera de línea.
+
 Ojo en Windows: un `python` instalado como paquete MSIX ve un
 `%APPDATA%\Roaming` virtualizado; pasa rutas absolutas y el token por variable
 de entorno en vez de leer `%APPDATA%` desde Python.

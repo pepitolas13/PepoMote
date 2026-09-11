@@ -85,6 +85,9 @@ pub fn run(
     // Modo Wii U con «Mando Wii»: cada uno de esos móviles tiene su propio
     // motor de puntero (su IR va a Cemu por el touchpad DSU, no al SO)
     let mut ir_engines: HashMap<u32, IrPointer> = HashMap::new();
+    // PEPOMOTE_RECORD=<archivo>: grabar la telemetría del Jugador 1 para
+    // analizar un gesto real después (pointer/record.rs)
+    let mut recorder = crate::pointer::record::Recorder::from_env();
 
     let mut win_start = Instant::now();
     let mut win_packets: u32 = 0;
@@ -246,6 +249,9 @@ pub fn run(
                         win_first_t = Some(p.t_sensor_us);
                     }
                     win_last_t = p.t_sensor_us;
+                    if let Some(r) = recorder.as_mut() {
+                        r.write(&buf[..len]);
+                    }
                 }
 
                 let (mode, sens_deg, abs_mode, pad_wii) = {

@@ -68,8 +68,23 @@ impl Filter2D {
         self.prev = None;
     }
 
+    /// Como `filter`, pero la velocidad que abre el filtro (y que devuelve)
+    /// viene de fuera (el gyro: instantánea y sin el retardo de derivar), en
+    /// las mismas unidades por segundo. El suavizado de esa velocidad es el
+    /// mismo (dcutoff).
+    pub fn filter_with_rate(&mut self, x: f32, y: f32, rate_x: f32, rate_y: f32, dt: f32) -> (f32, f32, f32) {
+        self.prev = Some((x, y));
+        let a_d = alpha(self.dcutoff, dt);
+        let dx = self.lp_dx.filter(rate_x, a_d);
+        let dy = self.lp_dy.filter(rate_y, a_d);
+        let speed = (dx * dx + dy * dy).sqrt();
+        let a = alpha(self.mincutoff + self.beta * speed, dt);
+        (self.lp_x.filter(x, a), self.lp_y.filter(y, a), speed)
+    }
+
     /// Devuelve (x, y) filtrados y la velocidad combinada suavizada
-    /// (mismas unidades de entrada por segundo).
+    /// (mismas unidades de entrada por segundo), derivando la entrada.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn filter(&mut self, x: f32, y: f32, dt: f32) -> (f32, f32, f32) {
         let (px, py) = self.prev.unwrap_or((x, y));
         self.prev = Some((x, y));
@@ -113,6 +128,26 @@ mod tests {
                 "paso {i}: ox={ox} oy={oy} — el lag no es isótropo"
             );
         }
+    }
+
+    #[test]
+    fn la_velocidad_externa_abre_el_filtro_igual_que_la_derivada() {
+        // Misma rampa: con la velocidad dada desde fuera (constante) el
+        // filtro converge a la misma salida que derivando, y con velocidad
+        // externa cero sigue a la senal con el cutoff minimo (mas lag).
+        let mut a = Filter2D::new(1.0, 0.2);
+        let mut b = Filter2D::new(1.0, 0.2);
+        let mut c = Filter2D::new(1.0, 0.2);
+        let (mut oa, mut ob, mut oc) = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0));
+        for i in 0..400 {
+            let v = i as f32 * 0.25; // 50 unidades/s
+            oa = a.filter(v, 0.0, 0.005);
+            ob = b.filter_with_rate(v, 0.0, 50.0, 0.0, 0.005);
+            oc = c.filter_with_rate(v, 0.0, 0.0, 0.0, 0.005);
+        }
+        assert!((oa.0 - ob.0).abs() < 0.05, "derivada {} vs externa {}", oa.0, ob.0);
+        assert!((oa.2 - 50.0).abs() < 1.0 && (ob.2 - 50.0).abs() < 0.01);
+        assert!(oc.0 < ob.0 - 1.0, "sin velocidad externa el lag debe ser mayor: {} vs {}", oc.0, ob.0);
     }
 
     #[test]

@@ -25,6 +25,12 @@ mod theme;
 mod tray;
 
 fn main() -> eframe::Result {
+    // --replay <grabación>: solo el motor del puntero sobre una grabación
+    // (PEPOMOTE_RECORD), CSV por stdout, y fuera.
+    if pointer::record::replay_from_args() {
+        return Ok(());
+    }
+
     // Instancia única: si ya hay un PepoMote vivo (quizá solo en la
     // bandeja), se le pide que se muestre y este proceso termina.
     match singleton::acquire() {
