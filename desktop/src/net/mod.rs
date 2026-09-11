@@ -8,8 +8,8 @@ use crate::dsu::Dsu;
 use crate::pairing::PairingInfo;
 use crate::state::{Role, SharedState};
 use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::net::{SocketAddr, TcpStream};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Límite del protocolo DSU: 4 mandos.
 pub const MAX_PLAYERS: usize = 4;
@@ -26,6 +26,40 @@ pub struct Session {
     pub device: String,
     /// Mando o Nunchuk (PROTOCOL.md §3).
     pub role: Role,
+    /// Modo Wii U: pidió ser Mando Wii en vez de GamePad / Pro.
+    pub pad_wii: bool,
+    /// Canal de control de esta sesión, para avisarle desde fuera de su hilo
+    /// (difusión de `mode` y `notice`). None solo en tests.
+    pub writer: Option<Arc<Mutex<TcpStream>>>,
+}
+
+/// Sesiones vivas, accesibles desde los módulos de configuración
+/// (Dolphin/Cemu) para avisar a los móviles.
+static SESSIONS: OnceLock<Sessions> = OnceLock::new();
+
+/// Envía `v` (una línea JSON) a todas las sesiones salvo `except`.
+pub fn broadcast(v: &serde_json::Value, except: Option<u32>) {
+    let Some(sessions) = SESSIONS.get() else { return };
+    let writers: Vec<Arc<Mutex<TcpStream>>> = sessions
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|s| Some(s.id) != except)
+        .filter_map(|s| s.writer.clone())
+        .collect();
+    let mut line = v.to_string();
+    line.push('\n');
+    for w in writers {
+        use std::io::Write;
+        if let Ok(mut w) = w.lock() {
+            let _ = w.write_all(line.as_bytes());
+        }
+    }
+}
+
+/// Aviso legible para todos los móviles (PROTOCOL.md §3, `notice`).
+pub fn notify_all(text: &str) {
+    broadcast(&serde_json::json!({"m":"notice","text":text}), None);
 }
 
 /// Sesiones de ESTE mismo móvil que siguen vivas (reconexión tras caída de
@@ -55,6 +89,7 @@ pub fn free_slot(sessions: &HashMap<u32, Session>, role: Role) -> Option<u8> {
 
 pub fn start(shared: SharedState, pairing: PairingInfo, dsu: Option<Arc<Dsu>>) {
     let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
+    let _ = SESSIONS.set(sessions.clone());
 
     {
         let shared = shared.clone();
@@ -96,6 +131,8 @@ mod tests {
             peer: std::net::IpAddr::from([192, 168, 1, 10 + slot]),
             device: format!("Movil{slot}"),
             role: Role::Wiimote,
+            pad_wii: false,
+            writer: None,
         }
     }
 

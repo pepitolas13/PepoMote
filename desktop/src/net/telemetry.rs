@@ -3,12 +3,13 @@
 
 use super::codec::{self, Packet};
 use super::Sessions;
-use crate::dsu::{Dsu, MotionSample};
+use crate::dsu::{Dsu, DsuProfile, MotionSample};
 use crate::input::{self, KeyCode, MouseButton};
 use crate::pairing::PairingInfo;
 use crate::pointer::{PointerEngine, PointerOutput};
 use crate::state::{Mode, Role, SharedState};
 use serde_json::json;
+use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -81,6 +82,9 @@ pub fn run(
     let mut held: u32 = 0;
     // El motor de puntero pertenece al Jugador 1: se resetea si cambia su sesión
     let mut engine_session: Option<u32> = None;
+    // Modo Wii U con «Mando Wii»: cada uno de esos móviles tiene su propio
+    // motor de puntero (su IR va a Cemu por el touchpad DSU, no al SO)
+    let mut ir_engines: HashMap<u32, IrPointer> = HashMap::new();
 
     let mut win_start = Instant::now();
     let mut win_packets: u32 = 0;
@@ -153,6 +157,10 @@ pub fn run(
                 if let Some(inj) = injector.as_deref_mut() {
                     release_all(inj, &mut held);
                 }
+            }
+            if !ir_engines.is_empty() {
+                let alive = sessions.lock().unwrap();
+                ir_engines.retain(|id, _| alive.contains_key(id));
             }
         }
 
@@ -230,21 +238,38 @@ pub fn run(
                     win_last_t = p.t_sensor_us;
                 }
 
-                let (mode, sens_deg, abs_mode) = {
+                let (mode, sens_deg, abs_mode, pad_wii) = {
                     let mut s = shared.lock().unwrap();
+                    let mut pad_wii = false;
                     if let Some(pl) = s.players[slot as usize].as_mut() {
                         pl.battery_pct = p.battery_pct;
+                        pad_wii = pl.pad_wii;
                     }
-                    (s.mode, s.config.sens_deg, s.config.abs_mode)
+                    (s.mode, s.config.sens_deg, s.config.abs_mode, pad_wii)
                 };
 
-                if mode == Mode::Dolphin {
-                    // Cambio a Dolphin con algo sostenido: soltarlo en el SO
+                if mode.feeds_dsu() {
+                    // Cambio a Dolphin/Cemu con algo sostenido: soltarlo en el SO
                     if let Some(inj) = injector.as_deref_mut() {
                         release_all(inj, &mut held);
                     }
                     // Todos los jugadores al DSU, cada uno en su slot, INLINE
                     if let Some(dsu) = &dsu {
+                        let (profile, touch) = if mode == Mode::Cemu {
+                            let touch = if role == Role::Wiimote && pad_wii {
+                                // Mando Wii en Cemu: su puntero IR es el
+                                // touchpad DSU (Cemu lo lee como posición)
+                                ir_engines
+                                    .entry(p.session_id)
+                                    .or_default()
+                                    .apply(&p, sens_deg, aspect, screen_w)
+                            } else {
+                                gamepad_touch(&p)
+                            };
+                            (DsuProfile::WiiU, touch)
+                        } else {
+                            (DsuProfile::Wii, None)
+                        };
                         dsu.push(
                             slot,
                             &MotionSample {
@@ -256,6 +281,10 @@ pub fn run(
                                 recenter_count: p.recenter_count,
                                 stick_x: p.stick_x,
                                 stick_y: p.stick_y,
+                                stick_rx: p.stick_rx,
+                                stick_ry: p.stick_ry,
+                                touch,
+                                profile,
                             },
                         );
                     }
@@ -287,6 +316,55 @@ pub fn run(
             }
             None => {}
         }
+    }
+}
+
+/// Resolución del touchpad DSU (la de un DS4): Cemu divide por esto para
+/// obtener la posición 0..1 (`DSUController::get_position`).
+const DSU_TOUCH_W: f32 = 1920.0;
+const DSU_TOUCH_H: f32 = 942.0;
+
+/// Pantalla táctil del GamePad: fracción 0..65535 del paquete → touchpad DSU.
+fn gamepad_touch(p: &codec::InputPacket) -> Option<(u16, u16)> {
+    if p.flags & codec::FLAG_EXT == 0 || p.flags & codec::FLAG_TOUCH == 0 {
+        return None;
+    }
+    let scale = |v: u16, max: f32| (v as f32 / 65535.0 * max).round() as u16;
+    Some((scale(p.touch_x, DSU_TOUCH_W), scale(p.touch_y, DSU_TOUCH_H)))
+}
+
+/// Puntero IR de un Mando Wii dentro de Cemu: el mismo motor absoluto que
+/// mueve el cursor del PC, pero su salida va al touchpad DSU. Fuera de la
+/// pantalla (con margen) el toque se apaga y el juego esconde el cursor.
+struct IrPointer {
+    engine: PointerEngine,
+    last: Option<(u16, u16)>,
+}
+
+impl Default for IrPointer {
+    fn default() -> Self {
+        Self { engine: PointerEngine::new(), last: None }
+    }
+}
+
+impl IrPointer {
+    fn apply(&mut self, p: &codec::InputPacket, sens_deg: f32, aspect: f32, screen_w: f32) -> Option<(u16, u16)> {
+        match self.engine.apply(p, sens_deg, aspect, true, screen_w) {
+            PointerOutput::Abs { nx, ny } => {
+                let on_screen = (-0.05..=1.05).contains(&nx) && (-0.05..=1.05).contains(&ny);
+                self.last = on_screen.then(|| {
+                    (
+                        (nx.clamp(0.0, 1.0) * DSU_TOUCH_W).round() as u16,
+                        (ny.clamp(0.0, 1.0) * DSU_TOUCH_H).round() as u16,
+                    )
+                });
+            }
+            // sin quaternion no hay apuntado absoluto que dar
+            PointerOutput::Rel { .. } => self.last = None,
+            // congelado en reposo: se mantiene la última posición
+            PointerOutput::None => {}
+        }
+        self.last
     }
 }
 

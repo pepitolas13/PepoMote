@@ -1,14 +1,16 @@
 //! Canal de control TCP: JSON por líneas (PROTOCOL.md §3).
 //! Un hilo por conexión: hasta MAX_PLAYERS móviles a la vez, cada uno con su
-//! slot (Jugador 1 = slot 0). El modo puntero/dolphin solo lo cambia el slot 0.
+//! slot (Jugador 1 = slot 0). El modo puntero/dolphin/cemu solo lo cambia el
+//! slot 0; cuando cambia se difunde a los demás móviles.
 
-use super::{free_slot, ghosts_of, Session, Sessions};
+use super::{broadcast, free_slot, ghosts_of, Session, Sessions};
 use crate::pairing::PairingInfo;
-use crate::state::{player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState};
+use crate::state::{pad_kind, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// PEPOMOTE_DEBUG=1: traza del canal de control (hello/slot/modo/bye).
@@ -37,6 +39,26 @@ pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo) {
     }
 }
 
+/// Escritor compartido: el hilo de esta conexión y las difusiones desde
+/// otros hilos escriben líneas enteras bajo el mismo candado.
+type Writer = Arc<Mutex<TcpStream>>;
+
+/// Nombre del tipo de mando Wii U de la sesión del `slot` (`ok.pad` / eco `pad`).
+fn pad_str(shared: &SharedState, slot: u8, role: Role) -> &'static str {
+    if role == Role::Nunchuk {
+        return "nunchuk";
+    }
+    pad_kind(&shared.lock().unwrap().players, slot)
+        .map(|k| k.as_str())
+        .unwrap_or("gamepad")
+}
+
+/// Disparo de la autoconfiguración de emuladores (cada una se filtra por modo).
+fn auto_configure(shared: &SharedState) {
+    crate::dolphin::maybe_auto_configure(shared);
+    crate::cemu::maybe_auto_configure(shared);
+}
+
 fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing: &PairingInfo) {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
@@ -44,8 +66,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         .peer_addr()
         .map(|a| a.ip())
         .unwrap_or(IpAddr::from([0, 0, 0, 0]));
-    let mut writer = match stream.try_clone() {
-        Ok(w) => w,
+    let writer: Writer = match stream.try_clone() {
+        Ok(w) => Arc::new(Mutex::new(w)),
         Err(_) => return,
     };
     let mut reader = BufReader::new(stream);
@@ -64,7 +86,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         return;
     }
     if hello["pv"].as_i64() != Some(1) {
-        let _ = send(&mut writer, &json!({"m":"err","code":"bad_version","msg":"Actualiza PepoMote"}));
+        let _ = send(&writer, &json!({"m":"err","code":"bad_version","msg":"Actualiza PepoMote"}));
         return;
     }
     // Token (QR) o, para móviles sin cámara, el código de 4 dígitos que se
@@ -80,7 +102,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         } else {
             ("bad_token", "Vuelve a escanear el QR")
         };
-        let _ = send(&mut writer, &json!({"m":"err","code":code,"msg":msg}));
+        let _ = send(&writer, &json!({"m":"err","code":code,"msg":msg}));
         return;
     }
 
@@ -88,9 +110,9 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     // quiere el token. Sin plaza, sin campanitas, sin tocar Dolphin.
     if hello["probe"].as_bool() == Some(true) {
         let _ = send(
-            &mut writer,
+            &writer,
             &json!({"m":"ok","probe":true,"name":pairing.name,"token":pairing.token,
-                    "mode":mode_str(shared.lock().unwrap().mode)}),
+                    "mode":shared.lock().unwrap().mode.as_str()}),
         );
         return;
     }
@@ -99,6 +121,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     let device_model = hello["model"].as_str().unwrap_or("").to_owned();
     // Papel: Nunchuk en la otra mano (ausente = mando)
     let role = if hello["role"].as_str() == Some("nunchuk") { Role::Nunchuk } else { Role::Wiimote };
+    // Modo Wii U: quiere ser Mando Wii (ausente = GamePad / Pro según jugador)
+    let pad_wii = role == Role::Wiimote && hello["pad"].as_str() == Some("wiimote");
 
     let session_id: u32 = rand::thread_rng().gen();
     let (slot, evicted_slots) = {
@@ -111,7 +135,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             .collect();
         let Some(slot) = free_slot(&guard, role) else {
             drop(guard);
-            let _ = send(&mut writer, &json!({"m":"err","code":"busy","msg":"Ya hay 4 mandos conectados"}));
+            let _ = send(&writer, &json!({"m":"err","code":"busy","msg":"Ya hay 4 mandos conectados"}));
             return;
         };
         guard.insert(
@@ -124,6 +148,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 peer: peer_ip,
                 device: device_name.clone(),
                 role,
+                pad_wii,
+                writer: Some(writer.clone()),
             },
         );
         (slot, evicted)
@@ -147,22 +173,26 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             battery_pct: 0,
             rtt_ms: None,
             role,
+            pad_wii,
         });
         if s.last_error.as_deref().is_some_and(|e| !e.starts_with("Inyección")) {
             s.last_error = None;
         }
         (s.mode, player_number(&s.players, slot))
     };
+    let modes: Vec<&str> = Mode::ALL.iter().map(|m| m.as_str()).collect();
     let mut ok = json!({"m":"ok","session_id":session_id,"udp_port":pairing.port,
-                        "mode":mode_str(mode),"slot":slot,"name":pairing.name,
+                        "mode":mode.as_str(),"slot":slot,"name":pairing.name,
                         "role":if role == Role::Nunchuk { "nunchuk" } else { "wiimote" },
-                        "player":player});
+                        "player":player,
+                        "modes":modes,
+                        "pad":pad_str(shared, slot, role)});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }
-    let _ = send(&mut writer, &ok);
+    let _ = send(&writer, &ok);
     crate::sound::connect_chime();
-    crate::dolphin::maybe_auto_configure(shared);
+    auto_configure(shared);
 
     // Bucle de control hasta que este móvil se vaya
     loop {
@@ -177,31 +207,67 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         };
         match msg["m"].as_str() {
             Some("ping") => {
-                let _ = send(&mut writer, &json!({"m":"pong","t":msg["t"]}));
+                let _ = send(&writer, &json!({"m":"pong","t":msg["t"]}));
             }
             Some("mode") => {
                 // Solo el Jugador 1 decide el modo
                 if slot == 0 {
-                    let new_mode = match msg["mode"].as_str() {
-                        Some("dolphin") => Mode::Dolphin,
-                        _ => Mode::Pointer,
+                    let new_mode = Mode::parse(msg["mode"].as_str());
+                    let changed = {
+                        let mut s = shared.lock().unwrap();
+                        let changed = s.mode != new_mode;
+                        s.mode = new_mode;
+                        changed
                     };
-                    shared.lock().unwrap().mode = new_mode;
                     if debug() {
-                        eprintln!("[control] {device_name}: modo → {}", mode_str(new_mode));
+                        eprintln!("[control] {device_name}: modo → {}", new_mode.as_str());
                     }
-                    let _ = send(&mut writer, &json!({"m":"mode","mode":mode_str(new_mode)}));
-                    crate::dolphin::maybe_auto_configure(shared);
+                    let reply = json!({"m":"mode","mode":new_mode.as_str()});
+                    let _ = send(&writer, &reply);
+                    if changed {
+                        // Los demás móviles cambian de pantalla con el modo
+                        broadcast(&reply, Some(session_id));
+                    }
+                    auto_configure(shared);
                 } else {
                     let cur = shared.lock().unwrap().mode;
                     if debug() {
-                        eprintln!("[control] {device_name} (slot {slot}) pidió modo: solo decide el Jugador 1, sigue {}", mode_str(cur));
+                        eprintln!("[control] {device_name} (slot {slot}) pidió modo: solo decide el Jugador 1, sigue {}", cur.as_str());
                     }
-                    let _ = send(&mut writer, &json!({"m":"mode","mode":mode_str(cur)}));
+                    let _ = send(&writer, &json!({"m":"mode","mode":cur.as_str()}));
+                }
+            }
+            Some("pad") => {
+                // Modo Wii U: cada móvil elige ser Mando Wii o GamePad/Pro
+                if role == Role::Wiimote {
+                    let wants_wii = msg["pad"].as_str() == Some("wiimote");
+                    let changed = {
+                        let mut s = shared.lock().unwrap();
+                        match s.players[slot as usize].as_mut() {
+                            Some(p) if p.pad_wii != wants_wii => {
+                                p.pad_wii = wants_wii;
+                                true
+                            }
+                            _ => false,
+                        }
+                    };
+                    if let Some(sess) = sessions.lock().unwrap().get_mut(&session_id) {
+                        sess.pad_wii = wants_wii;
+                    }
+                    let effective = pad_str(shared, slot, role);
+                    if debug() {
+                        eprintln!("[control] {device_name} (slot {slot}) pad → {effective}");
+                    }
+                    let _ = send(&writer, &json!({"m":"pad","pad":effective}));
+                    if changed {
+                        crate::cemu::maybe_auto_configure(shared);
+                    }
+                } else {
+                    let _ = send(&writer, &json!({"m":"pad","pad":"nunchuk"}));
                 }
             }
             Some("config") => {
-                let _ = send(&mut writer, &msg);
+                let _ = send(&writer, &msg);
             }
             Some("bye") | None => break,
             _ => {}
@@ -233,19 +299,13 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     };
     crate::sound::disconnect_chime();
     if !empty {
-        crate::dolphin::maybe_auto_configure(shared);
+        auto_configure(shared);
     }
 }
 
-fn mode_str(m: Mode) -> &'static str {
-    match m {
-        Mode::Pointer => "pointer",
-        Mode::Dolphin => "dolphin",
-    }
-}
-
-fn send(w: &mut TcpStream, v: &Value) -> std::io::Result<()> {
+fn send(w: &Writer, v: &Value) -> std::io::Result<()> {
     let mut s = v.to_string();
     s.push('\n');
+    let mut w = w.lock().unwrap_or_else(|e| e.into_inner());
     w.write_all(s.as_bytes())
 }

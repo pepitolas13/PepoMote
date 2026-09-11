@@ -10,7 +10,7 @@ PepoMote es un proyecto independiente. No está afiliado, respaldado ni patrocin
 4. **Sonidos**: 100 % sintetizados por `assets/sounds-src/gen_sounds.py`. Prohibido samplear menús de la consola.
 5. **Tipografía**: Nunito (SIL OFL). No usar la fuente de la Wii ni clones.
 6. **Paleta y layout**: inspiración de alto nivel (fondos claros, tarjetas redondeadas, azul) — no copia de pantallas concretas del menú de la Wii.
-7. **Dolphin**: es un proyecto GPL independiente; solo nos conectamos por su interfaz DSU pública. No distribuimos Dolphin ni juegos, ni enlazamos a ROMs/ISOs. La documentación asume que el usuario posee sus juegos.
+7. **Dolphin y Cemu**: son proyectos independientes de código abierto (Dolphin GPL, Cemu MPL-2.0); solo nos conectamos por su interfaz DSU pública y escribimos sus archivos de configuración de mandos en nombre del usuario. No distribuimos Dolphin, Cemu ni juegos, ni enlazamos a ROMs/ISOs. "Wii U" y "GamePad" se usan solo de forma nominativa para describir compatibilidad con Cemu. La documentación asume que el usuario posee sus juegos.
 8. **Capturas del README**: solo UI propia. Si aparece Dolphin, sin artwork de juegos de Nintendo.
 
 ## Licencias de terceros incluidas

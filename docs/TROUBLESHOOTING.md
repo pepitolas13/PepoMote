@@ -54,6 +54,24 @@ modo Dolphin solo lo activa el Jugador 1. Ya se arregla solo: al reconectar,
 el receptor desaloja la sesión fantasma del mismo móvil y le devuelve su
 plaza. Si lo ves en una versión vieja, reinicia el receptor del PC.
 
+## Cemu no ve el mando (Wii U)
+
+Con el modo Wii U activo en el móvil, la ventana del PC debe decir «Cemu
+(Wii U): 1 cliente(s) DSU» en cuanto Cemu arranca: si no, Cemu no está
+leyendo nuestro perfil. Causas: PepoMote no encontró Cemu («No encuentro Cemu
+en este equipo»: Ajustes → Carpeta de Cemu → Detectar, o abre Cemu una vez y
+la aprende); Cemu estaba abierto cuando entró el móvil («Cemu está abierto:
+ciérralo…»: ciérralo, pulsa Configurar Cemu y vuelve a abrirlo); o el perfil
+lo pisó otro programa (mira Opciones → Configuración de mandos: Controller 1
+debe ser Wii U GamePad con DSUController «Controller 1»). Detalles en
+`docs/SETUP-CEMU.md`.
+
+## El GamePad gira al revés (Wii U apaisado)
+
+Android detecta solo hacia qué lado giraste el móvil. En un móvil Linux, el
+ajuste **Giro** de la pantalla del GamePad (izquierda / derecha) tiene que
+coincidir con el lado hacia el que queda el borde superior del móvil.
+
 ## El cursor va a tirones
 
 - HUD del receptor: si el RTT sube de ~15 ms, es la red — pásate a 5 GHz o al hotspot del móvil.

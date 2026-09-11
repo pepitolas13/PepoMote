@@ -57,6 +57,13 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
 - **Mando**: solo botones, sin cambiar el modo.
 - **Nunchuk**: el móvil como Nunchuk del Jugador 1 (o del siguiente mando sin
   Nunchuk): stick, C, Z y su acelerómetro van al Nunchuk emulado en Dolphin.
+- **Wii U**: el móvil apaisado como Wii U GamePad para Cemu (dos sticks,
+  A/B/X/Y, L/R/ZL/ZR, giroscopio, pantalla táctil). Si el escritorio del móvil
+  no gira la pantalla (Phosh sin rotación automática), la app pinta el mando
+  girado para que lo sostengas apaisado; el ajuste **Giro** (izquierda /
+  derecha) dice hacia dónde queda el borde superior del móvil y orienta los
+  sensores. Chip **Mando Wii** para ser un mando de Wii dentro de Cemu. Ver
+  `docs/SETUP-CEMU.md`.
 - La cabecera enseña RTT y la frecuencia real del sensor.
 
 ## Sensores
@@ -176,10 +183,11 @@ cargo test                                    # fusión, IIO (sysfs simulado), b
 ./target/release/PepoMote-Mobile --fake-sensors   # en un PC, sin IMU: sensores simulados
 ./target/release/PepoMote-Mobile --pair 192.168.1.10 1234   # emparejar sin UI
 ./target/release/PepoMote-Mobile --autoconnect dolphin      # directo al mando, ya conectado
+./target/release/PepoMote-Mobile --autoconnect cemu         # directo al GamePad de Wii U
 ```
 
 Opciones: `--fake-sensors` (sin IMU), `--pair HOST[:PUERTO] CODIGO`,
-`--autoconnect [pointer|dolphin]` (para un lanzador que abra el mando
+`--autoconnect [pointer|dolphin|cemu|nunchuk]` (para un lanzador que abra el mando
 conectado). En el receptor, `PEPOMOTE_PORT=26771` cambia el puerto PMP
 (puerto ocupado o dos receptores en el mismo PC); el móvil lo teclea como
 `IP:puerto`.

@@ -9,6 +9,15 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// Qué lee el PadData: el perfil Wii (Dolphin: Home→PS, Touch = pulso de
+/// recentrado) o el Wii U (Cemu: Home→Touch, gatillos, stick derecho, táctil).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum DsuProfile {
+    #[default]
+    Wii,
+    WiiU,
+}
+
 /// Muestra de movimiento que la telemetría empuja al DSU.
 #[derive(Clone, Copy)]
 pub struct MotionSample {
@@ -18,9 +27,17 @@ pub struct MotionSample {
     pub buttons: u32,
     pub battery_pct: u8,
     pub recenter_count: u8,
-    /// Stick del Nunchuk (−127..127, +X derecha, +Y arriba); 0,0 en un Wiimote.
+    /// Stick del Nunchuk o izquierdo del GamePad (−127..127, +X derecha,
+    /// +Y arriba); 0,0 en un Wiimote.
     pub stick_x: i8,
     pub stick_y: i8,
+    /// Stick derecho del GamePad; 0,0 si no hay.
+    pub stick_rx: i8,
+    pub stick_ry: i8,
+    /// Toque en el touchpad DSU (x 0..1920, y 0..942, origen arriba-izquierda):
+    /// la pantalla táctil del GamePad o el puntero IR de un Mando Wii en Cemu.
+    pub touch: Option<(u16, u16)>,
+    pub profile: DsuProfile,
 }
 
 /// Duración del pulso del botón Touch al recentrar (IMUPointer/Recenter).

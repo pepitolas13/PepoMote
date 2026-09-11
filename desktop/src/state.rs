@@ -77,10 +77,43 @@ pub enum LinkStatus {
     Connected,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
     Pointer,
     Dolphin,
+    /// Wii U: el móvil es un GamePad / Pro Controller / Mando Wii para Cemu.
+    /// Como Dolphin (todo al DSU, nada al SO) pero se configura Cemu.
+    Cemu,
+}
+
+impl Mode {
+    /// Nombre en el protocolo (PROTOCOL.md §3).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Mode::Pointer => "pointer",
+            Mode::Dolphin => "dolphin",
+            Mode::Cemu => "cemu",
+        }
+    }
+
+    /// Nombre del protocolo → modo. Desconocido = puntero (lo más seguro:
+    /// un móvil nuevo contra un receptor viejo ve el eco y se entera).
+    pub fn parse(s: Option<&str>) -> Mode {
+        match s {
+            Some("dolphin") => Mode::Dolphin,
+            Some("cemu") => Mode::Cemu,
+            _ => Mode::Pointer,
+        }
+    }
+
+    /// Modos que soporta este receptor (`ok.modes`, para que el móvil sepa
+    /// si puede ofrecer Wii U).
+    pub const ALL: [Mode; 3] = [Mode::Pointer, Mode::Dolphin, Mode::Cemu];
+
+    /// En estos modos el receptor alimenta el DSU y no inyecta nada en el SO.
+    pub fn feeds_dsu(self) -> bool {
+        matches!(self, Mode::Dolphin | Mode::Cemu)
+    }
 }
 
 fn default_true() -> bool {
@@ -97,6 +130,13 @@ pub struct Config {
     /// Configurar Dolphin solo (mandos multijugador) al conectar/desconectar.
     #[serde(default = "default_true")]
     pub auto_dolphin: bool,
+    /// Configurar Cemu solo (perfiles de mando) en modo Wii U.
+    #[serde(default = "default_true")]
+    pub auto_cemu: bool,
+    /// Carpeta de Cemu (la del Cemu.exe / AppImage). "" = detectar sola. Se
+    /// aprende al ver a Cemu abierto y se guarda para configurarlo cerrado.
+    #[serde(default)]
+    pub cemu_dir: String,
     /// Linux: ya se ofreció la auto-reparación (firewall/uinput) una vez.
     /// Evita re-abrir el diálogo de contraseña en cada arranque si se canceló.
     #[serde(default)]
@@ -113,16 +153,27 @@ impl Default for Config {
             sens_deg: 40.0,
             abs_mode: true,
             auto_dolphin: true,
+            auto_cemu: true,
+            cemu_dir: String::new(),
             fix_attempted: false,
             screen: String::new(),
         }
     }
 }
 
+/// Directorio de configuración del receptor (settings.json, token.txt).
+/// `PEPOMOTE_CONFIG_DIR` lo sustituye (solo para los e2e: un receptor de
+/// prueba no debe leer ni pisar la configuración real).
+pub fn config_dir() -> Option<std::path::PathBuf> {
+    if let Some(d) = std::env::var_os("PEPOMOTE_CONFIG_DIR") {
+        return Some(std::path::PathBuf::from(d));
+    }
+    directories::ProjectDirs::from("dev", "pepotech", "PepoMote").map(|d| d.config_dir().to_path_buf())
+}
+
 impl Config {
     fn path() -> Option<std::path::PathBuf> {
-        directories::ProjectDirs::from("dev", "pepotech", "PepoMote")
-            .map(|d| d.config_dir().join("settings.json"))
+        config_dir().map(|d| d.join("settings.json"))
     }
 
     pub fn load() -> Self {
@@ -161,6 +212,70 @@ pub struct PlayerInfo {
     pub battery_pct: u8,
     pub rtt_ms: Option<f32>,
     pub role: Role,
+    /// Modo Wii U: el móvil ha pedido ser Mando Wii (Wiimote emulado de
+    /// Cemu) en vez de GamePad / Pro Controller.
+    pub pad_wii: bool,
+}
+
+/// Tipo de mando emulado en Cemu (modo Wii U) de un jugador.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PadKind {
+    GamePad,
+    Pro,
+    Wiimote,
+}
+
+impl PadKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PadKind::GamePad => "gamepad",
+            PadKind::Pro => "pro",
+            PadKind::Wiimote => "wiimote",
+        }
+    }
+}
+
+/// Un jugador tal como se configura en Cemu: `controller{index}.xml`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct CemuPlayer {
+    /// Índice del mando en Cemu (jugador − 1).
+    pub index: u8,
+    pub kind: PadKind,
+    /// Pad DSU del móvil (su slot).
+    pub dsu_slot: u8,
+    /// Pad DSU del Nunchuk emparejado (solo si el jugador es Mando Wii).
+    pub nunchuk_slot: Option<u8>,
+}
+
+/// Reparto para Cemu: el Jugador 1 es el GamePad y los demás Pro Controller,
+/// salvo los que pidieron Mando Wii; el Nunchuk solo acompaña a un Mando Wii.
+pub fn cemu_layout(players: &[Option<PlayerInfo>]) -> Vec<CemuPlayer> {
+    player_layout(players)
+        .iter()
+        .enumerate()
+        .map(|(i, (wslot, nslot))| {
+            let pad_wii = players[*wslot as usize].as_ref().is_some_and(|p| p.pad_wii);
+            let kind = if pad_wii {
+                PadKind::Wiimote
+            } else if i == 0 {
+                PadKind::GamePad
+            } else {
+                PadKind::Pro
+            };
+            CemuPlayer {
+                index: i as u8,
+                kind,
+                dsu_slot: *wslot,
+                nunchuk_slot: if kind == PadKind::Wiimote { *nslot } else { None },
+            }
+        })
+        .collect()
+}
+
+/// Tipo de mando efectivo del móvil del `slot` en modo Wii U (`ok.pad`).
+/// Un Nunchuk no tiene tipo propio: va con su jugador.
+pub fn pad_kind(players: &[Option<PlayerInfo>], slot: u8) -> Option<PadKind> {
+    cemu_layout(players).iter().find(|c| c.dsu_slot == slot).map(|c| c.kind)
 }
 
 /// Jugadores en orden: (slot del Wiimote, slot del Nunchuk asociado).
@@ -212,6 +327,8 @@ pub struct Shared {
     pub dsu_clients: usize,
     /// Resultado del último intento de configurar Dolphin (para la UI).
     pub dolphin_cfg_status: Option<String>,
+    /// Resultado del último intento de configurar Cemu (para la UI).
+    pub cemu_cfg_status: Option<String>,
     pub last_error: Option<String>,
     /// Aviso de firewall Linux bloqueando el puerto (None = todo bien).
     pub firewall_hint: Option<String>,
@@ -240,6 +357,7 @@ impl Shared {
             sensor_hz: 0.0,
             dsu_clients: 0,
             dolphin_cfg_status: None,
+            cemu_cfg_status: None,
             last_error: None,
             firewall_hint: None,
             uinput_denied: false,
@@ -272,7 +390,50 @@ mod tests {
             battery_pct: 0,
             rtt_ms: None,
             role,
+            pad_wii: false,
         })
+    }
+
+    #[test]
+    fn modos_por_nombre() {
+        assert_eq!(Mode::parse(Some("cemu")), Mode::Cemu);
+        assert_eq!(Mode::parse(Some("dolphin")), Mode::Dolphin);
+        assert_eq!(Mode::parse(Some("pointer")), Mode::Pointer);
+        assert_eq!(Mode::parse(Some("loquesea")), Mode::Pointer);
+        assert_eq!(Mode::parse(None), Mode::Pointer);
+        for m in Mode::ALL {
+            assert_eq!(Mode::parse(Some(m.as_str())), m);
+        }
+        assert!(Mode::Cemu.feeds_dsu() && Mode::Dolphin.feeds_dsu() && !Mode::Pointer.feeds_dsu());
+    }
+
+    #[test]
+    fn reparto_para_cemu() {
+        // J1 GamePad, J2 Pro; el Nunchuk (slot 3) acompaña a J1 solo si es Mando Wii
+        let p = [player(Role::Wiimote), player(Role::Wiimote), None, player(Role::Nunchuk)];
+        assert_eq!(
+            cemu_layout(&p),
+            vec![
+                CemuPlayer { index: 0, kind: PadKind::GamePad, dsu_slot: 0, nunchuk_slot: None },
+                CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None },
+            ]
+        );
+        assert_eq!(pad_kind(&p, 0), Some(PadKind::GamePad));
+        assert_eq!(pad_kind(&p, 1), Some(PadKind::Pro));
+        assert_eq!(pad_kind(&p, 3), None, "el Nunchuk no tiene tipo propio");
+        // J1 pide Mando Wii: se lleva el Nunchuk y J2 sigue siendo Pro (no GamePad)
+        let mut p = p;
+        p[0].as_mut().unwrap().pad_wii = true;
+        assert_eq!(
+            cemu_layout(&p),
+            vec![
+                CemuPlayer { index: 0, kind: PadKind::Wiimote, dsu_slot: 0, nunchuk_slot: Some(3) },
+                CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None },
+            ]
+        );
+        // solo un Nunchuk: nada que configurar
+        let p = [None, None, None, player(Role::Nunchuk)];
+        assert!(cemu_layout(&p).is_empty());
     }
 
     #[test]

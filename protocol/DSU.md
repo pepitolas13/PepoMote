@@ -81,10 +81,31 @@ Nunchuk/IMUAccelerometer/Up = `DSUClient/3/PepoMote:Accel Up`   (y los otros cin
 
 Con el acelerómetro IMU mapeado, Dolphin usa la aceleración real del móvil para el Nunchuk (agitar, inclinar: boxeo de Wii Sports) en vez de los gestos simulados.
 
+## Modo Wii U (Cemu)
+
+Cemu lee del PadData los bits de los bytes 36-37 (botón i = bit i del 36, 8+i = bit i del 37), el Touch (byte 39) como botón 16, los sticks (40-43), los gatillos analógicos l2/r2 (bytes 55/54) como ejes y el touchpad 1 (bytes 56-61: activo, id, x u16 0..1920, y u16 0..942) como posición; el PS (38) lo ignora. Con 17 botones digitales para 19 del GamePad, ZL/ZR van por los gatillos analógicos (Cemu convierte un eje pasado de la zona muerta en pulsación) y L2/R2 quedan para soplar y TV↔Pad. Mapeo de `desktop/src/dsu/mapping.rs` (`buttons_to_dsu_wiiu`) y los perfiles que escribe `desktop/src/cemu.rs`:
+
+| Wii U | PadData | botón/eje en Cemu |
+|---|---|---|
+| A / B / X / Y | Cross / Circle / Square / Triangle (bits 37.6/5/7/4 + analógicos 48-51) | 14 / 13 / 15 / 12 |
+| 1 / 2 (Mando Wii) | Square / Triangle | 15 / 12 |
+| L / R | L1 / R1 (bits 37.2/3 + analógicos 53/52) | 10 / 11 |
+| ZL / ZR | l2 / r2 analógicos (bytes 55 / 54) = 255, sin bit | ejes 42 / 43 (`X/Y-Trigger+`) |
+| soplar / pantalla | bits L2 / R2 (37.0 / 37.1) | 8 / 9 |
+| click stick izq / dcho | L3 / R3 (bits 36.1 / 36.2) | 1 / 2 |
+| + / − | Options / Share (bits 36.3 / 36.0) | 3 / 0 |
+| Home | Touch (byte 39) = 0xFF, y PS | 16 |
+| cruceta | bits 36.4-7 + analógicos 44-47 | 4-7 |
+| stick izquierdo / derecho | LX LY / RX RY = 128 + valor (255 = arriba) | ejes 38/39/44/45 y 40/41/46/47 |
+| pantalla táctil del GamePad | touchpad 1 activo, x = `touch_x`·1920/65535, y = `touch_y`·942/65535 | `has_position` → toque en la pantalla del GamePad |
+| puntero IR de un Mando Wii | touchpad 1 con la salida del motor de puntero del receptor (fuera de pantalla: inactivo) | `has_position` → IR del Wiimote emulado |
+
+En este perfil el pulso de recentrado NO toca el byte Touch (es Home); el recentrado lo consume el motor de puntero del receptor cuando el móvil es Mando Wii. Perfil de Cemu por jugador en `controllerProfiles/controller{N}.xml` con `<api>DSUController</api>`, `<uuid>{pad}</uuid>`, `<ip>127.0.0.1</ip>`, `<port>26760</port>` y `<motion>true</motion>` (GamePad y Mando Wii); Mando Wii con `<device_type>5</device_type>` (MotionPlus) o `6` (MotionPlus + Nunchuk, segundo `<controller>` leyendo del pad del otro móvil).
+
 ## Recentrado
 
 La diana del móvil incrementa `recenter_count` (PMP); el servidor DSU traduce cada flanco en un **pulso de 150 ms del botón Touch**, que el perfil mapea a `IMUPointer/Recenter`. Así el mismo gesto recentra en modo puntero y en Dolphin.
 
 ## Modo
 
-El receptor solo alimenta el DSU en modo `dolphin` (en modo puntero el pad se reporta desconectado al caducar el TTL de 1 s). Así un Dolphin abierto no recibe movimiento mientras usas el cursor.
+El receptor solo alimenta el DSU en modo `dolphin` (perfil Wii) y en modo `cemu` (perfil Wii U); en modo puntero el pad se reporta desconectado al caducar el TTL de 1 s. Así un Dolphin o un Cemu abiertos no reciben movimiento mientras usas el cursor.

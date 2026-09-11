@@ -5,7 +5,7 @@
 //! PadData, ~1/s). El streaming de PadData sale inline del hilo de telemetría
 //! (dsu::Dsu::push) para no añadir latencia.
 
-use super::{mapping, Client, Clients, MotionSample, SlotSamples};
+use super::{mapping, Client, Clients, DsuProfile, MotionSample, SlotSamples};
 use crate::net::MAX_PLAYERS;
 use crate::state::SharedState;
 use std::net::UdpSocket;
@@ -185,7 +185,22 @@ pub fn pad_data_packet(
     counter: u32,
 ) -> Vec<u8> {
     let (accel, gyro) = mapping::to_dsu(sample.accel_ms2, sample.gyro_rads);
-    let (b1, b2, ps, dpad, face) = mapping::buttons_to_dsu(sample.buttons);
+    let b = match sample.profile {
+        DsuProfile::Wii => mapping::buttons_to_dsu(sample.buttons),
+        DsuProfile::WiiU => mapping::buttons_to_dsu_wiiu(sample.buttons),
+    };
+    // Botón Touch: en Wii es el pulso de recentrado (IMUPointer/Recenter);
+    // en Wii U es Home (Cemu lo lee como botón 16 e ignora el PS)
+    let touch_btn = match sample.profile {
+        DsuProfile::Wii => {
+            if touch_pressed {
+                0xFF
+            } else {
+                0
+            }
+        }
+        DsuProfile::WiiU => b.touch,
+    };
 
     let mut p = Vec::with_capacity(84);
     p.extend_from_slice(&MSG_PAD_DATA.to_le_bytes());
@@ -196,19 +211,27 @@ pub fn pad_data_packet(
     ));
     p.push(1); // connected
     p.extend_from_slice(&counter.to_le_bytes());
-    p.push(b1);
-    p.push(b2);
-    p.push(ps);
-    p.push(if touch_pressed { 0xFF } else { 0 }); // botón Touch = recentrado
+    p.push(b.b1);
+    p.push(b.b2);
+    p.push(b.ps);
+    p.push(touch_btn);
     // Sticks LX LY RX RY (0-255, neutro 128; Y: 255 = arriba, "Left Y+" en
-    // Dolphin): el izquierdo lleva el stick del Nunchuk, el derecho queda neutro
-    let lx = (128 + sample.stick_x as i32).clamp(0, 255) as u8;
-    let ly = (128 + sample.stick_y as i32).clamp(0, 255) as u8;
-    p.extend_from_slice(&[lx, ly, 128, 128]);
-    p.extend_from_slice(&dpad); // analógico L D R U ("Pad W/S/E/N")
-    p.extend_from_slice(&face); // analógico square cross circle triangle
-    p.extend_from_slice(&[0, 0, 0, 0]); // analógico R1 L1 R2 L2
-    p.extend_from_slice(&[0u8; 6]); // touch 1 inactivo
+    // Dolphin y AxisY+ en Cemu): izquierdo = Nunchuk / stick izquierdo del
+    // GamePad, derecho = stick derecho del GamePad (neutro si no hay)
+    let axis = |v: i8| (128 + v as i32).clamp(0, 255) as u8;
+    p.extend_from_slice(&[axis(sample.stick_x), axis(sample.stick_y), axis(sample.stick_rx), axis(sample.stick_ry)]);
+    p.extend_from_slice(&b.dpad); // analógico L D R U ("Pad W/S/E/N")
+    p.extend_from_slice(&b.face); // analógico square cross circle triangle
+    p.extend_from_slice(&b.shoulders); // analógico R1 L1 R2 L2 (Wii U: ZR/ZL en R2/L2)
+    // Touch 1: activo, id, x u16, y u16 (Cemu: pantalla táctil / puntero IR)
+    match sample.touch {
+        Some((x, y)) => {
+            p.extend_from_slice(&[1, 0]);
+            p.extend_from_slice(&x.to_le_bytes());
+            p.extend_from_slice(&y.to_le_bytes());
+        }
+        None => p.extend_from_slice(&[0u8; 6]),
+    }
     p.extend_from_slice(&[0u8; 6]); // touch 2 inactivo
     p.extend_from_slice(&sample.t_us.to_le_bytes()); // timestamp del SENSOR
     for v in accel {
@@ -237,7 +260,40 @@ mod tests {
             recenter_count: 0,
             stick_x: 0,
             stick_y: 0,
+            stick_rx: 0,
+            stick_ry: 0,
+            touch: None,
+            profile: DsuProfile::Wii,
         }
+    }
+
+    #[test]
+    fn pad_data_wii_u_gamepad() {
+        use pmp::*;
+        let mut s = sample();
+        s.profile = DsuProfile::WiiU;
+        s.buttons = BTN_HOME | BTN_ZL | BTN_ZR | BTN_L | BTN_R | BTN_X;
+        s.stick_x = 100;
+        s.stick_y = -50;
+        s.stick_rx = -30;
+        s.stick_ry = 120;
+        s.touch = Some((960, 471));
+        let out = pad_data_packet(0, &s, true, 1);
+        assert_eq!(out[38], 0xFF, "Home también en PS (a Dolphin no le estorba)");
+        assert_eq!(out[39], 0xFF, "Home → Touch aunque no haya pulso de recentrado");
+        assert_eq!(&out[40..44], &[228, 78, 98, 248], "LX LY RX RY");
+        assert_eq!(out[48], 0xFF, "X → Square analógico");
+        assert_eq!(&out[52..56], &[0xFF, 0xFF, 0xFF, 0xFF], "R1 L1 R2(ZR) L2(ZL)");
+        assert_eq!(out[37] & 0b11, 0, "ZL/ZR no tocan los bits L2/R2 (micro y pantalla)");
+        assert_eq!(out[37] & 0b1100, 0b1100, "L/R → L1/R1");
+        assert_eq!(&out[56..62], &[1, 0, 0xC0, 0x03, 0xD7, 0x01], "touch1 activo en (960, 471)");
+        assert_eq!(&out[62..68], &[0u8; 6], "touch2 inactivo");
+        // Sin dedo: touch1 inactivo; sin Home: Touch a 0 aunque haya pulso
+        s.touch = None;
+        s.buttons = 0;
+        let out = pad_data_packet(0, &s, true, 2);
+        assert_eq!(out[39], 0);
+        assert_eq!(&out[56..62], &[0u8; 6]);
     }
 
     #[test]

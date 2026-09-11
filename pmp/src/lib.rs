@@ -10,6 +10,9 @@ pub const TYPE_INPUT: u8 = 0x01;
 pub const TYPE_PING: u8 = 0x02;
 pub const TYPE_PONG: u8 = 0x03;
 pub const INPUT_LEN: usize = 72;
+/// INPUT con el bloque de extensión Wii U (FLAG_EXT): stick derecho y
+/// pantalla táctil en los bytes 72-79.
+pub const INPUT_EXT_LEN: usize = 80;
 pub const PING_LEN: usize = 20;
 
 /// Puerto por defecto del receptor (TCP control y UDP telemetría).
@@ -20,8 +23,14 @@ pub const HERE_PREFIX: &[u8] = b"PMPHERE1 ";
 
 /// flags bit0: el quaternion es válido (el móvil tiene rotation vector / fusión)
 pub const FLAG_QUAT_VALID: u8 = 1 << 0;
-/// flags bit1: los bytes 6-7 llevan el stick (el emisor es un Nunchuk)
+/// flags bit1: los bytes 6-7 llevan el stick (Nunchuk o stick izquierdo del GamePad)
 pub const FLAG_STICK_VALID: u8 = 1 << 1;
+/// flags bit2: el paquete mide 80 bytes y los bytes 72-79 llevan el bloque
+/// Wii U (stick derecho + táctil). Solo se emite en modo `cemu`, que un
+/// receptor antiguo nunca confirma: así nunca recibe 80 bytes.
+pub const FLAG_EXT: u8 = 1 << 2;
+/// flags bit3: hay un dedo en la pantalla táctil del GamePad (touch_x/y válidos).
+pub const FLAG_TOUCH: u8 = 1 << 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct InputPacket {
@@ -36,11 +45,19 @@ pub struct InputPacket {
     pub recenter_count: u8,
     pub battery_pct: u8,
     pub touch_scroll_dy: i16,
-    /// Stick del Nunchuk (bytes 6-7, antes reservados): +X derecha, +Y
-    /// arriba, −127..127. Solo con FLAG_STICK_VALID; los emisores Wiimote
-    /// mandan 0,0.
+    /// Stick (bytes 6-7, antes reservados): +X derecha, +Y arriba,
+    /// −127..127. Del Nunchuk, o el izquierdo del GamePad. Solo con
+    /// FLAG_STICK_VALID; los emisores Wiimote mandan 0,0.
     pub stick_x: i8,
     pub stick_y: i8,
+    /// Bloque Wii U (bytes 72-79, solo con FLAG_EXT): stick derecho del
+    /// GamePad, misma convención que el izquierdo.
+    pub stick_rx: i8,
+    pub stick_ry: i8,
+    /// Pantalla táctil del GamePad (solo con FLAG_EXT y FLAG_TOUCH): fracción
+    /// de la pantalla en 0..65535, origen arriba-izquierda.
+    pub touch_x: u16,
+    pub touch_y: u16,
 }
 
 // Bits de botones (PROTOCOL.md 4.2)
@@ -64,6 +81,20 @@ pub const BTN_MEDIA_PREV: u32 = 1 << 16;
 /// Nunchuk (PROTOCOL.md 4.2): C y Z
 pub const BTN_C: u32 = 1 << 17;
 pub const BTN_Z: u32 = 1 << 18;
+/// Wii U GamePad / Pro Controller (PROTOCOL.md 4.2, modo `cemu`)
+pub const BTN_X: u32 = 1 << 19;
+pub const BTN_Y: u32 = 1 << 20;
+pub const BTN_L: u32 = 1 << 21;
+pub const BTN_R: u32 = 1 << 22;
+pub const BTN_ZL: u32 = 1 << 23;
+pub const BTN_ZR: u32 = 1 << 24;
+/// Click del stick izquierdo / derecho
+pub const BTN_STICK_L: u32 = 1 << 25;
+pub const BTN_STICK_R: u32 = 1 << 26;
+/// Soplar al micrófono del GamePad
+pub const BTN_MIC: u32 = 1 << 27;
+/// Cambiar la vista TV ↔ pantalla del GamePad (función de Cemu)
+pub const BTN_SCREEN: u32 = 1 << 28;
 
 #[derive(Debug, PartialEq)]
 pub enum Packet {
@@ -71,6 +102,11 @@ pub enum Packet {
     Ping { session_id: u32, t_us: u64 },
     Pong { session_id: u32, t_us: u64 },
     Discover,
+}
+
+/// Un INPUT mide 72 bytes, u 80 si trae el bloque de extensión (FLAG_EXT).
+fn input_len_ok(buf: &[u8]) -> bool {
+    buf.len() == INPUT_LEN || (buf.len() == INPUT_EXT_LEN && buf[5] & FLAG_EXT != 0)
 }
 
 pub fn parse(buf: &[u8]) -> Option<Packet> {
@@ -82,10 +118,13 @@ pub fn parse(buf: &[u8]) -> Option<Packet> {
     }
     let ty = buf[4];
     match ty {
-        TYPE_INPUT if buf.len() == INPUT_LEN => {
+        TYPE_INPUT if input_len_ok(buf) => {
             let f32_at = |off: usize| f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            let ext = buf.len() == INPUT_EXT_LEN;
             Some(Packet::Input(InputPacket {
-                flags: buf[5],
+                // Sin bloque de extensión sus flags no significan nada:
+                // se normalizan (y así parse→build vuelve a dar 72 bytes)
+                flags: if ext { buf[5] } else { buf[5] & !(FLAG_EXT | FLAG_TOUCH) },
                 stick_x: buf[6] as i8,
                 stick_y: buf[7] as i8,
                 session_id: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
@@ -98,6 +137,10 @@ pub fn parse(buf: &[u8]) -> Option<Packet> {
                 recenter_count: buf[68],
                 battery_pct: buf[69],
                 touch_scroll_dy: i16::from_le_bytes(buf[70..72].try_into().unwrap()),
+                stick_rx: if ext { buf[72] as i8 } else { 0 },
+                stick_ry: if ext { buf[73] as i8 } else { 0 },
+                touch_x: if ext { u16::from_le_bytes([buf[74], buf[75]]) } else { 0 },
+                touch_y: if ext { u16::from_le_bytes([buf[76], buf[77]]) } else { 0 },
             }))
         }
         TYPE_PING | TYPE_PONG if buf.len() == PING_LEN => {
@@ -113,13 +156,14 @@ pub fn parse(buf: &[u8]) -> Option<Packet> {
     }
 }
 
-/// INPUT de 72 bytes (PROTOCOL.md §4.1).
-pub fn build_input(p: &InputPacket) -> [u8; INPUT_LEN] {
-    let mut out = [0u8; INPUT_LEN];
+/// INPUT de 72 bytes (PROTOCOL.md §4.1), u 80 con FLAG_EXT (bloque Wii U).
+pub fn build_input(p: &InputPacket) -> Vec<u8> {
+    let ext = p.flags & FLAG_EXT != 0;
+    let mut out = vec![0u8; if ext { INPUT_EXT_LEN } else { INPUT_LEN }];
     out[0..4].copy_from_slice(&MAGIC.to_le_bytes());
     out[4] = TYPE_INPUT;
     out[5] = p.flags;
-    out[6] = p.stick_x as u8; // stick del Nunchuk (0 en un Wiimote)
+    out[6] = p.stick_x as u8; // stick del Nunchuk / izquierdo (0 en un Wiimote)
     out[7] = p.stick_y as u8;
     out[8..12].copy_from_slice(&p.session_id.to_le_bytes());
     out[12..16].copy_from_slice(&p.seq.to_le_bytes());
@@ -137,6 +181,13 @@ pub fn build_input(p: &InputPacket) -> [u8; INPUT_LEN] {
     out[68] = p.recenter_count;
     out[69] = p.battery_pct;
     out[70..72].copy_from_slice(&p.touch_scroll_dy.to_le_bytes());
+    if ext {
+        out[72] = p.stick_rx as u8;
+        out[73] = p.stick_ry as u8;
+        out[74..76].copy_from_slice(&p.touch_x.to_le_bytes());
+        out[76..78].copy_from_slice(&p.touch_y.to_le_bytes());
+        // 78-79 reservados a 0
+    }
     out
 }
 
@@ -182,6 +233,7 @@ mod tests {
                 from_hex(include_str!("../../protocol/vectors/input_buttons_all.hex"))
             }
             "input_nunchuk" => from_hex(include_str!("../../protocol/vectors/input_nunchuk.hex")),
+            "input_wiiu" => from_hex(include_str!("../../protocol/vectors/input_wiiu.hex")),
             "ping" => from_hex(include_str!("../../protocol/vectors/ping.hex")),
             "pong" => from_hex(include_str!("../../protocol/vectors/pong.hex")),
             _ => unreachable!(),
@@ -207,6 +259,7 @@ mod tests {
         assert_eq!(p.battery_pct, 100);
         assert_eq!(p.touch_scroll_dy, 0);
         assert_eq!((p.stick_x, p.stick_y), (0, 0), "sin stick: bytes reservados a 0");
+        assert_eq!((p.stick_rx, p.stick_ry, p.touch_x, p.touch_y), (0, 0, 0, 0), "sin extensión");
     }
 
     #[test]
@@ -221,6 +274,54 @@ mod tests {
         assert_eq!(p.buttons, BTN_C | BTN_Z);
         assert_eq!(p.accel, [0.0, 0.0, 9.5]);
         assert_eq!(p.battery_pct, 77);
+    }
+
+    #[test]
+    fn vector_input_wiiu() {
+        let buf = vector("input_wiiu");
+        assert_eq!(buf.len(), INPUT_EXT_LEN);
+        let Packet::Input(p) = parse(&buf).unwrap() else {
+            panic!("no es INPUT")
+        };
+        assert_eq!(p.flags, FLAG_QUAT_VALID | FLAG_STICK_VALID | FLAG_EXT | FLAG_TOUCH);
+        assert_eq!(p.session_id, 0xAABBCCDD);
+        assert_eq!(p.seq, 11);
+        assert_eq!(p.t_sensor_us, 5_000_000);
+        assert_eq!((p.stick_x, p.stick_y), (100, -50), "stick izquierdo");
+        assert_eq!((p.stick_rx, p.stick_ry), (-30, 120), "stick derecho");
+        assert_eq!((p.touch_x, p.touch_y), (0x8000, 0x4000), "táctil");
+        assert_eq!(
+            p.buttons,
+            BTN_A | BTN_X | BTN_Y | BTN_L | BTN_R | BTN_ZL | BTN_ZR | BTN_STICK_L | BTN_STICK_R | BTN_MIC | BTN_SCREEN
+        );
+        assert_eq!(p.buttons, 0x1FF8_0001);
+        assert_eq!(p.accel, [0.0, 0.0, 9.5]);
+        assert_eq!(p.recenter_count, 2);
+        assert_eq!(p.battery_pct, 66);
+        assert_eq!(p.touch_scroll_dy, 0);
+    }
+
+    #[test]
+    fn extension_solo_con_su_flag() {
+        // 80 bytes sin FLAG_EXT no es un INPUT válido
+        let mut buf = vector("input_wiiu");
+        buf[5] &= !FLAG_EXT;
+        assert_eq!(parse(&buf), None);
+        // 72 bytes con FLAG_EXT/FLAG_TOUCH puestos: se ignoran (y se limpian)
+        let mut short = vector("input_nunchuk");
+        short[5] |= FLAG_EXT | FLAG_TOUCH;
+        let Packet::Input(p) = parse(&short).unwrap() else {
+            panic!("no es INPUT")
+        };
+        assert_eq!(p.flags, FLAG_QUAT_VALID | FLAG_STICK_VALID);
+        assert_eq!(build_input(&p).len(), INPUT_LEN);
+        // build con FLAG_EXT da 80 bytes con el bloque; sin él, 72
+        let p = InputPacket { flags: FLAG_EXT, stick_rx: -1, stick_ry: 2, touch_x: 3, touch_y: 4, ..Default::default() };
+        let out = build_input(&p);
+        assert_eq!(out.len(), INPUT_EXT_LEN);
+        assert_eq!(&out[72..80], &[0xFF, 0x02, 0x03, 0x00, 0x04, 0x00, 0x00, 0x00]);
+        assert_eq!(parse(&out), Some(Packet::Input(p)));
+        assert_eq!(build_input(&InputPacket::default()).len(), INPUT_LEN);
     }
 
     #[test]
@@ -256,7 +357,7 @@ mod tests {
     fn build_reproduce_los_vectores_byte_a_byte() {
         // parse → build debe devolver EXACTAMENTE el vector: el emisor Linux
         // genera lo mismo que el Kotlin de Android
-        for name in ["input_neutral", "input_motion", "input_buttons_all", "input_nunchuk"] {
+        for name in ["input_neutral", "input_motion", "input_buttons_all", "input_nunchuk", "input_wiiu"] {
             let buf = vector(name);
             let Packet::Input(p) = parse(&buf).unwrap() else {
                 panic!("no es INPUT")

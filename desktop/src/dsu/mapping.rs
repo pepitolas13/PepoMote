@@ -7,7 +7,9 @@
 //!
 //! Postura de referencia: móvil en mano como mando, pantalla arriba, borde
 //! superior apuntando a la TV. Ejes Android: X = derecha, Y = hacia la TV,
-//! Z = perpendicular a la pantalla (arriba).
+//! Z = perpendicular a la pantalla (arriba). En modo Wii U el móvil apaisado
+//! ya viene remapeado a ese mismo marco (un DS4 tumbado), así que la matriz
+//! es la misma.
 
 const G: f32 = 9.80665;
 const RAD_TO_DEG: f32 = 180.0 / std::f32::consts::PI;
@@ -37,15 +39,39 @@ pub fn to_dsu(accel_ms2: [f32; 3], gyro_rads: [f32; 3]) -> ([f32; 3], [f32; 3]) 
     (accel, gyro)
 }
 
-/// Bits PMP (PROTOCOL.md §4.2) → botones DSU.
-/// Devuelve (buttons1, buttons2, ps, dpad_analog LDRU, face_analog YBAX).
+/// Botones de un PadData (bytes 36-39 y los analógicos 44-55).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DsuButtons {
+    /// byte 36: bit0 Share, bit1 L3, bit2 R3, bit3 Options, bit4 Up, bit5 Right, bit6 Down, bit7 Left
+    pub b1: u8,
+    /// byte 37: bit0 L2, bit1 R2, bit2 L1, bit3 R1, bit4 Triangle, bit5 Circle, bit6 Cross, bit7 Square
+    pub b2: u8,
+    /// byte 38: botón PS/Home
+    pub ps: u8,
+    /// byte 39: botón Touch (en el perfil Wii lo pone el pulso de recentrado)
+    pub touch: u8,
+    /// bytes 44-47: cruceta analógica Left, Down, Right, Up
+    pub dpad: [u8; 4],
+    /// bytes 48-51: caras analógicas square, cross, circle, triangle
+    pub face: [u8; 4],
+    /// bytes 52-55: R1, L1, R2, L2 analógicos
+    pub shoulders: [u8; 4],
+}
+
+fn on(c: bool) -> u8 {
+    if c {
+        0xFF
+    } else {
+        0
+    }
+}
+
+/// Bits PMP (PROTOCOL.md §4.2) → botones DSU, perfil Wii (Dolphin).
 ///
-/// buttons1: bit0 Share, bit3 Options, bit4 Up, bit5 Right, bit6 Down, bit7 Left
-/// buttons2: bit4 Triangle, bit5 Circle, bit6 Cross, bit7 Square
 /// Mapeo: A→Cross, B→Circle, 1→Square, 2→Triangle, +→Options, −→Share, Home→PS.
 /// Nunchuk (bits 17/18): C→Cross, Z→Circle (mismos bytes que A/B: cada
 /// Nunchuk va en su propio pad DSU y Dolphin lee de ahí sus C/Z).
-pub fn buttons_to_dsu(pmp: u32) -> (u8, u8, u8, [u8; 4], [u8; 4]) {
+pub fn buttons_to_dsu(pmp: u32) -> DsuButtons {
     let bit = |b: u32| pmp & (1 << b) != 0;
 
     let mut b1 = 0u8;
@@ -82,18 +108,66 @@ pub fn buttons_to_dsu(pmp: u32) -> (u8, u8, u8, [u8; 4], [u8; 4]) {
         b2 |= 1 << 7; // Uno → Square
     }
 
-    let ps = if bit(8) { 0xFF } else { 0 }; // Home → PS
+    DsuButtons {
+        b1,
+        b2,
+        ps: on(bit(8)), // Home → PS
+        touch: 0,
+        // dpad analógico en el orden del struct de Dolphin: Left, Down, Right, Up
+        // (entradas "Pad W", "Pad S", "Pad E", "Pad N")
+        dpad: [on(bit(4)), on(bit(3)), on(bit(5)), on(bit(2))],
+        // caras analógicas en el orden del struct de Dolphin (PadDataResponse):
+        // square, cross, circle, triangle — Dolphin lee los botones de cara de
+        // AQUÍ (los bits de button_states2 los ignora)
+        face: [on(bit(9)), on(bit(0) || bit(17)), on(bit(1) || bit(18)), on(bit(10))],
+        shoulders: [0; 4],
+    }
+}
 
-    let on = |c: bool| if c { 0xFFu8 } else { 0 };
-    // dpad analógico en el orden del struct de Dolphin: Left, Down, Right, Up
-    // (entradas "Pad W", "Pad S", "Pad E", "Pad N")
-    let dpad = [on(bit(4)), on(bit(3)), on(bit(5)), on(bit(2))];
-    // caras analógicas en el orden del struct de Dolphin (PadDataResponse):
-    // square, cross, circle, triangle — Dolphin lee los botones de cara de
-    // AQUÍ (los bits de button_states2 los ignora)
-    let face = [on(bit(9)), on(bit(0) || bit(17)), on(bit(1) || bit(18)), on(bit(10))];
-
-    (b1, b2, ps, dpad, face)
+/// Bits PMP → botones DSU, perfil Wii U (Cemu). Cemu lee los bits de los
+/// bytes 36-37 (botón i = bit i, y 8+i), el Touch (byte 39) como botón 16 y
+/// los gatillos analógicos l2/r2 (bytes 55/54) como ejes; el PS (38) lo
+/// ignora. Con 17 botones digitales para 19 del GamePad, ZL/ZR van por los
+/// gatillos analógicos y así L2/R2 quedan para soplar al micro y TV↔Pad.
+///
+/// A→Cross · B→Circle · X/1→Square · Y/2→Triangle · L→L1 · R→R1 ·
+/// ZL/ZR→l2/r2 analógicos · Mic→L2 · Pantalla→R2 · click sticks→L3/R3 ·
+/// +→Options · −→Share · Home→Touch (y PS) · cruceta igual · C→Cross · Z→Circle.
+pub fn buttons_to_dsu_wiiu(pmp: u32) -> DsuButtons {
+    let bit = |b: u32| pmp & (1 << b) != 0;
+    let mut d = buttons_to_dsu(pmp);
+    // X / Y del GamePad comparten destino con 1 / 2 del Mando Wii
+    if bit(19) {
+        d.b2 |= 1 << 7; // X → Square
+        d.face[0] = 0xFF;
+    }
+    if bit(20) {
+        d.b2 |= 1 << 4; // Y → Triangle
+        d.face[3] = 0xFF;
+    }
+    if bit(21) {
+        d.b2 |= 1 << 2; // L → L1
+    }
+    if bit(22) {
+        d.b2 |= 1 << 3; // R → R1
+    }
+    if bit(27) {
+        d.b2 |= 1 << 0; // Mic → L2 (bit; el analógico l2 es ZL)
+    }
+    if bit(28) {
+        d.b2 |= 1 << 1; // Pantalla TV↔Pad → R2 (bit; el analógico r2 es ZR)
+    }
+    if bit(25) {
+        d.b1 |= 1 << 1; // click stick izquierdo → L3
+    }
+    if bit(26) {
+        d.b1 |= 1 << 2; // click stick derecho → R3
+    }
+    // R1, L1, R2, L2 analógicos: R2/L2 son los gatillos ZR/ZL
+    d.shoulders = [on(bit(22)), on(bit(21)), on(bit(24)), on(bit(23))];
+    // Home → Touch (Cemu no lee el PS)
+    d.touch = on(bit(8));
+    d
 }
 
 /// % de batería → niveles DSU.
@@ -142,12 +216,61 @@ mod tests {
     fn botones() {
         // A + Plus + dpad Up + Home
         let pmp = (1 << 0) | (1 << 6) | (1 << 2) | (1 << 8);
-        let (b1, b2, ps, dpad, face) = buttons_to_dsu(pmp);
-        assert_eq!(b1, (1 << 3) | (1 << 4)); // Options + Up
-        assert_eq!(b2, 1 << 6); // Cross
-        assert_eq!(ps, 0xFF);
-        assert_eq!(dpad, [0, 0, 0, 0xFF]); // L D R U → solo Up
-        assert_eq!(face, [0, 0xFF, 0, 0]); // square CROSS circle triangle → A
+        let d = buttons_to_dsu(pmp);
+        assert_eq!(d.b1, (1 << 3) | (1 << 4)); // Options + Up
+        assert_eq!(d.b2, 1 << 6); // Cross
+        assert_eq!(d.ps, 0xFF);
+        assert_eq!(d.touch, 0, "en el perfil Wii el Touch es el pulso de recentrado");
+        assert_eq!(d.dpad, [0, 0, 0, 0xFF]); // L D R U → solo Up
+        assert_eq!(d.face, [0, 0xFF, 0, 0]); // square CROSS circle triangle → A
+        assert_eq!(d.shoulders, [0; 4]);
+    }
+
+    #[test]
+    fn botones_wii_u() {
+        use pmp::*;
+        // Todo el GamePad pulsado a la vez
+        let pmp = BTN_A | BTN_B | BTN_X | BTN_Y | BTN_L | BTN_R | BTN_ZL | BTN_ZR
+            | BTN_STICK_L | BTN_STICK_R | BTN_MIC | BTN_SCREEN | BTN_PLUS | BTN_MINUS | BTN_HOME
+            | BTN_DPAD_UP | BTN_DPAD_DOWN | BTN_DPAD_LEFT | BTN_DPAD_RIGHT;
+        let d = buttons_to_dsu_wiiu(pmp);
+        assert_eq!(d.b1, 0xFF, "Share L3 R3 Options Up Right Down Left");
+        assert_eq!(d.b2, 0xFF, "L2 R2 L1 R1 Triangle Circle Cross Square");
+        assert_eq!(d.touch, 0xFF, "Home → Touch (botón 16 de Cemu)");
+        assert_eq!(d.ps, 0xFF);
+        assert_eq!(d.face, [0xFF; 4]);
+        assert_eq!(d.dpad, [0xFF; 4]);
+        assert_eq!(d.shoulders, [0xFF; 4], "R1 L1 R2 L2 analógicos");
+
+        // Solo ZL: gatillo analógico l2 (byte 55) SIN el bit L2 (que es el micro)
+        let d = buttons_to_dsu_wiiu(BTN_ZL);
+        assert_eq!(d.b2, 0);
+        assert_eq!(d.shoulders, [0, 0, 0, 0xFF]);
+        // Solo ZR: r2 analógico (byte 54)
+        let d = buttons_to_dsu_wiiu(BTN_ZR);
+        assert_eq!(d.b2, 0);
+        assert_eq!(d.shoulders, [0, 0, 0xFF, 0]);
+        // Mic → bit L2, Pantalla → bit R2, sin analógicos
+        let d = buttons_to_dsu_wiiu(BTN_MIC | BTN_SCREEN);
+        assert_eq!(d.b2, 0b11);
+        assert_eq!(d.shoulders, [0; 4]);
+        // X/Y = Square/Triangle como 1/2; A/B = Cross/Circle
+        let d = buttons_to_dsu_wiiu(BTN_X | BTN_Y);
+        assert_eq!(d.b2, (1 << 7) | (1 << 4));
+        assert_eq!(d.face, [0xFF, 0, 0, 0xFF]);
+        let d = buttons_to_dsu_wiiu(BTN_A | BTN_B);
+        assert_eq!(d.b2, (1 << 6) | (1 << 5));
+        assert_eq!(d.face, [0, 0xFF, 0xFF, 0]);
+        // clicks de stick
+        let d = buttons_to_dsu_wiiu(BTN_STICK_L | BTN_STICK_R);
+        assert_eq!(d.b1, 0b110);
+        // C/Z del Nunchuk como en Wii
+        let d = buttons_to_dsu_wiiu(BTN_C | BTN_Z);
+        assert_eq!(d.b2, (1 << 6) | (1 << 5));
+        // Mando Wii dentro de Cemu: 1/2 y Home
+        let d = buttons_to_dsu_wiiu(BTN_ONE | BTN_TWO | BTN_HOME);
+        assert_eq!(d.b2, (1 << 7) | (1 << 4));
+        assert_eq!(d.touch, 0xFF);
     }
 
     #[test]

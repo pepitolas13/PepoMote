@@ -7,6 +7,6 @@ Icon=dev.pepotech.PepoMote
 Terminal=false
 Type=Application
 Categories=Game;Utility;
-Keywords=wii;pointer;puntero;mando;dolphin;
+Keywords=wii;wiiu;pointer;puntero;mando;dolphin;cemu;gamepad;
 X-Purism-FormFactor=Workstation;Mobile;
 X-KDE-FormFactor=handset;tablet;desktop;

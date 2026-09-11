@@ -77,6 +77,12 @@ const DSU_ENTRY: &str = "PepoMote:127.0.0.1:26760";
 
 /// Directorios de config de Dolphin presentes en esta máquina.
 pub fn config_dirs() -> Vec<PathBuf> {
+    // Solo para los e2e: un receptor de prueba no debe tocar el Dolphin real
+    if let Some(d) = std::env::var_os("PEPOMOTE_DOLPHIN_DIR") {
+        let d = PathBuf::from(d);
+        let _ = std::fs::create_dir_all(&d);
+        return vec![d];
+    }
     let mut dirs = Vec::new();
     let mut push = |p: PathBuf| {
         if p.exists() {
@@ -403,15 +409,26 @@ pub fn configure(layout: &Layout) -> Result<String, String> {
 
 fn run_configure(shared: &SharedState, layout: &Layout) {
     let _serial = CONFIGURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let msg = if dolphin_running() {
-        "Dolphin está abierto: ciérralo y pulsa Configurar".to_owned()
+    // Solo para los e2e en el propio equipo: escribir aunque el emulador esté abierto
+    let assume_closed = std::env::var_os("PEPOMOTE_ASSUME_EMULATOR_CLOSED").is_some();
+    let msg = if !assume_closed && dolphin_running() {
+        if layout.iter().any(|(_, n)| n.is_some()) {
+            // El Nunchuk entra con Dolphin abierto: su Extension no se puede
+            // escribir ahora y el juego no lo verá hasta reabrir Dolphin
+            "Dolphin está abierto: ciérralo y vuelve a abrirlo para que el Nunchuk se conecte".to_owned()
+        } else {
+            "Dolphin está abierto: ciérralo y pulsa Configurar".to_owned()
+        }
     } else {
         match configure(layout) {
             Ok(m) => m,
             Err(e) => format!("Dolphin: {e}"),
         }
     };
-    shared.lock().unwrap().dolphin_cfg_status = Some(msg);
+    shared.lock().unwrap().dolphin_cfg_status = Some(msg.clone());
+    // Los móviles lo ven también (banner): hasta ahora un Nunchuk que
+    // entraba con Dolphin abierto fallaba en silencio
+    crate::net::notify_all(&msg);
 }
 
 /// Disparo automático (conexión/desconexión/cambio a modo Dolphin).

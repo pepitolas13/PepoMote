@@ -488,6 +488,10 @@ mod tests {
             touch_scroll_dy: 0,
             stick_x: 0,
             stick_y: 0,
+            stick_rx: 0,
+            stick_ry: 0,
+            touch_x: 0,
+            touch_y: 0,
         }
     }
 

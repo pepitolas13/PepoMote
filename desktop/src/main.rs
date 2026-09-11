@@ -2,6 +2,7 @@
 
 mod app;
 mod autostart;
+mod cemu;
 mod dolphin;
 mod dsu;
 #[cfg(target_os = "linux")]

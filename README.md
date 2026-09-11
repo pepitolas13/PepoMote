@@ -7,6 +7,7 @@
 
 - **Pointer mode** — aim your phone at the screen and the cursor goes exactly there (world-anchored absolute pointing, roll-invariant, 250 Hz). Buttons, drag, scroll, media keys. Your real mouse keeps working whenever the phone is still.
 - **Dolphin mode** — PepoMote becomes a full-motion virtual Wiimote (DSU/cemuhook server on `127.0.0.1:26760`). Play real Wii games — Wii Sports bowling included — in the [Dolphin emulator](https://dolphin-emu.org/).
+- **Wii U mode** — turn the phone sideways and it is a Wii U GamePad for the [Cemu emulator](https://cemu.info/): two sticks, A/B/X/Y, L/R/ZL/ZR, gyro, touch screen. Cemu's controller profiles are written for you; a second phone can be a Pro Controller, and any phone can be a Wii Remote (with Nunchuk) for Wii-style Wii U games.
 
 | Piece | Platform | File |
 |---|---|---|
@@ -29,12 +30,16 @@
 
 See [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — two minutes of one-time Dolphin setup (DSU server + bundled controller profile), then: aim at the screen to point, hold the target button to recenter, swing to bowl.
 
+## Play Wii U games
+
+See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold the phone sideways, open Cemu. Nothing to configure: PepoMote writes Cemu's controller profile (GamePad from your phone's DSU pad, motion and touch included) while Cemu is closed.
+
 ## Nice touches
 
 - **Local multiplayer**: up to 4 phones on one PC — scan the same QR and each phone becomes its own Wiimote in Dolphin, with Dolphin's controller config written for you automatically
 - **Nunchuk**: a second phone in your other hand (tap **Nunchuk** in the app): stick, C, Z and its own accelerometer feed the emulated Nunchuk of your Wiimote, configured in Dolphin for you
 - Physical volume keys = A / B triggers (zero touch latency)
-- Turn the phone sideways for a NES-style pad (2D games)
+- Turn the phone sideways for a NES-style pad (2D games) — or a full Wii U GamePad in Wii U mode
 - Optional start-with-the-system (tray only, no window)
 - One QR pairing; reconnects with one tap; auto-discovery on your LAN
 - Synthesized UI sounds + haptics (both optional)
@@ -47,7 +52,7 @@ See [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — two minutes of one-time D
 
 ## Legal
 
-PepoMote is an original, independent project — not affiliated with, endorsed by, or sponsored by Nintendo. It contains no Nintendo assets, trademarks, fonts or sounds; "Wii" is used only nominatively to describe compatibility with the Dolphin emulator. It does not distribute Dolphin or any games. See [docs/LEGAL.md](docs/LEGAL.md).
+PepoMote is an original, independent project — not affiliated with, endorsed by, or sponsored by Nintendo. It contains no Nintendo assets, trademarks, fonts or sounds; "Wii" is used only nominatively to describe compatibility with the Dolphin emulator. "Wii U" likewise describes compatibility with the Cemu emulator (open source, MPL-2.0). It does not distribute Dolphin, Cemu or any games. See [docs/LEGAL.md](docs/LEGAL.md).
 
 ## License
 

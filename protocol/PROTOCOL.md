@@ -28,10 +28,12 @@ Una línea UTF-8 = un mensaje JSON terminado en `\n`. El móvil conecta y envía
 
 | Mensaje | Dirección | Campos | Respuesta |
 |---|---|---|---|
-| `hello` | móvil→PC | `{"m":"hello","pv":1,"token":"...","code":"1234"?,"name":"<móvil>","model":"<modelo>","role":"wiimote"\|"nunchuk"?}` | `ok` / `err` |
-| `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer","slot":0,"role":"wiimote","player":1,"name":"<PC>"}` | — |
+| `hello` | móvil→PC | `{"m":"hello","pv":1,"token":"...","code":"1234"?,"name":"<móvil>","model":"<modelo>","role":"wiimote"\|"nunchuk"?,"pad":"wiimote"?}` | `ok` / `err` |
+| `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer","slot":0,"role":"wiimote","player":1,"name":"<PC>","modes":["pointer","dolphin","cemu"],"pad":"gamepad"\|"pro"\|"wiimote"\|"nunchuk"}` | — |
 | `err` | PC→móvil | `{"m":"err","code":"bad_token"\|"bad_code"\|"bad_version"\|"busy","msg":"..."}` | cerrar |
-| `mode` | ambas | `{"m":"mode","mode":"pointer"\|"dolphin"}` | eco `mode` como confirmación |
+| `mode` | ambas | `{"m":"mode","mode":"pointer"\|"dolphin"\|"cemu"}` | eco `mode` como confirmación; el PC lo difunde además a las otras sesiones cuando cambia |
+| `pad` | ambas | `{"m":"pad","pad":"wiimote"\|"gamepad"}` (modo Wii U: ser Mando Wii o GamePad/Pro) | eco `pad` con el tipo efectivo (`gamepad`, `pro`, `wiimote`; `nunchuk` en un Nunchuk) |
+| `notice` | PC→móvil | `{"m":"notice","text":"..."}` aviso legible (p. ej. «Cemu está abierto: ciérralo…») | — (se muestra unos segundos) |
 | `config` | ambas | `{"m":"config","sensor_hz":u16?,"sens_deg":f32?,...}` solo claves presentes | eco `config` |
 | `ping` | ambas | `{"m":"ping","t":u64}` | `{"m":"pong","t":<mismo t>}` |
 | `bye` | ambas | `{"m":"bye"}` | cerrar |
@@ -40,19 +42,21 @@ Latido: `ping` TCP cada 1 s si no hay tráfico. Sesión muerta a los 5 s sin nad
 
 **Multijugador (desde pv=1, cambio aditivo):** hasta 4 sesiones simultáneas. El receptor asigna a cada `hello` el slot libre más bajo y lo devuelve en `ok.slot` (0 = Jugador 1). Con los 4 ocupados, `err busy`. El mensaje `mode` solo tiene efecto desde el slot 0 (a los demás se les responde con el modo vigente). En modo puntero solo inyecta el slot 0; en modo Dolphin cada sesión alimenta su slot DSU homónimo (0..3), cada uno con su MAC (`"PMP1"+0x00+slot`) y su pulso de recentrado propio.
 
+**Wii U / Cemu (desde pv=1, cambio aditivo):** modo `cemu`. Como en `dolphin`, el receptor no inyecta nada en el SO y cada sesión alimenta su pad DSU, pero con el perfil Wii U (`protocol/DSU.md`) y configurando Cemu en vez de Dolphin. El Jugador 1 es el **GamePad** y los demás **Pro Controller**; cualquier móvil puede pedir ser **Mando Wii** (`pad`), y entonces su puntero IR (motor de puntero del receptor) y su Nunchuk llegan a Cemu. `ok.modes` anuncia los modos del receptor: un móvil no ofrece Wii U si falta `cemu` (un receptor antiguo contesta `pointer` al pedir `cemu`, y el móvil se queda en el layout Wii). Mientras el receptor ha confirmado `cemu` y el móvil actúa como GamePad/Pro, el `INPUT` lleva el bloque de extensión (§4.1) con el stick derecho y la pantalla táctil; en cualquier otro caso mide 72 bytes. Los mensajes con `m` desconocido se ignoran.
+
 **Nunchuk (desde pv=1, cambio aditivo):** un segundo móvil en la otra mano. El `hello` lleva `"role":"nunchuk"` (ausente o `"wiimote"` = mando). Los Wiimotes ocupan slots desde el 0 hacia arriba y los Nunchuks desde el 3 hacia abajo; el Nunchuk i-ésimo (por slot descendente) va emparejado con el Wiimote i-ésimo (por slot ascendente) y el `ok` lo dice en `player` (1..4, el jugador al que pertenece; en un Wiimote, `player` = `slot`+1). Un Nunchuk nunca inyecta puntero ni cambia el modo; en modo Dolphin alimenta su slot DSU con el stick (bytes 6-7 del INPUT), C/Z y su acelerómetro, y el receptor configura el Wiimote emulado del jugador con `Extension = Nunchuk` leyendo de ese slot (`protocol/DSU.md`).
 
 ## 4. Telemetría (UDP, binario)
 
-### 4.1 `INPUT` móvil→receptor — 72 bytes fijos
+### 4.1 `INPUT` móvil→receptor — 72 bytes (80 con el bloque Wii U)
 
 | off | tam | tipo | campo |
 |---|---|---|---|
 | 0 | 4 | u32 | magic `0x31504D50` (ASCII "PMP1") |
 | 4 | 1 | u8 | tipo = `0x01` |
-| 5 | 1 | u8 | flags: bit0 = quaternion válido (el móvil tiene GAME_ROTATION_VECTOR); bit1 = stick válido (emisor Nunchuk); resto reservado 0 |
-| 6 | 1 | i8 | `stick_x` del Nunchuk: −127..127, + = derecha (0 en un Wiimote) |
-| 7 | 1 | i8 | `stick_y` del Nunchuk: −127..127, + = arriba (0 en un Wiimote) |
+| 5 | 1 | u8 | flags: bit0 = quaternion válido (el móvil tiene GAME_ROTATION_VECTOR); bit1 = stick válido (Nunchuk o stick izquierdo del GamePad); bit2 = `FLAG_EXT`, el paquete mide 80 bytes y trae el bloque Wii U; bit3 = `FLAG_TOUCH`, hay un dedo en la pantalla táctil del GamePad; resto reservado 0 |
+| 6 | 1 | i8 | `stick_x` (Nunchuk o stick izquierdo): −127..127, + = derecha (0 en un Wiimote) |
+| 7 | 1 | i8 | `stick_y` (Nunchuk o stick izquierdo): −127..127, + = arriba (0 en un Wiimote) |
 | 8 | 4 | u32 | `session_id` (del `ok`) |
 | 12 | 4 | u32 | `seq` monótono con wrap; el receptor descarta paquetes con `seq` ≤ último visto (ventana de wrap 2³¹) |
 | 16 | 8 | u64 | `t_sensor_us`: `SensorEvent.timestamp` de la muestra de gyro, en µs (ns/1000) |
@@ -63,6 +67,13 @@ Latido: `ping` TCP cada 1 s si no hay tráfico. Sesión muerta a los 5 s sin nad
 | 68 | 1 | u8 | `recenter_count`: incrementa con cada pulsación de recentrado; el receptor actúa al detectar el cambio |
 | 69 | 1 | u8 | batería 0-100 |
 | 70 | 2 | i16 | `touch_scroll_dy`: píxeles acumulados de la tira de scroll desde el paquete anterior (+ = dedo hacia arriba = scroll up) |
+| 72 | 1 | i8 | **bloque Wii U (solo con bit2):** `stick_rx`, stick derecho, + = derecha |
+| 73 | 1 | i8 | `stick_ry`, stick derecho, + = arriba |
+| 74 | 2 | u16 | `touch_x`: fracción horizontal de la pantalla táctil del GamePad, 0 = izquierda … 65535 = derecha (válido con bit3) |
+| 76 | 2 | u16 | `touch_y`: fracción vertical, 0 = arriba … 65535 = abajo |
+| 78 | 2 | — | reservado 0 |
+
+El bloque Wii U solo se envía cuando el receptor ha confirmado el modo `cemu` (§3): un receptor antiguo descarta cualquier `INPUT` que no mida 72 bytes, y nunca confirma `cemu`, así que nunca lo recibe.
 
 Cadencia: la del sensor (típico 100-200 Hz), tope 250 Hz, mínimo keepalive 1 Hz aunque no cambie nada. Cada paquete lleva el estado completo de botones: la pérdida de un paquete nunca deja un botón atascado.
 
@@ -87,10 +98,20 @@ Cadencia: la del sensor (típico 100-200 Hz), tope 250 Hz, mínimo keepalive 1 H
 | 14 | media play/pausa | play/pausa |
 | 15 | media next | siguiente pista |
 | 16 | media prev | pista anterior |
-| 17 | C (Nunchuk) | — (solo Dolphin) |
-| 18 | Z (Nunchuk) | — (solo Dolphin) |
+| 17 | C (Nunchuk) | — (solo Dolphin / Cemu) |
+| 18 | Z (Nunchuk) | — (solo Dolphin / Cemu) |
+| 19 | X (Wii U) | — (solo Cemu) |
+| 20 | Y (Wii U) | — (solo Cemu) |
+| 21 | L | — (solo Cemu) |
+| 22 | R | — (solo Cemu) |
+| 23 | ZL | — (solo Cemu) |
+| 24 | ZR | — (solo Cemu) |
+| 25 | click stick izquierdo | — (solo Cemu) |
+| 26 | click stick derecho | — (solo Cemu) |
+| 27 | soplar al micrófono del GamePad | — (solo Cemu) |
+| 28 | pantalla TV↔GamePad (función de Cemu) | — (solo Cemu) |
 
-En modo `dolphin` el receptor NO inyecta nada en el SO: todo el estado va al servidor DSU (mapeo en `protocol/DSU.md`).
+En modo `dolphin` y en modo `cemu` el receptor NO inyecta nada en el SO: todo el estado va al servidor DSU (mapeo en `protocol/DSU.md`).
 
 ### 4.3 `PING`/`PONG` UDP (RTT del hot path, para los HUD)
 
@@ -100,8 +121,8 @@ Regla: quien recibe un PING responde un PONG con el mismo cuerpo (solo cambia el
 
 ## 5. Versionado
 
-`pv` va en `hello` y en el TXT de mDNS. Mismo `pv` = compatible. `pv` distinto → `err bad_version` con `msg` legible ("Actualiza PepoMote en el PC/móvil"). El paquete `INPUT` no cambia dentro de pv=1; cambios de layout = pv=2.
+`pv` va en `hello` y en el TXT de mDNS. Mismo `pv` = compatible. `pv` distinto → `err bad_version` con `msg` legible ("Actualiza PepoMote en el PC/móvil"). El paquete `INPUT` de 72 bytes no cambia dentro de pv=1; el bloque Wii U es un añadido opcional que solo se emite hacia receptores que lo anuncian. Cambios de layout = pv=2.
 
 ## 6. Vectores dorados (`vectors/`)
 
-Cada `.hex` es un paquete completo en hex ASCII (sin espacios) + un `.json` hermano con los valores decodificados esperados. Tests: Kotlin (`PmpCodecTest`) y Rust (`codec::tests`) parsean el mismo hex y comparan contra el json. Vectores mínimos: `input_neutral`, `input_buttons_all`, `input_motion`, `input_nunchuk` (flags 0x03, stick (100, −50), C+Z), `ping`, `pong`.
+Cada `.hex` es un paquete completo en hex ASCII (sin espacios) + un `.json` hermano con los valores decodificados esperados. Tests: Kotlin (`PmpCodecTest`) y Rust (`codec::tests`) parsean el mismo hex y comparan contra el json. Vectores mínimos: `input_neutral`, `input_buttons_all`, `input_motion`, `input_nunchuk` (flags 0x03, stick (100, −50), C+Z), `input_wiiu` (80 bytes, flags 0x0F, sticks (100, −50) y (−30, 120), táctil (0x8000, 0x4000), botones 0x1FF80001), `ping`, `pong`. Los valores esperados están en los propios tests (Rust y Kotlin), no hay `.json` hermanos.

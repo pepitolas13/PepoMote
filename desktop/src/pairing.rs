@@ -73,8 +73,7 @@ fn host_name() -> String {
 
 /// Token de emparejamiento de 128 bits, persistido en el directorio de config.
 fn load_or_create_token() -> String {
-    let path = directories::ProjectDirs::from("dev", "pepotech", "PepoMote")
-        .map(|d| d.config_dir().join("token.txt"));
+    let path = crate::state::config_dir().map(|d| d.join("token.txt"));
 
     if let Some(ref p) = path {
         if let Ok(t) = std::fs::read_to_string(p) {

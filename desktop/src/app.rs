@@ -65,6 +65,7 @@ struct Snapshot {
     sensor_hz: f32,
     dsu_clients: usize,
     dolphin_status: Option<String>,
+    cemu_status: Option<String>,
     error: Option<String>,
     firewall_hint: Option<String>,
     uinput_denied: bool,
@@ -96,6 +97,7 @@ impl eframe::App for PepoMoteApp {
                 sensor_hz: s.sensor_hz,
                 dsu_clients: s.dsu_clients,
                 dolphin_status: s.dolphin_cfg_status.clone(),
+                cemu_status: s.cemu_cfg_status.clone(),
                 error: s.last_error.clone(),
                 firewall_hint: s.firewall_hint.clone(),
                 uinput_denied: s.uinput_denied,
@@ -130,6 +132,8 @@ impl eframe::App for PepoMoteApp {
                                 ui_players(ui, &snap);
                                 if snap.mode == Mode::Dolphin {
                                     self.ui_dolphin(ui, &snap);
+                                } else if snap.mode == Mode::Cemu {
+                                    self.ui_cemu(ui, &snap);
                                 }
                                 if snap.player_count < crate::net::MAX_PLAYERS {
                                     ui.add_space(12.0);
@@ -250,6 +254,34 @@ impl PepoMoteApp {
         }
     }
 
+    fn ui_cemu(&self, ui: &mut egui::Ui, snap: &Snapshot) {
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(format!("Cemu (Wii U): {} cliente(s) DSU", snap.dsu_clients))
+                .size(13.0)
+                .color(theme::BLUE),
+        );
+        if ui
+            .button(RichText::new("Configurar Cemu").size(13.0))
+            .clicked()
+        {
+            crate::cemu::configure_now(&self.shared);
+        }
+        if let Some(msg) = &snap.cemu_status {
+            let color = if msg.starts_with("Cemu configurado") || msg.starts_with("Cemu encontrado") {
+                theme::OK
+            } else {
+                theme::WARN
+            };
+            ui.label(RichText::new(msg).size(12.0).color(color));
+        }
+        ui.label(
+            RichText::new("Con Cemu cerrado. Jugador 1 = GamePad, los demás Pro Controller; «Mando de Wii» se elige en el móvil.")
+                .size(11.0)
+                .color(theme::TEXT_DIM),
+        );
+    }
+
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
         let mut config = self.shared.lock().unwrap().config.clone();
         let before = config.clone();
@@ -280,6 +312,27 @@ impl PepoMoteApp {
             ui.checkbox(
                 &mut config.auto_dolphin,
                 RichText::new("Configurar Dolphin automáticamente (multijugador)").size(13.0),
+            );
+            ui.add_space(4.0);
+            ui.checkbox(
+                &mut config.auto_cemu,
+                RichText::new("Configurar Cemu automáticamente (modo Wii U)").size(13.0),
+            );
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Carpeta de Cemu").size(13.0).color(theme::TEXT_DIM));
+                ui.add(
+                    egui::TextEdit::singleline(&mut config.cemu_dir)
+                        .desired_width(200.0)
+                        .hint_text("automática"),
+                );
+                if ui.button(RichText::new("Detectar").size(12.0)).clicked() {
+                    crate::cemu::detect_now(&self.shared);
+                }
+            });
+            ui.label(
+                RichText::new("Solo hace falta si Cemu está en un sitio raro; se aprende sola al verlo abierto.")
+                    .size(11.0)
+                    .color(theme::TEXT_DIM),
             );
             // Linux con varios monitores: a cuál apunta el móvil
             #[cfg(target_os = "linux")]
@@ -358,7 +411,10 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
     let mode_txt = match snap.mode {
         Mode::Pointer => "Modo puntero (apunta el Jugador 1)",
         Mode::Dolphin => "Modo Dolphin: todos juegan",
+        Mode::Cemu => "Modo Wii U (Cemu): todos juegan",
     };
+    let cemu = snap.mode == Mode::Cemu;
+    let cemu_layout = crate::state::cemu_layout(&snap.players);
     child.label(RichText::new(mode_txt).size(13.0).color(theme::BLUE));
     child.label(
         RichText::new(format!(
@@ -373,13 +429,25 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
     for (i, slot) in snap.players.iter().enumerate() {
         let Some(p) = slot else { continue };
         let number = crate::state::player_number(&snap.players, i as u8);
+        let badge = if p.role == crate::state::Role::Nunchuk {
+            if cemu && !cemu_layout.iter().any(|c| c.nunchuk_slot == Some(i as u8)) {
+                format!("J{number} · Nunchuk (sin uso: J{number} no es Mando Wii)")
+            } else {
+                format!("J{number} · Nunchuk")
+            }
+        } else if cemu {
+            match cemu_layout.iter().find(|c| c.dsu_slot == i as u8).map(|c| c.kind) {
+                Some(crate::state::PadKind::GamePad) => format!("J{number} · GamePad"),
+                Some(crate::state::PadKind::Pro) => format!("J{number} · Pro"),
+                Some(crate::state::PadKind::Wiimote) => format!("J{number} · Mando Wii"),
+                None => format!("J{number}"),
+            }
+        } else {
+            format!("J{number}")
+        };
         child.horizontal(|ui| {
             ui.label(
-                RichText::new(if p.role == crate::state::Role::Nunchuk {
-                    format!("J{number} · Nunchuk")
-                } else {
-                    format!("J{number}")
-                })
+                RichText::new(badge)
                     .size(13.0)
                     .strong()
                     .color(theme::CARD)
