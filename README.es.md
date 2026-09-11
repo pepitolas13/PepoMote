@@ -7,7 +7,7 @@
 
 - **Modo puntero** — apuntas con el móvil y el cursor va exactamente ahí (apuntado absoluto anclado al mundo, inmune al roll, 250 Hz). Botones, arrastre, scroll, teclas multimedia. Tu ratón de verdad sigue funcionando siempre que el móvil esté quieto.
 - **Modo Dolphin** — PepoMote se convierte en un Wiimote virtual con movimiento completo (servidor DSU/cemuhook en `127.0.0.1:26760`). Juega juegos de Wii reales — bolos de Wii Sports incluidos — en el [emulador Dolphin](https://es.dolphin-emu.org/).
-- **Modo Wii U** — pon el móvil apaisado y es un Wii U GamePad para el [emulador Cemu](https://cemu.info/): dos sticks, A/B/X/Y, L/R/ZL/ZR, giroscopio, pantalla táctil. Los perfiles de mando de Cemu se escriben solos; un segundo móvil es un Pro Controller, y cualquiera puede ser un Mando de Wii (con Nunchuk) para los juegos de Wii U que se juegan así.
+- **Modo Wii U** — pon el móvil apaisado y es un Wii U GamePad para el [emulador Cemu](https://cemu.info/): dos sticks, A/B/X/Y, L/R/ZL/ZR, giroscopio, pantalla táctil. Los perfiles de mando de Cemu se escriben solos; un segundo móvil es un Pro Controller, y cualquiera puede ser un Mando de Wii (con Nunchuk) para los juegos de Wii U que se juegan así. **Con doble pantalla**: la pantalla del GamePad (mapa, inventario, jugar sin TV) llega de Cemu al móvil, y tocarla es tocar la pantalla del GamePad.
 
 | Pieza | Plataforma | Archivo |
 |---|---|---|

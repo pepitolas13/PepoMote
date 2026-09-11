@@ -59,6 +59,27 @@ Wii U eres GamePad.
 Como el perfil de Cemu es global (no por juego), cambia de tipo con Cemu
 cerrado, antes de arrancar el juego.
 
+## Doble pantalla: la pantalla del GamePad en el móvil
+
+Como en el Wii U de verdad, el móvil GamePad enseña la segunda pantalla del
+juego (mapa, inventario, «Tap the screen!», off-TV play…) en su zona central,
+y tocarla es tocar la pantalla del GamePad. Funciona así:
+
+1. PepoMote deja `open_pad = true` en el `settings.xml` de Cemu al configurarlo:
+   Cemu abre su ventana **GamePad View** (la segunda pantalla) al arrancar. Si
+   la cierras, se vuelve a abrir en *Options → Separate GamePad view* (o al
+   reconfigurar con Cemu cerrado). Puedes hacerla pequeña, taparla o mandarla
+   a otro monitor: la captura no depende de que se vea.
+2. El receptor captura esa ventana solo mientras el móvil GamePad la pide
+   (hasta 30 fps, JPEG, la resolución nativa del GamePad como máximo) y la
+   ventana del PC dice «Pantalla del GamePad: N fps».
+3. En el móvil, la zona táctil pasa a ser la pantalla. Si no hay imagen, el
+   propio hueco dice por qué («Cemu no está abierto», «Abre la vista del
+   GamePad en Cemu…»).
+
+Linux: la captura es de X11, que vale también para XWayland. Con Cemu nativo
+en Wayland no hay ventana X que capturar: lanza Cemu con `GDK_BACKEND=x11`.
+
 ## Movimiento apaisado
 
 Sostén el móvil como un GamePad: horizontal, con el borde superior del móvil a
@@ -93,3 +114,6 @@ copiarlo a `controllerProfiles/`.
   pantalla del GamePad (izquierda ↔ derecha).
 - **El juego no ve el mando tras cambiar GamePad ↔ Mando Wii**: el cambio se
   aplica con Cemu cerrado; reinicia Cemu.
+- **En el móvil no aparece la pantalla del GamePad**: el hueco central dice el
+  motivo. Comprueba que Cemu tiene abierta la ventana GamePad View (Options →
+  Separate GamePad view) y que no está minimizada; en Wayland, `GDK_BACKEND=x11`.

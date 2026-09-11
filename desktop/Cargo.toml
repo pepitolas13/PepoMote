@@ -25,6 +25,8 @@ serde_json = "1"
 mdns-sd = "0.11"
 crc32fast = "1"
 rodio = { version = "0.19", default-features = false }
+jpeg-encoder = "0.6"
+fast_image_resize = "5"
 
 [target.'cfg(windows)'.dependencies]
 tray-icon = "0.19"
@@ -34,6 +36,8 @@ windows = { version = "0.58", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -42,6 +46,7 @@ evdev = "0.12"
 # uinput cubre TODO el escritorio y hay que mapearlo a la pantalla de juego
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client"] }
+x11rb = { version = "0.13", features = ["composite"] }
 
 [profile.release]
 opt-level = 3

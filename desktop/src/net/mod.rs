@@ -2,10 +2,12 @@
 pub use pmp as codec;
 pub mod control;
 pub mod discovery;
+pub mod screen;
 pub mod telemetry;
 
 use crate::dsu::Dsu;
 use crate::pairing::PairingInfo;
+use crate::screen::ScreenHub;
 use crate::state::{Role, SharedState};
 use std::collections::HashMap;
 use std::net::{SocketAddr, TcpStream};
@@ -96,7 +98,7 @@ pub fn free_slot(sessions: &HashMap<u32, Session>, role: Role) -> Option<u8> {
     }
 }
 
-pub fn start(shared: SharedState, pairing: PairingInfo, dsu: Option<Arc<Dsu>>) {
+pub fn start(shared: SharedState, pairing: PairingInfo, dsu: Option<Arc<Dsu>>, hub: Arc<ScreenHub>) {
     let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
     let _ = SESSIONS.set(sessions.clone());
 
@@ -104,9 +106,10 @@ pub fn start(shared: SharedState, pairing: PairingInfo, dsu: Option<Arc<Dsu>>) {
         let shared = shared.clone();
         let sessions = sessions.clone();
         let pairing = pairing.clone();
+        let hub = hub.clone();
         std::thread::Builder::new()
             .name("pmp-control".into())
-            .spawn(move || control::run(shared, sessions, pairing))
+            .spawn(move || control::run(shared, sessions, pairing, hub))
             .expect("hilo control");
     }
     {

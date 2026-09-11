@@ -119,6 +119,17 @@ Mismo socket UDP, **bidireccional**. Layout (20 bytes): bytes 0-7 como INPUT (ma
 
 Regla: quien recibe un PING responde un PONG con el mismo cuerpo (solo cambia el tipo). Quien recibe un PONG con su `session_id` calcula `RTT = ahora − t_envio_us` con su propio reloj. El móvil pinguea a 1 Hz (HUD del mando); el receptor pinguea a 2 Hz (HUD de la ventana).
 
+### 4.4 Canal de pantalla (doble pantalla del GamePad, desde 1.3, aditivo)
+
+El móvil que hace de GamePad recibe la pantalla del GamePad de Cemu (la ventana «GamePad View», que el receptor captura y comprime en JPEG) por una conexión TCP APARTE al mismo puerto PMP:
+
+1. Primera línea del móvil: `{"m":"screen","session_id":u32,"w":854,"h":480,"q":70}` (`w`/`h` = tamaño máximo, se conserva la relación de aspecto; `q` = calidad JPEG, opcional).
+2. Respuesta: `{"m":"screen","ok":true}` o `{"m":"err","code":"bad_session","msg":"…"}` (sesión desconocida o que no es un mando). Un receptor sin canal de pantalla no contesta: el móvil lo trata como «sin pantalla» a los 3 s.
+3. Después, solo tramas binarias del receptor al móvil: `"PMPS"` (4 bytes) · `tipo` u8 · `longitud` u32 LE · carga. Tipo 1 = imagen JPEG; tipo 2 = estado en texto UTF-8 («Cemu no está abierto», «Abre la vista del GamePad en Cemu…»); tipo 3 = keepalive sin carga (cada 2 s si no hay nada que mandar).
+4. Control de flujo: tras pintar cada imagen el móvil envía un byte `0x01`; el receptor no manda la siguiente hasta recibirlo (una imagen en vuelo: el ritmo se adapta al Wi-Fi y al móvil, la latencia no se acumula) y siempre manda la captura más reciente. Sin confirmación en 10 s el receptor cierra; sin nada en 6 s el móvil reconecta.
+
+El receptor captura solo mientras hay algún móvil suscrito, a 30 fps como máximo y descartando fotogramas idénticos; la captura es de la ventana (Windows: `PrintWindow` con contenido DWM; Linux: X11/XWayland con Composite — con Cemu nativo en Wayland no hay ventana X que capturar).
+
 ## 5. Versionado
 
 `pv` va en `hello` y en el TXT de mDNS. Mismo `pv` = compatible. `pv` distinto → `err bad_version` con `msg` legible ("Actualiza PepoMote en el PC/móvil"). El paquete `INPUT` de 72 bytes no cambia dentro de pv=1; el bloque Wii U es un añadido opcional que solo se emite hacia receptores que lo anuncian. Cambios de layout = pv=2.

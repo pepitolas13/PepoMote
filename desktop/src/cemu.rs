@@ -272,6 +272,34 @@ pub fn write_profiles(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
     Ok(())
 }
 
+/// `settings.xml`: `<open_pad>true</open_pad>`, es decir, Cemu abre su ventana
+/// «GamePad View» (la segunda pantalla) al arrancar; el receptor la captura y
+/// la manda al móvil GamePad. Se conserva todo lo demás del archivo; si Cemu
+/// nunca se ha abierto (no hay archivo) se crea uno mínimo que Cemu completa.
+pub fn ensure_pad_window(cfg_dir: &Path) -> Result<(), String> {
+    let path = cfg_dir.join("settings.xml");
+    let original = std::fs::read_to_string(&path).unwrap_or_default();
+    let new = if original.is_empty() {
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<content>\n    <open_pad>true</open_pad>\n</content>\n".to_owned()
+    } else if original.contains("<open_pad>true</open_pad>") {
+        return Ok(());
+    } else if original.contains("<open_pad>false</open_pad>") {
+        original.replacen("<open_pad>false</open_pad>", "<open_pad>true</open_pad>", 1)
+    } else if let Some(i) = original.find("<content>") {
+        let at = i + "<content>".len();
+        format!("{}\n    <open_pad>true</open_pad>{}", &original[..at], &original[at..])
+    } else {
+        return Err("settings.xml de Cemu sin <content>: no lo toco".into());
+    };
+    if !original.is_empty() {
+        let bak = path.with_extension("xml.pepomote.bak");
+        if !bak.exists() {
+            let _ = std::fs::copy(&path, bak);
+        }
+    }
+    std::fs::write(&path, new).map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Dónde está Cemu
 // ---------------------------------------------------------------------------
@@ -581,8 +609,13 @@ fn describe(layout: &Layout) -> String {
 /// Escribe los perfiles en todas las instalaciones de Cemu a la vista.
 pub fn configure(cfg: &Config, layout: &Layout) -> Result<String, String> {
     let dirs = config_dirs_from(&exe_dirs(cfg))?;
+    let gamepad = layout.iter().any(|p| p.kind == PadKind::GamePad);
     for dir in &dirs {
         write_profiles(dir, layout)?;
+        if gamepad {
+            // la segunda pantalla del GamePad vive en la ventana GamePad View
+            ensure_pad_window(dir)?;
+        }
     }
     Ok(format!(
         "Cemu configurado: {}{}",
@@ -829,6 +862,30 @@ mod tests {
         assert!(write_if_changed(&path, &xml).unwrap());
         assert!(!write_if_changed(&path, &xml).unwrap());
         assert!(!backup_path(&path).exists(), "lo nuestro no se respalda");
+    }
+
+    #[test]
+    fn ventana_del_gamepad_en_settings_xml() {
+        let dir = tmp_dir("openpad");
+        let path = dir.join("settings.xml");
+        // sin archivo: uno mínimo
+        ensure_pad_window(&dir).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains("<content>\n    <open_pad>true</open_pad>\n</content>"));
+        // false → true, conservando el resto y con backup del original
+        let cfg = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<content>\n    <logflag>0</logflag>\n    <open_pad>false</open_pad>\n    <pad_size>\n        <x>-1</x>\n    </pad_size>\n</content>\n";
+        std::fs::write(&path, cfg).unwrap();
+        let _ = std::fs::remove_file(path.with_extension("xml.pepomote.bak"));
+        ensure_pad_window(&dir).unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(out.contains("<open_pad>true</open_pad>") && out.contains("<logflag>0</logflag>") && out.contains("<pad_size>"));
+        assert_eq!(std::fs::read_to_string(path.with_extension("xml.pepomote.bak")).unwrap(), cfg);
+        // ya true: no se toca
+        ensure_pad_window(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), out);
+        // sin la clave: se inserta tras <content>
+        std::fs::write(&path, "<content>\n    <logflag>0</logflag>\n</content>\n").unwrap();
+        ensure_pad_window(&dir).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().starts_with("<content>\n    <open_pad>true</open_pad>\n    <logflag>0</logflag>"));
     }
 
     #[test]

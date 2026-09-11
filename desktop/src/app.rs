@@ -66,6 +66,7 @@ struct Snapshot {
     dsu_clients: usize,
     dolphin_status: Option<String>,
     cemu_status: Option<String>,
+    cemu_screen: Option<String>,
     error: Option<String>,
     firewall_hint: Option<String>,
     uinput_denied: bool,
@@ -98,6 +99,7 @@ impl eframe::App for PepoMoteApp {
                 dsu_clients: s.dsu_clients,
                 dolphin_status: s.dolphin_cfg_status.clone(),
                 cemu_status: s.cemu_cfg_status.clone(),
+                cemu_screen: s.cemu_screen_status.clone(),
                 error: s.last_error.clone(),
                 firewall_hint: s.firewall_hint.clone(),
                 uinput_denied: s.uinput_denied,
@@ -275,8 +277,16 @@ impl PepoMoteApp {
             };
             ui.label(RichText::new(msg).size(12.0).color(color));
         }
+        if let Some(msg) = &snap.cemu_screen {
+            let color = if msg.starts_with("Pantalla del GamePad:") && !msg.contains("sin móvil") {
+                theme::OK
+            } else {
+                theme::TEXT_DIM
+            };
+            ui.label(RichText::new(msg).size(12.0).color(color));
+        }
         ui.label(
-            RichText::new("Con Cemu cerrado. Jugador 1 = GamePad, los demás Pro Controller; «Mando de Wii» se elige en el móvil.")
+            RichText::new("Con Cemu cerrado. Jugador 1 = GamePad (y ve la pantalla del GamePad en el móvil), los demás Pro Controller; «Mando de Wii» se elige en el móvil.")
                 .size(11.0)
                 .color(theme::TEXT_DIM),
         );

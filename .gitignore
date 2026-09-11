@@ -24,3 +24,6 @@ Thumbs.db
 # Artefactos
 *.AppImage
 dist/
+
+# Receptor de pruebas e2e (CARGO_TARGET_DIR aparte)
+desktop/target-e2e/

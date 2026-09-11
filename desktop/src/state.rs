@@ -272,12 +272,6 @@ pub fn cemu_layout(players: &[Option<PlayerInfo>]) -> Vec<CemuPlayer> {
         .collect()
 }
 
-/// Tipo de mando efectivo del móvil del `slot` en modo Wii U (`ok.pad`).
-/// Un Nunchuk no tiene tipo propio: va con su jugador.
-pub fn pad_kind(players: &[Option<PlayerInfo>], slot: u8) -> Option<PadKind> {
-    cemu_layout(players).iter().find(|c| c.dsu_slot == slot).map(|c| c.kind)
-}
-
 /// Lo que se le dice a cada móvil en `ok.pad` / eco `pad`: su tipo de mando
 /// en Cemu; a un Nunchuk, `wiimote` si su jugador es Mando de Wii (está en
 /// uso) y `nunchuk` si no (en Wii U no tiene a quién acompañar).
@@ -350,6 +344,8 @@ pub struct Shared {
     pub dolphin_cfg_status: Option<String>,
     /// Resultado del último intento de configurar Cemu (para la UI).
     pub cemu_cfg_status: Option<String>,
+    /// Doble pantalla: estado de la captura de la ventana GamePad View.
+    pub cemu_screen_status: Option<String>,
     pub last_error: Option<String>,
     /// Aviso de firewall Linux bloqueando el puerto (None = todo bien).
     pub firewall_hint: Option<String>,
@@ -379,6 +375,7 @@ impl Shared {
             dsu_clients: 0,
             dolphin_cfg_status: None,
             cemu_cfg_status: None,
+            cemu_screen_status: None,
             last_error: None,
             firewall_hint: None,
             uinput_denied: false,
@@ -439,9 +436,6 @@ mod tests {
                 CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None },
             ]
         );
-        assert_eq!(pad_kind(&p, 0), Some(PadKind::GamePad));
-        assert_eq!(pad_kind(&p, 1), Some(PadKind::Pro));
-        assert_eq!(pad_kind(&p, 3), None, "el Nunchuk no tiene tipo propio");
         assert_eq!(effective_pad(&p, 0), "gamepad");
         assert_eq!(effective_pad(&p, 1), "pro");
         assert_eq!(effective_pad(&p, 3), "nunchuk", "sin uso: J1 es GamePad");

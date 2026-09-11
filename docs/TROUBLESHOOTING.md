@@ -66,6 +66,15 @@ lo pisó otro programa (mira Opciones → Configuración de mandos: Controller 1
 debe ser Wii U GamePad con DSUController «Controller 1»). Detalles en
 `docs/SETUP-CEMU.md`.
 
+## El móvil no enseña la pantalla del GamePad (doble pantalla)
+
+El hueco central del GamePad dice el motivo: «Cemu no está abierto», «Abre la
+vista del GamePad en Cemu (Options → Separate GamePad view)» o «…minimizada».
+PepoMote deja `open_pad = true` en el settings.xml de Cemu al configurarlo, así
+que la ventana GamePad View se abre sola al arrancar Cemu; si la cerraste,
+vuelve a abrirla desde ese menú. En Linux la captura es X11 (vale XWayland):
+con Cemu nativo en Wayland, lánzalo con `GDK_BACKEND=x11`.
+
 ## El GamePad gira al revés (Wii U apaisado)
 
 Android detecta solo hacia qué lado giraste el móvil. En un móvil Linux, el

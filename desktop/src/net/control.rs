@@ -5,6 +5,7 @@
 
 use super::{broadcast, free_slot, ghosts_of, send_line, Session, Sessions};
 use crate::pairing::PairingInfo;
+use crate::screen::ScreenHub;
 use crate::state::{effective_pad, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState};
 use rand::Rng;
 use serde_json::{json, Value};
@@ -18,7 +19,7 @@ fn debug() -> bool {
     std::env::var_os("PEPOMOTE_DEBUG").is_some()
 }
 
-pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo) {
+pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo, hub: Arc<ScreenHub>) {
     let listener = match TcpListener::bind(("0.0.0.0", pairing.port)) {
         Ok(l) => l,
         Err(e) => {
@@ -33,9 +34,10 @@ pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo) {
         let shared = shared.clone();
         let sessions = sessions.clone();
         let pairing = pairing.clone();
+        let hub = hub.clone();
         let _ = std::thread::Builder::new()
             .name("pmp-control-conn".into())
-            .spawn(move || handle(stream, &shared, &sessions, &pairing));
+            .spawn(move || handle(stream, &shared, &sessions, &pairing, &hub));
     }
 }
 
@@ -74,21 +76,21 @@ fn auto_configure(shared: &SharedState, sessions: &Sessions) {
     crate::cemu::maybe_auto_configure(shared);
 }
 
-fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing: &PairingInfo) {
+fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing: &PairingInfo, hub: &Arc<ScreenHub>) {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let peer_ip: IpAddr = stream
         .peer_addr()
         .map(|a| a.ip())
         .unwrap_or(IpAddr::from([0, 0, 0, 0]));
-    let writer: Writer = match stream.try_clone() {
-        Ok(w) => Arc::new(Mutex::new(w)),
+    let raw_writer = match stream.try_clone() {
+        Ok(w) => w,
         Err(_) => return,
     };
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
 
-    // Primer mensaje: hello
+    // Primer mensaje: hello (canal de control) o screen (canal de pantalla)
     line.clear();
     if reader.read_line(&mut line).is_err() || line.trim().is_empty() {
         return;
@@ -97,9 +99,14 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         Ok(v) => v,
         Err(_) => return,
     };
+    if hello["m"] == "screen" {
+        super::screen::handle(reader, raw_writer, &hello, shared, sessions, hub);
+        return;
+    }
     if hello["m"] != "hello" {
         return;
     }
+    let writer: Writer = Arc::new(Mutex::new(raw_writer));
     if hello["pv"].as_i64() != Some(1) {
         let _ = send(&writer, &json!({"m":"err","code":"bad_version","msg":"Actualiza PepoMote"}));
         return;

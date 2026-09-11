@@ -16,6 +16,7 @@ mod input;
 mod net;
 mod pairing;
 mod pointer;
+mod screen;
 mod singleton;
 mod sound;
 mod state;
@@ -35,7 +36,8 @@ fn main() -> eframe::Result {
     let pairing = pairing::PairingInfo::generate();
 
     let dsu = dsu::start(shared.clone());
-    net::start(shared.clone(), pairing.clone(), dsu);
+    let hub = screen::ScreenHub::new(shared.clone());
+    net::start(shared.clone(), pairing.clone(), dsu, hub);
 
     #[cfg(target_os = "linux")]
     firewall::watch(shared.clone(), pairing.port);
