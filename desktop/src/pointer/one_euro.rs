@@ -60,6 +60,14 @@ impl Filter2D {
         }
     }
 
+    /// Lleva la salida filtrada a (x, y) de golpe, sin tocar el estimador de
+    /// velocidad: lo que quedaba de cola no se pinta.
+    pub fn snap_to(&mut self, x: f32, y: f32) {
+        self.lp_x.y = Some(x);
+        self.lp_y.y = Some(y);
+        self.prev = Some((x, y));
+    }
+
     pub fn reset(&mut self) {
         self.lp_x = LowPass::new();
         self.lp_y = LowPass::new();

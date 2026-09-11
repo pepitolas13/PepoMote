@@ -72,6 +72,7 @@ pub fn run(
     #[cfg(target_os = "linux")]
     let mut last_norm: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
     let mut engine = PointerEngine::new();
+    engine.set_desktop(true);
     let start = Instant::now();
     let now_us = |s: Instant| s.elapsed().as_micros() as u64;
 
@@ -313,6 +314,7 @@ pub fn run(
                     if engine_session != Some(p.session_id) {
                         engine_session = Some(p.session_id);
                         engine = PointerEngine::new();
+                        engine.set_desktop(true);
                         release_all(inj, &mut held);
                         inj.move_abs(0.5, 0.5);
                     }

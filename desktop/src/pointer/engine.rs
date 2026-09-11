@@ -70,6 +70,30 @@ const SIGN_Y: f32 = -1.0;
 const ANCHOR_LAMBDA: f32 = 8.0;
 /// Fracción del movimiento ordenado que puede ir a disolver el puente.
 const BRIDGE_DISSOLVE_FRACTION: f32 = 0.12;
+/// Apuntado absoluto: si el cursor real se aleja más que esto (fracción de
+/// pantalla) de donde lo dejamos, es que el SO lo recortó en un borde o el
+/// ratón lo movió: se sigue desde donde está de verdad.
+const HINT_TOL: f32 = 0.01;
+
+// --- Rebote tras un flick (solo cursor del escritorio) ---
+// Tras un flick brusco (600-800°/s medidos) la mano rebota hacia atrás 3-7°
+// en menos de 100 ms y no lo nota: en un cursor de escritorio eso se ve como
+// «el cursor vuelve solo». Durante una ventana corta tras el flick, el
+// retroceso LENTO en sentido contrario (el rebote, que va decayendo) no se
+// pinta; un giro nuevo y rápido en sentido contrario (una intención) pasa
+// entero. En los juegos (puntero IR) no se toca nada: lo que hace la mano se
+// ve, como en la Wii.
+/// Velocidad mínima (°/s, paso filtrado) para que un gesto cuente como flick.
+const FLICK_PEAK_MIN_DEG_S: f32 = 250.0;
+/// El flick ha terminado cuando la velocidad cae por debajo de esta fracción
+/// de su pico; ahí empieza la ventana de asentamiento.
+const FLICK_END_FRACTION: f32 = 0.25;
+/// Duración de la ventana de asentamiento (µs): nadie re-apunta a propósito
+/// antes de un cuarto de segundo tras un flick (hay que ver dónde cayó).
+const FLICK_SETTLE_US: u64 = 250_000;
+/// Dentro de la ventana, un retroceso más rápido que esta fracción del pico
+/// es un gesto nuevo, no un rebote: pasa entero.
+const FLICK_REVERSE_FRACTION: f32 = 0.4;
 /// λ (1/s) del estimador de sesgo del gyro (solo aprende congelado: ahí el
 /// gyro debería leer cero y lo que lee es sesgo).
 const BIAS_LAMBDA: f32 = 0.7;
@@ -221,6 +245,17 @@ fn wrap180(deg: f32) -> f32 {
     x - 180.0
 }
 
+/// Flick en curso (subiendo hasta su pico) o asentándose (ventana).
+#[derive(Clone, Copy)]
+struct Flick {
+    /// Dirección del gesto (unitaria, en grados de yaw/pitch).
+    dir: (f32, f32),
+    /// Velocidad de pico (°/s).
+    peak: f32,
+    /// Fin de la ventana de asentamiento (µs del sensor), si ya ha empezado.
+    settle_until: Option<u64>,
+}
+
 pub struct PointerEngine {
     /// (yaw, pitch) del mundo capturados en el recentrado.
     ref_angles: Option<(f32, f32)>,
@@ -233,6 +268,11 @@ pub struct PointerEngine {
     /// Puente: lo que ve el usuario menos el apuntado absoluto filtrado. Se
     /// fija al descongelar (salto cero) y solo se disuelve con el movimiento.
     offset: (f32, f32),
+    /// Desplazamiento permanente del apuntado (hasta recentrar): lo que el
+    /// SO recortó en los bordes de la pantalla y lo que movió el ratón real.
+    /// Como con un ratón: al volver de un borde el cursor responde al
+    /// instante, y no hay recorrido invisible que deshacer.
+    shift: (f32, f32),
     /// t de la primera muestra: ventana de asentamiento del rotation vector.
     first_t_us: Option<u64>,
     /// Posición real del cursor (normalizada), si el SO la sabe: al
@@ -241,6 +281,9 @@ pub struct PointerEngine {
     last_t_us: Option<u64>,
     /// (yaw, pitch) del mundo integrados del gyro; anclados al quat en reposo.
     fused: Option<(f32, f32)>,
+    /// Giro del gyro acumulado desde el recentrado, SIN anclar: lo que la
+    /// mano ha girado de verdad (guardián de asentamiento).
+    raw_int: (f32, f32),
     /// Congelado: giro del gyro acumulado desde que se congeló, y (yaw, pitch)
     /// del quat en ese momento (escape por movimiento lento).
     freeze_gyro: (f32, f32),
@@ -250,6 +293,11 @@ pub struct PointerEngine {
     last_quat: Option<(f32, f32)>,
     /// Sesgo estimado del gyro (rad/s, ejes del dispositivo).
     bias: [f32; 3],
+    /// Cursor del escritorio (true) o puntero IR de un juego (false): solo el
+    /// primero esconde el rebote tras un flick.
+    desktop: bool,
+    /// Flick en curso o asentándose.
+    flick: Option<Flick>,
     // fallback relativo
     acc_x: f32,
     acc_y: f32,
@@ -268,17 +316,79 @@ impl PointerEngine {
             last_emitted: None,
             last_filtered: None,
             offset: (0.0, 0.0),
+            shift: (0.0, 0.0),
             first_t_us: None,
             cursor_hint: None,
             last_t_us: None,
             fused: None,
+            raw_int: (0.0, 0.0),
             freeze_gyro: (0.0, 0.0),
             freeze_quat: (0.0, 0.0),
             quat_rate: None,
             last_quat: None,
             bias: [0.0; 3],
+            desktop: false,
+            flick: None,
             acc_x: 0.0,
             acc_y: 0.0,
+        }
+    }
+
+    /// Cursor del escritorio: esconde el rebote de la mano tras un flick.
+    pub fn set_desktop(&mut self, on: bool) {
+        self.desktop = on;
+    }
+
+    /// Rebote tras un flick. Mientras dura el asentamiento, la componente de
+    /// retroceso del paso filtrado no se pinta: se queda en `shift` (el
+    /// apuntado sigue desde donde está). Devuelve true justo cuando termina
+    /// la ventana (el llamador absorbe entonces la cola del filtro).
+    fn settle_flick(&mut self, step: (f32, f32), dt: f32, t_us: u64) -> bool {
+        let len = step.0.hypot(step.1);
+        let speed = len / dt;
+        let dir = if len > 1e-9 { (step.0 / len, step.1 / len) } else { (0.0, 0.0) };
+        match self.flick.take() {
+            None => {
+                if speed > FLICK_PEAK_MIN_DEG_S {
+                    self.flick = Some(Flick { dir, peak: speed, settle_until: None });
+                }
+                false
+            }
+            Some(mut f) => match f.settle_until {
+                None => {
+                    if speed >= f.peak {
+                        f.peak = speed;
+                        f.dir = dir;
+                    } else if speed < f.peak * FLICK_END_FRACTION {
+                        f.settle_until = Some(t_us + FLICK_SETTLE_US);
+                    }
+                    self.flick = Some(f);
+                    false
+                }
+                Some(until) => {
+                    if t_us >= until {
+                        // asentado: a partir de aquí todo se pinta (y un
+                        // gesto rápido puede ser el siguiente flick)
+                        if speed > FLICK_PEAK_MIN_DEG_S {
+                            self.flick = Some(Flick { dir, peak: speed, settle_until: None });
+                        }
+                        return true;
+                    }
+                    if speed >= f.peak * FLICK_REVERSE_FRACTION {
+                        // giro nuevo y rápido: intención, pasa entero
+                        self.flick = Some(Flick { dir, peak: speed, settle_until: None });
+                        return false;
+                    }
+                    self.flick = Some(f);
+                    let back = -(step.0 * f.dir.0 + step.1 * f.dir.1);
+                    if back > 0.0 {
+                        // la componente de retroceso no se pinta
+                        self.shift.0 -= -f.dir.0 * back;
+                        self.shift.1 -= -f.dir.1 * back;
+                    }
+                    false
+                }
+            },
         }
     }
 
@@ -321,6 +431,8 @@ impl PointerEngine {
         let (gy, gp) = (dyaw * dt, dpitch * dt);
         fy += gy;
         fp += gp;
+        self.raw_int.0 += gy;
+        self.raw_int.1 += gp;
 
         if self.frozen {
             self.freeze_gyro.0 += gy;
@@ -362,9 +474,29 @@ impl PointerEngine {
         self.filter.reset();
         self.frozen = false;
         self.offset = (0.0, 0.0);
+        self.shift = (0.0, 0.0);
+        self.flick = None;
+        self.raw_int = (0.0, 0.0);
         self.last_emitted = Some((0.0, 0.0));
         self.last_filtered = None;
         self.freeze_gyro = (0.0, 0.0);
+    }
+
+    /// Apuntado absoluto: si el cursor real no está donde lo dejamos (el SO
+    /// lo recortó en un borde, o el ratón lo movió), se sigue desde donde
+    /// está DE VERDAD, sin zona muerta ni salto. Ese desplazamiento es
+    /// permanente (`shift`): no se disuelve, como no lo haría un ratón.
+    fn follow_real_cursor(&mut self, sens_deg: f32, aspect: f32) {
+        let (Some((cx, cy)), Some((py, pp))) = (self.cursor_hint, self.last_emitted) else {
+            return;
+        };
+        let hy = (cx - 0.5) * sens_deg;
+        let hp = (0.5 - cy) * sens_deg / aspect;
+        if (hy - py).abs() > HINT_TOL * sens_deg || (hp - pp).abs() > HINT_TOL * sens_deg / aspect {
+            self.shift.0 += hy - py;
+            self.shift.1 += hp - pp;
+            self.last_emitted = Some((hy, hp));
+        }
     }
 
     /// La telemetría informa de la posición real del cursor antes de cada
@@ -438,8 +570,10 @@ impl PointerEngine {
             let lim = sens_deg * 0.9;
             // Se mira el QUAT crudo, no el integrado: el salto de
             // asentamiento aparece en el quat al instante (sin gyro).
-            let qdev_yaw = wrap180(qyaw - yaw_ref);
-            let qdev_pitch = qpitch - pitch_ref;
+            // …y solo si el gyro NO lo explica: un giro de verdad lo mide
+            // el gyro; el salto de asentamiento del quat, no.
+            let qdev_yaw = wrap180(wrap180(qyaw - yaw_ref) - self.raw_int.0);
+            let qdev_pitch = qpitch - pitch_ref - self.raw_int.1;
             if qdev_yaw.abs() > lim || qdev_pitch.abs() * aspect_w_over_h > lim {
                 // El salto de asentamiento es una corrección del móvil, no un
                 // giro: re-anclar DIRECTO al quat.
@@ -455,7 +589,7 @@ impl PointerEngine {
         let dt = dt.unwrap_or(0.005);
         // La velocidad que abre el filtro (y que decide congelar) sale del
         // gyro: instantánea, sin el retardo de derivar, y ajena al anclaje.
-        let (yaw_f, pitch_f, speed) = self.filter.filter_with_rate(yaw, pitch, rate_yaw, rate_pitch, dt);
+        let (mut yaw_f, mut pitch_f, speed) = self.filter.filter_with_rate(yaw, pitch, rate_yaw, rate_pitch, dt);
         let quat_speed = self.quat_rate.map_or(0.0, |(a, b)| a.hypot(b));
         let (lf_yaw, lf_pitch) = self.last_filtered.replace((yaw_f, pitch_f)).unwrap_or((yaw_f, pitch_f));
 
@@ -468,22 +602,12 @@ impl PointerEngine {
             let qdev = wrap180(qyaw - self.freeze_quat.0).hypot(qpitch - self.freeze_quat.1);
             let creeping = gdev > FREEZE_ESCAPE_DEG && qdev > FREEZE_ESCAPE_QUAT_DEG;
             if speed > FREEZE_EXIT_DEG_S || creeping {
-                // Liberar SIN salto y desde donde esté el cursor DE VERDAD:
-                // si el ratón real lo movió mientras estábamos congelados, el
-                // puntero continúa desde ahí (convivencia con el mouse).
+                // Liberar SIN salto: el puente absorbe lo que el anclaje movió
+                // el estado mientras estaba congelado (se disuelve con el
+                // movimiento); si el ratón real movió el cursor, lo recoge
+                // `follow_real_cursor` (permanente).
                 self.frozen = false;
-                let (anchor_yaw, anchor_pitch) = match (abs_mode, self.cursor_hint) {
-                    (true, Some((cx, cy))) => (
-                        (cx - 0.5) * sens_deg,
-                        (0.5 - cy) * sens_deg / aspect_w_over_h,
-                    ),
-                    _ => (prev_yaw, prev_pitch),
-                };
-                self.offset = (anchor_yaw - yaw_f, anchor_pitch - pitch_f);
-                self.last_emitted = Some((anchor_yaw, anchor_pitch));
-                let out = self.emit(anchor_yaw, anchor_pitch, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, prev_yaw, prev_pitch);
-                // (el paso de este mismo sample ya está en el puente)
-                return out;
+                self.offset = (prev_yaw - yaw_f - self.shift.0, prev_pitch - pitch_f - self.shift.1);
             } else {
                 // Congelado = SILENCIO: ni un paquete de inyección. El ratón
                 // real queda libre mientras el móvil esté quieto.
@@ -493,9 +617,22 @@ impl PointerEngine {
 
         // Libre: el puente se disuelve dentro del propio movimiento ordenado
         self.dissolve_bridge(yaw_f - lf_yaw, pitch_f - lf_pitch);
+        if self.desktop && self.settle_flick((yaw_f - lf_yaw, pitch_f - lf_pitch), dt, p.t_sensor_us) {
+            // Fin del asentamiento: lo que le quedaba de cola al filtro (el
+            // rebote que aún estaba «entrando») tampoco se pinta
+            self.shift.0 -= yaw - yaw_f;
+            self.shift.1 -= pitch - pitch_f;
+            self.filter.snap_to(yaw, pitch);
+            self.last_filtered = Some((yaw, pitch));
+            yaw_f = yaw;
+            pitch_f = pitch;
+        }
+        if abs_mode {
+            self.follow_real_cursor(sens_deg, aspect_w_over_h);
+        }
 
-        let out_yaw = yaw_f + self.offset.0;
-        let out_pitch = pitch_f + self.offset.1;
+        let out_yaw = yaw_f + self.offset.0 + self.shift.0;
+        let out_pitch = pitch_f + self.offset.1 + self.shift.1;
 
         // Quieto: el gyro no ve movimiento, o ve tan poco que puede ser su
         // sesgo y el quat confirma que no hay nada
@@ -690,6 +827,20 @@ mod tests {
         e.apply(p, 35.0, 16.0 / 9.0, true, 1920.0)
     }
 
+    /// Como `ap`, simulando además el cursor real del SO: la última posición
+    /// emitida, recortada a la pantalla (el receptor lo lee antes de cada
+    /// paquete). Si `mouse` trae algo, el ratón real lo dejó ahí.
+    fn ap_os(e: &mut PointerEngine, p: &InputPacket, mouse: Option<(f32, f32)>) -> PointerOutput {
+        if let Some(m) = mouse {
+            e.set_cursor_hint(Some(m));
+        }
+        let out = ap(e, p);
+        if let PointerOutput::Abs { nx, ny } = out {
+            e.set_cursor_hint(Some((nx.clamp(0.0, 1.0), ny.clamp(0.0, 1.0))));
+        }
+        out
+    }
+
     #[test]
     fn recentrado_centra_y_yaw_derecha_mueve_derecha() {
         let mut e = PointerEngine::new();
@@ -808,12 +959,11 @@ mod tests {
             assert_eq!(ap(&mut e, &p), PointerOutput::None, "congelado debe callar");
         }
         // El ratón real dejó el cursor en (0.3, 0.7); el móvil retoma
-        e.set_cursor_hint(Some((0.3, 0.7)));
         let mut first_abs: Option<(f32, f32)> = None;
         for i in 1..100 {
             let deg = -0.02 * i as f32 * 4.0; // rampa que escapa del freeze
             let p = ph.make(qrot_z(deg), 0);
-            if let PointerOutput::Abs { nx, ny } = ap(&mut e, &p) {
+            if let PointerOutput::Abs { nx, ny } = ap_os(&mut e, &p, Some((0.3, 0.7))) {
                 first_abs = Some((nx, ny));
                 break;
             }
@@ -1245,14 +1395,14 @@ mod tests {
         let p = ph.make(qrot_z(0.0), 0);
         ap(&mut e, &p);
         ph.hold(&mut e, 400);
-        e.set_cursor_hint(Some((0.5, 0.8)));
         let mut prev: Option<(f32, f32)> = None;
         let mut max_dy = 0.0f32;
         let mut first: Option<(f32, f32)> = None;
         let mut last = (0.5, 0.5);
         for i in 1..=200 {
-            let p = ph.make(qrot_z(-0.15 * i as f32), 0); // 30°/s
-            if let PointerOutput::Abs { nx, ny } = ap(&mut e, &p) {
+            let p = ph.make(qrot_z(-0.07 * i as f32), 0); // 14°/s, se queda en pantalla
+            let mouse = if i == 1 { Some((0.5, 0.8)) } else { None };
+            if let PointerOutput::Abs { nx, ny } = ap_os(&mut e, &p, mouse) {
                 if let Some((px, py)) = prev {
                     max_dy = max_dy.max((ny - py).abs());
                     assert!(nx >= px - 1e-4, "retrocedió en x: {px} → {nx}");
@@ -1268,10 +1418,152 @@ mod tests {
         assert!((fy - 0.8).abs() < 0.03, "debe arrancar donde dejó el ratón (y=0.8), fue {fy}");
         assert!(max_dy < 1e-3, "movimiento vertical no ordenado: {max_dy} por muestra");
         assert!((last.1 - fy).abs() < 0.01, "el cursor se fue en vertical: {} → {}", fy, last.1);
-        // ganancia horizontal dentro del ±12 % del puente
+        // ganancia horizontal exacta: lo del ratón es un desplazamiento
+        // permanente, no un puente que se disuelva
         let travel = last.0 - fx;
-        let ideal = 30.0 / 35.0 * 0.85; // lo recorrido tras el arranque (aprox.)
-        assert!(travel > ideal * 0.85 && travel < 30.0 / 35.0 * 1.13, "ganancia fuera de rango: {travel}");
+        let ideal = 14.0 / 35.0 * 0.9; // ~lo recorrido tras el arranque
+        assert!(travel > ideal * 0.9 && travel < 14.0 / 35.0 * 1.02, "ganancia fuera de rango: {travel}");
+    }
+
+    #[test]
+    fn volver_de_un_borde_no_tiene_zona_muerta() {
+        // Flick hacia arriba que se pasa del borde superior (el SO deja el
+        // cursor clavado en y=0). Al bajar la mano, el cursor tiene que bajar
+        // AL INSTANTE y 1:1, como un ratón: nada de "deshacer" el recorrido
+        // invisible que quedó por encima de la pantalla.
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_x(0.0), 0);
+        ap_os(&mut e, &p, None);
+        for _ in 0..200 {
+            let q = ph.q;
+            let p = ph.make(q, 0);
+            ap_os(&mut e, &p, None);
+        }
+        // flick: +30° de pitch en 20 muestras (300°/s): ny = 0.5 - 30/35·16/9 < 0
+        let (axis, ang) = delta_axis_angle(ph.q, qrot_x(30.0));
+        let q0 = ph.q;
+        let mut min_ny = 1.0f32;
+        for i in 1..=20 {
+            let qi = q0.mul(qrot_axis(axis, ang * i as f32 / 20.0));
+            let p = ph.make(qi, 0);
+            if let PointerOutput::Abs { ny, .. } = ap_os(&mut e, &p, None) {
+                min_ny = min_ny.min(ny);
+            }
+        }
+        assert!(min_ny < 0.0, "el flick debería pasarse del borde (ny={min_ny})");
+        // la mano baja 5° a 50°/s (sin pararse: no hay congelación)
+        let (axis, ang) = delta_axis_angle(ph.q, qrot_x(25.0));
+        let q1 = ph.q;
+        let mut first_down: Option<(u32, f32)> = None;
+        let mut last_ny = 0.0f32;
+        for i in 1..=20 {
+            let qi = q1.mul(qrot_axis(axis, ang * i as f32 / 20.0));
+            let p = ph.make(qi, 0);
+            if let PointerOutput::Abs { ny, .. } = ap_os(&mut e, &p, None) {
+                if ny > 0.005 && first_down.is_none() {
+                    first_down = Some((i, ny));
+                }
+                last_ny = ny;
+            }
+        }
+        let (i, _) = first_down.expect("el cursor debe bajar del borde");
+        // (un par de muestras de cola del filtro al invertir el sentido)
+        assert!(i <= 8, "zona muerta: tardó {i} muestras en responder");
+        // 5° de bajada = 5/35·16/9 = 0.254 de pantalla desde el borde (±cola del filtro)
+        let mut ny_settled = last_ny;
+        for _ in 0..30 {
+            let q = ph.q;
+            let p = ph.make(q, 0);
+            if let PointerOutput::Abs { ny, .. } = ap_os(&mut e, &p, None) {
+                ny_settled = ny;
+            }
+        }
+        // (menos la cola del filtro que aún subía cuando la mano invirtió,
+        // absorbida en el borde: ~0,7° a 600°/s)
+        let expected = 5.0 / 35.0 * (16.0 / 9.0);
+        assert!((ny_settled - expected).abs() < 0.05, "bajada desde el borde: ny={ny_settled} esperado={expected} (último en movimiento {last_ny})");
+    }
+
+    /// Flick de `flick_deg` de pitch en 20 muestras (≈ flick_deg·10 °/s) y
+    /// después un retroceso de `back_deg` en `back_steps` muestras, y reposo.
+    /// Devuelve (ny al acabar el flick, ny final tras el reposo).
+    fn flick_and_back(desktop: bool, flick_deg: f32, back_deg: f32, back_steps: u32) -> (f32, f32) {
+        let mut e = PointerEngine::new();
+        e.set_desktop(desktop);
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_x(0.0), 0);
+        ap(&mut e, &p);
+        ph.hold(&mut e, 200);
+        // el flick (sin simular el cursor del SO: aquí no hay bordes)
+        let (_, ny_flick) = ph.turn(&mut e, qrot_x(flick_deg), 20);
+        // el retroceso
+        ph.turn(&mut e, qrot_x(flick_deg - back_deg), back_steps);
+        let (_, ny_end) = ph.hold(&mut e, 60);
+        (ny_flick, ny_end)
+    }
+
+    #[test]
+    fn el_rebote_tras_un_flick_no_devuelve_el_cursor() {
+        // Flick de 30° arriba en 100 ms (300°/s) y rebote de 4° en 60 ms
+        // (67°/s): el cursor se queda donde acabó el flick (±cola del filtro).
+        let (ny_flick, ny_end) = flick_and_back(true, 30.0, 4.0, 12);
+        let expected = 0.5 - 30.0 / 35.0 * (16.0 / 9.0);
+        // (la última muestra del flick aún lleva algo de cola del filtro)
+        assert!((ny_flick - expected).abs() < 0.1, "el flick no llegó: {ny_flick} vs {expected}");
+        assert!((ny_end - expected).abs() < 0.04, "el rebote movió el cursor: acabó en {ny_end}, el flick llegaba a {expected}");
+    }
+
+    #[test]
+    fn un_giro_rapido_tras_el_flick_si_pasa() {
+        // Flick de 30° arriba y, sin pausa, 30° abajo igual de rápido: es una
+        // intención (no un rebote) y el cursor tiene que hacer todo el camino.
+        let (_, ny_end) = flick_and_back(true, 30.0, 30.0, 20);
+        assert!((ny_end - 0.5).abs() < 0.06, "el giro deliberado no volvió: ny={ny_end}");
+    }
+
+    #[test]
+    fn en_los_juegos_el_rebote_se_ve() {
+        // Puntero IR (Wii): lo que hace la mano se ve, rebote incluido.
+        let (ny_flick, ny_end) = flick_and_back(false, 30.0, 4.0, 12);
+        let expected = 0.5 - 30.0 / 35.0 * (16.0 / 9.0) + 4.0 / 35.0 * (16.0 / 9.0);
+        assert!((ny_end - expected).abs() < 0.03, "IR: el rebote debería verse: {ny_flick} → {ny_end} (esperado {expected})");
+    }
+
+    #[test]
+    fn el_raton_mueve_el_cursor_en_pleno_apuntado() {
+        // Mientras el móvil barre en horizontal, el ratón real desplaza el
+        // cursor 0,2 de pantalla en vertical: el puntero sigue desde ahí,
+        // sin volver atrás y con la ganancia intacta.
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_z(0.0), 0);
+        ap_os(&mut e, &p, None);
+        for _ in 0..100 {
+            let q = ph.q;
+            let p = ph.make(q, 0);
+            ap_os(&mut e, &p, None);
+        }
+        let mut before: Option<(f32, f32)> = None;
+        let mut last = (0.5, 0.5);
+        for i in 1..=200 {
+            let p = ph.make(qrot_z(-0.07 * i as f32), 0); // 14°/s, se queda en pantalla
+            let mouse = if i == 100 { before.map(|(x, y)| (x, y + 0.2)) } else { None };
+            if let PointerOutput::Abs { nx, ny } = ap_os(&mut e, &p, mouse) {
+                if i == 99 {
+                    before = Some((nx, ny));
+                }
+                if i > 105 {
+                    assert!((ny - (before.unwrap().1 + 0.2)).abs() < 0.01, "muestra {i}: ny={ny}, debería seguir a 0,2 del ratón");
+                }
+                last = (nx, ny);
+            }
+        }
+        let (bx, _) = before.unwrap();
+        // 101 muestras más a 0,07° = 7,07° → 7,07/35 de pantalla, ganancia 1:1
+        let travel = last.0 - bx;
+        let expected = 7.07 / 35.0;
+        assert!((travel - expected).abs() < 0.02, "ganancia tras el ratón: {travel} esperado {expected}");
     }
 
     #[test]

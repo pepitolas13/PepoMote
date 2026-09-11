@@ -80,12 +80,20 @@ pub fn replay_from_args() -> bool {
     match read_recording(path) {
         Ok(recs) => {
             let mut engine = PointerEngine::new();
+            engine.set_desktop(true); // la grabación es del cursor del escritorio
+            // El cursor real que vería el receptor: la última posición emitida,
+            // recortada a la pantalla (el SO no deja salir el cursor)
+            let mut last_abs: Option<(f32, f32)> = None;
             let stdout = std::io::stdout();
             let mut w = stdout.lock();
             let _ = writeln!(w, "t_sensor_us,llegada_us,flags,gx,gy,gz,qw,qx,qy,qz,salida,nx_o_dx,ny_o_dy");
             for (arrival, raw) in recs {
                 let Some(Packet::Input(p)) = codec::parse(&raw) else { continue };
+                engine.set_cursor_hint(last_abs.map(|(x, y)| (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0))));
                 let out = engine.apply(&p, sens, 16.0 / 9.0, true, 2560.0);
+                if let PointerOutput::Abs { nx, ny } = out {
+                    last_abs = Some((nx, ny));
+                }
                 let (kind, a, b) = match out {
                     PointerOutput::Abs { nx, ny } => ("abs", nx, ny),
                     PointerOutput::Rel { dx, dy } => ("rel", dx as f32, dy as f32),

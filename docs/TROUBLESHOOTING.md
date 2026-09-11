@@ -103,7 +103,13 @@ coincidir con el lado hacia el que queda el borde superior del móvil.
 
 Desde 1.3.0 el cursor lo mueve el giroscopio, 1:1 con la mano, y el rotation
 vector del móvil solo ancla la posición cuando el móvil está quieto, en
-silencio (ninguna corrección mueve el cursor). Si aun así notas algo raro,
+silencio (ninguna corrección mueve el cursor). Los bordes de la pantalla se
+comportan como con un ratón: si te pasas del borde, al volver el cursor
+responde al instante (no hay recorrido invisible que deshacer). Y tras un
+flick brusco la mano rebota unos grados hacia atrás sin que lo notes: ese
+rebote no se pinta durante 150 ms (un giro rápido y deliberado en sentido
+contrario sí pasa). En los juegos (puntero de Wii) no se esconde nada: lo que
+hace la mano se ve. Si aun así notas algo raro,
 grábalo y mándalo: arranca el receptor con la variable de entorno
 `PEPOMOTE_RECORD=C:\ruta\gesto.bin`, repite el gesto, cierra el receptor y
 pasa el archivo por `PepoMote --replay gesto.bin` (saca un CSV con lo que
