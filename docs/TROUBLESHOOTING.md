@@ -103,7 +103,10 @@ coincidir con el lado hacia el que queda el borde superior del móvil.
 
 Desde 1.3.0 el cursor lo mueve el giroscopio, 1:1 con la mano, y el rotation
 vector del móvil solo ancla la posición cuando el móvil está quieto, en
-silencio (ninguna corrección mueve el cursor). Los bordes de la pantalla se
+silencio (ninguna corrección mueve el cursor). El cursor solo se congela con
+la mano quieta de verdad (más de 0,3 s por debajo de 0,25°/s): un movimiento
+lento y suave nunca cae en la congelación (antes sí, y el cursor iba a
+trompicones). Los bordes de la pantalla se
 comportan como con un ratón: si te pasas del borde, al volver el cursor
 responde al instante (no hay recorrido invisible que deshacer). Nada se
 esconde ni se frena: si tras un flick brusco la mano rebota unos grados hacia
@@ -118,6 +121,15 @@ En **modo relativo** (Ajustes → apuntado absoluto desactivado) Windows aplica
 al cursor su aceleración de ratón: si quieres que el recorrido sea exacto,
 desactiva «Mejorar la precisión del puntero» en la configuración del ratón
 de Windows. El apuntado absoluto no pasa por esa aceleración.
+
+## El clic del móvil no activa la ventana (Windows)
+
+Un clic inyectado no siempre lleva la ventana a primer plano: Windows solo se
+lo concede al proceso que «recibió la última entrada». Desde 1.3.0 el
+receptor activa a mano la ventana sobre la que cae el clic (izquierdo o
+derecho), como haría el ratón. Si una ventana no responde a nada, suele ser
+que está elevada (administrador): Windows no deja inyectarle entrada desde un
+programa normal.
 
 ## El cursor va a tirones
 

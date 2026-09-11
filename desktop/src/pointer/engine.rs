@@ -21,26 +21,41 @@
 use super::one_euro::Filter2D;
 use crate::net::codec::{InputPacket, FLAG_QUAT_VALID};
 
-/// Congelación por velocidad con histéresis: clavado en reposo, continuo
-/// (sin cuantizar la trayectoria) en cuanto hay intención de movimiento.
-/// Entra cuando NI el gyro NI el quat ven movimiento (el sesgo del gyro no
-/// impide congelar; una corrección del quat tampoco); sale con el gyro (el
-/// que no tiene retraso).
-const FREEZE_ENTER_DEG_S: f32 = 0.6;
-const FREEZE_EXIT_DEG_S: f32 = 1.8;
+/// Congelación: clavado y en silencio SOLO con la mano quieta de verdad, y
+/// continuo en cuanto se mueve. Con una banda de histéresis ancha (antes
+/// 0,6-1,8°/s) el movimiento lento y suave caía dentro y el cursor iba a
+/// trompicones (medido: 79 congelaciones en 4 min de barridos a ~1°/s).
+/// Ahora: entra por debajo de `FREEZE_ENTER_DEG_S` mantenido `FREEZE_DWELL_US`
+/// (nada de parpadeos en el umbral), y sale en cuanto el gyro supera
+/// `FREEZE_EXIT_DEG_S` o acumula un movimiento sostenido (escape), que se
+/// recupera al salir en vez de perderse.
+const FREEZE_ENTER_DEG_S: f32 = 0.25;
+const FREEZE_EXIT_DEG_S: f32 = 0.5;
+const FREEZE_DWELL_US: u64 = 300_000;
+/// Permanencia más corta cuando es el quat quien dice que el móvil está
+/// quieto (el gyro solo trae sesgo): no hay movimiento real que proteger.
+const FREEZE_DWELL_QUAT_US: u64 = 100_000;
+/// Salida por velocidad: el gyro por encima de `FREEZE_EXIT_DEG_S` con el
+/// quat confirmando (por encima de esto), o el gyro por encima de la
+/// tolerancia al sesgo (eso ya no puede ser sesgo, diga lo que diga el quat).
+const FREEZE_EXIT_QUAT_DEG_S: f32 = 0.3;
 /// Hasta esta velocidad del gyro (°/s) el quat puede desmentirlo («eso es
 /// sesgo, el móvil está quieto»); por encima, si el gyro dice que se mueve,
 /// se mueve, diga lo que diga el quat (que puede haberse quedado colgado).
-const FREEZE_BIAS_TOLERANCE_DEG_S: f32 = 4.0;
-/// Velocidad del quat (°/s) por debajo de la cual el móvil está quieto de
-/// verdad y lo que lee el gyro es sesgo (se aprende).
-const QUAT_STILL_DEG_S: f32 = 0.3;
-/// Escape por posición: movimiento lento por debajo de la histéresis. Se
-/// libera cuando el GYRO acumula esto desde que se congeló Y el quat lo
-/// confirma (`FREEZE_ESCAPE_QUAT_DEG`): así ni el sesgo del gyro (el quat no
-/// se mueve) ni una corrección del quat (el gyro no se mueve) descongelan.
-const FREEZE_ESCAPE_DEG: f32 = 0.35;
-const FREEZE_ESCAPE_QUAT_DEG: f32 = 0.18;
+const FREEZE_BIAS_TOLERANCE_DEG_S: f32 = 3.0;
+/// El sesgo del gyro solo se aprende con el móvil quieto DE VERDAD: llevando
+/// congelado al menos esto (µs) y con el quat sin haberse movido más de
+/// `BIAS_LEARN_QUAT_DEG` desde que se congeló. (Un quat «pegajoso» durante un
+/// movimiento lento parece quieto un instante; en 400 ms ya no.)
+const BIAS_LEARN_AFTER_US: u64 = 400_000;
+const BIAS_LEARN_QUAT_DEG: f32 = 0.1;
+/// Escape por movimiento sostenido: acumulación con fuga (τ = 1 s) del giro
+/// del gyro y del quat desde que se congeló; el ruido no la llena, un
+/// movimiento lento sí. Hace falta que gyro Y quat lo vean (ni el sesgo del
+/// gyro ni una corrección del quat descongelan).
+const FREEZE_ESCAPE_DEG: f32 = 0.08;
+const FREEZE_ESCAPE_QUAT_DEG: f32 = 0.04;
+const FREEZE_LEAK_TAU_S: f32 = 1.0;
 
 /// Signos del fallback relativo (h1). Corrección SOLO aquí.
 const SIGN_X: f32 = -1.0;
@@ -254,10 +269,16 @@ pub struct PointerEngine {
     /// Giro del gyro acumulado desde el recentrado, SIN anclar: lo que la
     /// mano ha girado de verdad (guardián de asentamiento).
     raw_int: (f32, f32),
-    /// Congelado: giro del gyro acumulado desde que se congeló, y (yaw, pitch)
-    /// del quat en ese momento (escape por movimiento lento).
+    /// Congelado: giro del gyro acumulado desde que se congeló (exacto, para
+    /// recuperarlo al salir) y con fuga (para el escape); ídem del quat.
     freeze_gyro: (f32, f32),
-    freeze_quat: (f32, f32),
+    freeze_gyro_leaky: (f32, f32),
+    freeze_quat_leaky: (f32, f32),
+    /// Desde cuándo la mano está por debajo del umbral de congelar (µs).
+    still_since: Option<u64>,
+    /// Cuándo se congeló y dónde estaba el quat entonces (aprendizaje del
+    /// sesgo solo con el móvil quieto de verdad).
+    frozen_at: Option<(u64, f32, f32)>,
     /// Velocidad del quat suavizada (°/s por eje): «el quat ve movimiento».
     quat_rate: Option<(f32, f32)>,
     last_quat: Option<(f32, f32)>,
@@ -292,7 +313,10 @@ impl PointerEngine {
             fused: None,
             raw_int: (0.0, 0.0),
             freeze_gyro: (0.0, 0.0),
-            freeze_quat: (0.0, 0.0),
+            freeze_gyro_leaky: (0.0, 0.0),
+            freeze_quat_leaky: (0.0, 0.0),
+            still_since: None,
+            frozen_at: None,
             quat_rate: None,
             last_quat: None,
             bias: [0.0; 3],
@@ -325,10 +349,14 @@ impl PointerEngine {
             lowpass(prev.map(|r| r.1), rp, RATE_CUTOFF_HZ, dt),
         ));
 
-        let quat_still = self.quat_rate.is_some_and(|(a, b)| a.hypot(b) < QUAT_STILL_DEG_S);
-        if self.frozen && quat_still {
-            // Quieto de verdad (el quat no se mueve): lo que lee el gyro es
-            // sesgo. Acotado: más que eso no es sesgo, es movimiento.
+        let truly_still = self.frozen
+            && self.frozen_at.is_some_and(|(t0, y0, p0)| {
+                p.t_sensor_us.saturating_sub(t0) >= BIAS_LEARN_AFTER_US
+                    && wrap180(qyaw - y0).hypot(qpitch - p0) < BIAS_LEARN_QUAT_DEG
+            });
+        if truly_still {
+            // Quieto de verdad: lo que lee el gyro es sesgo. Acotado: más
+            // que eso no es sesgo, es movimiento.
             let l = 1.0 - (-dt * BIAS_LAMBDA).exp();
             for i in 0..3 {
                 let target = p.gyro[i].clamp(-BIAS_MAX_RADS, BIAS_MAX_RADS);
@@ -346,6 +374,13 @@ impl PointerEngine {
         if self.frozen {
             self.freeze_gyro.0 += gy;
             self.freeze_gyro.1 += gp;
+            let leak = dt / FREEZE_LEAK_TAU_S;
+            self.freeze_gyro_leaky.0 += gy - self.freeze_gyro_leaky.0 * leak;
+            self.freeze_gyro_leaky.1 += gp - self.freeze_gyro_leaky.1 * leak;
+            if let Some((qry, qrp)) = self.quat_rate {
+                self.freeze_quat_leaky.0 += qry * dt - self.freeze_quat_leaky.0 * leak;
+                self.freeze_quat_leaky.1 += qrp * dt - self.freeze_quat_leaky.1 * leak;
+            }
             // Anclaje silencioso al quat: congelado no se emite nada, y al
             // descongelar el puente absorbe la diferencia
             let l = 1.0 - (-dt * ANCHOR_LAMBDA).exp();
@@ -388,6 +423,10 @@ impl PointerEngine {
         self.last_emitted = Some((0.0, 0.0));
         self.last_filtered = None;
         self.freeze_gyro = (0.0, 0.0);
+        self.freeze_gyro_leaky = (0.0, 0.0);
+        self.freeze_quat_leaky = (0.0, 0.0);
+        self.still_since = None;
+        self.frozen_at = None;
     }
 
     /// Apuntado absoluto: si el cursor real no está donde lo dejamos (el SO
@@ -498,18 +537,31 @@ impl PointerEngine {
         let (prev_yaw, prev_pitch) = self.last_emitted.unwrap_or((yaw_f, pitch_f));
 
         if self.frozen {
-            // Movimiento lento por debajo de la histéresis: el gyro lo acumula
-            // y el quat lo confirma (ni sesgo ni corrección descongelan)
-            let gdev = self.freeze_gyro.0.hypot(self.freeze_gyro.1);
-            let qdev = wrap180(qyaw - self.freeze_quat.0).hypot(qpitch - self.freeze_quat.1);
+            // Movimiento lento sostenido: el gyro lo acumula y el quat lo
+            // confirma (ni sesgo ni corrección descongelan)
+            let gdev = self.freeze_gyro_leaky.0.hypot(self.freeze_gyro_leaky.1);
+            let qdev = self.freeze_quat_leaky.0.hypot(self.freeze_quat_leaky.1);
             let creeping = gdev > FREEZE_ESCAPE_DEG && qdev > FREEZE_ESCAPE_QUAT_DEG;
-            if speed > FREEZE_EXIT_DEG_S || creeping {
-                // Liberar SIN salto: el puente absorbe lo que el anclaje movió
-                // el estado mientras estaba congelado (se disuelve con el
-                // movimiento); si el ratón real movió el cursor, lo recoge
-                // `follow_real_cursor` (permanente).
+            let moving = speed > FREEZE_BIAS_TOLERANCE_DEG_S
+                || (speed > FREEZE_EXIT_DEG_S && quat_speed > FREEZE_EXIT_QUAT_DEG_S);
+            if moving || creeping {
+                // Liberar recuperando lo que la mano giró mientras estaba
+                // congelado (unos píxeles), medido por el QUAT (con sesgo del
+                // gyro no se ha movido nada y el quat lo sabe): el puente
+                // absorbe SOLO lo que el anclaje movió el estado (se disuelve
+                // con el movimiento). Si el ratón real movió el cursor, lo
+                // recoge `follow_real_cursor`.
+                let (ry, rp) = match self.frozen_at {
+                    Some((_, y0, p0)) => (wrap180(qyaw - y0), qpitch - p0),
+                    None => (0.0, 0.0),
+                };
                 self.frozen = false;
-                self.offset = (prev_yaw - yaw_f - self.shift.0, prev_pitch - pitch_f - self.shift.1);
+                self.still_since = None;
+                self.frozen_at = None;
+                self.offset = (
+                    prev_yaw + ry - yaw_f - self.shift.0,
+                    prev_pitch + rp - pitch_f - self.shift.1,
+                );
             } else {
                 // Congelado = SILENCIO: ni un paquete de inyección. El ratón
                 // real queda libre mientras el móvil esté quieto.
@@ -527,13 +579,22 @@ impl PointerEngine {
         let out_pitch = pitch_f + self.offset.1 + self.shift.1;
 
         // Quieto: el gyro no ve movimiento, o ve tan poco que puede ser su
-        // sesgo y el quat confirma que no hay nada
-        let still = speed < FREEZE_ENTER_DEG_S
-            || (speed < FREEZE_BIAS_TOLERANCE_DEG_S && quat_speed < FREEZE_ENTER_DEG_S);
+        // sesgo y el quat confirma que no hay nada; y mantenido un rato
+        // (permanencia), que un roce con el umbral no congele
+        let quat_says_still = speed < FREEZE_BIAS_TOLERANCE_DEG_S && quat_speed < FREEZE_ENTER_DEG_S;
+        let still = speed < FREEZE_ENTER_DEG_S || quat_says_still;
         if still {
-            self.frozen = true;
-            self.freeze_gyro = (0.0, 0.0);
-            self.freeze_quat = (qyaw, qpitch);
+            let since = *self.still_since.get_or_insert(p.t_sensor_us);
+            let dwell = if quat_says_still { FREEZE_DWELL_QUAT_US } else { FREEZE_DWELL_US };
+            if p.t_sensor_us.saturating_sub(since) >= dwell {
+                self.frozen = true;
+                self.frozen_at = Some((p.t_sensor_us, qyaw, qpitch));
+                self.freeze_gyro = (0.0, 0.0);
+                self.freeze_gyro_leaky = (0.0, 0.0);
+                self.freeze_quat_leaky = (0.0, 0.0);
+            }
+        } else {
+            self.still_since = None;
         }
         self.last_emitted = Some((out_yaw, out_pitch));
         self.emit(out_yaw, out_pitch, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, prev_yaw, prev_pitch)
@@ -1533,6 +1594,72 @@ mod tests {
         }
         let expected = 0.5 + 20.0 / 35.0;
         assert!((last - expected).abs() < 0.03, "con el quat colgado el cursor se quedó en {last} (esperado {expected})");
+    }
+
+    #[test]
+    fn un_barrido_lento_no_va_a_trompicones() {
+        // Barrido continuo a 1°/s (el caso medido: 79 congelaciones en 4 min):
+        // ni una sola muestra sin emitir después del arranque.
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_z(0.0), 0);
+        ap(&mut e, &p);
+        ph.hold(&mut e, 200);
+        let mut silent = 0;
+        let mut last_nx = 0.5f32;
+        for i in 1..=600 {
+            let p = ph.make(qrot_z(-0.005 * i as f32), 0); // 1°/s
+            match ap(&mut e, &p) {
+                PointerOutput::Abs { nx, .. } => {
+                    assert!(nx >= last_nx - 1e-4, "muestra {i}: retrocedió {last_nx} → {nx}");
+                    last_nx = nx;
+                }
+                _ => {
+                    if i > 120 {
+                        silent += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(silent, 0, "el barrido lento se congeló {silent} muestras");
+        let expected = 0.5 + 3.0 / 35.0;
+        assert!((last_nx - expected).abs() < 0.01, "recorrido a 1°/s: {last_nx} esperado {expected}");
+    }
+
+    #[test]
+    fn congelar_exige_estar_quieto_un_rato_y_al_salir_no_se_pierde_nada() {
+        // Quieto → congela (silencio) tras la permanencia; un movimiento lento
+        // sostenido descongela y el cursor sale donde la mano está de verdad.
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_z(0.0), 0);
+        ap(&mut e, &p);
+        let mut frozen_at = None;
+        for i in 0..200 {
+            let q = ph.q;
+            let p = ph.make(q, 0);
+            if ap(&mut e, &p) == PointerOutput::None && frozen_at.is_none() {
+                frozen_at = Some(i);
+            }
+        }
+        let f = frozen_at.expect("debe congelar en reposo");
+        // quieto de verdad (el quat también lo dice): permanencia corta, ~100 ms
+        assert!(f >= 15 && f <= 80, "congeló en la muestra {f} (esperado ~20-60 de permanencia)");
+        // 0,4°/s: por debajo del umbral de salida por velocidad, pero
+        // sostenido → escape en menos de 0,5 s y sin perder recorrido
+        let mut first = None;
+        for i in 1..=200 {
+            let p = ph.make(qrot_z(-0.002 * i as f32), 0);
+            if let PointerOutput::Abs { nx, .. } = ap(&mut e, &p) {
+                first = Some((i, nx));
+                break;
+            }
+        }
+        let (i, nx) = first.expect("el movimiento lento debe descongelar");
+        assert!(i <= 100, "tardó {i} muestras en descongelar");
+        let travelled = 0.002 * i as f32;
+        let expected = 0.5 + travelled / 35.0;
+        assert!((nx - expected).abs() < 0.004, "al salir el cursor debe estar donde la mano: nx={nx} esperado={expected}");
     }
 
     #[test]

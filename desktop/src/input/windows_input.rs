@@ -7,9 +7,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_ESCAPE, VK_LEFT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK, VK_RETURN,
     VK_RIGHT, VK_SHIFT, VK_SPACE, VK_UP, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
 };
+use windows::Win32::Foundation::POINT;
+use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
+use windows::Win32::System::Threading::AttachThreadInput;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, SM_CXSCREEN, SM_CXVIRTUALSCREEN, SM_CYSCREEN, SM_CYVIRTUALSCREEN,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    GetAncestor, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowThreadProcessId,
+    SetForegroundWindow, WindowFromPoint, GA_ROOT, SM_CXSCREEN, SM_CXVIRTUALSCREEN, SM_CYSCREEN,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 
 pub struct WinInjector;
@@ -35,6 +40,54 @@ impl WinInjector {
         };
         unsafe {
             SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        }
+    }
+
+    /// Un clic de verdad lleva a primer plano la ventana sobre la que cae.
+    /// Con un clic inyectado Windows no siempre lo hace (el derecho de
+    /// primer plano es del proceso que «recibió la última entrada», y el
+    /// nuestro solo la inyecta): se activa a mano, como haría el ratón.
+    /// Primero por las buenas; si el sistema se resiste, enganchando la cola
+    /// de entrada del hilo en primer plano; y si tampoco, con la pulsación de
+    /// ALT que da el derecho (el truco estándar), soltándola ya activada.
+    fn activate_window_under_cursor(&self) {
+        unsafe {
+            let mut pt = POINT::default();
+            if GetCursorPos(&mut pt).is_err() {
+                return;
+            }
+            let hit = WindowFromPoint(pt);
+            if hit.0.is_null() {
+                return;
+            }
+            let mut root = GetAncestor(hit, GA_ROOT);
+            if root.0.is_null() {
+                root = hit;
+            }
+            let fg = GetForegroundWindow();
+            if root == fg {
+                return;
+            }
+            if SetForegroundWindow(root).as_bool() {
+                return;
+            }
+            // Cola de entrada compartida con el hilo que está en primer plano
+            let mut fg_thread = 0;
+            if !fg.0.is_null() {
+                fg_thread = GetWindowThreadProcessId(fg, None);
+            }
+            let me = GetCurrentThreadId();
+            let attached = fg_thread != 0 && fg_thread != me && AttachThreadInput(me, fg_thread, true).as_bool();
+            let ok = SetForegroundWindow(root).as_bool();
+            if attached {
+                let _ = AttachThreadInput(me, fg_thread, false);
+            }
+            if ok {
+                return;
+            }
+            self.send_key(VK_MENU, true);
+            let _ = SetForegroundWindow(root);
+            self.send_key(VK_MENU, false);
         }
     }
 
@@ -104,6 +157,9 @@ impl Injector for WinInjector {
     }
 
     fn button(&mut self, btn: MouseButton, down: bool) {
+        if down {
+            self.activate_window_under_cursor();
+        }
         let flags = match (btn, down) {
             (MouseButton::Left, true) => MOUSEEVENTF_LEFTDOWN,
             (MouseButton::Left, false) => MOUSEEVENTF_LEFTUP,
@@ -185,8 +241,6 @@ impl Injector for WinInjector {
     }
 
     fn cursor_pos(&mut self) -> Option<(f32, f32)> {
-        use windows::Win32::Foundation::POINT;
-        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
         let mut p = POINT::default();
         unsafe {
             if GetCursorPos(&mut p).is_ok() {
