@@ -13,6 +13,7 @@ mod fusion;
 mod inhibit;
 mod link;
 mod pacing;
+mod screen;
 mod sensor;
 mod store;
 mod ui;

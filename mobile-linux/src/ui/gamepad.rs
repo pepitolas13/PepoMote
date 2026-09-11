@@ -11,14 +11,21 @@
 //! conectando): hasta que el receptor confirma `cemu`, los controles se ven
 //! atenuados e inertes. Bajo la cabecera, el selector «En Cemu soy:
 //! GamePad / Mando de Wii» (el mismo que en el layout Wii dentro de Wii U).
+//!
+//! Doble pantalla: si la app tiene abierto el canal de la pantalla
+//! (`screen::Client`), la zona táctil pinta la imagen del GamePad de Cemu
+//! (textura con filtro lineal, escalada exacta a la zona y girada con ella);
+//! sin imagen, el fondo y la etiqueta de siempre más la línea de estado. El
+//! mapeo táctil no cambia: sigue siendo la fracción de la zona.
 
 use crate::buttons::Buttons;
 use crate::frame::Rotation;
 use crate::link::Status;
+use crate::screen;
 use crate::theme;
 use crate::ui::nunchuk::{knob_pos, stick_value};
-use crate::ui::touch::{self, Canvas, Input, Phase, Seg, Shape, Transform};
-use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
+use crate::ui::touch::{self, fit_rect, Canvas, Input, Phase, Seg, Shape, Transform};
+use egui::{Align2, Color32, FontId, ImageData, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -44,6 +51,8 @@ pub struct Inputs<'a> {
     /// Petición de `pad` sin eco: su segmento a medio tono.
     pub pad_pending: Option<&'a str>,
     pub sensor_hz: f32,
+    /// Canal de la pantalla del GamePad (doble pantalla), si está abierto.
+    pub screen: Option<&'a screen::Client>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -94,6 +103,8 @@ struct View<'a> {
     pending: Option<&'a str>,
     notice: Option<&'a str>,
     rtt_ms: Option<f32>,
+    /// Canal de la pantalla del GamePad, si la app lo tiene abierto.
+    screen: Option<&'a screen::Client>,
 }
 
 pub struct GamePadUi {
@@ -106,6 +117,9 @@ pub struct GamePadUi {
     touch_rect: Rect,
     active: bool,
     fired: Option<Chip>,
+    /// La pantalla del GamePad de Cemu (se crea con la primera imagen y se
+    /// actualiza con cada una; se suelta sin canal).
+    texture: Option<TextureHandle>,
 }
 
 impl Default for GamePadUi {
@@ -147,6 +161,33 @@ impl GamePadUi {
             touch_rect: Rect::NOTHING,
             active: false,
             fired: None,
+            texture: None,
+        }
+    }
+
+    /// Zona táctil en píxeles físicos (ancho, alto) tal como se maquetó la
+    /// última vez; `None` antes del primer frame. Es lo que se pide al
+    /// receptor como tamaño máximo de la pantalla.
+    pub fn touch_size_px(&self, pixels_per_point: f32) -> Option<(f32, f32)> {
+        self.touch_rect
+            .is_positive()
+            .then(|| (self.touch_rect.width() * pixels_per_point, self.touch_rect.height() * pixels_per_point))
+    }
+
+    /// Sube a la textura la imagen que haya dejado el hilo de la pantalla
+    /// (`load_texture` la primera vez, `set` después; filtro lineal). Sin
+    /// canal, la textura se suelta.
+    fn upload(&mut self, ctx: &egui::Context, screen: Option<&screen::Client>) {
+        let Some(c) = screen else {
+            self.texture = None;
+            return;
+        };
+        if let Some(img) = c.take_image() {
+            let data = ImageData::Color(img);
+            match &mut self.texture {
+                Some(t) => t.set(data, TextureOptions::LINEAR),
+                None => self.texture = Some(ctx.load_texture("pantalla-gamepad", data, TextureOptions::LINEAR)),
+            }
         }
     }
 
@@ -155,6 +196,7 @@ impl GamePadUi {
         let (rect, _) = ui.allocate_exact_size(avail, Sense::hover());
         self.screen = rect;
         self.transform = Transform::for_screen(rect, inp.rotation);
+        self.upload(ui.ctx(), inp.screen);
         let notice = inp.status.live_notice();
         let view = match inp.status {
             Status::Connected {
@@ -178,6 +220,7 @@ impl GamePadUi {
                 pending: inp.pad_pending,
                 notice,
                 rtt_ms: *rtt_ms,
+                screen: inp.screen,
             },
             other => View {
                 pc_name: if matches!(other, Status::Connecting) { "Conectando…" } else { "Sin conexión" },
@@ -192,6 +235,7 @@ impl GamePadUi {
                 pending: None,
                 notice,
                 rtt_ms: None,
+                screen: None,
             },
         };
         self.active = view.active;
@@ -261,6 +305,12 @@ impl GamePadUi {
         }
         if sensor_hz > 0.0 {
             line.push_str(&format!(" · {sensor_hz:.0} Hz"));
+        }
+        if let Some(c) = v.screen {
+            let fps = c.fps();
+            if c.showing() && fps > 0.0 {
+                line.push_str(&format!(" · pantalla · {fps:.0} fps"));
+            }
         }
         let avail = right - x0 - 4.0 * s;
         cv.text(Pos2::new(x0 + 4.0 * s, hy), Align2::LEFT_CENTER, &cv.fit_text(&line, title_font.clone(), avail), title_font, theme::TEXT);
@@ -363,7 +413,7 @@ impl GamePadUi {
             let tw = (zone_w - 8.0 * s).min(0.42 * vw);
             let th = tw * 9.0 / 16.0;
             let tr = Rect::from_min_size(Pos2::new(cx - tw / 2.0, by), Vec2::new(tw, th));
-            self.touch_area(cv, tr, buttons, s);
+            self.touch_area(cv, tr, buttons, s, v.screen);
             tr.bottom() + 6.0 * s + 20.0 * s
         };
         let br2 = 20.0 * s;
@@ -440,16 +490,35 @@ impl GamePadUi {
         self.hits.push((Shape::Circle { c, r: ring_r + 10.0 * s }, Target::Stick(side)));
     }
 
-    fn touch_area(&mut self, cv: &Canvas, tr: Rect, buttons: &Buttons, s: f32) {
+    /// La zona táctil 16:9: con la doble pantalla en marcha, la imagen del
+    /// GamePad de Cemu escalada exacta a la zona (bandas si no es 16:9); si
+    /// no, el fondo y la etiqueta de siempre más la línea de estado del canal.
+    fn touch_area(&mut self, cv: &Canvas, tr: Rect, buttons: &Buttons, s: f32, screen: Option<&screen::Client>) {
         let (tx, ty, down) = buttons.touch();
-        cv.rounded_rect(tr, 6.0 * s, theme::CARD, Stroke::new(1.0_f32, if down { theme::BLUE } else { theme::CARD_BORDER }));
-        cv.text(
-            Pos2::new(tr.center().x, tr.top() + 5.0 * s),
-            Align2::CENTER_TOP,
-            "Pantalla táctil",
-            FontId::proportional(11.0 * s),
-            theme::TEXT_DIM,
-        );
+        let border = Stroke::new(1.0_f32, if down { theme::BLUE } else { theme::CARD_BORDER });
+        let live = screen.is_some_and(|c| c.showing());
+        match (&self.texture, live) {
+            (Some(tex), true) => {
+                cv.rounded_rect(tr, 6.0 * s, Color32::BLACK, Stroke::NONE);
+                cv.image(fit_rect(tr, tex.size()), tex.id());
+                cv.rounded_rect(tr, 6.0 * s, Color32::TRANSPARENT, border);
+            }
+            _ => {
+                cv.rounded_rect(tr, 6.0 * s, theme::CARD, border);
+                cv.text(
+                    Pos2::new(tr.center().x, tr.top() + 5.0 * s),
+                    Align2::CENTER_TOP,
+                    "Pantalla táctil",
+                    FontId::proportional(11.0 * s),
+                    theme::TEXT_DIM,
+                );
+                if let Some(c) = screen {
+                    let font = FontId::proportional(12.0 * s);
+                    let text = cv.fit_text(&c.placeholder(), font.clone(), tr.width() - 12.0 * s);
+                    cv.text(tr.center(), Align2::CENTER_CENTER, &text, font, theme::TEXT_DIM);
+                }
+            }
+        }
         if down {
             let p = Pos2::new(
                 tr.left() + tx as f32 / 65535.0 * tr.width(),

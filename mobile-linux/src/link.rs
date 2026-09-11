@@ -12,6 +12,7 @@ use crate::discovery;
 use crate::frame::{self, Rotation};
 use crate::fusion::Madgwick;
 use crate::pacing::{Pacer, State};
+use crate::screen::Endpoint;
 use crate::sensor::{self, Sample, Source};
 use crate::store::{self, Pairing};
 use serde_json::{json, Value};
@@ -96,6 +97,9 @@ pub struct Link {
     writer: Arc<Mutex<Option<TcpStream>>>,
     stop: Arc<AtomicBool>,
     sensor_hz: Arc<AtomicU32>,
+    /// Host, puerto y sesión del `ok`: por donde abrir otros canales
+    /// (la pantalla del GamePad).
+    endpoint: Arc<Mutex<Option<Endpoint>>>,
 }
 
 impl Link {
@@ -112,12 +116,14 @@ impl Link {
         let writer: Arc<Mutex<Option<TcpStream>>> = Arc::new(Mutex::new(None));
         let stop = Arc::new(AtomicBool::new(false));
         let sensor_hz = Arc::new(AtomicU32::new(0));
+        let endpoint = Arc::new(Mutex::new(None));
         {
             let ctx = Ctx {
                 status: status.clone(),
                 writer: writer.clone(),
                 stop: stop.clone(),
                 sensor_hz: sensor_hz.clone(),
+                endpoint: endpoint.clone(),
                 buttons,
                 role,
             };
@@ -131,11 +137,18 @@ impl Link {
             writer,
             stop,
             sensor_hz,
+            endpoint,
         }
     }
 
     pub fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
+    }
+
+    /// A dónde abrir el canal de la pantalla del GamePad (mismo host y
+    /// puerto que el control, sesión del `ok`); `None` hasta el `ok`.
+    pub fn screen_endpoint(&self) -> Option<Endpoint> {
+        self.endpoint.lock().unwrap().clone()
     }
 
     pub fn sensor_hz(&self) -> f32 {
@@ -181,6 +194,7 @@ struct Ctx {
     writer: Arc<Mutex<Option<TcpStream>>>,
     stop: Arc<AtomicBool>,
     sensor_hz: Arc<AtomicU32>,
+    endpoint: Arc<Mutex<Option<Endpoint>>>,
     buttons: Arc<Buttons>,
     role: Role,
 }
@@ -275,7 +289,7 @@ fn device_name() -> String {
         .unwrap_or_else(|| "Linux".into())
 }
 
-fn resolve(host: &str, port: u16) -> Result<SocketAddr, String> {
+pub(crate) fn resolve(host: &str, port: u16) -> Result<SocketAddr, String> {
     (host, port)
         .to_socket_addrs()
         .map_err(|e| format!("Dirección no válida {host}:{port}: {e}"))?
@@ -423,6 +437,14 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
                     mode_seq: 0,
                     pad_seq: 0,
                 };
+                // la pantalla del GamePad va por otra conexión TCP al mismo
+                // puerto PMP que este control (el `udp_port` del ok es ese
+                // mismo puerto), con la sesión del ok
+                *ctx.endpoint.lock().unwrap() = Some(Endpoint {
+                    host: pairing.host.clone(),
+                    port: pairing.port,
+                    session_id,
+                });
                 if let Some(src) = source.take() {
                     start_hot_path(&pairing.host, udp_port, session_id, src, &ctx);
                 }
@@ -449,6 +471,7 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
 
     ctx.stop.store(true, Ordering::Relaxed);
     ctx.buttons.release_all();
+    ctx.endpoint.lock().unwrap().take();
     let mut st = ctx.status.lock().unwrap();
     if !matches!(*st, Status::Failed { .. }) {
         *st = Status::Disconnected;

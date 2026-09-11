@@ -7,8 +7,8 @@
 
 use crate::frame::Rotation;
 use crate::theme;
-use egui::epaint::TextShape;
-use egui::{Align2, Color32, Event, FontId, Pos2, Rect, Rounding, Stroke, TouchPhase, Vec2};
+use egui::epaint::{Mesh, TextShape, Vertex};
+use egui::{Align2, Color32, Event, FontId, Pos2, Rect, Rounding, Stroke, TextureId, TouchPhase, Vec2};
 use std::f32::consts::FRAC_PI_2;
 
 /// Id de "dedo" del puntero del ratón.
@@ -217,6 +217,46 @@ impl<'a> Canvas<'a> {
     pub fn fit_text(&self, text: &str, font: FontId, max_w: f32) -> String {
         fit(text, max_w, |t| self.text_width(t, font.clone()))
     }
+
+    /// La textura entera sobre el rectángulo virtual `r`, girada con la
+    /// pantalla: cada esquina va a su sitio con su coordenada de textura,
+    /// así la imagen sale derecha para quien sostiene el móvil.
+    pub fn image(&self, r: Rect, tex: TextureId) {
+        let mut mesh = Mesh::with_texture(tex);
+        for (p, uv) in image_quad(r) {
+            mesh.vertices.push(Vertex {
+                pos: self.t.to_screen(self.screen, p),
+                uv,
+                color: Color32::WHITE,
+            });
+        }
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        self.painter.add(egui::Shape::mesh(mesh));
+    }
+}
+
+/// Esquinas (virtuales) de `r` con su coordenada de textura: la esquina
+/// superior izquierda de la imagen cae en `r.min` y se sigue en el sentido
+/// de las agujas del reloj.
+pub fn image_quad(r: Rect) -> [(Pos2, Pos2); 4] {
+    [
+        (r.left_top(), Pos2::new(0.0, 0.0)),
+        (r.right_top(), Pos2::new(1.0, 0.0)),
+        (r.right_bottom(), Pos2::new(1.0, 1.0)),
+        (r.left_bottom(), Pos2::new(0.0, 1.0)),
+    ]
+}
+
+/// Mayor rectángulo con la proporción de `size` (ancho, alto) centrado en
+/// `zone`: la imagen entera, con bandas si no es 16:9.
+pub fn fit_rect(zone: Rect, size: [usize; 2]) -> Rect {
+    let (w, h) = (size[0] as f32, size[1] as f32);
+    if w <= 0.0 || h <= 0.0 || !zone.is_positive() {
+        return zone;
+    }
+    let k = (zone.width() / w).min(zone.height() / h);
+    Rect::from_center_size(zone.center(), Vec2::new(w * k, h * k))
 }
 
 /// Recorta `text` hasta que `measure` diga que cabe en `max_w`.
@@ -446,6 +486,45 @@ mod tests {
             assert!(sr.min.x <= sr.max.x && sr.min.y <= sr.max.y, "rect normalizado");
             assert!((sr.area() - r.area()).abs() < 1e-2, "misma área");
         }
+    }
+
+    #[test]
+    fn la_imagen_gira_con_la_pantalla() {
+        let s = portrait();
+        let t = Transform::RotLeft;
+        let q = image_quad(t.virtual_rect(s));
+        assert_eq!(q[0].1, Pos2::new(0.0, 0.0));
+        assert_eq!(q[2].1, Pos2::new(1.0, 1.0));
+        // arriba-izquierda de la imagen → esquina superior derecha del móvil;
+        // su borde superior baja por el lado derecho (el de arriba para el
+        // jugador con el borde superior del móvil a la izquierda)
+        assert!(near(t.to_screen(s, q[0].0), s.right_top()));
+        assert!(near(t.to_screen(s, q[1].0), s.right_bottom()));
+        assert!(near(t.to_screen(s, q[2].0), s.left_bottom()));
+        assert!(near(t.to_screen(s, q[3].0), s.left_top()));
+        let t = Transform::RotRight;
+        let q = image_quad(t.virtual_rect(s));
+        assert!(near(t.to_screen(s, q[0].0), s.left_bottom()));
+        assert!(near(t.to_screen(s, q[1].0), s.left_top()));
+        assert!(near(t.to_screen(s, q[2].0), s.right_top()));
+        assert!(near(t.to_screen(s, q[3].0), s.right_bottom()));
+        let land = Rect::from_min_max(Pos2::ZERO, Pos2::new(640.0, 360.0));
+        let q = image_quad(land);
+        assert_eq!(Transform::Straight.to_screen(land, q[0].0), land.min, "recto: tal cual");
+        assert_eq!(Transform::Straight.to_screen(land, q[2].0), land.max);
+    }
+
+    #[test]
+    fn la_imagen_cabe_entera_con_bandas_si_no_es_16_9() {
+        let zone = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(320.0, 180.0));
+        let r = fit_rect(zone, [854, 480]);
+        assert!((r.width() - 320.0).abs() < 0.5 && (r.height() - 180.0).abs() < 0.5, "16:9: toda la zona {r:?}");
+        let r = fit_rect(zone, [640, 480]);
+        assert!((r.width() - 240.0).abs() < 1e-3 && (r.height() - 180.0).abs() < 1e-3, "4:3: bandas a los lados {r:?}");
+        assert!(near(r.center(), zone.center()));
+        let r = fit_rect(zone, [800, 200]);
+        assert!((r.width() - 320.0).abs() < 1e-3 && (r.height() - 80.0).abs() < 1e-3, "panorámica: bandas arriba y abajo");
+        assert_eq!(fit_rect(zone, [0, 0]), zone, "sin imagen: la zona");
     }
 
     #[test]

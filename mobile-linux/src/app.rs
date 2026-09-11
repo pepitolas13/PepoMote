@@ -8,6 +8,7 @@ use crate::calib::{self, Axes};
 use crate::discovery::{self, Receiver};
 use crate::inhibit::Inhibit;
 use crate::link::{self, Link, Role, Status};
+use crate::screen;
 use crate::sensor;
 use crate::store::{self, Pairing, Settings};
 use crate::theme;
@@ -201,6 +202,9 @@ pub struct MobileApp {
     calib: Option<Calib>,
     /// Pantalla encendida y sin suspensión mientras dura la conexión.
     inhibit: Option<Inhibit>,
+    /// Canal de la pantalla del GamePad (doble pantalla): abierto solo
+    /// mientras se juega en la pantalla GamePad como GamePad.
+    pad_screen: Option<screen::Client>,
 }
 
 fn describe_sensors(fake: bool) -> String {
@@ -241,6 +245,7 @@ impl MobileApp {
             diag_pointer: 0,
             calib: None,
             inhibit: None,
+            pad_screen: None,
             discovered: Vec::new(),
             scan_rx: None,
             last_scan: None,
@@ -354,6 +359,7 @@ impl MobileApp {
     }
 
     fn close_link(&mut self) {
+        self.close_screen();
         if let Some(l) = self.link.take() {
             l.disconnect();
         }
@@ -363,6 +369,52 @@ impl MobileApp {
         self.pad_pending = None;
     }
 
+    /// Cierra el canal de la pantalla del GamePad, si estaba abierto.
+    fn close_screen(&mut self) {
+        if let Some(c) = self.pad_screen.take() {
+            c.stop();
+        }
+    }
+
+    /// El receptor dice que somos el GamePad (el que tiene pantalla; un Pro
+    /// Controller no).
+    fn pad_is_gamepad(&self) -> bool {
+        self.link
+            .as_ref()
+            .is_some_and(|l| matches!(l.status(), Status::Connected { pad, .. } if pad == "gamepad"))
+    }
+
+    /// Canal de la pantalla del GamePad (doble pantalla): abierto solo
+    /// mientras `want` (pantalla GamePad operativa, Wii U confirmado y
+    /// `pad == "gamepad"`); cerrado al salir de esa pantalla, al pasar a
+    /// Pro/Mando de Wii o al perder el enlace. Idempotente: una sola
+    /// instancia, que se reabre si cambia la sesión o el tamaño de la zona.
+    fn sync_screen(&mut self, ctx: &egui::Context, want: bool) {
+        let endpoint = if want { self.link.as_ref().and_then(|l| l.screen_endpoint()) } else { None };
+        let Some(endpoint) = endpoint else {
+            self.close_screen();
+            return;
+        };
+        // el tamaño se pide como la zona táctil real: hasta que esté
+        // maquetada (siguiente frame) no se abre
+        let Some(zone) = self.gamepad.touch_size_px(ctx.pixels_per_point()) else { return };
+        let size = screen::wanted_size(zone);
+        if self
+            .pad_screen
+            .as_ref()
+            .is_some_and(|c| *c.endpoint() == endpoint && !screen::size_differs(c.size(), size))
+        {
+            return;
+        }
+        // la instancia anterior (si la hay) se para antes de abrir otra
+        self.close_screen();
+        log_line(&format!(
+            "pantalla del GamePad: abriendo el canal con {}:{} (sesión {}, {}×{})",
+            endpoint.host, endpoint.port, endpoint.session_id, size.0, size.1
+        ));
+        self.pad_screen = Some(screen::Client::start(endpoint, size, ctx.clone()));
+    }
+
     fn poll_link(&mut self) {
         let Some(l) = &self.link else { return };
         let status = l.status();
@@ -370,6 +422,7 @@ impl MobileApp {
         match &status {
             Status::Failed { msg, .. } => {
                 self.error = Some(msg.clone());
+                self.close_screen();
                 self.link = None;
                 self.inhibit = None;
                 self.intent = Intent::None;
@@ -410,6 +463,7 @@ impl MobileApp {
                 }
             }
             Status::Disconnected => {
+                self.close_screen();
                 self.link = None;
                 self.inhibit = None;
                 self.was_connected = false;
@@ -810,6 +864,7 @@ impl MobileApp {
             optimistic: self.intent != Intent::None,
             pad_pending: self.pad_pending.map(|p| p.pad),
             sensor_hz: link.sensor_hz(),
+            screen: self.pad_screen.as_ref(),
         };
         match self.gamepad.show(ui, &self.buttons, &inputs) {
             GamePadAction::Exit => {
@@ -1046,6 +1101,10 @@ impl eframe::App for MobileApp {
                 self.buttons.release_all();
             }
         }
+        // Doble pantalla: el canal de la pantalla del GamePad solo mientras se
+        // juega aquí como GamePad (un Pro Controller no tiene pantalla)
+        let want_screen = gamepad && self.pad_is_gamepad();
+        self.sync_screen(ctx, want_screen);
 
         egui::CentralPanel::default()
             // el GamePad se pinta a mano y aprovecha hasta el borde
