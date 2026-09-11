@@ -6,9 +6,14 @@
 //! cortos; mantener pulsado no cambia nada; dos toques seguidos no se funden
 //! (hueco de 10 ms). Aquí se evalúa de forma perezosa al construir cada
 //! paquete: sin temporizadores.
+//!
+//! Lo analógico (sticks, pantalla táctil del GamePad) no lleva latch: va tal
+//! cual en cada paquete. Y dos atómicos dicen al hilo de paquetes cómo
+//! actuar: si el móvil es GamePad/Pro de Wii U (80 bytes, sensores
+//! remapeados) y cómo está girado apaisado.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI32, AtomicI8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI8, AtomicU16, AtomicU32, AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -26,9 +31,24 @@ pub struct Buttons {
     latches: Mutex<HashMap<u32, Latch>>,
     recenter: AtomicU32,
     scroll: AtomicI32,
-    /// Stick del Nunchuk (+X derecha, +Y arriba, −127..127); 0,0 en reposo.
+    /// Stick del Nunchuk o izquierdo del GamePad (+X derecha, +Y arriba,
+    /// −127..127); 0,0 en reposo.
     stick_x: AtomicI8,
     stick_y: AtomicI8,
+    /// Stick derecho del GamePad de Wii U, misma convención.
+    stick_rx: AtomicI8,
+    stick_ry: AtomicI8,
+    /// Pantalla táctil del GamePad: fracción 0..65535 (origen arriba a la
+    /// izquierda) y si hay un dedo apoyado.
+    touch_x: AtomicU16,
+    touch_y: AtomicU16,
+    touch_down: AtomicBool,
+    /// El móvil actúa como GamePad/Pro de Wii U: el hilo de paquetes manda
+    /// 80 bytes con el bloque de extensión y remapea los sensores.
+    gamepad: AtomicBool,
+    /// Giro del móvil apaisado (`frame::Rotation`): 0 = borde superior a la
+    /// izquierda, 1 = a la derecha.
+    rotation: AtomicU8,
 }
 
 impl Default for Buttons {
@@ -45,6 +65,13 @@ impl Buttons {
             scroll: AtomicI32::new(0),
             stick_x: AtomicI8::new(0),
             stick_y: AtomicI8::new(0),
+            stick_rx: AtomicI8::new(0),
+            stick_ry: AtomicI8::new(0),
+            touch_x: AtomicU16::new(0),
+            touch_y: AtomicU16::new(0),
+            touch_down: AtomicBool::new(false),
+            gamepad: AtomicBool::new(false),
+            rotation: AtomicU8::new(0),
         }
     }
 
@@ -101,6 +128,8 @@ impl Buttons {
             .fold(0, |acc, (bit, _)| acc | bit)
     }
 
+    /// Suelta todo: botones, scroll, los dos sticks y la pantalla táctil. El
+    /// papel (GamePad) y el giro no son estado del dedo: se conservan.
     pub fn release_all(&self) {
         for l in self.latches.lock().unwrap().values_mut() {
             l.phys_down = false;
@@ -108,10 +137,12 @@ impl Buttons {
         }
         self.scroll.store(0, Ordering::Relaxed);
         self.set_stick(0, 0);
+        self.set_stick2(0, 0);
+        self.set_touch(0, 0, false);
     }
 
-    /// Stick del Nunchuk: sin latch (es analógico, va en cada paquete). El
-    /// protocolo es simétrico (−127..127): −128 se recorta.
+    /// Stick del Nunchuk / izquierdo: sin latch (es analógico, va en cada
+    /// paquete). El protocolo es simétrico (−127..127): −128 se recorta.
     pub fn set_stick(&self, x: i8, y: i8) {
         self.stick_x.store(x.max(-127), Ordering::Relaxed);
         self.stick_y.store(y.max(-127), Ordering::Relaxed);
@@ -119,6 +150,49 @@ impl Buttons {
 
     pub fn stick(&self) -> (i8, i8) {
         (self.stick_x.load(Ordering::Relaxed), self.stick_y.load(Ordering::Relaxed))
+    }
+
+    /// Stick derecho del GamePad, igual que el izquierdo.
+    pub fn set_stick2(&self, x: i8, y: i8) {
+        self.stick_rx.store(x.max(-127), Ordering::Relaxed);
+        self.stick_ry.store(y.max(-127), Ordering::Relaxed);
+    }
+
+    pub fn stick2(&self) -> (i8, i8) {
+        (self.stick_rx.load(Ordering::Relaxed), self.stick_ry.load(Ordering::Relaxed))
+    }
+
+    /// Pantalla táctil del GamePad: posición (fracción 0..65535) y si hay dedo.
+    pub fn set_touch(&self, x: u16, y: u16, down: bool) {
+        self.touch_x.store(x, Ordering::Relaxed);
+        self.touch_y.store(y, Ordering::Relaxed);
+        self.touch_down.store(down, Ordering::Relaxed);
+    }
+
+    pub fn touch(&self) -> (u16, u16, bool) {
+        (
+            self.touch_x.load(Ordering::Relaxed),
+            self.touch_y.load(Ordering::Relaxed),
+            self.touch_down.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Entrar/salir de la pantalla GamePad: cambia cómo se construye el INPUT.
+    pub fn set_gamepad(&self, on: bool) {
+        self.gamepad.store(on, Ordering::Relaxed);
+    }
+
+    pub fn is_gamepad(&self) -> bool {
+        self.gamepad.load(Ordering::Relaxed)
+    }
+
+    /// Giro apaisado: 0 = borde superior a la izquierda, 1 = a la derecha.
+    pub fn set_rotation(&self, r: u8) {
+        self.rotation.store(r, Ordering::Relaxed);
+    }
+
+    pub fn rotation(&self) -> u8 {
+        self.rotation.load(Ordering::Relaxed)
     }
 
     pub fn bump_recenter(&self) {
@@ -226,5 +300,39 @@ mod tests {
         b.release_all();
         assert_eq!(b.stick(), (0, 0), "release_all también centra el stick");
         assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn stick_derecho_y_tactil_del_gamepad() {
+        let b = Buttons::new();
+        assert_eq!(b.stick2(), (0, 0));
+        assert_eq!(b.touch(), (0, 0, false), "sin dedo en la pantalla táctil");
+        b.set_stick2(-30, 120);
+        assert_eq!(b.stick2(), (-30, 120));
+        b.set_stick2(-128, -128);
+        assert_eq!(b.stick2(), (-127, -127), "el derecho también recorta −128");
+        b.set_touch(0x8000, 0x4000, true);
+        assert_eq!(b.touch(), (0x8000, 0x4000, true));
+        b.set_touch(0x8000, 0x4000, false);
+        assert_eq!(b.touch(), (0x8000, 0x4000, false), "al levantar el dedo quedan las últimas coordenadas");
+        b.set_stick2(10, 10);
+        b.set_touch(1, 2, true);
+        b.release_all();
+        assert_eq!(b.stick2(), (0, 0), "release_all centra el stick derecho");
+        assert_eq!(b.touch(), (0, 0, false), "y apaga la pantalla táctil");
+    }
+
+    #[test]
+    fn gamepad_y_giro_no_son_estado_del_dedo() {
+        let b = Buttons::new();
+        assert!(!b.is_gamepad(), "por defecto, mando de 72 bytes");
+        assert_eq!(b.rotation(), 0, "por defecto, borde superior a la izquierda");
+        b.set_gamepad(true);
+        b.set_rotation(1);
+        b.release_all();
+        assert!(b.is_gamepad(), "release_all no cambia el papel");
+        assert_eq!(b.rotation(), 1, "ni el giro");
+        b.set_gamepad(false);
+        assert!(!b.is_gamepad());
     }
 }

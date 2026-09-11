@@ -1,6 +1,6 @@
 //! El Nunchuk (la otra mano): stick analógico táctil, botón C y gatillo Z.
-//! Mismo multitouch REAL que el mando (ui/controller.rs): cada dedo se sigue
-//! por su id de toque con hit-test propio, así el stick sigue respondiendo
+//! Mismo multitouch REAL que el mando (ui/touch.rs): cada dedo se sigue por
+//! su id de toque con hit-test propio, así el stick sigue respondiendo
 //! mientras se mantiene Z o C. Con ratón (pruebas en PC) se usa el puntero;
 //! en cuanto aparece el primer toque, el puntero sintetizado se ignora.
 //! El movimiento (acelerómetro) va aparte por el hilo de paquetes, igual que
@@ -9,7 +9,9 @@
 use crate::buttons::Buttons;
 use crate::link::{Role, Status};
 use crate::theme;
-use egui::{Align2, Event, FontId, Pos2, Rect, RichText, Rounding, Sense, Stroke, TouchPhase, Vec2};
+use crate::ui::controller::{mode_label, notice_banner};
+use crate::ui::touch::{self, Canvas, Input, Phase, Shape, Transform};
+use egui::{Align2, FontId, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -53,33 +55,16 @@ pub fn stick_value(knob: Vec2) -> (i8, i8) {
     (x, y)
 }
 
-#[derive(Clone, Copy)]
-enum Shape {
-    Circle { c: Pos2, r: f32 },
-    Rect(Rect),
-}
-
-impl Shape {
-    fn hit(&self, p: Pos2) -> bool {
-        match self {
-            Shape::Circle { c, r } => c.distance(p) <= *r,
-            Shape::Rect(r) => r.contains(p),
-        }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Target {
     Button(u32),
     Stick,
 }
 
-const MOUSE_ID: u64 = u64::MAX;
-
 pub struct NunchukUi {
     hits: Vec<(Shape, Target)>,
     touches: HashMap<u64, Target>,
-    touch_seen: bool,
+    input: Input,
     /// Centro y recorrido del stick del último frame: el dedo se mapea
     /// contra ellos.
     stick_c: Pos2,
@@ -99,7 +84,7 @@ impl NunchukUi {
         Self {
             hits: Vec::new(),
             touches: HashMap::new(),
-            touch_seen: false,
+            input: Input::default(),
             stick_c: Pos2::ZERO,
             stick_travel: 1.0,
             knob: Vec2::ZERO,
@@ -112,12 +97,13 @@ impl NunchukUi {
         // Cabecera
         ui.horizontal(|ui| {
             ui.vertical(|ui| match status {
-                Status::Connected { pc_name, player, role, rtt_ms, .. } => {
+                Status::Connected { pc_name, mode, player, role, rtt_ms, pad, .. } => {
                     ui.label(RichText::new(pc_name).size(17.0).strong().color(theme::TEXT));
                     // un receptor anterior ignora el role del hello y nos da
-                    // un slot de mando: que se vea, no que se sufra
+                    // un slot de mando: que se vea, no que se sufra. El modo
+                    // lo decide el mando; nos llega por difusión
                     let (mut line, color) = match role {
-                        Role::Nunchuk => (format!("Nunchuk · Jugador {player}"), theme::TEXT_DIM),
+                        Role::Nunchuk => (format!("Nunchuk · Jugador {player} · {}", mode_label(mode)), theme::TEXT_DIM),
                         Role::Wiimote => ("El PC te ve como mando: actualiza el receptor".to_owned(), theme::WARN),
                     };
                     if let Some(r) = rtt_ms {
@@ -127,6 +113,14 @@ impl NunchukUi {
                         line.push_str(&format!(" · {sensor_hz:.0} Hz"));
                     }
                     ui.label(RichText::new(line).size(13.0).color(color));
+                    // en Wii U, Cemu solo ve el Nunchuk colgado de un Mando de Wii
+                    if mode == "cemu" && pad != "wiimote" {
+                        ui.label(
+                            RichText::new("En Wii U el Nunchuk solo funciona si el mando elige Mando de Wii")
+                                .size(12.0)
+                                .color(theme::WARN),
+                        );
+                    }
                 }
                 Status::Connecting => {
                     ui.label(RichText::new("Conectando…").size(17.0).strong().color(theme::TEXT));
@@ -144,6 +138,7 @@ impl NunchukUi {
                 }
             });
         });
+        notice_banner(ui, status);
 
         // Cuerpo: un lienzo con hit-test propio
         let avail = ui.available_size();
@@ -156,40 +151,35 @@ impl NunchukUi {
 
     fn layout(&mut self, ui: &mut egui::Ui, rect: Rect, buttons: &Buttons) {
         let painter = ui.painter();
+        let cv = Canvas::new(painter, rect, Transform::Straight);
         let pressed = buttons.physical();
         // Escala para que quepa en pantallas bajas (referencia: 660 pt de alto)
         let s = (rect.height() / 660.0).clamp(0.7, 1.05);
         let cx = rect.center().x;
 
-        // C: mediano, arriba. Va primero en los hits: tiene prioridad sobre
-        // el margen del stick
-        let c_r = 34.0 * s;
-        let c_c = Pos2::new(cx, rect.top() + 10.0 * s + c_r);
-        let c_down = pressed & pmp::BTN_C != 0;
-        painter.circle(
-            c_c,
-            if c_down { c_r * 0.94 } else { c_r },
-            if c_down { theme::GLOW } else { theme::CARD },
-            Stroke::new(1.0_f32, theme::CARD_BORDER),
-        );
-        painter.text(c_c, Align2::CENTER_CENTER, "C", FontId::proportional(24.0 * s), theme::TEXT);
-        self.hits.push((Shape::Circle { c: c_c, r: c_r }, Target::Button(pmp::BTN_C)));
-
-        // Gatillo Z: banda inferior, como B en el mando
-        let z_h = 84.0 * s;
+        // Gatillo Z: banda inferior, como B en el mando (el pulgar cae ahí
+        // sin mirar; en el Nunchuk real es el gatillo grande)
+        let z_h = 96.0 * s;
         let z_rect = Rect::from_min_max(
             Pos2::new(rect.left(), rect.bottom() - z_h - 8.0 * s),
             Pos2::new(rect.right(), rect.bottom() - 8.0 * s),
         );
 
-        // Stick: lo más grande que quepa entre C y Z
-        let top = c_c.y + c_r + 16.0 * s;
-        let bottom = z_rect.top() - 16.0 * s;
-        let ring_r = ((bottom - top) / 2.0)
-            .min(rect.width() / 2.0 - 12.0 * s)
-            .min(150.0 * s)
+        // Stick: en la zona del pulgar (justo sobre Z), de tamaño cómodo
+        // (anillo de ~80 pt de radio como mucho: un pulgar lo recorre entero
+        // sin cambiar el agarre); C, grande, justo encima
+        let c_r = 40.0 * s;
+        let c_top = rect.top() + 8.0 * s;
+        let stick_bottom = z_rect.top() - 22.0 * s;
+        let ring_r = ((stick_bottom - (c_top + 2.0 * c_r + 18.0 * s)) / 2.0)
+            .min(rect.width() / 2.0 - 16.0 * s)
+            .min(80.0 * s)
             .max(40.0);
-        let stick_c = Pos2::new(cx, (top + bottom) / 2.0);
+        let stick_c = Pos2::new(cx, stick_bottom - ring_r);
+        // C va primero en los hits: tiene prioridad sobre el margen del stick
+        let c_c = Pos2::new(cx, (stick_c.y - ring_r - 18.0 * s - c_r).max(c_top + c_r));
+        let shape = touch::circle_button(&cv, c_c, c_r, "C", 26.0 * s, pressed & pmp::BTN_C != 0, false);
+        self.hits.push((shape, Target::Button(pmp::BTN_C)));
         let knob_r = ring_r * 0.40;
         // el borde del pomo llega justo al anillo
         let travel = ring_r - knob_r;
@@ -221,40 +211,16 @@ impl NunchukUi {
             if z_down { theme::BLUE_HOVER } else { theme::BLUE },
             Stroke::NONE,
         );
-        painter.text(z_rect.center(), Align2::CENTER_CENTER, "Z", FontId::proportional(30.0 * s), theme::CARD);
+        painter.text(z_rect.center(), Align2::CENTER_CENTER, "Z", FontId::proportional(34.0 * s), theme::CARD);
         self.hits.push((Shape::Rect(z_rect), Target::Button(pmp::BTN_Z)));
     }
 
-    fn hit(&self, p: Pos2) -> Option<Target> {
-        self.hits.iter().find(|(s, _)| s.hit(p)).map(|(_, t)| *t)
-    }
-
     fn process_events(&mut self, ctx: &egui::Context, buttons: &Buttons) {
-        let events = ctx.input(|i| i.events.clone());
-        for ev in events {
-            match ev {
-                Event::Touch { id, phase, pos, .. } => {
-                    self.touch_seen = true;
-                    match phase {
-                        TouchPhase::Start => self.begin(id.0, pos, buttons),
-                        TouchPhase::Move => self.moved(id.0, pos, buttons),
-                        TouchPhase::End | TouchPhase::Cancel => self.end(id.0, buttons),
-                    }
-                }
-                Event::PointerButton {
-                    pos,
-                    button: egui::PointerButton::Primary,
-                    pressed,
-                    ..
-                } if !self.touch_seen => {
-                    if pressed {
-                        self.begin(MOUSE_ID, pos, buttons);
-                    } else {
-                        self.end(MOUSE_ID, buttons);
-                    }
-                }
-                Event::PointerMoved(pos) if !self.touch_seen => self.moved(MOUSE_ID, pos, buttons),
-                _ => {}
+        for ev in self.input.events(ctx) {
+            match ev.phase {
+                Phase::Begin => self.begin(ev.key, ev.pos, buttons),
+                Phase::Move => self.moved(ev.key, ev.pos, buttons),
+                Phase::End => self.end(ev.key, buttons),
             }
         }
         if !self.touches.is_empty() {
@@ -263,7 +229,7 @@ impl NunchukUi {
     }
 
     fn begin(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
-        let Some(target) = self.hit(pos) else { return };
+        let Some(target) = touch::hit_test(&self.hits, pos) else { return };
         match target {
             Target::Button(bit) => buttons.set(bit, true),
             Target::Stick => {

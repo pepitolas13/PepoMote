@@ -1,13 +1,15 @@
-//! Enlace con el receptor: canal de control TCP (hello/ok/err/ping/mode/bye),
-//! socket UDP caliente (INPUT a la cadencia del sensor, PING/PONG para el
-//! RTT) y el hilo de paquetes que fusiona las muestras del sensor. Mismo
-//! comportamiento que LinkForegroundService + MotionEngine de Android.
-//! Un mismo enlace sirve de Wiimote o de Nunchuk (PROTOCOL.md §3): solo
-//! cambian el `role` del hello y, en cada INPUT, el stick con su flag.
+//! Enlace con el receptor: canal de control TCP (hello/ok/err/ping/mode/pad/
+//! notice/bye), socket UDP caliente (INPUT a la cadencia del sensor,
+//! PING/PONG para el RTT) y el hilo de paquetes que fusiona las muestras del
+//! sensor. Mismo comportamiento que LinkForegroundService + MotionEngine de
+//! Android. Un mismo enlace sirve de Wiimote, de Nunchuk (PROTOCOL.md §3) o
+//! de GamePad/Pro de Wii U (modo `cemu`): cambian el hello y, en cada INPUT,
+//! el stick con su flag o el bloque de extensión de 80 bytes.
 
+use crate::bias::GyroBias;
 use crate::buttons::Buttons;
 use crate::discovery;
-use crate::bias::GyroBias;
+use crate::frame::{self, Rotation};
 use crate::fusion::Madgwick;
 use crate::pacing::{Pacer, State};
 use crate::sensor::{self, Sample, Source};
@@ -24,6 +26,8 @@ const MAX_ATTEMPTS: u32 = 3;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 /// Tope del protocolo: 250 Hz.
 const MIN_PACKET_GAP: Duration = Duration::from_micros(3_900);
+/// Cuánto se muestra un aviso (`notice`) en pantalla.
+pub const NOTICE_SECS: u64 = 6;
 
 /// Papel del móvil ante el receptor: mando (ausente en el hello) o Nunchuk
 /// de la otra mano (`"role":"nunchuk"`).
@@ -58,11 +62,33 @@ pub enum Status {
         /// hello y nos trata de mando).
         role: Role,
         rtt_ms: Option<f32>,
+        /// El receptor anuncia `modes` con "cemu": sabe de Wii U (1.3+).
+        supports_cemu: bool,
+        /// Tipo de mando efectivo en modo Wii U: "gamepad", "pro" o "wiimote".
+        pad: String,
+        /// Aviso transitorio (del receptor o local) y cuándo llegó.
+        notice: Option<(String, Instant)>,
+        /// Cuántos `mode` (eco o difusión) y cuántos ecos `pad` han llegado
+        /// en esta sesión: así la UI sabe si su petición ya tuvo respuesta.
+        mode_seq: u32,
+        pad_seq: u32,
     },
     Failed {
         code: String,
         msg: String,
     },
+}
+
+impl Status {
+    /// Aviso aún vigente (menos de `NOTICE_SECS` desde que llegó).
+    pub fn live_notice(&self) -> Option<&str> {
+        match self {
+            Status::Connected { notice: Some((text, at)), .. } if at.elapsed() < Duration::from_secs(NOTICE_SECS) => {
+                Some(text)
+            }
+            _ => None,
+        }
+    }
 }
 
 pub struct Link {
@@ -120,6 +146,20 @@ impl Link {
         send_json(&self.writer, &json!({"m":"mode","mode":mode}));
     }
 
+    /// Elegir Mando Wii (`"wiimote"`) o volver a GamePad/Pro (`"gamepad"`)
+    /// en modo Wii U. El receptor contesta con el eco del tipo efectivo; uno
+    /// antiguo no contesta y no pasa nada.
+    pub fn send_pad(&self, pad: &str) {
+        send_json(&self.writer, &json!({"m":"pad","pad":pad}));
+    }
+
+    /// Aviso local (mismo banner que un `notice` del receptor).
+    pub fn notify(&self, text: &str) {
+        if let Status::Connected { notice, .. } = &mut *self.status.lock().unwrap() {
+            *notice = Some((text.to_owned(), Instant::now()));
+        }
+    }
+
     pub fn disconnect(&self) {
         self.stop.store(true, Ordering::Relaxed);
         send_json(&self.writer, &json!({"m":"bye"}));
@@ -146,7 +186,8 @@ struct Ctx {
 }
 
 /// `hello` de sesión (PROTOCOL.md §3): `role` solo si somos Nunchuk; un
-/// mando no lo manda (compatibilidad con receptores anteriores).
+/// mando no lo manda (compatibilidad con receptores anteriores). El tipo de
+/// mando en Wii U no va aquí: se elige ya en la sesión con `pad`.
 fn hello(token: &str, role: Role) -> Value {
     let mut v = json!({"m":"hello","pv":1,"token":token,"name":device_name(),"model":"Linux móvil"});
     if role == Role::Nunchuk {
@@ -162,6 +203,56 @@ fn player_of(ok: &Value, slot: u8) -> u8 {
         .filter(|p| (1..=4).contains(p))
         .map(|p| p as u8)
         .unwrap_or(slot.saturating_add(1))
+}
+
+/// El receptor sabe de Wii U si su `ok.modes` incluye "cemu".
+fn supports_cemu(ok: &Value) -> bool {
+    ok["modes"]
+        .as_array()
+        .is_some_and(|m| m.iter().any(|v| v.as_str() == Some("cemu")))
+}
+
+fn valid_pad(s: Option<&str>) -> Option<&str> {
+    s.filter(|p| matches!(*p, "gamepad" | "pro" | "wiimote"))
+}
+
+/// Tipo de mando efectivo en modo Wii U que anuncia el `ok`; si falta
+/// (receptor antiguo, que nunca confirmará `cemu`), el que tocaría: GamePad
+/// para el jugador 1 y Pro para los demás.
+fn pad_of(ok: &Value, slot: u8) -> String {
+    valid_pad(ok["pad"].as_str())
+        .unwrap_or(if slot == 0 { "gamepad" } else { "pro" })
+        .to_owned()
+}
+
+/// Mensajes que solo actualizan el estado de una sesión ya conectada: `mode`
+/// (eco o difusión: se aplica igual), `pad` (eco del tipo efectivo) y
+/// `notice`. Cualquier otro se ignora (devuelve `false`).
+fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
+    let Status::Connected { mode, pad, notice, mode_seq, pad_seq, .. } = st else {
+        return false;
+    };
+    match msg["m"].as_str() {
+        Some("mode") => {
+            *mode = msg["mode"].as_str().unwrap_or("pointer").to_owned();
+            *mode_seq = mode_seq.wrapping_add(1);
+            true
+        }
+        Some("pad") => {
+            if let Some(p) = valid_pad(msg["pad"].as_str()) {
+                *pad = p.to_owned();
+            }
+            *pad_seq = pad_seq.wrapping_add(1);
+            true
+        }
+        Some("notice") => {
+            if let Some(t) = msg["text"].as_str().map(str::trim).filter(|t| !t.is_empty()) {
+                *notice = Some((t.to_owned(), now));
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
 fn send_json(writer: &Mutex<Option<TcpStream>>, v: &Value) -> bool {
@@ -326,6 +417,11 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
                     player,
                     role,
                     rtt_ms: None,
+                    supports_cemu: supports_cemu(&msg),
+                    pad: pad_of(&msg, slot),
+                    notice: None,
+                    mode_seq: 0,
+                    pad_seq: 0,
                 };
                 if let Some(src) = source.take() {
                     start_hot_path(&pairing.host, udp_port, session_id, src, &ctx);
@@ -344,12 +440,10 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
             Some("ping") => {
                 send_json(&ctx.writer, &json!({"m":"pong","t":msg["t"]}));
             }
-            Some("mode") => {
-                if let Status::Connected { mode, .. } = &mut *ctx.status.lock().unwrap() {
-                    *mode = msg["mode"].as_str().unwrap_or("pointer").to_owned();
-                }
+            // mode (eco o difundido), pad, notice… y lo desconocido se ignora
+            _ => {
+                apply_update(&mut ctx.status.lock().unwrap(), &msg, Instant::now());
             }
-            _ => {}
         }
     }
 
@@ -422,6 +516,71 @@ fn start_hot_path(host: &str, port: u16, session_id: u32, source: Box<dyn Source
     }
 }
 
+/// INPUT a partir del estado fusionado y de lo que tiene el dedo. Como
+/// GamePad/Pro de Wii U (`buttons.is_gamepad()`, que la UI solo activa con
+/// `mode == "cemu"` confirmado): 80 bytes con FLAG_EXT (+FLAG_TOUCH con dedo
+/// en la pantalla táctil), stick izquierdo en 6-7, derecho y táctil en la
+/// extensión, y los sensores remapeados al marco apaisado según el giro. Si
+/// no, 72 bytes como siempre: el Nunchuk lleva su stick con FLAG_STICK_VALID
+/// y el mando manda 0,0.
+#[allow(clippy::too_many_arguments)]
+fn packet_from_state(
+    st: &State,
+    buttons: &Buttons,
+    role: Role,
+    now: Instant,
+    session_id: u32,
+    seq: u32,
+    battery_pct: u8,
+) -> pmp::InputPacket {
+    let base = pmp::InputPacket {
+        session_id,
+        seq,
+        t_sensor_us: st.t_us,
+        quat: st.quat,
+        gyro: st.gyro,
+        accel: st.accel,
+        buttons: buttons.wire_at(now),
+        recenter_count: buttons.recenter_count(),
+        battery_pct,
+        touch_scroll_dy: buttons.drain_scroll(),
+        ..Default::default()
+    };
+    if buttons.is_gamepad() && role == Role::Wiimote {
+        let (quat, gyro, accel) = frame::remap(st.quat, st.gyro, st.accel, Rotation::from_u8(buttons.rotation()));
+        let (stick_x, stick_y) = buttons.stick();
+        let (stick_rx, stick_ry) = buttons.stick2();
+        let (touch_x, touch_y, touch_down) = buttons.touch();
+        let mut flags = pmp::FLAG_QUAT_VALID | pmp::FLAG_STICK_VALID | pmp::FLAG_EXT;
+        if touch_down {
+            flags |= pmp::FLAG_TOUCH;
+        }
+        return pmp::InputPacket {
+            flags,
+            quat,
+            gyro,
+            accel,
+            stick_x,
+            stick_y,
+            stick_rx,
+            stick_ry,
+            touch_x,
+            touch_y,
+            ..base
+        };
+    }
+    let (flags, (stick_x, stick_y)) = match role {
+        Role::Nunchuk => (pmp::FLAG_QUAT_VALID | pmp::FLAG_STICK_VALID, buttons.stick()),
+        Role::Wiimote => (pmp::FLAG_QUAT_VALID, (0, 0)),
+    };
+    pmp::InputPacket {
+        flags,
+        stick_x,
+        stick_y,
+        ..base
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn packet_loop(
     udp: Arc<UdpSocket>,
@@ -432,11 +591,6 @@ fn packet_loop(
     sensor_hz: Arc<AtomicU32>,
     role: Role,
 ) {
-    // Nunchuk: bytes 6-7 = stick, y el flag que dice que valen
-    let (stick_flag, stick) = match role {
-        Role::Nunchuk => (pmp::FLAG_STICK_VALID, true),
-        Role::Wiimote => (0, false),
-    };
     let mut fusion = Madgwick::new(0.1);
     let mut bias = GyroBias::new();
     let mut pacer = Pacer::new();
@@ -523,22 +677,7 @@ fn packet_loop(
         });
         last_sent = now;
         seq = seq.wrapping_add(1);
-        let (stick_x, stick_y) = if stick { buttons.stick() } else { (0, 0) };
-        let packet = pmp::InputPacket {
-            flags: pmp::FLAG_QUAT_VALID | stick_flag,
-            stick_x,
-            stick_y,
-            session_id,
-            seq,
-            t_sensor_us: st.t_us,
-            quat: st.quat,
-            gyro: st.gyro,
-            accel: st.accel,
-            buttons: buttons.wire_at(now),
-            recenter_count: buttons.recenter_count(),
-            battery_pct: battery.pct(),
-            touch_scroll_dy: buttons.drain_scroll(),
-        };
+        let packet = packet_from_state(&st, &buttons, role, now, session_id, seq, battery.pct());
         let _ = udp.send(&pmp::build_input(&packet));
 
         if last_ping.elapsed() >= Duration::from_secs(1) {
@@ -600,9 +739,11 @@ mod tests {
         assert_eq!(w["pv"], 1);
         assert_eq!(w["token"], "tok");
         assert!(w.get("role").is_none(), "un mando no manda role (receptores anteriores)");
+        assert!(w.get("pad").is_none(), "el tipo de mando de Wii U se elige en la sesión, no en el hello");
         let n = hello("tok", Role::Nunchuk);
         assert_eq!(n["role"], "nunchuk");
         assert_eq!(n["token"], "tok");
+        assert!(n.get("pad").is_none());
     }
 
     #[test]
@@ -620,5 +761,196 @@ mod tests {
         assert_eq!(Role::parse(Some("wiimote")), Some(Role::Wiimote));
         assert_eq!(Role::parse(Some("otro")), None);
         assert_eq!(Role::parse(None), None);
+    }
+
+    #[test]
+    fn modos_y_tipo_de_mando_del_ok() {
+        let new = json!({"m":"ok","modes":["pointer","dolphin","cemu"],"pad":"pro","slot":1});
+        assert!(supports_cemu(&new));
+        assert_eq!(pad_of(&new, 1), "pro");
+        let old = json!({"m":"ok","mode":"pointer","slot":0});
+        assert!(!supports_cemu(&old), "sin modes: receptor anterior a 1.3");
+        assert!(!supports_cemu(&json!({"m":"ok","modes":["pointer","dolphin"]})));
+        assert!(!supports_cemu(&json!({"m":"ok","modes":"cemu"})), "tipo malo: se ignora");
+        assert_eq!(pad_of(&old, 0), "gamepad", "jugador 1 sin pad: GamePad");
+        assert_eq!(pad_of(&old, 2), "pro", "los demás: Pro");
+        assert_eq!(pad_of(&json!({"m":"ok","pad":"raro"}), 0), "gamepad", "pad desconocido: como si faltara");
+        assert_eq!(pad_of(&json!({"m":"ok","pad":"wiimote"}), 0), "wiimote", "el receptor manda");
+    }
+
+    fn connected() -> Status {
+        Status::Connected {
+            pc_name: "PC".into(),
+            mode: "pointer".into(),
+            slot: 0,
+            player: 1,
+            role: Role::Wiimote,
+            rtt_ms: None,
+            supports_cemu: true,
+            pad: "gamepad".into(),
+            notice: None,
+            mode_seq: 0,
+            pad_seq: 0,
+        }
+    }
+
+    #[test]
+    fn mode_pad_y_notice_actualizan_la_sesion_y_lo_demas_se_ignora() {
+        let mut st = connected();
+        let now = Instant::now();
+        assert!(apply_update(&mut st, &json!({"m":"mode","mode":"cemu"}), now), "difundido sin pedirlo: se aplica");
+        assert!(matches!(&st, Status::Connected { mode, mode_seq: 1, pad_seq: 0, .. } if mode == "cemu"));
+        assert!(apply_update(&mut st, &json!({"m":"mode","mode":"cemu"}), now));
+        assert!(matches!(&st, Status::Connected { mode_seq: 2, .. }), "cada eco cuenta, aunque repita el modo");
+        assert!(apply_update(&mut st, &json!({"m":"pad","pad":"wiimote"}), now));
+        assert!(matches!(&st, Status::Connected { pad, pad_seq: 1, .. } if pad == "wiimote"));
+        assert!(apply_update(&mut st, &json!({"m":"pad","pad":"nada"}), now));
+        assert!(matches!(&st, Status::Connected { pad, pad_seq: 2, .. } if pad == "wiimote"), "eco inválido: se conserva el tipo, pero cuenta como respuesta");
+        assert!(apply_update(&mut st, &json!({"m":"notice","text":" Cemu está abierto "}), now));
+        assert!(matches!(&st, Status::Connected { notice: Some((t, at)), .. } if t == "Cemu está abierto" && *at == now));
+        assert_eq!(st.live_notice(), Some("Cemu está abierto"));
+        let before = st.clone();
+        assert!(!apply_update(&mut st, &json!({"m":"desconocido","x":1}), now), "m desconocido: no rompe nada");
+        assert!(!apply_update(&mut st, &json!({"sin":"m"}), now));
+        assert_eq!(st, before);
+        assert!(apply_update(&mut st, &json!({"m":"notice","text":""}), now));
+        assert_eq!(st, before, "aviso vacío: nada que mostrar, se conserva el anterior");
+        let mut off = Status::Disconnected;
+        assert!(!apply_update(&mut off, &json!({"m":"mode","mode":"cemu"}), now), "sin sesión no hay nada que actualizar");
+        assert_eq!(off, Status::Disconnected);
+    }
+
+    #[test]
+    fn el_aviso_caduca() {
+        let mut st = connected();
+        let old = Instant::now() - Duration::from_secs(NOTICE_SECS + 1);
+        assert!(apply_update(&mut st, &json!({"m":"notice","text":"viejo"}), old));
+        assert_eq!(st.live_notice(), None);
+        assert_eq!(Status::Connecting.live_notice(), None);
+    }
+
+    fn from_hex(s: &str) -> Vec<u8> {
+        let s: String = s.split_whitespace().collect();
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// Estado del contrato (vector dorado input_wiiu): sticks (100,−50) y
+    /// (−30,120), táctil (0x8000,0x4000), A|X|Y|L|R|ZL|ZR|L3|R3|Mic|Pantalla,
+    /// recentrado 2.
+    fn wiiu_buttons() -> Buttons {
+        let b = Buttons::new();
+        b.set_gamepad(true);
+        b.set_stick(100, -50);
+        b.set_stick2(-30, 120);
+        b.set_touch(0x8000, 0x4000, true);
+        for bit in [
+            pmp::BTN_A,
+            pmp::BTN_X,
+            pmp::BTN_Y,
+            pmp::BTN_L,
+            pmp::BTN_R,
+            pmp::BTN_ZL,
+            pmp::BTN_ZR,
+            pmp::BTN_STICK_L,
+            pmp::BTN_STICK_R,
+            pmp::BTN_MIC,
+            pmp::BTN_SCREEN,
+        ] {
+            b.set(bit, true);
+        }
+        b.bump_recenter();
+        b.bump_recenter();
+        b
+    }
+
+    fn wiiu_state() -> State {
+        State {
+            t_us: 5_000_000,
+            quat: [1.0, 0.0, 0.0, 0.0],
+            gyro: [0.0; 3],
+            accel: [0.0, 0.0, 9.5],
+        }
+    }
+
+    #[test]
+    fn gamepad_construye_los_80_bytes_del_vector_dorado() {
+        let golden = from_hex(include_str!("../../protocol/vectors/input_wiiu.hex"));
+        assert_eq!(golden.len(), pmp::INPUT_EXT_LEN);
+        let b = wiiu_buttons();
+        // borde superior a la izquierda (por defecto): los sensores se remapean
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 0xAABBCCDD, 11, 66);
+        assert_eq!(p.flags, 0x0F, "QUAT|STICK|EXT|TOUCH");
+        assert_eq!(p.buttons, 0x1FF8_0001);
+        assert_eq!((p.stick_x, p.stick_y), (100, -50));
+        assert_eq!((p.stick_rx, p.stick_ry), (-30, 120));
+        assert_eq!((p.touch_x, p.touch_y), (0x8000, 0x4000));
+        assert_eq!(p.accel, [0.0, 0.0, 9.5], "plano: la gravedad no cambia con el giro");
+        let q = p.quat;
+        assert!((q[0] - 0.7071068).abs() < 1e-6 && q[1] == 0.0 && q[2] == 0.0 && (q[3] + 0.7071068).abs() < 1e-6, "{q:?}");
+        let out = pmp::build_input(&p);
+        assert_eq!(out.len(), pmp::INPUT_EXT_LEN);
+        // todo menos el quaternion (remapeado) coincide byte a byte con el vector
+        assert_eq!(&out[..24], &golden[..24], "cabecera, flags, stick izquierdo, sesión, seq, t");
+        assert_eq!(&out[40..], &golden[40..], "gyro, accel, botones, recentrado, batería, scroll y extensión");
+        assert_eq!(&out[72..80], &[0xE2, 0x78, 0x00, 0x80, 0x00, 0x40, 0x00, 0x00]);
+        // sin giro conocido (valor fuera de 0/1) no se remapea: paridad TOTAL
+        b.set_rotation(7);
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 0xAABBCCDD, 11, 66);
+        assert_eq!(pmp::build_input(&p), golden);
+        assert_eq!(pmp::parse(&golden), Some(pmp::Packet::Input(p)));
+    }
+
+    #[test]
+    fn gamepad_gira_los_sensores_segun_el_ajuste() {
+        let b = wiiu_buttons();
+        let st = State {
+            t_us: 1,
+            quat: [1.0, 0.0, 0.0, 0.0],
+            gyro: [1.0, 0.0, 0.0],
+            accel: [0.0, 1.0, 0.0],
+        };
+        b.set_rotation(1);
+        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100);
+        assert_eq!(p.gyro, [0.0, -1.0, 0.0], "derecha: (gy, −gx, gz)");
+        assert_eq!(p.accel, [1.0, 0.0, 0.0]);
+        assert!((p.quat[3] - 0.7071068).abs() < 1e-6);
+        b.set_rotation(0);
+        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100);
+        assert_eq!(p.gyro, [0.0, 1.0, 0.0], "izquierda: (−gy, gx, gz)");
+        assert_eq!(p.accel, [-1.0, 0.0, 0.0]);
+        assert!((p.quat[3] + 0.7071068).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sin_dedo_en_la_tactil_cae_flag_touch() {
+        let b = wiiu_buttons();
+        b.set_touch(0x8000, 0x4000, false);
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 1, 1, 100);
+        assert_eq!(p.flags, pmp::FLAG_QUAT_VALID | pmp::FLAG_STICK_VALID | pmp::FLAG_EXT);
+        assert_eq!(pmp::build_input(&p).len(), pmp::INPUT_EXT_LEN, "sigue siendo un paquete de 80 bytes");
+    }
+
+    #[test]
+    fn fuera_del_gamepad_72_bytes_como_siempre() {
+        let b = wiiu_buttons();
+        b.set_gamepad(false);
+        let st = wiiu_state();
+        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100);
+        assert_eq!(p.flags, pmp::FLAG_QUAT_VALID, "mando: sin stick ni extensión");
+        assert_eq!((p.stick_x, p.stick_y), (0, 0), "un mando manda 0,0 aunque el stick tenga valor");
+        assert_eq!((p.stick_rx, p.stick_ry, p.touch_x, p.touch_y), (0, 0, 0, 0));
+        assert_eq!(p.quat, st.quat, "sin remapeo");
+        assert_eq!(pmp::build_input(&p).len(), pmp::INPUT_LEN);
+        let n = packet_from_state(&st, &b, Role::Nunchuk, Instant::now(), 1, 1, 100);
+        assert_eq!(n.flags, pmp::FLAG_QUAT_VALID | pmp::FLAG_STICK_VALID, "Nunchuk: stick en 6-7");
+        assert_eq!((n.stick_x, n.stick_y), (100, -50));
+        assert_eq!(pmp::build_input(&n).len(), pmp::INPUT_LEN);
+        // un Nunchuk nunca es GamePad aunque el atómico quede puesto
+        b.set_gamepad(true);
+        let n = packet_from_state(&st, &b, Role::Nunchuk, Instant::now(), 1, 1, 100);
+        assert_eq!(pmp::build_input(&n).len(), pmp::INPUT_LEN);
     }
 }

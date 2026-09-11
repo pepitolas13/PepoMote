@@ -1,5 +1,7 @@
-//! Pantallas: Inicio, Conectar (descubrimiento), IP a mano, Código, Mando y
-//! Nunchuk. Misma lógica de navegación que MainActivity en Android.
+//! Pantallas: Inicio, Conectar (descubrimiento), IP a mano, Código, Mando,
+//! Nunchuk y GamePad de Wii U. Misma lógica de navegación que MainActivity
+//! en Android: la pantalla del mando la decide lo que diga el receptor
+//! (modo y tipo de mando), no solo lo que se tocó en Inicio.
 
 use crate::buttons::Buttons;
 use crate::calib::{self, Axes};
@@ -7,9 +9,10 @@ use crate::discovery::{self, Receiver};
 use crate::inhibit::Inhibit;
 use crate::link::{self, Link, Role, Status};
 use crate::sensor;
-use crate::store::{self, Pairing};
+use crate::store::{self, Pairing, Settings};
 use crate::theme;
 use crate::ui::controller::{Action, ControllerUi};
+use crate::ui::gamepad::{Action as GamePadAction, GamePadUi, Inputs as GamePadInputs};
 use crate::ui::keypad::{keypad, Key};
 use crate::ui::nunchuk::{Action as NunchukAction, NunchukUi};
 use egui::{RichText, Vec2};
@@ -35,7 +38,7 @@ pub fn log_line(msg: &str) {
     eprintln!("[pepomote] {msg}");
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Screen {
     Home,
     Pair,
@@ -44,7 +47,101 @@ enum Screen {
     Controller,
     /// La otra mano: stick, C y Z (el móvil que hace de mando decide el modo).
     Nunchuk,
+    /// GamePad (o Pro Controller) de Wii U para Cemu: apaisado, 80 bytes.
+    GamePad,
     Calibrate,
+}
+
+/// Intención Wii U pendiente (tarjeta del inicio o chip Wii U): el GamePad
+/// se muestra ya, optimista, y la resuelve el primer eco/difusión de `mode`
+/// posterior a la petición (`seq` = `mode_seq` al pedirlo); `since` acota la
+/// espera.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Intent {
+    None,
+    WiiU { seq: u32, since: Instant },
+}
+
+/// Petición de tipo de mando (`pad`) sin eco todavía: el selector la pinta a
+/// medio tono hasta el eco (`pad_seq` avanza) o hasta que caduque.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PadRequest {
+    pad: &'static str,
+    seq: u32,
+    since: Instant,
+}
+
+const NOTICE_OLD_PC: &str = "El PC necesita PepoMote 1.3 para Wii U";
+const NOTICE_ONLY_P1: &str = "Solo el Jugador 1 cambia el modo";
+/// Sin eco de `mode` en este tiempo, la intención Wii U se da por fallida.
+const INTENT_TIMEOUT: Duration = Duration::from_secs(3);
+/// Sin eco de `pad` en este tiempo (PC antiguo), el selector vuelve a lo que hay.
+const PAD_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// (`mode_seq`, `pad_seq`) de la sesión; (0, 0) si no está conectada.
+fn seqs(status: &Status) -> (u32, u32) {
+    match status {
+        Status::Connected { mode_seq, pad_seq, .. } => (*mode_seq, *pad_seq),
+        _ => (0, 0),
+    }
+}
+
+/// Pantalla de juego que toca (addendum UX v2), pura:
+/// 1. GamePad si la sesión está en Wii U como mando y no es Mando de Wii;
+/// 2. GamePad si hay intención Wii U pendiente (conectando o conectados);
+/// 3. Nunchuk si ese es el papel (el del `ok`, o el pedido mientras conecta);
+/// 4. si no, el layout Wii.
+fn route(status: &Status, link_role: Role, intent: Intent) -> Screen {
+    if let Status::Connected { mode, role, pad, .. } = status {
+        if mode == "cemu" && *role == Role::Wiimote && pad != "wiimote" {
+            return Screen::GamePad;
+        }
+    }
+    if intent != Intent::None {
+        return Screen::GamePad;
+    }
+    let role = match status {
+        Status::Connected { role, .. } => *role,
+        _ => link_role,
+    };
+    match role {
+        Role::Nunchuk => Screen::Nunchuk,
+        Role::Wiimote => Screen::Controller,
+    }
+}
+
+/// La intención Wii U ante el estado actual: sigue pendiente, o se resuelve
+/// (con el aviso que toque si el receptor no ha ido a Wii U): eco/difusión
+/// posterior que no es `cemu`, `ok` sin `cemu` en `modes` (PC antiguo, que
+/// no hace falta esperar) o silencio más allá de `INTENT_TIMEOUT`.
+fn settle(status: &Status, intent: Intent, now: Instant) -> (Intent, Option<&'static str>) {
+    let Intent::WiiU { seq, since } = intent else {
+        return (Intent::None, None);
+    };
+    let Status::Connected { mode, mode_seq, supports_cemu, slot, .. } = status else {
+        return (intent, None); // aún conectando
+    };
+    if mode == "cemu" {
+        return (Intent::None, None);
+    }
+    let failed = *mode_seq > seq || !supports_cemu || now.saturating_duration_since(since) > INTENT_TIMEOUT;
+    if !failed {
+        return (intent, None);
+    }
+    let notice = if *supports_cemu && *slot != 0 { NOTICE_ONLY_P1 } else { NOTICE_OLD_PC };
+    (Intent::None, Some(notice))
+}
+
+/// Petición de `pad` pendiente: se cierra con el eco (`pad_seq` avanza) o
+/// pasado `PAD_TIMEOUT` (PC antiguo: no contesta).
+fn settle_pad(status: &Status, req: Option<PadRequest>, now: Instant) -> Option<PadRequest> {
+    let r = req?;
+    match status {
+        Status::Connected { pad_seq, .. } if *pad_seq > r.seq => None,
+        Status::Connected { .. } if now.saturating_duration_since(r.since) > PAD_TIMEOUT => None,
+        Status::Connected { .. } => Some(r),
+        _ => None,
+    }
 }
 
 /// Calibración de ejes en curso: fuente cruda en su hilo, paso actual y lo
@@ -78,9 +175,17 @@ pub struct MobileApp {
     manual: String,
     pair_rx: Option<mpsc::Receiver<Result<Pairing, String>>>,
     pair_error: Option<String>,
-    // Mando / Nunchuk
+    // Mando / Nunchuk / GamePad
     controller: ControllerUi,
     nunchuk: NunchukUi,
+    gamepad: GamePadUi,
+    /// Giro apaisado (settings.json).
+    settings: Settings,
+    /// Intención Wii U pendiente (tarjeta o chip): GamePad optimista hasta
+    /// el eco de `mode`.
+    intent: Intent,
+    /// Petición de tipo de mando (`pad`) sin eco todavía.
+    pad_pending: Option<PadRequest>,
     /// Papel con el que se abrió el enlace vigente (otro papel = reconectar).
     link_role: Role,
     dolphin_only: bool,
@@ -110,22 +215,25 @@ impl MobileApp {
         theme::apply(&cc.egui_ctx);
         let mut app = Self::build(fake);
         if let Some(m) = autoconnect {
-            if m == "nunchuk" {
-                app.open_nunchuk();
-            } else {
-                let dolphin = m == "dolphin";
-                app.open_controller(Some(if dolphin { "dolphin" } else { "pointer" }), dolphin);
+            match m.as_str() {
+                "nunchuk" => app.open_nunchuk(),
+                "cemu" => app.open_gamepad(),
+                "dolphin" => app.open_controller(Some("dolphin"), true),
+                _ => app.open_controller(Some("pointer"), false),
             }
         }
         app
     }
 
     fn build(fake: bool) -> Self {
+        let settings = store::load_settings();
+        let buttons = Arc::new(Buttons::new());
+        buttons.set_rotation(settings.rotation.as_u8());
         Self {
             screen: Screen::Home,
             pairing: store::load(),
             link: None,
-            buttons: Arc::new(Buttons::new()),
+            buttons,
             fake,
             sensor_desc: describe_sensors(fake),
             diag: String::new(),
@@ -143,6 +251,10 @@ impl MobileApp {
             pair_error: None,
             controller: ControllerUi::new(),
             nunchuk: NunchukUi::new(),
+            gamepad: GamePadUi::new(),
+            settings,
+            intent: Intent::None,
+            pad_pending: None,
             link_role: Role::Wiimote,
             dolphin_only: false,
             recenter_at: None,
@@ -169,17 +281,48 @@ impl MobileApp {
         self.open_link(Role::Nunchuk, None);
     }
 
+    /// Wii U: conecta como mando (si hace falta), pide `mode cemu` y muestra
+    /// el GamePad AL INSTANTE (optimista, conectando incluido); el eco lo
+    /// confirma o devuelve al layout Wii con aviso (`settle`).
+    fn open_gamepad(&mut self) {
+        self.dolphin_only = false;
+        let before = self.mode_seq();
+        self.open_link(Role::Wiimote, Some("cemu"));
+        if self.link.is_some() {
+            // el eco que resuelve la intención es el posterior a la petición
+            // (una sesión nueva empieza en 0)
+            let seq = before.min(self.mode_seq());
+            self.intent = Intent::WiiU { seq, since: Instant::now() };
+            self.go_play();
+        }
+    }
+
+    /// El receptor ha confirmado Wii U y somos GamePad/Pro: se juega (y van
+    /// paquetes de 80 bytes).
+    fn wiiu_confirmed(&self) -> bool {
+        self.link.as_ref().is_some_and(|l| {
+            matches!(l.status(), Status::Connected { mode, role: Role::Wiimote, pad, .. } if mode == "cemu" && pad != "wiimote")
+        })
+    }
+
+    /// `mode_seq` de la sesión vigente (0 si no la hay o aún conecta).
+    fn mode_seq(&self) -> u32 {
+        self.link.as_ref().map(|l| seqs(&l.status()).0).unwrap_or(0)
+    }
+
+    /// A la pantalla de juego que toca ahora mismo (`route`).
+    fn go_play(&mut self) {
+        let status = self.link.as_ref().map(|l| l.status()).unwrap_or(Status::Connecting);
+        self.screen = route(&status, self.link_role, self.intent);
+    }
+
     fn open_link(&mut self, role: Role, mode: Option<&'static str>) {
-        let screen = match role {
-            Role::Wiimote => Screen::Controller,
-            Role::Nunchuk => Screen::Nunchuk,
-        };
         if self.link_alive() {
             if self.link_role == role {
                 if let (Some(m), Some(l)) = (mode, &self.link) {
                     l.send_mode(m);
                 }
-                self.screen = screen;
+                self.go_play();
                 return;
             }
             // otro papel: el receptor asigna el slot según el hello, así
@@ -196,7 +339,7 @@ impl MobileApp {
                 self.link = Some(Link::connect(pairing, self.buttons.clone(), source, mode.map(|m| m.to_owned()), role));
                 self.link_role = role;
                 self.was_connected = false;
-                self.screen = screen;
+                self.go_play();
             }
             Err(e) => {
                 // Sin sensores no hay mando: a Inicio, con el motivo y el
@@ -216,21 +359,40 @@ impl MobileApp {
         }
         self.buttons.release_all();
         self.inhibit = None;
+        self.intent = Intent::None;
+        self.pad_pending = None;
     }
 
     fn poll_link(&mut self) {
         let Some(l) = &self.link else { return };
-        match l.status() {
+        let status = l.status();
+        let now = Instant::now();
+        match &status {
             Status::Failed { msg, .. } => {
-                self.error = Some(msg);
+                self.error = Some(msg.clone());
                 self.link = None;
                 self.inhibit = None;
-                if matches!(self.screen, Screen::Controller | Screen::Nunchuk) {
+                self.intent = Intent::None;
+                self.pad_pending = None;
+                if matches!(self.screen, Screen::Controller | Screen::Nunchuk | Screen::GamePad) {
                     self.screen = Screen::Home;
                 }
             }
-            Status::Connected { .. } => {
-                if !self.was_connected {
+            Status::Connecting | Status::Connected { .. } => {
+                // ¿Ya contestó el receptor a la intención Wii U o al `pad`?
+                let (intent, notice) = settle(&status, self.intent, now);
+                if let Some(n) = notice {
+                    l.notify(n);
+                }
+                self.intent = intent;
+                self.pad_pending = settle_pad(&status, self.pad_pending, now);
+                // en las pantallas de juego manda el receptor (eco o difusión)
+                if matches!(self.screen, Screen::Controller | Screen::Nunchuk | Screen::GamePad) {
+                    self.screen = route(&status, self.link_role, self.intent);
+                }
+                if !matches!(status, Status::Connected { .. }) {
+                    // conectando: nada más que hacer
+                } else if !self.was_connected {
                     self.was_connected = true;
                     // "Pulsar la diana" al conectar: centra el cursor con el
                     // móvil ya en la mano (igual que en Android)
@@ -251,8 +413,9 @@ impl MobileApp {
                 self.link = None;
                 self.inhibit = None;
                 self.was_connected = false;
+                self.intent = Intent::None;
+                self.pad_pending = None;
             }
-            Status::Connecting => {}
         }
         if self.recenter_at.is_some_and(|t| Instant::now() >= t) {
             self.recenter_at = None;
@@ -362,7 +525,7 @@ impl MobileApp {
         ui.add_space(18.0);
 
         let w = ui.available_width();
-        let half = Vec2::new((w - 12.0) / 2.0, 104.0);
+        let half = Vec2::new((w - 12.0) / 2.0, 96.0);
         let card = |ui: &mut egui::Ui, size: Vec2, title: &str, sub: &str, accent: egui::Color32| -> bool {
             ui.add_sized(
                 size,
@@ -393,9 +556,14 @@ impl MobileApp {
             }
         });
         ui.add_space(12.0);
-        if card(ui, Vec2::new(w, 64.0), "Emparejar", "otro PC / código", theme::TEXT_DIM) {
-            go = Some(3);
-        }
+        ui.horizontal(|ui| {
+            if card(ui, half, "Wii U", "GamePad para Cemu", theme::OK) {
+                go = Some(5);
+            }
+            if card(ui, half, "Emparejar", "otro PC / código", theme::TEXT_DIM) {
+                go = Some(3);
+            }
+        });
         match go {
             Some(0) => self.open_controller(Some("pointer"), false),
             Some(1) => self.open_controller(None, false),
@@ -406,6 +574,7 @@ impl MobileApp {
                 self.screen = Screen::Pair;
             }
             Some(4) => self.open_nunchuk(),
+            Some(5) => self.open_gamepad(),
             _ => {}
         }
 
@@ -595,13 +764,71 @@ impl MobileApp {
         let status = link.status();
         let slot0 = matches!(&status, Status::Connected { slot: 0, .. });
         let hz = link.sensor_hz();
-        match self.controller.show(ui, &self.buttons, &status, !self.dolphin_only && slot0, hz) {
+        let pending = self.pad_pending.map(|p| p.pad);
+        match self.controller.show(ui, &self.buttons, &status, !self.dolphin_only && slot0, pending, hz) {
             Action::Exit => {
                 self.close_link();
                 self.screen = Screen::Home;
             }
+            Action::Mode("cemu") => {
+                // chip Wii U: al GamePad ya (optimista); el eco confirma o
+                // devuelve aquí con aviso
+                let seq = seqs(&status).0;
+                link.send_mode("cemu");
+                self.intent = Intent::WiiU { seq, since: Instant::now() };
+                self.screen = route(&status, self.link_role, self.intent);
+            }
             Action::Mode(m) => link.send_mode(m),
+            Action::Pad(p) => {
+                let seq = seqs(&status).1;
+                link.send_pad(p);
+                self.pad_pending = Some(PadRequest { pad: p, seq, since: Instant::now() });
+            }
             Action::None => {}
+        }
+    }
+
+    fn ui_gamepad(&mut self, ui: &mut egui::Ui) {
+        let Some(link) = &self.link else {
+            ui.add_space(10.0);
+            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::TEXT));
+            ui.add_space(8.0);
+            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::BLUE)).clicked() {
+                self.open_gamepad();
+            }
+            if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+                self.screen = Screen::Home;
+            }
+            return;
+        };
+        let status = link.status();
+        let slot0 = matches!(&status, Status::Connected { slot: 0, .. });
+        let inputs = GamePadInputs {
+            status: &status,
+            rotation: self.settings.rotation,
+            show_chips: !self.dolphin_only && slot0,
+            optimistic: self.intent != Intent::None,
+            pad_pending: self.pad_pending.map(|p| p.pad),
+            sensor_hz: link.sensor_hz(),
+        };
+        match self.gamepad.show(ui, &self.buttons, &inputs) {
+            GamePadAction::Exit => {
+                self.close_link();
+                self.screen = Screen::Home;
+            }
+            GamePadAction::Mode(m) => link.send_mode(m),
+            GamePadAction::Pad(p) => {
+                let seq = seqs(&status).1;
+                link.send_pad(p);
+                self.pad_pending = Some(PadRequest { pad: p, seq, since: Instant::now() });
+            }
+            GamePadAction::Rotation(r) => {
+                self.settings.rotation = r;
+                store::save_settings(&self.settings);
+                self.buttons.set_rotation(r.as_u8());
+                log_line(&format!("giro apaisado: borde superior a la {}", r.label()));
+            }
+            GamePadAction::None => {}
         }
     }
 
@@ -807,8 +1034,22 @@ impl eframe::App for MobileApp {
         self.poll_link();
         self.update_diag(ctx);
 
+        // El hilo de paquetes manda 80 bytes (y remapea los sensores) solo
+        // mientras se juega en la pantalla GamePad con Wii U CONFIRMADO por el
+        // receptor (conectando u optimista: 72 bytes como siempre, y los
+        // controles están inertes); al dejar de jugar, todo suelto
+        let on_gamepad = self.screen == Screen::GamePad;
+        let gamepad = on_gamepad && self.wiiu_confirmed();
+        if gamepad != self.buttons.is_gamepad() {
+            self.buttons.set_gamepad(gamepad);
+            if !gamepad {
+                self.buttons.release_all();
+            }
+        }
+
         egui::CentralPanel::default()
-            .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(16.0))
+            // el GamePad se pinta a mano y aprovecha hasta el borde
+            .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(if on_gamepad { 6.0 } else { 16.0 }))
             .show(ctx, |ui| match self.screen {
                 Screen::Home => self.ui_home(ui),
                 Screen::Pair => self.ui_pair(ui),
@@ -816,7 +1057,127 @@ impl eframe::App for MobileApp {
                 Screen::Code => self.ui_code(ui),
                 Screen::Controller => self.ui_controller(ui),
                 Screen::Nunchuk => self.ui_nunchuk(ui),
+                Screen::GamePad => self.ui_gamepad(ui),
                 Screen::Calibrate => self.ui_calibrate(ui),
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn(mode: &str, role: Role, pad: &str, slot: u8, supports_cemu: bool, mode_seq: u32) -> Status {
+        Status::Connected {
+            pc_name: "PC".into(),
+            mode: mode.into(),
+            slot,
+            player: slot + 1,
+            role,
+            rtt_ms: None,
+            supports_cemu,
+            pad: pad.into(),
+            notice: None,
+            mode_seq,
+            pad_seq: 0,
+        }
+    }
+
+    fn wiiu(now: Instant) -> Intent {
+        Intent::WiiU { seq: 0, since: now }
+    }
+
+    #[test]
+    fn enrutado_del_addendum() {
+        let now = Instant::now();
+        // 1. Wii U confirmado como mando: GamePad (J1) o Pro (J2), sin intención
+        assert_eq!(route(&conn("cemu", Role::Wiimote, "gamepad", 0, true, 1), Role::Wiimote, Intent::None), Screen::GamePad);
+        assert_eq!(route(&conn("cemu", Role::Wiimote, "pro", 1, true, 1), Role::Wiimote, Intent::None), Screen::GamePad);
+        // Mando de Wii dentro de Wii U: layout Wii
+        assert_eq!(route(&conn("cemu", Role::Wiimote, "wiimote", 0, true, 1), Role::Wiimote, Intent::None), Screen::Controller);
+        // 2. intención pendiente: GamePad optimista, conectando o conectados en otro modo
+        assert_eq!(route(&Status::Connecting, Role::Wiimote, wiiu(now)), Screen::GamePad);
+        assert_eq!(route(&conn("pointer", Role::Wiimote, "gamepad", 0, true, 0), Role::Wiimote, wiiu(now)), Screen::GamePad);
+        assert_eq!(route(&conn("dolphin", Role::Wiimote, "gamepad", 0, false, 0), Role::Wiimote, wiiu(now)), Screen::GamePad);
+        // 3. Nunchuk: su pantalla, esté el modo que esté
+        assert_eq!(route(&conn("cemu", Role::Nunchuk, "pro", 3, true, 1), Role::Nunchuk, Intent::None), Screen::Nunchuk);
+        assert_eq!(route(&conn("pointer", Role::Nunchuk, "pro", 3, true, 0), Role::Nunchuk, Intent::None), Screen::Nunchuk);
+        assert_eq!(route(&Status::Connecting, Role::Nunchuk, Intent::None), Screen::Nunchuk);
+        // 4. lo demás: layout Wii
+        assert_eq!(route(&conn("pointer", Role::Wiimote, "gamepad", 0, true, 0), Role::Wiimote, Intent::None), Screen::Controller);
+        assert_eq!(route(&conn("dolphin", Role::Wiimote, "gamepad", 1, false, 0), Role::Wiimote, Intent::None), Screen::Controller);
+        assert_eq!(route(&Status::Connecting, Role::Wiimote, Intent::None), Screen::Controller);
+        // un receptor antiguo degrada al Nunchuk a mando: manda lo que dice el ok
+        assert_eq!(route(&conn("pointer", Role::Wiimote, "gamepad", 1, false, 0), Role::Nunchuk, Intent::None), Screen::Controller);
+    }
+
+    #[test]
+    fn eco_pointer_con_intencion_pendiente_vuelve_a_wii_con_aviso() {
+        let now = Instant::now();
+        let intent = wiiu(now);
+        // el ok aún no es respuesta (mode_seq 0): se sigue esperando en el GamePad
+        let st = conn("pointer", Role::Wiimote, "gamepad", 0, true, 0);
+        assert_eq!(settle(&st, intent, now), (intent, None));
+        assert_eq!(route(&st, Role::Wiimote, intent), Screen::GamePad);
+        // eco posterior que no es cemu: se resuelve, aviso de PC antiguo, layout Wii
+        let st = conn("pointer", Role::Wiimote, "gamepad", 0, true, 1);
+        let (after, notice) = settle(&st, intent, now);
+        assert_eq!(after, Intent::None);
+        assert_eq!(notice, Some(NOTICE_OLD_PC));
+        assert_eq!(route(&st, Role::Wiimote, after), Screen::Controller);
+        // jugador 2 con un receptor que sí sabe de Wii U: solo el jugador 1 cambia el modo
+        let st = conn("pointer", Role::Wiimote, "pro", 1, true, 1);
+        assert_eq!(settle(&st, intent, now), (Intent::None, Some(NOTICE_ONLY_P1)));
+        // jugador 2 con receptor antiguo: el aviso es el de la versión
+        let st = conn("pointer", Role::Wiimote, "pro", 1, false, 1);
+        assert_eq!(settle(&st, intent, now), (Intent::None, Some(NOTICE_OLD_PC)));
+    }
+
+    #[test]
+    fn la_intencion_se_resuelve_con_cemu_sin_aviso_y_espera_mientras_conecta() {
+        let now = Instant::now();
+        let intent = wiiu(now);
+        assert_eq!(settle(&Status::Connecting, intent, now), (intent, None), "conectando: se espera");
+        assert_eq!(settle(&Status::Disconnected, intent, now), (intent, None));
+        let st = conn("cemu", Role::Wiimote, "gamepad", 0, true, 1);
+        assert_eq!(settle(&st, intent, now), (Intent::None, None), "eco cemu: confirmado");
+        // ya estaba en cemu al conectar (lo puso el jugador 1): también confirmado
+        let st = conn("cemu", Role::Wiimote, "pro", 1, true, 0);
+        assert_eq!(settle(&st, intent, now), (Intent::None, None));
+        assert_eq!(settle(&st, Intent::None, now), (Intent::None, None), "sin intención no hay nada que resolver");
+    }
+
+    #[test]
+    fn pc_antiguo_o_silencio_no_dejan_el_gamepad_colgado() {
+        let now = Instant::now();
+        let intent = wiiu(now);
+        // el ok no trae cemu en modes: no hace falta esperar al eco
+        let st = conn("pointer", Role::Wiimote, "gamepad", 0, false, 0);
+        assert_eq!(settle(&st, intent, now), (Intent::None, Some(NOTICE_OLD_PC)));
+        // sabe de Wii U pero no contesta: a los 3 s se da por perdido
+        let st = conn("pointer", Role::Wiimote, "gamepad", 0, true, 0);
+        assert_eq!(settle(&st, intent, now + INTENT_TIMEOUT), (intent, None), "justo en el límite aún se espera");
+        assert_eq!(settle(&st, intent, now + INTENT_TIMEOUT + Duration::from_millis(1)), (Intent::None, Some(NOTICE_OLD_PC)));
+        let st = conn("pointer", Role::Wiimote, "pro", 2, true, 0);
+        assert_eq!(settle(&st, intent, now + Duration::from_secs(4)), (Intent::None, Some(NOTICE_ONLY_P1)));
+    }
+
+    #[test]
+    fn peticion_de_pad_pendiente_hasta_el_eco_o_dos_segundos() {
+        let now = Instant::now();
+        let req = PadRequest { pad: "wiimote", seq: 0, since: now };
+        let mut st = conn("cemu", Role::Wiimote, "gamepad", 0, true, 1);
+        assert_eq!(settle_pad(&st, Some(req), now), Some(req), "sin eco: sigue pendiente");
+        assert_eq!(settle_pad(&st, Some(req), now + PAD_TIMEOUT), Some(req));
+        assert_eq!(settle_pad(&st, Some(req), now + PAD_TIMEOUT + Duration::from_millis(1)), None, "PC antiguo: caduca");
+        if let Status::Connected { pad_seq, pad, .. } = &mut st {
+            *pad_seq = 1;
+            *pad = "wiimote".into();
+        }
+        assert_eq!(settle_pad(&st, Some(req), now), None, "eco: resuelta");
+        assert_eq!(settle_pad(&st, None, now), None);
+        assert_eq!(settle_pad(&Status::Connecting, Some(req), now), None, "sin sesión no hay petición");
+        assert_eq!(seqs(&st), (1, 1));
+        assert_eq!(seqs(&Status::Connecting), (0, 0));
     }
 }

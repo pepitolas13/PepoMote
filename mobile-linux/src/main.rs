@@ -8,6 +8,7 @@ mod bias;
 mod buttons;
 mod calib;
 mod discovery;
+mod frame;
 mod fusion;
 mod inhibit;
 mod link;
@@ -62,8 +63,8 @@ fn main() -> eframe::Result {
         std::process::exit(0);
     }
     let fake = args.iter().any(|a| a == "--fake-sensors");
-    // --autoconnect [pointer|dolphin|nunchuk] → directo al mando (o al
-    // Nunchuk de la otra mano), conectado (lanzadores)
+    // --autoconnect [pointer|dolphin|cemu|nunchuk] → directo al mando (al
+    // GamePad de Wii U, o al Nunchuk de la otra mano), conectado (lanzadores)
     let autoconnect = args
         .iter()
         .position(|a| a == "--autoconnect")

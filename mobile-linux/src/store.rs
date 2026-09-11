@@ -1,7 +1,8 @@
-//! Persistencia en ~/.config/pepomote/: emparejamiento
-//! (pairing.json) y calibración de ejes del sensor (axes.json).
+//! Persistencia en ~/.config/pepomote/: emparejamiento (pairing.json),
+//! calibración de ejes del sensor (axes.json) y ajustes (settings.json).
 
 use crate::calib::Axes;
+use crate::frame::Rotation;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -13,12 +14,33 @@ pub struct Pairing {
     pub pc_name: String,
 }
 
+/// Ajustes del usuario (settings.json). Los campos que falten toman el valor
+/// por defecto, así un archivo de una versión anterior sigue valiendo. La
+/// elección GamePad / Mando de Wii NO se guarda: cada sesión empieza como
+/// diga el receptor.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct Settings {
+    /// Giro del móvil apaisado en el GamePad de Wii U (izquierda por defecto).
+    pub rotation: Rotation,
+}
+
 fn config_file(name: &str) -> Option<PathBuf> {
     directories::ProjectDirs::from("dev", "pepotech", "PepoMote").map(|d| d.config_dir().join(name))
 }
 
 fn path() -> Option<PathBuf> {
     config_file("pairing.json")
+}
+
+fn write_json<T: Serialize>(name: &str, v: &T) {
+    let Some(path) = config_file(name) else { return };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(s) = serde_json::to_string_pretty(v) {
+        let _ = std::fs::write(path, s);
+    }
 }
 
 pub fn load_axes() -> Option<Axes> {
@@ -28,19 +50,24 @@ pub fn load_axes() -> Option<Axes> {
 }
 
 pub fn save_axes(a: &Axes) {
-    let Some(path) = config_file("axes.json") else { return };
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    if let Ok(s) = serde_json::to_string_pretty(a) {
-        let _ = std::fs::write(path, s);
-    }
+    write_json("axes.json", a);
 }
 
 pub fn clear_axes() {
     if let Some(p) = config_file("axes.json") {
         let _ = std::fs::remove_file(p);
     }
+}
+
+pub fn load_settings() -> Settings {
+    config_file("settings.json")
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_settings(s: &Settings) {
+    write_json("settings.json", s);
 }
 
 pub fn load() -> Option<Pairing> {
@@ -50,13 +77,7 @@ pub fn load() -> Option<Pairing> {
 }
 
 pub fn save(p: &Pairing) {
-    let Some(path) = path() else { return };
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    if let Ok(s) = serde_json::to_string_pretty(p) {
-        let _ = std::fs::write(path, s);
-    }
+    write_json("pairing.json", p);
 }
 
 /// "192.168.1.5" → (host, puerto por defecto); "192.168.1.5:26800" → (host, 26800).
@@ -80,5 +101,18 @@ mod tests {
         assert_eq!(split_host_port("192.168.1.5"), ("192.168.1.5".into(), 26761));
         assert_eq!(split_host_port("192.168.1.5:26800"), ("192.168.1.5".into(), 26800));
         assert_eq!(split_host_port(" 10.0.0.2:x "), ("10.0.0.2:x".into(), 26761));
+    }
+
+    #[test]
+    fn ajustes_con_valores_por_defecto() {
+        let d = Settings::default();
+        assert_eq!(d.rotation, Rotation::Left);
+        assert_eq!(serde_json::from_str::<Settings>("{}").unwrap(), d, "archivo vacío: por defecto");
+        let s: Settings = serde_json::from_str(r#"{"rotation":"right"}"#).unwrap();
+        assert_eq!(s.rotation, Rotation::Right);
+        let s: Settings = serde_json::from_str(r#"{"otro":1,"pad_wii":true}"#).unwrap();
+        assert_eq!(s.rotation, Rotation::Left, "campo ausente: por defecto; los desconocidos se ignoran");
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&Settings { rotation: Rotation::Right }).unwrap()).unwrap();
+        assert_eq!(back, Settings { rotation: Rotation::Right });
     }
 }

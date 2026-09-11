@@ -1,14 +1,15 @@
 //! El mando (vertical, estilo Wiimote): cruceta, −/diana/+, A, 1/2,
 //! multimedia, gatillo B y tira de scroll. Multitouch REAL: cada dedo se
-//! sigue por su id de toque (egui::Event::Touch) con hit-test propio, así se
-//! puede mantener B mientras se pulsa A. Con ratón (pruebas en PC) se usa el
+//! sigue por su id de toque (ui/touch.rs) con hit-test propio, así se puede
+//! mantener B mientras se pulsa A. Con ratón (pruebas en PC) se usa el
 //! puntero; en cuanto aparece el primer toque, el puntero sintetizado del
 //! primer dedo se ignora para no contar doble.
 
 use crate::buttons::Buttons;
 use crate::link::Status;
 use crate::theme;
-use egui::{Align2, Color32, Event, FontId, Pos2, Rect, RichText, Rounding, Sense, Stroke, TouchPhase, Vec2};
+use crate::ui::touch::{self, Canvas, Input, Phase, Shape, Transform};
+use egui::{Align2, FontId, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -16,21 +17,9 @@ pub enum Action {
     None,
     Exit,
     Mode(&'static str),
-}
-
-#[derive(Clone, Copy)]
-enum Shape {
-    Circle { c: Pos2, r: f32 },
-    Rect(Rect),
-}
-
-impl Shape {
-    fn hit(&self, p: Pos2) -> bool {
-        match self {
-            Shape::Circle { c, r } => c.distance(p) <= *r,
-            Shape::Rect(r) => r.contains(p),
-        }
-    }
+    /// Pedir al receptor otro tipo de mando en modo Wii U (`"gamepad"` o
+    /// `"wiimote"`, desde el selector «En Cemu soy»).
+    Pad(&'static str),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -47,13 +36,12 @@ struct Touch {
     recentered: bool,
 }
 
-const MOUSE_ID: u64 = u64::MAX;
 const RECENTER_HOLD: Duration = Duration::from_millis(150);
 
 pub struct ControllerUi {
     hits: Vec<(Shape, Target)>,
     touches: HashMap<u64, Touch>,
-    touch_seen: bool,
+    input: Input,
     show_media: bool,
 }
 
@@ -63,17 +51,89 @@ impl Default for ControllerUi {
     }
 }
 
+/// Nombre del modo del receptor para la cabecera.
+pub fn mode_label(mode: &str) -> String {
+    match mode {
+        "pointer" => "Puntero".to_owned(),
+        "dolphin" => "Dolphin".to_owned(),
+        "cemu" => "Wii U".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
+/// Selector segmentado «En Cemu soy: [GamePad|Pro Controller] [Mando de
+/// Wii]» (modo Wii U). El activo va en azul; el pedido y sin eco, a medio
+/// tono (`pending`). Devuelve el `pad` a pedir al tocar el otro segmento.
+pub fn pad_selector(ui: &mut egui::Ui, player: u8, pad: &str, pending: Option<&str>) -> Option<&'static str> {
+    let mut out = None;
+    let wii = pad == "wiimote";
+    ui.label(RichText::new("En Cemu soy:").size(13.0).color(theme::TEXT_DIM));
+    ui.horizontal(|ui| {
+        let w = ((ui.available_width() - 8.0) / 2.0).max(90.0);
+        let seg = |ui: &mut egui::Ui, label: &str, on: bool, pend: bool| -> bool {
+            let (fill, color) = if on {
+                (theme::BLUE, theme::CARD)
+            } else if pend {
+                (theme::GLOW, theme::TEXT)
+            } else {
+                (theme::CARD, theme::TEXT)
+            };
+            ui.add_sized(
+                Vec2::new(w, 44.0),
+                egui::Button::new(RichText::new(label).size(15.0).color(color))
+                    .fill(fill)
+                    .stroke(Stroke::new(1.0_f32, theme::CARD_BORDER)),
+            )
+            .clicked()
+        };
+        let first = if player == 1 { "GamePad" } else { "Pro Controller" };
+        if seg(ui, first, !wii && pending.is_none(), pending == Some("gamepad")) && wii {
+            out = Some("gamepad");
+        }
+        if seg(ui, "Mando de Wii", wii && pending.is_none(), pending == Some("wiimote")) && !wii {
+            out = Some("wiimote");
+        }
+    });
+    out
+}
+
+/// Banner del aviso transitorio (`notice`) bajo la cabecera.
+pub fn notice_banner(ui: &mut egui::Ui, status: &Status) {
+    if let Some(n) = status.live_notice() {
+        egui::Frame::none()
+            .fill(theme::CARD)
+            .stroke(Stroke::new(1.5_f32, theme::WARN))
+            .rounding(Rounding::same(12.0))
+            .inner_margin(8.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new(n).size(13.0).color(theme::TEXT));
+            });
+        ui.ctx().request_repaint_after(Duration::from_millis(500));
+    }
+}
+
 impl ControllerUi {
     pub fn new() -> Self {
         Self {
             hits: Vec::new(),
             touches: HashMap::new(),
-            touch_seen: false,
+            input: Input::default(),
             show_media: false,
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, buttons: &Buttons, status: &Status, show_chips: bool, sensor_hz: f32) -> Action {
+    /// `pad_pending`: tipo de mando pedido al receptor y aún sin eco (el
+    /// selector lo pinta a medio tono).
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        buttons: &Buttons,
+        status: &Status,
+        show_chips: bool,
+        pad_pending: Option<&str>,
+        sensor_hz: f32,
+    ) -> Action {
         let mut action = Action::None;
 
         // Cabecera
@@ -86,12 +146,10 @@ impl ControllerUi {
                         pc_name.clone()
                     };
                     ui.label(RichText::new(title).size(17.0).strong().color(theme::TEXT));
-                    let mut line = if mode == "dolphin" {
-                        "Dolphin".to_owned()
-                    } else if *slot > 0 {
-                        "Puntero: apunta el Jugador 1".to_owned()
-                    } else {
-                        "Puntero".to_owned()
+                    let mut line = match mode.as_str() {
+                        "cemu" => "Wii U · Mando de Wii".to_owned(),
+                        "pointer" if *slot > 0 => "Puntero: apunta el Jugador 1".to_owned(),
+                        m => mode_label(m),
                     };
                     if let Some(r) = rtt_ms {
                         line.push_str(&format!(" · {r:.0} ms"));
@@ -118,18 +176,35 @@ impl ControllerUi {
             });
         });
 
-        if show_chips {
-            if let Status::Connected { mode, .. } = status {
+        if let Status::Connected { mode, supports_cemu, player, pad, .. } = status {
+            let wiiu = mode == "cemu";
+            if show_chips {
                 ui.horizontal(|ui| {
-                    if ui.selectable_label(mode != "dolphin", RichText::new("  Puntero  ").size(14.0)).clicked() {
+                    // selección por igualdad exacta del modo
+                    if ui.selectable_label(mode == "pointer", RichText::new("  Puntero  ").size(14.0)).clicked() {
                         action = Action::Mode("pointer");
                     }
                     if ui.selectable_label(mode == "dolphin", RichText::new("  Dolphin  ").size(14.0)).clicked() {
                         action = Action::Mode("dolphin");
                     }
+                    if *supports_cemu && ui.selectable_label(wiiu, RichText::new("  Wii U  ").size(14.0)).clicked() {
+                        action = Action::Mode("cemu");
+                    }
                 });
             }
+            if wiiu {
+                // Mando de Wii dentro de Wii U: el mismo selector que en el GamePad
+                if let Some(p) = pad_selector(ui, *player, pad, pad_pending) {
+                    action = Action::Pad(p);
+                }
+                ui.label(
+                    RichText::new("Para juegos de Wii U que se juegan con el mando de Wii (Wii Sports Club, Wii Party U…)")
+                        .size(11.0)
+                        .color(theme::TEXT_DIM),
+                );
+            }
         }
+        notice_banner(ui, status);
 
         // Cuerpo del mando: un lienzo con hit-test propio
         let avail = ui.available_size();
@@ -142,6 +217,7 @@ impl ControllerUi {
 
     fn layout(&mut self, ui: &mut egui::Ui, rect: Rect, buttons: &Buttons) {
         let painter = ui.painter();
+        let cv = Canvas::new(painter, rect, Transform::Straight);
         let pressed = buttons.physical();
         // Escala para que quepa en pantallas bajas (referencia: 660 pt de alto)
         let s = (rect.height() / 660.0).clamp(0.7, 1.05);
@@ -179,8 +255,8 @@ impl ControllerUi {
 
         // − ◎ +
         let row_y = y + 32.0 * s;
-        self.circle(painter, Pos2::new(cx - 74.0 * s, row_y), 27.0 * s, "−", 20.0 * s, pmp::BTN_MINUS, pressed, false);
-        self.circle(painter, Pos2::new(cx + 74.0 * s, row_y), 27.0 * s, "+", 20.0 * s, pmp::BTN_PLUS, pressed, false);
+        self.circle(&cv, Pos2::new(cx - 74.0 * s, row_y), 27.0 * s, "−", 20.0 * s, pmp::BTN_MINUS, pressed, false);
+        self.circle(&cv, Pos2::new(cx + 74.0 * s, row_y), 27.0 * s, "+", 20.0 * s, pmp::BTN_PLUS, pressed, false);
         // diana de recentrado
         let rc = Pos2::new(cx, row_y);
         let holding = self.touches.values().any(|t| t.target == Target::Recenter);
@@ -192,13 +268,13 @@ impl ControllerUi {
 
         // A
         let a_r = 72.0 * s;
-        self.circle(painter, Pos2::new(cx, y + a_r), a_r, "A", 44.0 * s, pmp::BTN_A, pressed, true);
+        self.circle(&cv, Pos2::new(cx, y + a_r), a_r, "A", 44.0 * s, pmp::BTN_A, pressed, true);
         y += a_r * 2.0 + 12.0 * s;
 
         // 1 2
         let r12 = 26.0 * s;
-        self.circle(painter, Pos2::new(cx - 36.0 * s, y + r12), r12, "1", 18.0 * s, pmp::BTN_ONE, pressed, false);
-        self.circle(painter, Pos2::new(cx + 36.0 * s, y + r12), r12, "2", 18.0 * s, pmp::BTN_TWO, pressed, false);
+        self.circle(&cv, Pos2::new(cx - 36.0 * s, y + r12), r12, "1", 18.0 * s, pmp::BTN_ONE, pressed, false);
+        self.circle(&cv, Pos2::new(cx + 36.0 * s, y + r12), r12, "2", 18.0 * s, pmp::BTN_TWO, pressed, false);
         y += r12 * 2.0 + 8.0 * s;
 
         // Multimedia (plegable)
@@ -207,7 +283,6 @@ impl ControllerUi {
         if toggle_resp.clicked() {
             self.show_media = !self.show_media;
         }
-        let painter = ui.painter();
         painter.text(
             toggle.center(),
             Align2::CENTER_CENTER,
@@ -229,7 +304,7 @@ impl ControllerUi {
             let step = r * 2.0 + 8.0 * s;
             let x0 = cx - step * 2.5;
             for (i, (label, bit)) in items.iter().enumerate() {
-                self.circle(painter, Pos2::new(x0 + step * i as f32, y + r), r, label, 15.0 * s, *bit, pressed, false);
+                self.circle(&cv, Pos2::new(x0 + step * i as f32, y + r), r, label, 15.0 * s, *bit, pressed, false);
             }
             y += r * 2.0 + 8.0 * s;
         }
@@ -269,48 +344,17 @@ impl ControllerUi {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn circle(&mut self, painter: &egui::Painter, c: Pos2, r: f32, label: &str, font: f32, bit: u32, pressed: u32, primary: bool) {
-        let down = pressed & bit != 0;
-        let (fill, text): (Color32, Color32) = if primary {
-            (if down { theme::BLUE_HOVER } else { theme::BLUE }, theme::CARD)
-        } else {
-            (if down { theme::GLOW } else { theme::CARD }, theme::TEXT)
-        };
-        painter.circle(c, if down { r * 0.94 } else { r }, fill, Stroke::new(1.0_f32, theme::CARD_BORDER));
-        painter.text(c, Align2::CENTER_CENTER, label, FontId::proportional(font), text);
-        self.hits.push((Shape::Circle { c, r }, Target::Button(bit)));
-    }
-
-    fn hit(&self, p: Pos2) -> Option<Target> {
-        self.hits.iter().find(|(s, _)| s.hit(p)).map(|(_, t)| *t)
+    fn circle(&mut self, cv: &Canvas, c: Pos2, r: f32, label: &str, font: f32, bit: u32, pressed: u32, primary: bool) {
+        let shape = touch::circle_button(cv, c, r, label, font, pressed & bit != 0, primary);
+        self.hits.push((shape, Target::Button(bit)));
     }
 
     fn process_events(&mut self, ctx: &egui::Context, buttons: &Buttons) {
-        let events = ctx.input(|i| i.events.clone());
-        for ev in events {
-            match ev {
-                Event::Touch { id, phase, pos, .. } => {
-                    self.touch_seen = true;
-                    match phase {
-                        TouchPhase::Start => self.begin(id.0, pos, buttons),
-                        TouchPhase::Move => self.moved(id.0, pos, buttons),
-                        TouchPhase::End | TouchPhase::Cancel => self.end(id.0, buttons),
-                    }
-                }
-                Event::PointerButton {
-                    pos,
-                    button: egui::PointerButton::Primary,
-                    pressed,
-                    ..
-                } if !self.touch_seen => {
-                    if pressed {
-                        self.begin(MOUSE_ID, pos, buttons);
-                    } else {
-                        self.end(MOUSE_ID, buttons);
-                    }
-                }
-                Event::PointerMoved(pos) if !self.touch_seen => self.moved(MOUSE_ID, pos, buttons),
-                _ => {}
+        for ev in self.input.events(ctx) {
+            match ev.phase {
+                Phase::Begin => self.begin(ev.key, ev.pos, buttons),
+                Phase::Move => self.moved(ev.key, ev.pos, buttons),
+                Phase::End => self.end(ev.key, buttons),
             }
         }
         // Diana: mantener 150 ms → recentrar (una vez por toque)
@@ -326,7 +370,7 @@ impl ControllerUi {
     }
 
     fn begin(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
-        let Some(target) = self.hit(pos) else { return };
+        let Some(target) = touch::hit_test(&self.hits, pos) else { return };
         if let Target::Button(bit) = target {
             buttons.set(bit, true);
         }
