@@ -25,6 +25,11 @@ en el entorno:
   `pad`/`notice`, difusión de `mode`, regresión de Dolphin.
 - `python e2e_nunchuk.py` — Nunchuk en modo Dolphin: slots, emparejamiento,
   stick/C/Z en su pad DSU.
+- `python e2e_screen.py <segundos> <salida.jpg>` — canal de pantalla (doble
+  pantalla del GamePad): sesión mala rechazada, apertura, tramas. Con Cemu
+  abierto y su ventana GamePad View a la vista (por ejemplo
+  `Cemu.exe -g <juego.wux>`) recibe imágenes reales y guarda la última;
+  sin Cemu comprueba que llegan estado y keepalive.
 - `python cemu_live.py [idle|buttons|sticks|touch|all]` — móvil simulado contra
   el receptor NORMAL (token real por `PEPOMOTE_TOKEN`), para ver en Cemu el
   mando moviéndose. Un archivo `cemu_live.cmd` junto al script cambia el patrón.
