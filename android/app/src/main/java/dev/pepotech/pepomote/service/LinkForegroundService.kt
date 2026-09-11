@@ -164,6 +164,9 @@ class LinkForegroundService : Service() {
                         LinkState.pendingMode = null
                         control?.sendMode(m)
                     }
+                    // Doble pantalla: la pantalla GamePad abre el canal cuando
+                    // toca; va al mismo puerto que este control. Un Nunchuk no tiene.
+                    if (!nunchuk) ScreenLink.bind(pairing.host, pairing.port, ok.sessionId)
                     UiSounds.init(this@LinkForegroundService)
                     UiSounds.connect()
                     // "Pulsar la diana" automáticamente al conectar: recentra
@@ -252,6 +255,7 @@ class LinkForegroundService : Service() {
         LinkState.sendMode = null
         LinkState.sendPad = null
         LinkState.motion = null
+        ScreenLink.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()
         udp?.close()
         control?.close()

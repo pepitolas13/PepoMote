@@ -1,6 +1,9 @@
 package dev.pepotech.pepomote.ui.screens
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Paint
+import android.graphics.RectF
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
@@ -36,6 +39,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,7 +50,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -56,10 +65,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.net.ScreenClient
 import dev.pepotech.pepomote.sensor.SenderKind
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.Route
+import dev.pepotech.pepomote.service.ScreenLink
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
 import dev.pepotech.pepomote.ui.components.NoticeBanner
@@ -83,6 +95,12 @@ import kotlin.math.roundToInt
  * inertes y el motor sigue emitiendo 72 bytes. Con el modo confirmado, el
  * motor emite como GamePad (80 bytes, sensores remapeados al marco apaisado);
  * al salir se suelta todo y el motor vuelve a lo de antes.
+ *
+ * Doble pantalla: siendo el GamePad (Jugador 1, no Pro) y con el modo
+ * confirmado se abre el canal de pantalla ([ScreenLink]) y la zona táctil
+ * pinta la pantalla del GamePad de Cemu que manda el receptor. Se cierra al
+ * salir, al pasar a Pro/Mando de Wii, al perder el enlace o al irse la app a
+ * segundo plano.
  */
 @Composable
 fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
@@ -92,6 +110,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val pro = connected?.pad == LinkState.PAD_PRO
     val engine = LinkState.motion
     val rotation = rememberDisplayRotation()
+    val screen by ScreenLink.client.collectAsState()
 
     DisposableEffect(Unit) {
         view.keepScreenOn = true
@@ -149,8 +168,24 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         val touchW = minOf(centerW, (bodyH - bottomRowH - gap * 2) * (16f / 9f))
         val touchH = touchW * (9f / 16f)
 
+        // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene)
+        // y con el modo confirmado. Se pide como máximo la resolución nativa
+        // (854×480) o, si la zona táctil es más estrecha, su ancho real en
+        // píxeles físicos con el alto 16:9. Al salir (o cambiar) se retira.
+        val wantScreen = operative && connected?.pad == LinkState.PAD_GAMEPAD
+        val touchPx = with(LocalDensity.current) { touchW.roundToPx() }
+        DisposableEffect(wantScreen, touchPx) {
+            if (wantScreen) {
+                val w = minOf(ScreenClient.NATIVE_WIDTH, touchPx)
+                ScreenLink.request(w, w * 9 / 16)
+                onDispose { ScreenLink.release() }
+            } else {
+                onDispose { }
+            }
+        }
+
         Column(Modifier.fillMaxSize()) {
-            Header(link, operative, headerH, onDisconnect)
+            Header(link, operative, headerH, screen, onDisconnect)
             Spacer(Modifier.height(gap))
             // Qué mando soy en Cemu: debajo de la cabecera, centrado
             Box(
@@ -211,7 +246,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                 textAlign = TextAlign.Center
                             )
                         } else {
-                            TouchScreen(touchW, touchH)
+                            TouchScreen(touchW, touchH, screen)
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -274,9 +309,19 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     }
 }
 
-/** Cabecera compacta: PC · «J1 · GamePad» / «J2 · Pro Controller» · chips de modo (Jugador 1) · Salir. */
+/**
+ * Cabecera compacta: PC · «J1 · GamePad» / «J2 · Pro Controller» · ritmo de
+ * la doble pantalla («pantalla · 30 fps», media de 1 s) · chips de modo
+ * (Jugador 1) · Salir.
+ */
 @Composable
-private fun Header(link: UiLink, operative: Boolean, height: Dp, onDisconnect: () -> Unit) {
+private fun Header(
+    link: UiLink,
+    operative: Boolean,
+    height: Dp,
+    screen: ScreenClient<Bitmap>?,
+    onDisconnect: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -302,6 +347,15 @@ private fun Header(link: UiLink, operative: Boolean, height: Dp, onDisconnect: (
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1
                 )
+                // Barato: el cliente lo publica una vez por segundo
+                val fps = screen?.fps?.collectAsState()?.value ?: 0
+                if (fps > 0) {
+                    Text(
+                        "pantalla · $fps fps",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                        maxLines = 1
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 if (link.slot == 0) {
                     // Mientras se espera el eco, Wii U ya va marcado (es lo pedido)
@@ -359,18 +413,49 @@ private fun FaceButtons(size: Dp, btn: Dp) {
  * Pantalla táctil del GamePad: rectángulo 16:9 con marco fino. Un solo
  * dedo; mientras esté, su posición dentro del rectángulo (recortada a 0..1)
  * va como fracción 0..65535 con FLAG_TOUCH; al soltar, sin dedo.
+ *
+ * Con el canal de pantalla abierto pinta la imagen del GamePad de Cemu
+ * ocupando la zona entera (la fuente es 16:9; si no lo fuera, letterbox
+ * centrado), con filtro lineal y solo en la fase de dibujo: cada imagen
+ * invalida el dibujo, no la composición. Al pintarla avisa al cliente
+ * ([ScreenClient.shown]) y entonces sale la confirmación al receptor. Sin
+ * imagen: la etiqueta de siempre y la última línea de estado del receptor
+ * (o «Conectando la pantalla…»). El mapeo táctil es el mismo con o sin imagen.
  */
 @Composable
-private fun TouchScreen(width: Dp, height: Dp) {
+private fun TouchScreen(width: Dp, height: Dp, screen: ScreenClient<Bitmap>?) {
     val view = LocalView.current
     var finger by remember { mutableStateOf<Offset?>(null) }
     val shape = RoundedCornerShape(10.dp)
     val dot = 14.dp
+    val image = screen?.image?.collectAsState()
+    val status = screen?.status?.collectAsState()
+    val hasImage by remember(image) { derivedStateOf { image?.value != null } }
+    val paint = remember { Paint().apply { isFilterBitmap = true } }
+    val dst = remember { RectF() }
 
     Box(
         modifier = Modifier
             .size(width, height)
+            .clip(shape)
             .background(PepoColors.Card, shape)
+            .drawBehind {
+                val img = image?.value ?: return@drawBehind
+                val bmp = img.bitmap
+                val bw = bmp.width.toFloat()
+                val bh = bmp.height.toFloat()
+                if (bw <= 0f || bh <= 0f) return@drawBehind
+                // Escalada a la zona conservando la proporción; un 16:9 de
+                // verdad la cubre entera (sin hilo de fondo por el redondeo)
+                val scale = minOf(size.width / bw, size.height / bh)
+                val dw = (bw * scale).let { if (it > size.width - 1f) size.width else it }
+                val dh = (bh * scale).let { if (it > size.height - 1f) size.height else it }
+                val left = (size.width - dw) / 2f
+                val top = (size.height - dh) / 2f
+                dst.set(left, top, left + dw, top + dh)
+                drawIntoCanvas { it.nativeCanvas.drawBitmap(bmp, null, dst, paint) }
+                screen?.shown(img.seq)
+            }
             .border(1.5.dp, if (finger != null) PepoColors.Glow else PepoColors.CardBorder, shape)
             .pointerInput(Unit) {
                 awaitEachGesture {
@@ -397,7 +482,19 @@ private fun TouchScreen(width: Dp, height: Dp) {
             },
         contentAlignment = Alignment.Center
     ) {
-        Text("Pantalla táctil", style = MaterialTheme.typography.bodyMedium)
+        if (!hasImage) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Pantalla táctil", style = MaterialTheme.typography.bodyMedium)
+                if (screen != null) {
+                    Text(
+                        status?.value ?: "Conectando la pantalla…",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 2.dp, start = 12.dp, end = 12.dp)
+                    )
+                }
+            }
+        }
         finger?.let { p ->
             val half = with(LocalDensity.current) { (dot / 2).toPx() }
             Box(

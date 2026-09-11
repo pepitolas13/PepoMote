@@ -30,6 +30,7 @@ import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.PadScreen
 import dev.pepotech.pepomote.service.Route
+import dev.pepotech.pepomote.service.ScreenLink
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.screens.ControllerLandscapeScreen
 import dev.pepotech.pepomote.ui.screens.ControllerScreen
@@ -81,6 +82,20 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         intent.data?.let { onPairContent(it.toString()) }
+    }
+
+    /**
+     * La doble pantalla del GamePad solo se recibe con la app a la vista:
+     * en segundo plano (ON_STOP) se cierra el canal y al volver se reabre.
+     */
+    override fun onStart() {
+        super.onStart()
+        ScreenLink.setForeground(true)
+    }
+
+    override fun onStop() {
+        ScreenLink.setForeground(false)
+        super.onStop()
     }
 
     /**
