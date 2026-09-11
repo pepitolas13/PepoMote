@@ -74,6 +74,8 @@ import dev.pepotech.pepomote.service.Route
 import dev.pepotech.pepomote.service.ScreenLink
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
+import dev.pepotech.pepomote.ui.components.KeyboardButton
+import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
@@ -111,6 +113,9 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val engine = LinkState.motion
     val rotation = rememberDisplayRotation()
     val screen by ScreenLink.client.collectAsState()
+
+    // «Teclado»: texto para el teclado en pantalla de Cemu (GamePad y Pro)
+    var keyboardOpen by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         view.keepScreenOn = true
@@ -174,6 +179,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         // píxeles físicos con el alto 16:9. Al salir (o cambiar) se retira.
         val wantScreen = operative && connected?.pad == LinkState.PAD_GAMEPAD
         val touchPx = with(LocalDensity.current) { touchW.roundToPx() }
+        // En pantallas estrechas el contador de fps de la cabecera no cabe con todo lo demás
+        val showFps = maxWidth >= 760.dp
         DisposableEffect(wantScreen, touchPx) {
             if (wantScreen) {
                 val w = minOf(ScreenClient.NATIVE_WIDTH, touchPx)
@@ -185,7 +192,14 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         }
 
         Column(Modifier.fillMaxSize()) {
-            Header(link, operative, headerH, screen, onDisconnect)
+            Header(
+                link, operative, headerH, screen,
+                showFps = showFps,
+                onKeyboard = if (operative) {
+                    { keyboardOpen = true }
+                } else null,
+                onDisconnect = onDisconnect
+            )
             Spacer(Modifier.height(gap))
             // Qué mando soy en Cemu: debajo de la cabecera, centrado
             Box(
@@ -306,13 +320,20 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                 .align(Alignment.TopCenter)
                 .padding(top = headerH + selectorH + gap * 2)
         )
+
+        if (keyboardOpen) {
+            KeyboardDialog(
+                onSend = { LinkState.sendText?.invoke(it) },
+                onClose = { keyboardOpen = false }
+            )
+        }
     }
 }
 
 /**
  * Cabecera compacta: PC · «J1 · GamePad» / «J2 · Pro Controller» · ritmo de
- * la doble pantalla («pantalla · 30 fps», media de 1 s) · chips de modo
- * (Jugador 1) · Salir.
+ * la doble pantalla («pantalla · 30 fps», media de 1 s, si [showFps]) ·
+ * chips de modo (Jugador 1) · «Teclado» (con el modo confirmado) · Salir.
  */
 @Composable
 private fun Header(
@@ -320,6 +341,8 @@ private fun Header(
     operative: Boolean,
     height: Dp,
     screen: ScreenClient<Bitmap>?,
+    showFps: Boolean,
+    onKeyboard: (() -> Unit)?,
     onDisconnect: () -> Unit
 ) {
     Row(
@@ -349,7 +372,7 @@ private fun Header(
                 )
                 // Barato: el cliente lo publica una vez por segundo
                 val fps = screen?.fps?.collectAsState()?.value ?: 0
-                if (fps > 0) {
+                if (showFps && fps > 0) {
                     Text(
                         "pantalla · $fps fps",
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
@@ -365,6 +388,8 @@ private fun Header(
                         compact = true
                     )
                 }
+                // Texto para el teclado en pantalla de Cemu (GamePad y Pro)
+                if (onKeyboard != null) KeyboardButton(compact = true, onClick = onKeyboard)
             }
 
             is UiLink.Connecting -> {

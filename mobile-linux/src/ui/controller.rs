@@ -20,6 +20,8 @@ pub enum Action {
     /// Pedir al receptor otro tipo de mando en modo Wii U (`"gamepad"` o
     /// `"wiimote"`, desde el selector «En Cemu soy»).
     Pad(&'static str),
+    /// Abrir el teclado para el teclado en pantalla de Cemu (modo Wii U).
+    Keyboard,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -123,6 +125,13 @@ impl ControllerUi {
         }
     }
 
+    /// Suelta todos los dedos (al tapar la pantalla con el teclado: los
+    /// toques que sigan no llegarán aquí).
+    pub fn release(&mut self, buttons: &Buttons) {
+        self.touches.clear();
+        buttons.release_all();
+    }
+
     /// `pad_pending`: tipo de mando pedido al receptor y aún sin eco (el
     /// selector lo pinta a medio tono).
     pub fn show(
@@ -172,6 +181,13 @@ impl ControllerUi {
                     .clicked()
                 {
                     action = Action::Exit;
+                }
+                // Mando de Wii dentro de Wii U: el teclado para el teclado en
+                // pantalla de Cemu, como en el GamePad
+                if matches!(status, Status::Connected { mode, .. } if mode == "cemu")
+                    && ui.button(RichText::new("Teclado").size(14.0).color(theme::TEXT)).clicked()
+                {
+                    action = Action::Keyboard;
                 }
             });
         });

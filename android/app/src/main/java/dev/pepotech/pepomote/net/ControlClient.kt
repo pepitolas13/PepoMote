@@ -1,5 +1,6 @@
 package dev.pepotech.pepomote.net
 
+import dev.pepotech.pepomote.control.TextInput
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -155,8 +156,17 @@ class ControlClient(
         sendJson(JSONObject().put("m", "pad").put("pad", pad))
     }
 
-    private fun sendJson(obj: JSONObject) {
-        val text = obj.toString()
+    /**
+     * Modo Wii U: texto para el teclado en pantalla de Cemu (`\n` = Intro,
+     * `\b` (U+0008) = borrar; ver [TextInput]). Sin respuesta; un receptor
+     * antiguo lo ignora como mensaje desconocido.
+     */
+    fun sendText(text: String) = sendLine(TextInput.encode(text))
+
+    private fun sendJson(obj: JSONObject) = sendLine(obj.toString())
+
+    /** Una línea JSON al receptor (el `\n` final se pone aquí). */
+    private fun sendLine(text: String) {
         try {
             outbound.execute {
                 try {

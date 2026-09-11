@@ -150,6 +150,7 @@ class LinkForegroundService : Service() {
                     LinkState.sendMode = { m -> control?.sendMode(m) }
                     // Solo para esta sesión: cada conexión empieza como GamePad/Pro
                     LinkState.sendPad = { p -> control?.sendPad(p) }
+                    LinkState.sendText = { t -> control?.sendText(t) }
                     LinkState.publish(
                         UiLink.Connected(
                             pairing.pcName, ok.mode, null, 0f, ok.slot,
@@ -254,6 +255,7 @@ class LinkForegroundService : Service() {
         generation++
         LinkState.sendMode = null
         LinkState.sendPad = null
+        LinkState.sendText = null
         LinkState.motion = null
         ScreenLink.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()

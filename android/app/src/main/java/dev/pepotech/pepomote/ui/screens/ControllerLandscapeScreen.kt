@@ -11,17 +11,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.ui.components.KeyboardButton
+import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
@@ -33,11 +42,13 @@ import dev.pepotech.pepomote.ui.theme.PepoColors
  * grandes a la derecha. Para juegos 2D en Dolphin con el Wiimote de lado.
  * `showChips`: selector Puntero/Dolphin/Wii U, mismas condiciones que en
  * vertical. Dentro de Wii U como Mando de Wii: cabecera «Wii U · Mando de
- * Wii» y el selector «En Cemu soy» debajo.
+ * Wii» con «Teclado» (texto para el teclado en pantalla de Cemu) y el
+ * selector «En Cemu soy» debajo.
  */
 @Composable
 fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
     val view = LocalView.current
+    var keyboardOpen by remember { mutableStateOf(false) }
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
@@ -68,7 +79,11 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                         is UiLink.Connecting -> "Conectando…"
                         else -> "Sin conexión"
                     },
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    // Un nombre de PC largo no echa a «Salir» fuera de la pantalla
+                    modifier = Modifier.widthIn(max = 160.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (link is UiLink.Connected) {
                     if (isWiiUAsWiimote(link)) {
@@ -77,6 +92,10 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                     // Selector Puntero/Dolphin/Wii U también de lado (solo el Jugador 1)
                     if (showModeChips(link, showChips)) {
                         ModeChips(current = link.mode, supportsCemu = link.supportsCemu, compact = true)
+                    }
+                    // Modo Wii U: texto para el teclado en pantalla de Cemu
+                    if (link.mode == LinkState.MODE_CEMU) {
+                        KeyboardButton(compact = true) { keyboardOpen = true }
                     }
                 }
                 TextButton(onClick = onDisconnect) {
@@ -149,5 +168,12 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 .align(Alignment.TopCenter)
                 .padding(top = 84.dp)
         )
+
+        if (keyboardOpen) {
+            KeyboardDialog(
+                onSend = { LinkState.sendText?.invoke(it) },
+                onClose = { keyboardOpen = false }
+            )
+        }
     }
 }

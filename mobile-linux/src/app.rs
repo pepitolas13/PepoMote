@@ -16,6 +16,7 @@ use crate::ui::controller::{Action, ControllerUi};
 use crate::ui::gamepad::{Action as GamePadAction, GamePadUi, Inputs as GamePadInputs};
 use crate::ui::keypad::{keypad, Key};
 use crate::ui::nunchuk::{Action as NunchukAction, NunchukUi};
+use crate::ui::text::{effect, TextDialog};
 use egui::{RichText, Vec2};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -205,6 +206,9 @@ pub struct MobileApp {
     /// Canal de la pantalla del GamePad (doble pantalla): abierto solo
     /// mientras se juega en la pantalla GamePad como GamePad.
     pad_screen: Option<screen::Client>,
+    /// Teclado para el teclado en pantalla de Cemu (modo Wii U): tapa la
+    /// pantalla de juego sin cambiarla (los INPUT siguen saliendo).
+    text_dialog: Option<TextDialog>,
 }
 
 fn describe_sensors(fake: bool) -> String {
@@ -246,6 +250,7 @@ impl MobileApp {
             calib: None,
             inhibit: None,
             pad_screen: None,
+            text_dialog: None,
             discovered: Vec::new(),
             scan_rx: None,
             last_scan: None,
@@ -373,6 +378,43 @@ impl MobileApp {
     fn close_screen(&mut self) {
         if let Some(c) = self.pad_screen.take() {
             c.stop();
+        }
+    }
+
+    /// La sesión está en Wii U (el teclado solo tiene sentido ahí).
+    fn mode_is_cemu(&self) -> bool {
+        self.link
+            .as_ref()
+            .is_some_and(|l| matches!(l.status(), Status::Connected { mode, .. } if mode == "cemu"))
+    }
+
+    /// Abre el teclado para Cemu tapando la pantalla de juego: los dedos que
+    /// hubiera se sueltan (sus toques ya no llegarán al mando), pero la
+    /// pantalla no cambia, así los INPUT siguen saliendo igual.
+    fn open_text_dialog(&mut self) {
+        self.gamepad.release(&self.buttons);
+        self.controller.release(&self.buttons);
+        self.text_dialog = Some(TextDialog::new());
+    }
+
+    /// El diálogo del teclado: cada botón manda lo que toque por el canal de
+    /// control (`effect`, puro) y vacía el campo o cierra según diga.
+    fn ui_text(&mut self, ui: &mut egui::Ui) {
+        let (Some(dlg), Some(link)) = (self.text_dialog.as_mut(), self.link.as_ref()) else {
+            self.text_dialog = None;
+            return;
+        };
+        if let Some(b) = dlg.show(ui) {
+            let e = effect(b, &dlg.field);
+            if let Some(t) = e.send {
+                link.send_text(&t);
+            }
+            if e.clear_field {
+                dlg.field.clear();
+            }
+            if e.close {
+                self.text_dialog = None;
+            }
         }
     }
 
@@ -739,7 +781,8 @@ impl MobileApp {
                     self.screen = Screen::Code;
                 }
             }
-            None => {}
+            // el numérico no tiene Shift
+            Some(Key::Shift) | None => {}
         }
         ui.add_space(8.0);
         if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
@@ -838,6 +881,7 @@ impl MobileApp {
                 link.send_pad(p);
                 self.pad_pending = Some(PadRequest { pad: p, seq, since: Instant::now() });
             }
+            Action::Keyboard => self.open_text_dialog(),
             Action::None => {}
         }
     }
@@ -883,6 +927,7 @@ impl MobileApp {
                 self.buttons.set_rotation(r.as_u8());
                 log_line(&format!("giro apaisado: borde superior a la {}", r.label()));
             }
+            GamePadAction::Keyboard => self.open_text_dialog(),
             GamePadAction::None => {}
         }
     }
@@ -1106,18 +1151,33 @@ impl eframe::App for MobileApp {
         let want_screen = gamepad && self.pad_is_gamepad();
         self.sync_screen(ctx, want_screen);
 
+        // El teclado para Cemu tapa la pantalla de juego sin cambiarla (los
+        // INPUT siguen saliendo, el giro no cambia); se va solo si se pierde
+        // el enlace, la pantalla de juego o el modo Wii U
+        let text_open = self.text_dialog.is_some()
+            && matches!(self.screen, Screen::Controller | Screen::GamePad)
+            && self.mode_is_cemu();
+        if !text_open {
+            self.text_dialog = None;
+        }
+
         egui::CentralPanel::default()
             // el GamePad se pinta a mano y aprovecha hasta el borde
-            .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(if on_gamepad { 6.0 } else { 16.0 }))
-            .show(ctx, |ui| match self.screen {
-                Screen::Home => self.ui_home(ui),
-                Screen::Pair => self.ui_pair(ui),
-                Screen::Manual => self.ui_manual(ui),
-                Screen::Code => self.ui_code(ui),
-                Screen::Controller => self.ui_controller(ui),
-                Screen::Nunchuk => self.ui_nunchuk(ui),
-                Screen::GamePad => self.ui_gamepad(ui),
-                Screen::Calibrate => self.ui_calibrate(ui),
+            .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(if on_gamepad && !text_open { 6.0 } else { 16.0 }))
+            .show(ctx, |ui| {
+                if text_open {
+                    return self.ui_text(ui);
+                }
+                match self.screen {
+                    Screen::Home => self.ui_home(ui),
+                    Screen::Pair => self.ui_pair(ui),
+                    Screen::Manual => self.ui_manual(ui),
+                    Screen::Code => self.ui_code(ui),
+                    Screen::Controller => self.ui_controller(ui),
+                    Screen::Nunchuk => self.ui_nunchuk(ui),
+                    Screen::GamePad => self.ui_gamepad(ui),
+                    Screen::Calibrate => self.ui_calibrate(ui),
+                }
             });
     }
 }

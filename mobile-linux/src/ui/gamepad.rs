@@ -37,6 +37,8 @@ pub enum Action {
     Pad(&'static str),
     /// Nuevo giro del móvil apaisado (ajuste + atómico).
     Rotation(Rotation),
+    /// Abrir el teclado para el teclado en pantalla de Cemu.
+    Keyboard,
 }
 
 /// Lo que la app pasa cada frame.
@@ -67,6 +69,7 @@ enum Chip {
     Mode(&'static str),
     Pad(&'static str),
     Rotate,
+    Keyboard,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -256,8 +259,19 @@ impl GamePadUi {
             Some(Chip::Pad(p)) if p != current_pad => Action::Pad(p),
             Some(Chip::Pad(_)) => Action::None,
             Some(Chip::Rotate) => Action::Rotation(inp.rotation.toggled()),
+            Some(Chip::Keyboard) => Action::Keyboard,
             None => Action::None,
         }
+    }
+
+    /// Suelta todos los dedos (al tapar la pantalla con el teclado: los
+    /// toques que sigan no llegarán aquí).
+    pub fn release(&mut self, buttons: &Buttons) {
+        self.touches.clear();
+        for st in &mut self.sticks {
+            st.knob = Vec2::ZERO;
+        }
+        buttons.release_all();
     }
 
     fn layout(&mut self, cv: &Canvas, buttons: &Buttons, v: &View, rotation: Rotation, sensor_hz: f32) {
@@ -287,6 +301,10 @@ impl GamePadUi {
             Rotation::Right => "Giro ▶",
         };
         self.chip(cv, place(66.0 * s), giro, chip_font, false, theme::TEXT, Chip::Rotate);
+        if v.mode == "cemu" {
+            // teclado del móvil para el teclado en pantalla de Cemu (GamePad y Pro)
+            self.chip(cv, place(64.0 * s), "Teclado", chip_font, false, theme::TEXT, Chip::Keyboard);
+        }
         if v.show_chips {
             // esta ES la pantalla Wii U: su chip va marcado (también mientras
             // se espera el eco); los otros dos, por igualdad exacta

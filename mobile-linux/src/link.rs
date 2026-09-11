@@ -166,6 +166,12 @@ impl Link {
         send_json(&self.writer, &json!({"m":"pad","pad":pad}));
     }
 
+    /// Teclado del móvil → teclado en pantalla de Cemu (solo tiene sentido
+    /// con `mode == "cemu"`). Sin respuesta; un receptor antiguo lo ignora.
+    pub fn send_text(&self, text: &str) {
+        send_json(&self.writer, &text_message(text));
+    }
+
     /// Aviso local (mismo banner que un `notice` del receptor).
     pub fn notify(&self, text: &str) {
         if let Status::Connected { notice, .. } = &mut *self.status.lock().unwrap() {
@@ -208,6 +214,13 @@ fn hello(token: &str, role: Role) -> Value {
         v["role"] = json!("nunchuk");
     }
     v
+}
+
+/// Texto para el teclado en pantalla de Cemu (PROTOCOL.md §3): la cadena tal
+/// cual en UTF-8; `"\n"` = Intro (aceptar) y `"\u{8}"` = borrar un carácter,
+/// escapados como cualquier JSON.
+pub fn text_message(text: &str) -> Value {
+    json!({"m":"text","text":text})
 }
 
 /// Jugador (1..4) que anuncia el `ok`; si falta o no vale, slot+1.
@@ -770,6 +783,19 @@ mod tests {
     }
 
     #[test]
+    fn mensaje_de_texto_para_cemu() {
+        let m = text_message("Link");
+        assert_eq!(m["m"], "text");
+        assert_eq!(m["text"], "Link");
+        assert_eq!(text_message("Zelda\n").to_string(), r#"{"m":"text","text":"Zelda\n"}"#, "Intro escapado como JSON normal");
+        assert_eq!(text_message("\u{8}").to_string(), r#"{"m":"text","text":"\b"}"#, "borrar: U+0008 escapado");
+        // el receptor lo lee con serde_json: ida y vuelta intacta
+        let back: Value = serde_json::from_str(&text_message("ñ \u{8}\n").to_string()).unwrap();
+        assert_eq!(back["text"].as_str(), Some("ñ \u{8}\n"));
+        assert_eq!(text_message("").to_string(), r#"{"m":"text","text":""}"#);
+    }
+
+    #[test]
     fn jugador_del_ok_o_slot_mas_uno() {
         assert_eq!(player_of(&json!({"m":"ok","slot":3,"player":1}), 3), 1, "Nunchuk del jugador 1 en el slot 3");
         assert_eq!(player_of(&json!({"m":"ok","slot":1}), 1), 2, "receptor sin player: slot+1");
@@ -912,7 +938,8 @@ mod tests {
         assert_eq!((p.touch_x, p.touch_y), (0x8000, 0x4000));
         assert_eq!(p.accel, [0.0, 0.0, 9.5], "plano: la gravedad no cambia con el giro");
         let q = p.quat;
-        assert!((q[0] - 0.7071068).abs() < 1e-6 && q[1] == 0.0 && q[2] == 0.0 && (q[3] + 0.7071068).abs() < 1e-6, "{q:?}");
+        let h = std::f32::consts::FRAC_1_SQRT_2;
+        assert!((q[0] - h).abs() < 1e-6 && q[1] == 0.0 && q[2] == 0.0 && (q[3] + h).abs() < 1e-6, "{q:?}");
         let out = pmp::build_input(&p);
         assert_eq!(out.len(), pmp::INPUT_EXT_LEN);
         // todo menos el quaternion (remapeado) coincide byte a byte con el vector
@@ -939,12 +966,12 @@ mod tests {
         let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100);
         assert_eq!(p.gyro, [0.0, -1.0, 0.0], "derecha: (gy, −gx, gz)");
         assert_eq!(p.accel, [1.0, 0.0, 0.0]);
-        assert!((p.quat[3] - 0.7071068).abs() < 1e-6);
+        assert!((p.quat[3] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
         b.set_rotation(0);
         let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100);
         assert_eq!(p.gyro, [0.0, 1.0, 0.0], "izquierda: (−gy, gx, gz)");
         assert_eq!(p.accel, [-1.0, 0.0, 0.0]);
-        assert!((p.quat[3] + 0.7071068).abs() < 1e-6);
+        assert!((p.quat[3] + std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
     }
 
     #[test]

@@ -79,6 +79,13 @@ object LinkState {
     var sendPad: ((String) -> Unit)? = null
 
     /**
+     * Modo Wii U: texto para el teclado en pantalla de Cemu (`\n` = Intro,
+     * `\b` (U+0008) = borrar; ver [dev.pepotech.pepomote.control.TextInput]).
+     */
+    @Volatile
+    var sendText: ((String) -> Unit)? = null
+
+    /**
      * Motor de sensores del enlace vivo: la pantalla GamePad le fija
      * `kind`/`rotation` al entrar y los restaura al salir.
      */

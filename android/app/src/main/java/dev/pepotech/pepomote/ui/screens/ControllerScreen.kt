@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.ui.components.KeyboardButton
+import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
@@ -55,11 +57,14 @@ import kotlin.math.roundToInt
  * con el ajuste activo). Entrando por la tarjeta Dolphin no hay selector: esa
  * pantalla es solo-Dolphin. Dentro de Wii U como Mando de Wii, la cabecera lo
  * dice, los chips se ven siempre (Jugador 1) y debajo va el selector
- * «En Cemu soy» con su ayuda; el puntero se recentra como en Dolphin.
+ * «En Cemu soy» con su ayuda; el puntero se recentra como en Dolphin. En
+ * modo Wii U la cabecera lleva además «Teclado» (texto para el teclado en
+ * pantalla de Cemu).
  */
 @Composable
 fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
     val view = LocalView.current
+    var keyboardOpen by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         view.keepScreenOn = true
@@ -136,6 +141,11 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                         }
                     }
                 }
+                // Modo Wii U: texto para el teclado en pantalla de Cemu
+                if (link is UiLink.Connected && link.mode == LinkState.MODE_CEMU) {
+                    KeyboardButton(compact = true) { keyboardOpen = true }
+                    Spacer(Modifier.width(4.dp))
+                }
                 TextButton(onClick = onDisconnect) {
                     Text("Salir", color = PepoColors.Error)
                 }
@@ -203,6 +213,13 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 .align(Alignment.TopCenter)
                 .padding(top = 64.dp, start = 24.dp, end = 24.dp)
         )
+
+        if (keyboardOpen) {
+            KeyboardDialog(
+                onSend = { LinkState.sendText?.invoke(it) },
+                onClose = { keyboardOpen = false }
+            )
+        }
     }
 }
 

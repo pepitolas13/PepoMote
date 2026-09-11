@@ -126,8 +126,9 @@ mod tests {
     #[test]
     fn quat_identidad_pasa_a_medio_giro_en_z() {
         let id = [1.0, 0.0, 0.0, 0.0];
-        assert!(close(remap_quat(id, Rotation::Left), [0.7071068, 0.0, 0.0, -0.7071068]));
-        assert!(close(remap_quat(id, Rotation::Right), [0.7071068, 0.0, 0.0, 0.7071068]));
+        let h = std::f32::consts::FRAC_1_SQRT_2;
+        assert!(close(remap_quat(id, Rotation::Left), [h, 0.0, 0.0, -h]));
+        assert!(close(remap_quat(id, Rotation::Right), [h, 0.0, 0.0, h]));
     }
 
     #[test]
