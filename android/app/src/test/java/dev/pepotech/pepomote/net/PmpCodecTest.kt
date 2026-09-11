@@ -68,6 +68,27 @@ class PmpCodecTest {
         assertEquals(vector("input_buttons_all.hex"), packet.toHex())
     }
 
+    /** Emisor Nunchuk: flags bit1, stick en los bytes 6-7, C y Z. */
+    @Test
+    fun inputNunchuk() {
+        val packet = PmpCodec.encodeInput(
+            sessionId = 0xAABBCCDD.toInt(),
+            seq = 10,
+            tSensorUs = 4_000_000,
+            quat = floatArrayOf(1f, 0f, 0f, 0f),
+            gyro = floatArrayOf(0f, 0f, 0f),
+            accel = floatArrayOf(0f, 0f, 9.5f),
+            buttons = 0x60000,
+            recenterCount = 0,
+            batteryPct = 77,
+            touchScrollDy = 0,
+            flags = PmpCodec.FLAG_QUAT_VALID or PmpCodec.FLAG_STICK_VALID,
+            stickX = 100,
+            stickY = -50
+        )
+        assertEquals(vector("input_nunchuk.hex"), packet.toHex())
+    }
+
     @Test
     fun pingPong() {
         assertEquals(

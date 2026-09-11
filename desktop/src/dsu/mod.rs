@@ -18,6 +18,9 @@ pub struct MotionSample {
     pub buttons: u32,
     pub battery_pct: u8,
     pub recenter_count: u8,
+    /// Stick del Nunchuk (−127..127, +X derecha, +Y arriba); 0,0 en un Wiimote.
+    pub stick_x: i8,
+    pub stick_y: i8,
 }
 
 /// Duración del pulso del botón Touch al recentrar (IMUPointer/Recenter).

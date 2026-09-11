@@ -144,13 +144,61 @@ impl Config {
     }
 }
 
-/// Un móvil conectado (indexado por slot: Jugador N = slot N-1).
+/// Papel de un móvil: mando (Wiimote) o Nunchuk en la otra mano.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Role {
+    Wiimote,
+    Nunchuk,
+}
+
+/// Un móvil conectado (indexado por slot DSU). Los Wiimotes ocupan slots
+/// desde el 0 hacia arriba y los Nunchuks desde el 3 hacia abajo
+/// (PROTOCOL.md §3): el Nunchuk i-ésimo pertenece al Wiimote i-ésimo.
 #[derive(Clone)]
 pub struct PlayerInfo {
     pub name: String,
     pub model: String,
     pub battery_pct: u8,
     pub rtt_ms: Option<f32>,
+    pub role: Role,
+}
+
+/// Jugadores en orden: (slot del Wiimote, slot del Nunchuk asociado).
+pub fn player_layout(players: &[Option<PlayerInfo>]) -> Vec<(u8, Option<u8>)> {
+    let wiimotes: Vec<u8> = (0..players.len())
+        .filter(|i| players[*i].as_ref().is_some_and(|p| p.role == Role::Wiimote))
+        .map(|i| i as u8)
+        .collect();
+    let nunchuks: Vec<u8> = (0..players.len())
+        .rev()
+        .filter(|i| players[*i].as_ref().is_some_and(|p| p.role == Role::Nunchuk))
+        .map(|i| i as u8)
+        .collect();
+    wiimotes
+        .iter()
+        .enumerate()
+        .map(|(i, w)| (*w, nunchuks.get(i).copied()))
+        .collect()
+}
+
+/// Número de jugador (1..4) del móvil del `slot`: el Wiimote i-ésimo por slot
+/// ascendente y el Nunchuk i-ésimo por slot descendente son el jugador i.
+pub fn player_number(players: &[Option<PlayerInfo>], slot: u8) -> u8 {
+    let Some(p) = players.get(slot as usize).and_then(|p| p.as_ref()) else {
+        return slot + 1;
+    };
+    let same: Vec<u8> = match p.role {
+        Role::Wiimote => (0..players.len())
+            .filter(|i| players[*i].as_ref().is_some_and(|q| q.role == Role::Wiimote))
+            .map(|i| i as u8)
+            .collect(),
+        Role::Nunchuk => (0..players.len())
+            .rev()
+            .filter(|i| players[*i].as_ref().is_some_and(|q| q.role == Role::Nunchuk))
+            .map(|i| i as u8)
+            .collect(),
+    };
+    same.iter().position(|s| *s == slot).map(|i| i as u8 + 1).unwrap_or(slot + 1)
 }
 
 /// Estado compartido entre los hilos de red y la UI.
@@ -216,6 +264,36 @@ pub fn new_shared() -> SharedState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn player(role: Role) -> Option<PlayerInfo> {
+        Some(PlayerInfo {
+            name: "m".into(),
+            model: String::new(),
+            battery_pct: 0,
+            rtt_ms: None,
+            role,
+        })
+    }
+
+    #[test]
+    fn reparto_de_jugadores_con_nunchuks() {
+        // slots: 0 mando, 1 mando, 2 Nunchuk, 3 Nunchuk → J1 = 0+3, J2 = 1+2
+        let p = [player(Role::Wiimote), player(Role::Wiimote), player(Role::Nunchuk), player(Role::Nunchuk)];
+        assert_eq!(player_layout(&p), vec![(0, Some(3)), (1, Some(2))]);
+        assert_eq!(player_number(&p, 0), 1);
+        assert_eq!(player_number(&p, 3), 1);
+        assert_eq!(player_number(&p, 1), 2);
+        assert_eq!(player_number(&p, 2), 2);
+        // un mando y un Nunchuk
+        let p = [player(Role::Wiimote), None, None, player(Role::Nunchuk)];
+        assert_eq!(player_layout(&p), vec![(0, Some(3))]);
+        // Nunchuk solo: sin mando al que acompañar (layout vacío) pero se numera
+        let p = [None, None, None, player(Role::Nunchuk)];
+        assert!(player_layout(&p).is_empty());
+        assert_eq!(player_number(&p, 3), 1);
+        // slot vacío → número por posición
+        assert_eq!(player_number(&p, 1), 2);
+    }
 
     #[test]
     fn codigo_de_un_solo_uso_y_rotacion_por_fallos() {

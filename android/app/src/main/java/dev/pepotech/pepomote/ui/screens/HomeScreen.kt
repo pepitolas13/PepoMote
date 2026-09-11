@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +34,7 @@ fun HomeScreen(
     onConnect: () -> Unit,
     onController: () -> Unit,
     onDolphin: () -> Unit,
+    onNunchuk: () -> Unit,
     onNewPairing: () -> Unit
 ) {
     Column(
@@ -94,12 +96,25 @@ fun HomeScreen(
                     onClick = onDolphin
                 )
             }
+            // Con Dolphin: el segundo móvil, en la otra mano
             item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_nunchuk),
+                    subtitle = stringResource(R.string.channel_nunchuk_sub),
+                    glyph = ChannelGlyph.Stick,
+                    accent = PepoColors.Ok,
+                    onClick = onNunchuk
+                )
+            }
+            // Ajustes a todo el ancho: dos filas de pares (PC / Dolphin) y
+            // una tira debajo, en vez de una tarjeta huérfana
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 ChannelCard(
                     title = stringResource(R.string.channel_settings),
                     subtitle = stringResource(R.string.channel_settings_sub),
                     glyph = ChannelGlyph.Gear,
                     accent = PepoColors.TextDim,
+                    wide = true,
                     onClick = onNewPairing
                 )
             }

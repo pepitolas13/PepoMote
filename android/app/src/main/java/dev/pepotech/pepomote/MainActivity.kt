@@ -32,12 +32,13 @@ import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.screens.ControllerLandscapeScreen
 import dev.pepotech.pepomote.ui.screens.ControllerScreen
 import dev.pepotech.pepomote.ui.screens.HomeScreen
+import dev.pepotech.pepomote.ui.screens.NunchukScreen
 import dev.pepotech.pepomote.ui.screens.OnboardingScreen
 import dev.pepotech.pepomote.ui.screens.PairScreen
 import dev.pepotech.pepomote.ui.screens.SettingsScreen
 import dev.pepotech.pepomote.ui.theme.PepoMoteTheme
 
-internal enum class Screen { Onboarding, Home, Pair, Controller, Settings }
+internal enum class Screen { Onboarding, Home, Pair, Controller, Nunchuk, Settings }
 
 class MainActivity : ComponentActivity() {
 
@@ -45,6 +46,12 @@ class MainActivity : ComponentActivity() {
 
     /** true = se entró al mando por la tarjeta Dolphin (pantalla solo-Dolphin). */
     internal var controllerDolphinOnly by mutableStateOf(false)
+
+    /**
+     * Rol con el que se entró (Mando/Dolphin = wiimote, Nunchuk = nunchuk):
+     * tras escanear el QR el enlace arranca con él y se abre su pantalla.
+     */
+    internal var linkRole by mutableStateOf(LinkState.ROLE_WIIMOTE)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -123,8 +130,9 @@ private fun Root(activity: MainActivity) {
         // Servicio ANTES del diálogo de permiso: pedirlo primero dejaba el
         // arranque del servicio compitiendo con el diálogo del sistema y el
         // primer emparejamiento fallaba en algunos OEMs.
-        LinkForegroundService.start(context)
-        activity.currentScreen = Screen.Controller
+        LinkForegroundService.start(context, activity.linkRole)
+        activity.currentScreen =
+            if (activity.linkRole == LinkState.ROLE_NUNCHUK) Screen.Nunchuk else Screen.Controller
     }
 
     fun scanQr() {
@@ -144,50 +152,65 @@ private fun Root(activity: MainActivity) {
             activity.currentScreen = Screen.Home
         })
 
-        Screen.Home -> HomeScreen(
-            connected = link is UiLink.Connected,
-            onConnect = {
-                activity.controllerDolphinOnly = false
+        Screen.Home -> {
+            val linkAlive = link is UiLink.Connected || link is UiLink.Connecting
+            val linkIsNunchuk = linkAlive && LinkState.role == LinkState.ROLE_NUNCHUK
+
+            // Al mando (wiimote) en el modo pedido. El rol no se cambia en
+            // caliente: un enlace vivo como Nunchuk se rehace como mando.
+            fun openController(mode: String) {
+                activity.linkRole = LinkState.ROLE_WIIMOTE
                 when {
-                    // Ya conectado (por Dolphin o lo que sea): al mando en
-                    // modo puntero — nunca al escáner
-                    link is UiLink.Connected || link is UiLink.Connecting -> {
-                        LinkState.sendMode?.invoke("pointer")
+                    // Ya conectado como mando (por Dolphin o lo que sea): al
+                    // mando en ese modo — nunca al escáner
+                    linkAlive && !linkIsNunchuk -> {
+                        LinkState.sendMode?.invoke(mode)
                         activity.currentScreen = Screen.Controller
                     }
 
                     PairStore.load(context) != null -> {
-                        LinkState.pendingMode = "pointer"
+                        LinkState.pendingMode = mode
                         LinkForegroundService.start(context)
                         activity.currentScreen = Screen.Controller
                     }
 
                     else -> activity.currentScreen = Screen.Pair
                 }
-            },
-            onController = {
-                activity.controllerDolphinOnly = false
-                activity.currentScreen = Screen.Controller
-            },
-            onDolphin = {
-                activity.controllerDolphinOnly = true
-                when {
-                    link is UiLink.Connected || link is UiLink.Connecting -> {
-                        LinkState.sendMode?.invoke("dolphin")
-                        activity.currentScreen = Screen.Controller
-                    }
+            }
 
-                    PairStore.load(context) != null -> {
-                        LinkState.pendingMode = "dolphin"
-                        LinkForegroundService.start(context)
-                        activity.currentScreen = Screen.Controller
-                    }
+            HomeScreen(
+                connected = link is UiLink.Connected,
+                onConnect = {
+                    activity.controllerDolphinOnly = false
+                    openController("pointer")
+                },
+                onController = {
+                    activity.controllerDolphinOnly = false
+                    activity.linkRole = LinkState.ROLE_WIIMOTE
+                    if (linkIsNunchuk) LinkForegroundService.start(context)
+                    activity.currentScreen = Screen.Controller
+                },
+                onDolphin = {
+                    activity.controllerDolphinOnly = true
+                    openController("dolphin")
+                },
+                onNunchuk = {
+                    activity.linkRole = LinkState.ROLE_NUNCHUK
+                    when {
+                        linkIsNunchuk -> activity.currentScreen = Screen.Nunchuk
 
-                    else -> activity.currentScreen = Screen.Pair
-                }
-            },
-            onNewPairing = { activity.currentScreen = Screen.Settings }
-        )
+                        PairStore.load(context) != null -> {
+                            // Rehace el enlace si estaba vivo como mando
+                            LinkForegroundService.start(context, LinkState.ROLE_NUNCHUK)
+                            activity.currentScreen = Screen.Nunchuk
+                        }
+
+                        else -> activity.currentScreen = Screen.Pair
+                    }
+                },
+                onNewPairing = { activity.currentScreen = Screen.Settings }
+            )
+        }
 
         Screen.Pair -> PairScreen(
             onScanQr = { scanQr() },
@@ -195,9 +218,30 @@ private fun Root(activity: MainActivity) {
         )
 
         Screen.Settings -> SettingsScreen(
-            onNewPairing = { activity.currentScreen = Screen.Pair },
+            onNewPairing = {
+                activity.linkRole = LinkState.ROLE_WIIMOTE // QR desde Ajustes: mando
+                activity.currentScreen = Screen.Pair
+            },
             onBack = { activity.currentScreen = Screen.Home }
         )
+
+        Screen.Nunchuk -> {
+            // Mismo trato del error que en el mando: aviso y vuelta al inicio
+            LaunchedEffect(link) {
+                (link as? UiLink.Failed)?.let { f ->
+                    Toast.makeText(context, "Error: ${f.msg}", Toast.LENGTH_LONG).show()
+                    LinkState.clearFailure()
+                    activity.currentScreen = Screen.Home
+                }
+            }
+            NunchukScreen(
+                link = link,
+                onDisconnect = {
+                    LinkForegroundService.stop(context)
+                    activity.currentScreen = Screen.Home
+                }
+            )
+        }
 
         Screen.Controller -> {
             // Error de conexión: aviso y vuelta al inicio como EFECTO (no en

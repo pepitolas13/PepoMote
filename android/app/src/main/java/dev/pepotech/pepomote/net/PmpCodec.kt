@@ -21,6 +21,9 @@ object PmpCodec {
     /** flags bit0: el quaternion es válido (hay GAME_ROTATION_VECTOR). */
     const val FLAG_QUAT_VALID = 1
 
+    /** flags bit1: bytes 6-7 llevan el stick del Nunchuk (emisor Nunchuk). */
+    const val FLAG_STICK_VALID = 2
+
     fun encodeInput(
         sessionId: Int,
         seq: Int,
@@ -32,13 +35,16 @@ object PmpCodec {
         recenterCount: Int,
         batteryPct: Int,
         touchScrollDy: Int,
-        flags: Int = 0
+        flags: Int = 0,
+        stickX: Int = 0, // Nunchuk: −127..127, + derecha (0 en un Wiimote)
+        stickY: Int = 0 // Nunchuk: −127..127, + arriba (0 en un Wiimote)
     ): ByteArray {
         val buf = ByteBuffer.allocate(INPUT_LEN).order(ByteOrder.LITTLE_ENDIAN)
         buf.putInt(MAGIC)
         buf.put(TYPE_INPUT)
         buf.put((flags and 0xFF).toByte())
-        buf.putShort(0) // reservado
+        buf.put(stickX.coerceIn(-127, 127).toByte())
+        buf.put(stickY.coerceIn(-127, 127).toByte())
         buf.putInt(sessionId)
         buf.putInt(seq)
         buf.putLong(tSensorUs)

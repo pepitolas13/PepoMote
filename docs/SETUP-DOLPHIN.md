@@ -17,6 +17,17 @@ manuales de abajo solo hacen falta si prefieres mapear a mano.
 Requisitos: Dolphin 5.0+ reciente (2023 en adelante), PepoMote en el PC y el
 móvil emparejado.
 
+## Nunchuk: dos móviles, uno en cada mano
+
+Abre PepoMote en un segundo móvil y toca **Nunchuk**: entra emparejado con el
+mando del Jugador 1 (la ventana del PC lo lista como «J1 · Nunchuk»). En el
+móvil tienes el stick, C y Z; su acelerómetro también llega a Dolphin (agitar
+e inclinar el Nunchuk: boxeo de Wii Sports). El receptor configura solo el
+Wiimote del jugador con `Extension = Nunchuk` leyendo del pad de ese segundo
+móvil, con Dolphin cerrado como siempre. Con más jugadores, el segundo
+Nunchuk que entre es el del Jugador 2, y así. El móvil Nunchuk no mueve el
+cursor del PC ni cambia el modo: eso lo decide el mando.
+
 ## 1. Activar el modo Dolphin
 
 En el móvil, dentro del mando: chip **Dolphin** (o la tarjeta Dolphin del menú

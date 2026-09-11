@@ -19,6 +19,8 @@ import dev.pepotech.pepomote.net.PmpCodec
 class MotionEngine(
     context: Context,
     private val sessionId: Int,
+    /** Emisor Nunchuk: el paquete lleva el stick (bytes 6-7) y flags bit1. */
+    private val nunchuk: Boolean = false,
     private val onPacket: (ByteArray) -> Unit
 ) : SensorEventListener {
 
@@ -113,7 +115,10 @@ class MotionEngine(
             recenterCount = ButtonState.recenterCount(),
             batteryPct = battery(),
             touchScrollDy = ButtonState.drainScroll(),
-            flags = if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0
+            flags = (if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0) or
+                (if (nunchuk) PmpCodec.FLAG_STICK_VALID else 0),
+            stickX = if (nunchuk) ButtonState.stickX() else 0,
+            stickY = if (nunchuk) ButtonState.stickY() else 0
         )
         onPacket(packet)
     }

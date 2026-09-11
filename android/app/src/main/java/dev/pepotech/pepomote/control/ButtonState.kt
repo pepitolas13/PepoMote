@@ -29,9 +29,17 @@ object ButtonState {
     const val MEDIA_NEXT = 1 shl 15
     const val MEDIA_PREV = 1 shl 16
 
+    /** Nunchuk (móvil de la otra mano). */
+    const val C = 1 shl 17
+    const val Z = 1 shl 18
+
     private val mask = AtomicInteger(0)
     private val recenter = AtomicInteger(0)
     private val scrollAcc = AtomicInteger(0)
+
+    /** Stick del Nunchuk, −127..127, +x derecha, +y arriba. Solo lo escribe la pantalla Nunchuk. */
+    private val stickXv = AtomicInteger(0)
+    private val stickYv = AtomicInteger(0)
 
     private val handler = Handler(Looper.getMainLooper())
     private val latch = PressLatch(object : PressLatch.Scheduler {
@@ -63,9 +71,20 @@ object ButtonState {
     /** Vacía el acumulador de scroll (lo llama el hilo de sensores por paquete). */
     fun drainScroll(): Int = scrollAcc.getAndSet(0).coerceIn(-32768, 32767)
 
+    /** Posición del stick (el stick va sin latch: es continuo, no un flanco). */
+    fun setStick(x: Int, y: Int) {
+        stickXv.set(x.coerceIn(-127, 127))
+        stickYv.set(y.coerceIn(-127, 127))
+    }
+
+    fun stickX(): Int = stickXv.get()
+    fun stickY(): Int = stickYv.get()
+
     fun reset() {
         latch.reset()
         mask.set(0)
         scrollAcc.set(0)
+        stickXv.set(0)
+        stickYv.set(0)
     }
 }

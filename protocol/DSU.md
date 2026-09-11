@@ -68,6 +68,19 @@ En Dolphin: Controllers → Alternate Input Sources ON (servidor 127.0.0.1:26760
 
 Con las 9 comprobaciones en verde, el puntero IMU ("Point" con Total Yaw/Pitch + Recenter) y Wii Sports funcionan. Perfil listo en `assets/dolphin/PepoMote.ini`.
 
+## Nunchuk (segundo móvil)
+
+Un móvil con `role = nunchuk` (PROTOCOL.md §3) ocupa un slot DSU propio, asignado desde el 3 hacia abajo (los Wiimotes van del 0 hacia arriba); el Nunchuk i-ésimo pertenece al Wiimote i-ésimo. Su PadData lleva: `LX = 128 + stick_x`, `LY = 128 + stick_y` (255 = arriba, como exige Dolphin: `Left Y+`), C → Cross y Z → Circle (bytes analógicos, igual que A/B), y su accel/gyro con el mismo mapeo de ejes. En la configuración de Dolphin el Wiimote emulado del jugador lleva `Extension = Nunchuk` y las entradas del Nunchuk apuntan al pad del otro móvil con nombre completo:
+
+```
+Nunchuk/Buttons/C = `DSUClient/3/PepoMote:Cross`
+Nunchuk/Buttons/Z = `DSUClient/3/PepoMote:Circle`
+Nunchuk/Stick/Up = `DSUClient/3/PepoMote:Left Y+`   (Down = Left Y-, Left = Left X-, Right = Left X+)
+Nunchuk/IMUAccelerometer/Up = `DSUClient/3/PepoMote:Accel Up`   (y los otros cinco ejes)
+```
+
+Con el acelerómetro IMU mapeado, Dolphin usa la aceleración real del móvil para el Nunchuk (agitar, inclinar: boxeo de Wii Sports) en vez de los gestos simulados.
+
 ## Recentrado
 
 La diana del móvil incrementa `recenter_count` (PMP); el servidor DSU traduce cada flanco en un **pulso de 150 ms del botón Touch**, que el perfil mapea a `IMUPointer/Recenter`. Así el mismo gesto recentra en modo puntero y en Dolphin.

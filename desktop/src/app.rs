@@ -372,9 +372,14 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
 
     for (i, slot) in snap.players.iter().enumerate() {
         let Some(p) = slot else { continue };
+        let number = crate::state::player_number(&snap.players, i as u8);
         child.horizontal(|ui| {
             ui.label(
-                RichText::new(format!("J{}", i + 1))
+                RichText::new(if p.role == crate::state::Role::Nunchuk {
+                    format!("J{number} · Nunchuk")
+                } else {
+                    format!("J{number}")
+                })
                     .size(13.0)
                     .strong()
                     .color(theme::CARD)

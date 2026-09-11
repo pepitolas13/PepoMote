@@ -55,6 +55,8 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
 - **Dolphin**: Wiimote virtual (el receptor alimenta el servidor DSU). Con
   varios móviles, cada uno entra como Jugador N; el modo lo manda el Jugador 1.
 - **Mando**: solo botones, sin cambiar el modo.
+- **Nunchuk**: el móvil como Nunchuk del Jugador 1 (o del siguiente mando sin
+  Nunchuk): stick, C, Z y su acelerómetro van al Nunchuk emulado en Dolphin.
 - La cabecera enseña RTT y la frecuencia real del sensor.
 
 ## Sensores

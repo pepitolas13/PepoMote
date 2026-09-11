@@ -2,9 +2,9 @@
 //! Un hilo por conexión: hasta MAX_PLAYERS móviles a la vez, cada uno con su
 //! slot (Jugador 1 = slot 0). El modo puntero/dolphin solo lo cambia el slot 0.
 
-use super::{ghosts_of, lowest_free_slot, Session, Sessions};
+use super::{free_slot, ghosts_of, Session, Sessions};
 use crate::pairing::PairingInfo;
-use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
+use crate::state::{player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -97,6 +97,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
 
     let device_name = hello["name"].as_str().unwrap_or("Móvil").to_owned();
     let device_model = hello["model"].as_str().unwrap_or("").to_owned();
+    // Papel: Nunchuk en la otra mano (ausente = mando)
+    let role = if hello["role"].as_str() == Some("nunchuk") { Role::Nunchuk } else { Role::Wiimote };
 
     let session_id: u32 = rand::thread_rng().gen();
     let (slot, evicted_slots) = {
@@ -107,7 +109,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             .into_iter()
             .filter_map(|id| guard.remove(&id).map(|s| s.slot))
             .collect();
-        let Some(slot) = lowest_free_slot(&guard) else {
+        let Some(slot) = free_slot(&guard, role) else {
             drop(guard);
             let _ = send(&mut writer, &json!({"m":"err","code":"busy","msg":"Ya hay 4 mandos conectados"}));
             return;
@@ -121,6 +123,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 phone_udp: None,
                 peer: peer_ip,
                 device: device_name.clone(),
+                role,
             },
         );
         (slot, evicted)
@@ -132,7 +135,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         );
     }
 
-    let mode = {
+    let (mode, player) = {
         let mut s = shared.lock().unwrap();
         for e in &evicted_slots {
             s.players[*e as usize] = None;
@@ -143,12 +146,17 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             model: device_model,
             battery_pct: 0,
             rtt_ms: None,
+            role,
         });
-        s.last_error = None;
-        s.mode
+        if s.last_error.as_deref().is_some_and(|e| !e.starts_with("Inyección")) {
+            s.last_error = None;
+        }
+        (s.mode, player_number(&s.players, slot))
     };
     let mut ok = json!({"m":"ok","session_id":session_id,"udp_port":pairing.port,
-                        "mode":mode_str(mode),"slot":slot,"name":pairing.name});
+                        "mode":mode_str(mode),"slot":slot,"name":pairing.name,
+                        "role":if role == Role::Nunchuk { "nunchuk" } else { "wiimote" },
+                        "player":player});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }

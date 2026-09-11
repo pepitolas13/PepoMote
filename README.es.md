@@ -32,6 +32,7 @@ Mira [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — dos minutos de configura
 ## Detalles finos
 
 - **Multijugador local**: hasta 4 móviles en el mismo PC — escanean el mismo QR y cada uno es su propio Wiimote en Dolphin, con la configuración de mandos de Dolphin escrita sola
+- **Nunchuk**: un segundo móvil en la otra mano (toca **Nunchuk** en la app): stick, C, Z y su propio acelerómetro alimentan el Nunchuk emulado de tu Wiimote, configurado solo en Dolphin
 - Botones físicos de volumen = A / B (latencia táctil cero)
 - Gira el móvil y tienes un mando estilo NES (juegos 2D)
 - Arranque con el sistema opcional (solo bandeja, sin ventana)

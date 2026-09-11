@@ -8,7 +8,7 @@
 //! paquete: sin temporizadores.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicI8, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -26,6 +26,9 @@ pub struct Buttons {
     latches: Mutex<HashMap<u32, Latch>>,
     recenter: AtomicU32,
     scroll: AtomicI32,
+    /// Stick del Nunchuk (+X derecha, +Y arriba, −127..127); 0,0 en reposo.
+    stick_x: AtomicI8,
+    stick_y: AtomicI8,
 }
 
 impl Default for Buttons {
@@ -40,6 +43,8 @@ impl Buttons {
             latches: Mutex::new(HashMap::new()),
             recenter: AtomicU32::new(0),
             scroll: AtomicI32::new(0),
+            stick_x: AtomicI8::new(0),
+            stick_y: AtomicI8::new(0),
         }
     }
 
@@ -102,6 +107,18 @@ impl Buttons {
             l.wire_down_at = None;
         }
         self.scroll.store(0, Ordering::Relaxed);
+        self.set_stick(0, 0);
+    }
+
+    /// Stick del Nunchuk: sin latch (es analógico, va en cada paquete). El
+    /// protocolo es simétrico (−127..127): −128 se recorta.
+    pub fn set_stick(&self, x: i8, y: i8) {
+        self.stick_x.store(x.max(-127), Ordering::Relaxed);
+        self.stick_y.store(y.max(-127), Ordering::Relaxed);
+    }
+
+    pub fn stick(&self) -> (i8, i8) {
+        (self.stick_x.load(Ordering::Relaxed), self.stick_y.load(Ordering::Relaxed))
     }
 
     pub fn bump_recenter(&self) {
@@ -193,5 +210,21 @@ mod tests {
         b.bump_recenter();
         b.bump_recenter();
         assert_eq!(b.recenter_count(), 2);
+    }
+
+    #[test]
+    fn stick_se_recorta_y_se_suelta() {
+        let b = Buttons::new();
+        assert_eq!(b.stick(), (0, 0), "en reposo, centrado");
+        b.set_stick(100, -50);
+        assert_eq!(b.stick(), (100, -50));
+        b.set_stick(-128, 127);
+        assert_eq!(b.stick(), (-127, 127), "−128 no existe en el protocolo");
+        b.set_stick(127, -128);
+        assert_eq!(b.stick(), (127, -127));
+        b.set(A, true);
+        b.release_all();
+        assert_eq!(b.stick(), (0, 0), "release_all también centra el stick");
+        assert_eq!(b.physical(), 0);
     }
 }

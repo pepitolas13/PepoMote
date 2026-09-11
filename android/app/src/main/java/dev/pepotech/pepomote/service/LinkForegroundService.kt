@@ -34,14 +34,23 @@ class LinkForegroundService : Service() {
         private const val CHANNEL_ID = "link"
         private const val NOTIF_ID = 1
         private const val ACTION_STOP = "dev.pepotech.pepomote.STOP"
+        private const val EXTRA_ROLE = "role"
         private const val MAX_ATTEMPTS = 3
 
-        fun start(context: Context) {
+        /**
+         * `role`: wiimote (mando) o nunchuk (móvil de la otra mano). Va en el
+         * hello y lo conservan los reintentos; un start() con otro rol rehace
+         * el enlace entero.
+         */
+        fun start(context: Context, role: String = LinkState.ROLE_WIIMOTE) {
             // "Conectando" YA, antes de que el servicio llegue a arrancar: si
             // el intento anterior acabó en Failed, la pantalla del mando aún
             // lo veía y rebotaba al inicio repitiendo el error viejo.
+            LinkState.role = role
             LinkState.publish(UiLink.Connecting)
-            context.startForegroundService(Intent(context, LinkForegroundService::class.java))
+            context.startForegroundService(
+                Intent(context, LinkForegroundService::class.java).putExtra(EXTRA_ROLE, role)
+            )
         }
 
         fun stop(context: Context) {
@@ -51,6 +60,7 @@ class LinkForegroundService : Service() {
 
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var attempt = 0
+    private var role = LinkState.ROLE_WIIMOTE
 
     /**
      * Generación del enlace. Cada connect() la sube; los callbacks de un
@@ -78,6 +88,8 @@ class LinkForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        role = intent?.getStringExtra(EXTRA_ROLE) ?: LinkState.ROLE_WIIMOTE
+        LinkState.role = role
 
         createChannel()
         val notif = buildNotification("Conectando con ${pairing.pcName}…")
@@ -115,20 +127,31 @@ class LinkForegroundService : Service() {
             token = pairing.token,
             deviceName = Build.MODEL ?: "Android",
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
+            role = role,
             callbacks = object : ControlClient.Callbacks {
-                override fun onOk(sessionId: Int, udpPort: Int, mode: String, slot: Int) {
+                override fun onOk(
+                    sessionId: Int, udpPort: Int, mode: String, slot: Int, okRole: String, player: Int
+                ) {
                     if (gen != generation) return
+                    val nunchuk = okRole == LinkState.ROLE_NUNCHUK
                     val sender = UdpSender(pairing.host, udpPort, sessionId) { rtt ->
                         LinkState.updateConnected { it.copy(rttMs = rtt) }
                     }
                     udp = sender
-                    val engine = MotionEngine(this@LinkForegroundService, sessionId) { packet ->
+                    val engine = MotionEngine(this@LinkForegroundService, sessionId, nunchuk) { packet ->
                         sender.send(packet)
                     }
                     motion = engine
                     engine.start()
                     LinkState.sendMode = { m -> control?.sendMode(m) }
-                    LinkState.publish(UiLink.Connected(pairing.pcName, mode, null, 0f, slot))
+                    LinkState.publish(
+                        UiLink.Connected(
+                            pairing.pcName, mode, null, 0f, slot,
+                            role = okRole,
+                            // Receptor sin "player" en el ok: el jugador es el slot
+                            player = if (player > 0) player else slot + 1
+                        )
+                    )
                     LinkState.pendingMode?.let { m ->
                         LinkState.pendingMode = null
                         control?.sendMode(m)
@@ -138,7 +161,10 @@ class LinkForegroundService : Service() {
                     // "Pulsar la diana" automáticamente al conectar: recentra
                     // y centra el cursor con los primeros paquetes ya fluyendo
                     mainHandler.postDelayed({ ButtonState.bumpRecenter() }, 300)
-                    updateNotification("Conectado a ${pairing.pcName}")
+                    updateNotification(
+                        if (nunchuk) "Nunchuk conectado a ${pairing.pcName}"
+                        else "Conectado a ${pairing.pcName}"
+                    )
                 }
 
                 override fun onError(code: String, msg: String) {

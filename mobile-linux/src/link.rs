@@ -2,6 +2,8 @@
 //! socket UDP caliente (INPUT a la cadencia del sensor, PING/PONG para el
 //! RTT) y el hilo de paquetes que fusiona las muestras del sensor. Mismo
 //! comportamiento que LinkForegroundService + MotionEngine de Android.
+//! Un mismo enlace sirve de Wiimote o de Nunchuk (PROTOCOL.md §3): solo
+//! cambian el `role` del hello y, en cada INPUT, el stick con su flag.
 
 use crate::buttons::Buttons;
 use crate::discovery;
@@ -23,6 +25,24 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 /// Tope del protocolo: 250 Hz.
 const MIN_PACKET_GAP: Duration = Duration::from_micros(3_900);
 
+/// Papel del móvil ante el receptor: mando (ausente en el hello) o Nunchuk
+/// de la otra mano (`"role":"nunchuk"`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Wiimote,
+    Nunchuk,
+}
+
+impl Role {
+    fn parse(s: Option<&str>) -> Option<Role> {
+        match s {
+            Some("nunchuk") => Some(Role::Nunchuk),
+            Some("wiimote") => Some(Role::Wiimote),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Status {
     Disconnected,
@@ -31,6 +51,12 @@ pub enum Status {
         pc_name: String,
         mode: String,
         slot: u8,
+        /// Jugador 1..4 al que pertenece esta sesión (`ok.player`; si el
+        /// receptor no lo manda, slot+1).
+        player: u8,
+        /// Lo que el receptor dice que somos (un receptor antiguo ignora el
+        /// hello y nos trata de mando).
+        role: Role,
         rtt_ms: Option<f32>,
     },
     Failed {
@@ -48,11 +74,13 @@ pub struct Link {
 
 impl Link {
     /// Conecta en segundo plano. `pending_mode` se manda nada más recibir `ok`.
+    /// Con `Role::Nunchuk` el hello lo declara y cada INPUT lleva el stick.
     pub fn connect(
         pairing: Pairing,
         buttons: Arc<Buttons>,
         source: Box<dyn Source>,
         pending_mode: Option<String>,
+        role: Role,
     ) -> Link {
         let status = Arc::new(Mutex::new(Status::Connecting));
         let writer: Arc<Mutex<Option<TcpStream>>> = Arc::new(Mutex::new(None));
@@ -65,6 +93,7 @@ impl Link {
                 stop: stop.clone(),
                 sensor_hz: sensor_hz.clone(),
                 buttons,
+                role,
             };
             std::thread::Builder::new()
                 .name("pepomote-control".into())
@@ -113,6 +142,26 @@ struct Ctx {
     stop: Arc<AtomicBool>,
     sensor_hz: Arc<AtomicU32>,
     buttons: Arc<Buttons>,
+    role: Role,
+}
+
+/// `hello` de sesión (PROTOCOL.md §3): `role` solo si somos Nunchuk; un
+/// mando no lo manda (compatibilidad con receptores anteriores).
+fn hello(token: &str, role: Role) -> Value {
+    let mut v = json!({"m":"hello","pv":1,"token":token,"name":device_name(),"model":"Linux móvil"});
+    if role == Role::Nunchuk {
+        v["role"] = json!("nunchuk");
+    }
+    v
+}
+
+/// Jugador (1..4) que anuncia el `ok`; si falta o no vale, slot+1.
+fn player_of(ok: &Value, slot: u8) -> u8 {
+    ok["player"]
+        .as_u64()
+        .filter(|p| (1..=4).contains(p))
+        .map(|p| p as u8)
+        .unwrap_or(slot.saturating_add(1))
 }
 
 fn send_json(writer: &Mutex<Option<TcpStream>>, v: &Value) -> bool {
@@ -227,10 +276,7 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
     let mut reader = BufReader::new(read_half);
     *ctx.writer.lock().unwrap() = Some(stream);
 
-    send_json(
-        &ctx.writer,
-        &json!({"m":"hello","pv":1,"token":pairing.token,"name":device_name(),"model":"Linux móvil"}),
-    );
+    send_json(&ctx.writer, &hello(&pairing.token, ctx.role));
 
     // Latido TCP 1 Hz
     {
@@ -265,6 +311,8 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
                 let udp_port = msg["udp_port"].as_u64().map(|p| p as u16).unwrap_or(pairing.port);
                 let mode = msg["mode"].as_str().unwrap_or("pointer").to_owned();
                 let slot = msg["slot"].as_u64().unwrap_or(0) as u8;
+                let player = player_of(&msg, slot);
+                let role = Role::parse(msg["role"].as_str()).unwrap_or(ctx.role);
                 if let Some(name) = msg["name"].as_str() {
                     if name != pairing.pc_name {
                         pairing.pc_name = name.to_owned();
@@ -275,6 +323,8 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
                     pc_name: pairing.pc_name.clone(),
                     mode,
                     slot,
+                    player,
+                    role,
                     rtt_ms: None,
                 };
                 if let Some(src) = source.take() {
@@ -364,13 +414,15 @@ fn start_hot_path(host: &str, port: u16, session_id: u32, source: Box<dyn Source
         let stop = ctx.stop.clone();
         let buttons = ctx.buttons.clone();
         let sensor_hz = ctx.sensor_hz.clone();
+        let role = ctx.role;
         std::thread::Builder::new()
             .name("pepomote-packets".into())
-            .spawn(move || packet_loop(udp, session_id, rx, buttons, stop, sensor_hz))
+            .spawn(move || packet_loop(udp, session_id, rx, buttons, stop, sensor_hz, role))
             .expect("hilo paquetes");
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn packet_loop(
     udp: Arc<UdpSocket>,
     session_id: u32,
@@ -378,7 +430,13 @@ fn packet_loop(
     buttons: Arc<Buttons>,
     stop: Arc<AtomicBool>,
     sensor_hz: Arc<AtomicU32>,
+    role: Role,
 ) {
+    // Nunchuk: bytes 6-7 = stick, y el flag que dice que valen
+    let (stick_flag, stick) = match role {
+        Role::Nunchuk => (pmp::FLAG_STICK_VALID, true),
+        Role::Wiimote => (0, false),
+    };
     let mut fusion = Madgwick::new(0.1);
     let mut bias = GyroBias::new();
     let mut pacer = Pacer::new();
@@ -465,8 +523,11 @@ fn packet_loop(
         });
         last_sent = now;
         seq = seq.wrapping_add(1);
+        let (stick_x, stick_y) = if stick { buttons.stick() } else { (0, 0) };
         let packet = pmp::InputPacket {
-            flags: pmp::FLAG_QUAT_VALID,
+            flags: pmp::FLAG_QUAT_VALID | stick_flag,
+            stick_x,
+            stick_y,
             session_id,
             seq,
             t_sensor_us: st.t_us,
@@ -525,5 +586,39 @@ impl Battery {
             }
         }
         self.pct
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hello_declara_el_papel_solo_en_el_nunchuk() {
+        let w = hello("tok", Role::Wiimote);
+        assert_eq!(w["m"], "hello");
+        assert_eq!(w["pv"], 1);
+        assert_eq!(w["token"], "tok");
+        assert!(w.get("role").is_none(), "un mando no manda role (receptores anteriores)");
+        let n = hello("tok", Role::Nunchuk);
+        assert_eq!(n["role"], "nunchuk");
+        assert_eq!(n["token"], "tok");
+    }
+
+    #[test]
+    fn jugador_del_ok_o_slot_mas_uno() {
+        assert_eq!(player_of(&json!({"m":"ok","slot":3,"player":1}), 3), 1, "Nunchuk del jugador 1 en el slot 3");
+        assert_eq!(player_of(&json!({"m":"ok","slot":1}), 1), 2, "receptor sin player: slot+1");
+        assert_eq!(player_of(&json!({"m":"ok","player":0}), 0), 1, "fuera de 1..4: se ignora");
+        assert_eq!(player_of(&json!({"m":"ok","player":9}), 2), 3);
+        assert_eq!(player_of(&json!({"m":"ok","player":"2"}), 0), 1, "tipo malo: se ignora");
+    }
+
+    #[test]
+    fn papel_que_anuncia_el_receptor() {
+        assert_eq!(Role::parse(Some("nunchuk")), Some(Role::Nunchuk));
+        assert_eq!(Role::parse(Some("wiimote")), Some(Role::Wiimote));
+        assert_eq!(Role::parse(Some("otro")), None);
+        assert_eq!(Role::parse(None), None);
     }
 }

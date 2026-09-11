@@ -17,10 +17,13 @@ class ControlClient(
     private val token: String,
     private val deviceName: String,
     private val deviceModel: String,
+    /** "wiimote" (mando, el valor por defecto del receptor) o "nunchuk". */
+    private val role: String,
     private val callbacks: Callbacks
 ) {
     interface Callbacks {
-        fun onOk(sessionId: Int, udpPort: Int, mode: String, slot: Int)
+        /** `role`: el que confirma el receptor; `player`: 1..4 (0 si el ok no lo trae). */
+        fun onOk(sessionId: Int, udpPort: Int, mode: String, slot: Int, role: String, player: Int)
         fun onError(code: String, msg: String)
         fun onModeChanged(mode: String)
         fun onClosed()
@@ -59,6 +62,8 @@ class ControlClient(
                     .put("token", token)
                     .put("name", deviceName)
                     .put("model", deviceModel)
+                    // Ausente = wiimote (receptores anteriores no lo conocen)
+                    .apply { if (role == "nunchuk") put("role", role) }
             )
 
             while (running) {
@@ -70,7 +75,9 @@ class ControlClient(
                         msg.getInt("session_id"),
                         msg.optInt("udp_port", port),
                         msg.optString("mode", "pointer"),
-                        msg.optInt("slot", 0)
+                        msg.optInt("slot", 0),
+                        msg.optString("role", role),
+                        msg.optInt("player", 0)
                     )
 
                     "err" -> {

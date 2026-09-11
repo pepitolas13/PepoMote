@@ -79,9 +79,9 @@ impl ControllerUi {
         // Cabecera
         ui.horizontal(|ui| {
             ui.vertical(|ui| match status {
-                Status::Connected { pc_name, mode, slot, rtt_ms } => {
+                Status::Connected { pc_name, mode, slot, player, rtt_ms, .. } => {
                     let title = if *slot > 0 {
-                        format!("{pc_name} · Jugador {}", slot + 1)
+                        format!("{pc_name} · Jugador {player}")
                     } else {
                         pc_name.clone()
                     };

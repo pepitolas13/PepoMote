@@ -1,16 +1,17 @@
-//! Pantallas: Inicio, Conectar (descubrimiento), IP a mano, Código y Mando.
-//! Misma lógica de navegación que MainActivity en Android.
+//! Pantallas: Inicio, Conectar (descubrimiento), IP a mano, Código, Mando y
+//! Nunchuk. Misma lógica de navegación que MainActivity en Android.
 
 use crate::buttons::Buttons;
 use crate::calib::{self, Axes};
 use crate::discovery::{self, Receiver};
 use crate::inhibit::Inhibit;
-use crate::link::{self, Link, Status};
+use crate::link::{self, Link, Role, Status};
 use crate::sensor;
 use crate::store::{self, Pairing};
 use crate::theme;
 use crate::ui::controller::{Action, ControllerUi};
 use crate::ui::keypad::{keypad, Key};
+use crate::ui::nunchuk::{Action as NunchukAction, NunchukUi};
 use egui::{RichText, Vec2};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -41,6 +42,8 @@ enum Screen {
     Manual,
     Code,
     Controller,
+    /// La otra mano: stick, C y Z (el móvil que hace de mando decide el modo).
+    Nunchuk,
     Calibrate,
 }
 
@@ -75,8 +78,11 @@ pub struct MobileApp {
     manual: String,
     pair_rx: Option<mpsc::Receiver<Result<Pairing, String>>>,
     pair_error: Option<String>,
-    // Mando
+    // Mando / Nunchuk
     controller: ControllerUi,
+    nunchuk: NunchukUi,
+    /// Papel con el que se abrió el enlace vigente (otro papel = reconectar).
+    link_role: Role,
     dolphin_only: bool,
     recenter_at: Option<Instant>,
     was_connected: bool,
@@ -104,8 +110,12 @@ impl MobileApp {
         theme::apply(&cc.egui_ctx);
         let mut app = Self::build(fake);
         if let Some(m) = autoconnect {
-            let dolphin = m == "dolphin";
-            app.open_controller(Some(if dolphin { "dolphin" } else { "pointer" }), dolphin);
+            if m == "nunchuk" {
+                app.open_nunchuk();
+            } else {
+                let dolphin = m == "dolphin";
+                app.open_controller(Some(if dolphin { "dolphin" } else { "pointer" }), dolphin);
+            }
         }
         app
     }
@@ -132,6 +142,8 @@ impl MobileApp {
             pair_rx: None,
             pair_error: None,
             controller: ControllerUi::new(),
+            nunchuk: NunchukUi::new(),
+            link_role: Role::Wiimote,
             dolphin_only: false,
             recenter_at: None,
             was_connected: false,
@@ -148,12 +160,31 @@ impl MobileApp {
     /// Conecta (o cambia de modo si ya hay enlace) y va al mando.
     fn open_controller(&mut self, mode: Option<&'static str>, dolphin_only: bool) {
         self.dolphin_only = dolphin_only;
+        self.open_link(Role::Wiimote, mode);
+    }
+
+    /// Conecta como Nunchuk (la otra mano) y va a su pantalla. Sin modo: lo
+    /// decide el móvil que hace de mando.
+    fn open_nunchuk(&mut self) {
+        self.open_link(Role::Nunchuk, None);
+    }
+
+    fn open_link(&mut self, role: Role, mode: Option<&'static str>) {
+        let screen = match role {
+            Role::Wiimote => Screen::Controller,
+            Role::Nunchuk => Screen::Nunchuk,
+        };
         if self.link_alive() {
-            if let (Some(m), Some(l)) = (mode, &self.link) {
-                l.send_mode(m);
+            if self.link_role == role {
+                if let (Some(m), Some(l)) = (mode, &self.link) {
+                    l.send_mode(m);
+                }
+                self.screen = screen;
+                return;
             }
-            self.screen = Screen::Controller;
-            return;
+            // otro papel: el receptor asigna el slot según el hello, así
+            // que toca reconectar
+            self.close_link();
         }
         let Some(pairing) = self.pairing.clone() else {
             self.screen = Screen::Pair;
@@ -162,9 +193,10 @@ impl MobileApp {
         match sensor::open_corrected(self.fake) {
             Ok(source) => {
                 self.buttons.release_all();
-                self.link = Some(Link::connect(pairing, self.buttons.clone(), source, mode.map(|m| m.to_owned())));
+                self.link = Some(Link::connect(pairing, self.buttons.clone(), source, mode.map(|m| m.to_owned()), role));
+                self.link_role = role;
                 self.was_connected = false;
-                self.screen = Screen::Controller;
+                self.screen = screen;
             }
             Err(e) => {
                 // Sin sensores no hay mando: a Inicio, con el motivo y el
@@ -193,7 +225,7 @@ impl MobileApp {
                 self.error = Some(msg);
                 self.link = None;
                 self.inhibit = None;
-                if self.screen == Screen::Controller {
+                if matches!(self.screen, Screen::Controller | Screen::Nunchuk) {
                     self.screen = Screen::Home;
                 }
             }
@@ -330,11 +362,10 @@ impl MobileApp {
         ui.add_space(18.0);
 
         let w = ui.available_width();
-        let cw = (w - 12.0) / 2.0;
-        let ch = 112.0;
-        let card = |ui: &mut egui::Ui, title: &str, sub: &str, accent: egui::Color32| -> bool {
+        let half = Vec2::new((w - 12.0) / 2.0, 104.0);
+        let card = |ui: &mut egui::Ui, size: Vec2, title: &str, sub: &str, accent: egui::Color32| -> bool {
             ui.add_sized(
-                Vec2::new(cw, ch),
+                size,
                 egui::Button::new(
                     RichText::new(format!("{title}\n{sub}")).size(16.0).color(theme::TEXT),
                 )
@@ -345,22 +376,26 @@ impl MobileApp {
         };
         let mut go: Option<u8> = None;
         ui.horizontal(|ui| {
-            if card(ui, "Conectar", "apunta y haz clic", theme::BLUE) {
+            if card(ui, half, "Conectar", "apunta y haz clic", theme::BLUE) {
                 go = Some(0);
             }
-            if card(ui, "Mando", "solo botones", theme::BLUE) {
+            if card(ui, half, "Mando", "solo botones", theme::BLUE) {
                 go = Some(1);
             }
         });
         ui.add_space(12.0);
         ui.horizontal(|ui| {
-            if card(ui, "Dolphin", "Wiimote virtual", theme::OK) {
+            if card(ui, half, "Dolphin", "Wiimote virtual", theme::OK) {
                 go = Some(2);
             }
-            if card(ui, "Emparejar", "otro PC / código", theme::TEXT_DIM) {
-                go = Some(3);
+            if card(ui, half, "Nunchuk", "la otra mano", theme::OK) {
+                go = Some(4);
             }
         });
+        ui.add_space(12.0);
+        if card(ui, Vec2::new(w, 64.0), "Emparejar", "otro PC / código", theme::TEXT_DIM) {
+            go = Some(3);
+        }
         match go {
             Some(0) => self.open_controller(Some("pointer"), false),
             Some(1) => self.open_controller(None, false),
@@ -370,6 +405,7 @@ impl MobileApp {
                 self.last_scan = None;
                 self.screen = Screen::Pair;
             }
+            Some(4) => self.open_nunchuk(),
             _ => {}
         }
 
@@ -568,6 +604,27 @@ impl MobileApp {
             Action::None => {}
         }
     }
+
+    fn ui_nunchuk(&mut self, ui: &mut egui::Ui) {
+        let Some(link) = &self.link else {
+            ui.add_space(10.0);
+            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::TEXT));
+            ui.add_space(8.0);
+            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::BLUE)).clicked() {
+                self.open_nunchuk();
+            }
+            if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+                self.screen = Screen::Home;
+            }
+            return;
+        };
+        let status = link.status();
+        let hz = link.sensor_hz();
+        if let NunchukAction::Exit = self.nunchuk.show(ui, &self.buttons, &status, hz) {
+            self.close_link();
+            self.screen = Screen::Home;
+        }
+    }
 }
 
 impl MobileApp {
@@ -758,6 +815,7 @@ impl eframe::App for MobileApp {
                 Screen::Manual => self.ui_manual(ui),
                 Screen::Code => self.ui_code(ui),
                 Screen::Controller => self.ui_controller(ui),
+                Screen::Nunchuk => self.ui_nunchuk(ui),
                 Screen::Calibrate => self.ui_calibrate(ui),
             });
     }

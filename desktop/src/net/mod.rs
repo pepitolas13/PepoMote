@@ -6,7 +6,7 @@ pub mod telemetry;
 
 use crate::dsu::Dsu;
 use crate::pairing::PairingInfo;
-use crate::state::SharedState;
+use crate::state::{Role, SharedState};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -24,6 +24,8 @@ pub struct Session {
     /// sesión aún viva, es una reconexión y la fantasma se desaloja.
     pub peer: std::net::IpAddr,
     pub device: String,
+    /// Mando o Nunchuk (PROTOCOL.md §3).
+    pub role: Role,
 }
 
 /// Sesiones de ESTE mismo móvil que siguen vivas (reconexión tras caída de
@@ -40,9 +42,15 @@ pub fn ghosts_of(sessions: &HashMap<u32, Session>, peer: std::net::IpAddr, devic
 /// session_id → Session (hasta MAX_PLAYERS a la vez).
 pub type Sessions = Arc<Mutex<HashMap<u32, Session>>>;
 
-/// Slot libre más bajo (el Jugador 1 es el slot 0).
-pub fn lowest_free_slot(sessions: &HashMap<u32, Session>) -> Option<u8> {
-    (0..MAX_PLAYERS as u8).find(|s| !sessions.values().any(|x| x.slot == *s))
+/// Slot libre según el papel: los Wiimotes desde el 0 hacia arriba, los
+/// Nunchuks desde el 3 hacia abajo (así el Nunchuk i-ésimo por slot
+/// descendente es el del Wiimote i-ésimo por slot ascendente).
+pub fn free_slot(sessions: &HashMap<u32, Session>, role: Role) -> Option<u8> {
+    let taken = |s: u8| sessions.values().any(|x| x.slot == s);
+    match role {
+        Role::Wiimote => (0..MAX_PLAYERS as u8).find(|s| !taken(*s)),
+        Role::Nunchuk => (0..MAX_PLAYERS as u8).rev().find(|s| !taken(*s)),
+    }
 }
 
 pub fn start(shared: SharedState, pairing: PairingInfo, dsu: Option<Arc<Dsu>>) {
@@ -87,7 +95,23 @@ mod tests {
             phone_udp: None,
             peer: std::net::IpAddr::from([192, 168, 1, 10 + slot]),
             device: format!("Movil{slot}"),
+            role: Role::Wiimote,
         }
+    }
+
+    #[test]
+    fn nunchuks_desde_arriba_y_wiimotes_desde_abajo() {
+        let mut m = HashMap::new();
+        assert_eq!(free_slot(&m, Role::Nunchuk), Some(3));
+        m.insert(1, Session { role: Role::Nunchuk, ..sess(1, 3) });
+        assert_eq!(free_slot(&m, Role::Wiimote), Some(0), "el mando sigue siendo el Jugador 1");
+        m.insert(2, sess(2, 0));
+        assert_eq!(free_slot(&m, Role::Nunchuk), Some(2));
+        assert_eq!(free_slot(&m, Role::Wiimote), Some(1));
+        m.insert(3, sess(3, 1));
+        m.insert(4, Session { role: Role::Nunchuk, ..sess(4, 2) });
+        assert_eq!(free_slot(&m, Role::Wiimote), None);
+        assert_eq!(free_slot(&m, Role::Nunchuk), None);
     }
 
     #[test]
@@ -105,22 +129,22 @@ mod tests {
             m.remove(&id);
         }
         // y recupera SU plaza (la 0), no la siguiente libre
-        assert_eq!(lowest_free_slot(&m), Some(0));
+        assert_eq!(free_slot(&m, Role::Wiimote), Some(0));
     }
 
     #[test]
     fn slots_se_asignan_y_reutilizan() {
         let mut m = HashMap::new();
-        assert_eq!(lowest_free_slot(&m), Some(0));
+        assert_eq!(free_slot(&m, Role::Wiimote), Some(0));
         m.insert(1, sess(1, 0));
         m.insert(2, sess(2, 1));
-        assert_eq!(lowest_free_slot(&m), Some(2));
+        assert_eq!(free_slot(&m, Role::Wiimote), Some(2));
         // se va el jugador 1: su slot 0 queda libre y es el siguiente en asignarse
         m.remove(&1);
-        assert_eq!(lowest_free_slot(&m), Some(0));
+        assert_eq!(free_slot(&m, Role::Wiimote), Some(0));
         m.insert(3, sess(3, 0));
         m.insert(4, sess(4, 2));
         m.insert(5, sess(5, 3));
-        assert_eq!(lowest_free_slot(&m), None); // lleno: busy
+        assert_eq!(free_slot(&m, Role::Wiimote), None); // lleno: busy
     }
 }

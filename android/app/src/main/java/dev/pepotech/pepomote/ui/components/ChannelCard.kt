@@ -4,10 +4,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -16,54 +19,76 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 // Glifos propios, dibujados a mano — nada de iconografía ajena.
-enum class ChannelGlyph { Qr, Pad, Pointer, Gear }
+enum class ChannelGlyph { Qr, Pad, Pointer, Stick, Gear }
 
+/** `wide`: tarjeta apaisada a todo el ancho (glifo a la izquierda, textos al lado). */
 @Composable
 fun ChannelCard(
     title: String,
     subtitle: String,
     glyph: ChannelGlyph,
     accent: Color = PepoColors.Blue,
+    wide: Boolean = false,
     onClick: () -> Unit = {}
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f),
+        modifier = if (wide) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().aspectRatio(1f),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
         border = BorderStroke(1.5.dp, PepoColors.CardBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Canvas(modifier = Modifier.size(52.dp).padding(bottom = 4.dp)) {
-                when (glyph) {
-                    ChannelGlyph.Qr -> drawQrGlyph(accent)
-                    ChannelGlyph.Pad -> drawPadGlyph(accent)
-                    ChannelGlyph.Pointer -> drawPointerGlyph(accent)
-                    ChannelGlyph.Gear -> drawGearGlyph(accent)
+        if (wide) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Canvas(modifier = Modifier.size(40.dp)) { drawGlyph(glyph, accent) }
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
                 }
             }
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2
-            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Canvas(modifier = Modifier.size(52.dp).padding(bottom = 4.dp)) {
+                    drawGlyph(glyph, accent)
+                }
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2
+                )
+            }
         }
+    }
+}
+
+private fun DrawScope.drawGlyph(glyph: ChannelGlyph, accent: Color) {
+    when (glyph) {
+        ChannelGlyph.Qr -> drawQrGlyph(accent)
+        ChannelGlyph.Pad -> drawPadGlyph(accent)
+        ChannelGlyph.Pointer -> drawPointerGlyph(accent)
+        ChannelGlyph.Stick -> drawStickGlyph(accent)
+        ChannelGlyph.Gear -> drawGearGlyph(accent)
     }
 }
 
@@ -110,6 +135,16 @@ private fun DrawScope.drawPointerGlyph(accent: Color) {
     val c = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
     drawCircle(color = accent, radius = size.width * 0.42f, center = c, style = Stroke(width = size.width * 0.10f))
     drawCircle(color = accent, radius = size.width * 0.12f, center = c)
+}
+
+/** Stick empujado arriba-derecha: aro, vástago y pomo. */
+private fun DrawScope.drawStickGlyph(accent: Color) {
+    val w = size.width
+    val c = androidx.compose.ui.geometry.Offset(w / 2f, size.height / 2f)
+    drawCircle(color = accent, radius = w * 0.42f, center = c, style = Stroke(width = w * 0.07f))
+    val knob = androidx.compose.ui.geometry.Offset(c.x + w * 0.15f, c.y - w * 0.15f)
+    drawLine(color = accent, start = c, end = knob, strokeWidth = w * 0.11f, cap = StrokeCap.Round)
+    drawCircle(color = accent, radius = w * 0.17f, center = knob)
 }
 
 private fun DrawScope.drawGearGlyph(accent: Color) {

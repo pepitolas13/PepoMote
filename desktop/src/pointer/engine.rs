@@ -486,6 +486,8 @@ mod tests {
             recenter_count: recenter,
             battery_pct: 100,
             touch_scroll_dy: 0,
+            stick_x: 0,
+            stick_y: 0,
         }
     }
 

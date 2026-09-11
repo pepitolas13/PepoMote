@@ -7,7 +7,7 @@ use crate::dsu::{Dsu, MotionSample};
 use crate::input::{self, KeyCode, MouseButton};
 use crate::pairing::PairingInfo;
 use crate::pointer::{PointerEngine, PointerOutput};
-use crate::state::{Mode, SharedState};
+use crate::state::{Mode, Role, SharedState};
 use serde_json::json;
 use std::net::UdpSocket;
 use std::sync::Arc;
@@ -204,7 +204,7 @@ pub fn run(
             }
             Some(Packet::Input(p)) => {
                 // Validar sesión, seq y aprender la dirección UDP del jugador
-                let slot = {
+                let (slot, role) = {
                     let mut guard = sessions.lock().unwrap();
                     let Some(sess) = guard.get_mut(&p.session_id) else {
                         continue;
@@ -217,7 +217,7 @@ pub fn run(
                     }
                     sess.last_seq = Some(p.seq);
                     sess.phone_udp = Some(from);
-                    sess.slot
+                    (sess.slot, sess.role)
                 };
 
                 win_packets += 1;
@@ -254,11 +254,14 @@ pub fn run(
                                 buttons: p.buttons,
                                 battery_pct: p.battery_pct,
                                 recenter_count: p.recenter_count,
+                                stick_x: p.stick_x,
+                                stick_y: p.stick_y,
                             },
                         );
                     }
-                } else if slot == 0 {
+                } else if slot == 0 && role == Role::Wiimote {
                     // Modo puntero: el SO tiene UN cursor y es del Jugador 1
+                    // (un Nunchuk nunca mueve el cursor)
                     let Some(inj) = injector.as_deref_mut() else {
                         continue; // sin uinput aún: se está reintentando
                     };

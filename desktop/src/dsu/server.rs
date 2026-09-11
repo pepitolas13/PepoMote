@@ -200,7 +200,11 @@ pub fn pad_data_packet(
     p.push(b2);
     p.push(ps);
     p.push(if touch_pressed { 0xFF } else { 0 }); // botón Touch = recentrado
-    p.extend_from_slice(&[128, 128, 128, 128]); // sticks LX LY RX RY neutros
+    // Sticks LX LY RX RY (0-255, neutro 128; Y: 255 = arriba, "Left Y+" en
+    // Dolphin): el izquierdo lleva el stick del Nunchuk, el derecho queda neutro
+    let lx = (128 + sample.stick_x as i32).clamp(0, 255) as u8;
+    let ly = (128 + sample.stick_y as i32).clamp(0, 255) as u8;
+    p.extend_from_slice(&[lx, ly, 128, 128]);
     p.extend_from_slice(&dpad); // analógico L D R U ("Pad W/S/E/N")
     p.extend_from_slice(&face); // analógico square cross circle triangle
     p.extend_from_slice(&[0, 0, 0, 0]); // analógico R1 L1 R2 L2
@@ -231,7 +235,28 @@ mod tests {
             buttons: 1, // A
             battery_pct: 100,
             recenter_count: 0,
+            stick_x: 0,
+            stick_y: 0,
         }
+    }
+
+    #[test]
+    fn pad_data_stick_del_nunchuk() {
+        let mut s = sample();
+        s.buttons = pmp::BTN_C | pmp::BTN_Z;
+        s.stick_x = 100;
+        s.stick_y = -50;
+        let out = pad_data_packet(3, &s, false, 1);
+        assert_eq!(out[20], 3); // slot del Nunchuk
+        assert_eq!(&out[40..44], &[228, 78, 128, 128], "LX/LY = 128 + stick, derecho neutro");
+        assert_eq!(out[49], 0xFF, "C → Cross analógico");
+        assert_eq!(out[50], 0xFF, "Z → Circle analógico");
+        assert_eq!(out[37] & (3 << 5), 3 << 5, "C/Z también en el bitmask");
+        // extremos recortados a 0..255
+        s.stick_x = -127;
+        s.stick_y = 127;
+        let out = pad_data_packet(3, &s, false, 2);
+        assert_eq!(&out[40..42], &[1, 255]);
     }
 
     #[test]

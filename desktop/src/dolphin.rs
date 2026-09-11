@@ -49,9 +49,29 @@ IMUPointer/Enabled = True
 IMUPointer/Recenter = `Touch Button`
 IMUPointer/Total Yaw = 25.000000000000000
 IMUPointer/Total Pitch = 20.000000000000000
-Extension = None
 Options/Battery = `Battery`
 ";
+
+/// Nunchuk emulado alimentado por el pad DSU del OTRO móvil ({NDEV} = su
+/// slot): stick, C/Z (Cross/Circle de ese pad) y su acelerómetro real
+/// (Dolphin lo usa tal cual para agitar/inclinar). Ver protocol/DSU.md.
+const NUNCHUK_MAPPING: &str = "Extension = Nunchuk
+Nunchuk/Buttons/C = `DSUClient/{NDEV}/PepoMote:Cross`
+Nunchuk/Buttons/Z = `DSUClient/{NDEV}/PepoMote:Circle`
+Nunchuk/Stick/Up = `DSUClient/{NDEV}/PepoMote:Left Y+`
+Nunchuk/Stick/Down = `DSUClient/{NDEV}/PepoMote:Left Y-`
+Nunchuk/Stick/Left = `DSUClient/{NDEV}/PepoMote:Left X-`
+Nunchuk/Stick/Right = `DSUClient/{NDEV}/PepoMote:Left X+`
+Nunchuk/IMUAccelerometer/Up = `DSUClient/{NDEV}/PepoMote:Accel Up`
+Nunchuk/IMUAccelerometer/Down = `DSUClient/{NDEV}/PepoMote:Accel Down`
+Nunchuk/IMUAccelerometer/Left = `DSUClient/{NDEV}/PepoMote:Accel Left`
+Nunchuk/IMUAccelerometer/Right = `DSUClient/{NDEV}/PepoMote:Accel Right`
+Nunchuk/IMUAccelerometer/Forward = `DSUClient/{NDEV}/PepoMote:Accel Forward`
+Nunchuk/IMUAccelerometer/Backward = `DSUClient/{NDEV}/PepoMote:Accel Backward`
+";
+
+/// Jugadores a configurar: (slot DSU del Wiimote, slot DSU de su Nunchuk).
+pub type Layout = [(u8, Option<u8>)];
 
 const DSU_ENTRY: &str = "PepoMote:127.0.0.1:26760";
 
@@ -253,18 +273,22 @@ pub fn ensure_emulated_adapter(cfg_dir: &Path) -> Result<(), String> {
 /// Source=0 (Ninguno): exactamente un mando por móvil. En los slots que se
 /// apagan solo se toca la clave Source; el resto de sus líneas (un mapeo
 /// manual, por ejemplo) se conserva. Las demás secciones, intactas.
-pub fn write_wiimotes(cfg_dir: &Path, n_players: usize) -> Result<(), String> {
+pub fn write_wiimotes(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
     let path = cfg_dir.join("WiimoteNew.ini");
     let original = std::fs::read_to_string(&path).unwrap_or_default();
     let mut ini = parse_ini(&original);
-    let n = n_players.min(crate::net::MAX_PLAYERS);
-    for slot in 0..n {
-        let body: Vec<String> = MAPPING
-            .replace("{DEV}", &slot.to_string())
+    let n = layout.len().min(crate::net::MAX_PLAYERS);
+    for (i, (wslot, nslot)) in layout.iter().take(n).enumerate() {
+        let mut body: Vec<String> = MAPPING
+            .replace("{DEV}", &wslot.to_string())
             .lines()
             .map(|l| l.to_owned())
             .collect();
-        set_section(&mut ini, &format!("Wiimote{}", slot + 1), body);
+        match nslot {
+            Some(ns) => body.extend(NUNCHUK_MAPPING.replace("{NDEV}", &ns.to_string()).lines().map(|l| l.to_owned())),
+            None => body.push("Extension = None".to_owned()),
+        }
+        set_section(&mut ini, &format!("Wiimote{}", i + 1), body);
     }
     for slot in n..crate::net::MAX_PLAYERS {
         let name = format!("Wiimote{}", slot + 1);
@@ -353,20 +377,22 @@ fn write_profiles(cfg_dir: &Path, n_players: usize) {
 /// Configura todos los Dolphin encontrados: adaptador Bluetooth emulado,
 /// servidor DSU y un mando emulado por móvil conectado (Jugador N = móvil N
 /// por orden de conexión); los slots restantes quedan en Ninguno.
-pub fn configure(n_players: usize) -> Result<String, String> {
+pub fn configure(layout: &Layout) -> Result<String, String> {
     let dirs = config_dirs();
     if dirs.is_empty() {
         return Err("No encuentro la configuración de Dolphin en este equipo".into());
     }
-    let n = n_players.clamp(1, crate::net::MAX_PLAYERS);
+    let n = layout.len().clamp(1, crate::net::MAX_PLAYERS);
+    let nunchuks = layout.iter().filter(|(_, n)| n.is_some()).count();
     for dir in &dirs {
         ensure_emulated_adapter(dir)?;
         ensure_dsu_server(dir)?;
-        write_wiimotes(dir, n)?;
+        write_wiimotes(dir, layout)?;
         write_profiles(dir, crate::net::MAX_PLAYERS);
     }
     Ok(format!(
-        "Dolphin configurado: adaptador emulado y {n} mando(s){}",
+        "Dolphin configurado: adaptador emulado, {n} mando(s){}{}",
+        if nunchuks > 0 { format!(" y {nunchuks} Nunchuk(s)") } else { String::new() },
         if dirs.len() > 1 {
             format!(" en {} instalaciones", dirs.len())
         } else {
@@ -375,12 +401,12 @@ pub fn configure(n_players: usize) -> Result<String, String> {
     ))
 }
 
-fn run_configure(shared: &SharedState, n: usize) {
+fn run_configure(shared: &SharedState, layout: &Layout) {
     let _serial = CONFIGURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let msg = if dolphin_running() {
         "Dolphin está abierto: ciérralo y pulsa Configurar".to_owned()
     } else {
-        match configure(n) {
+        match configure(layout) {
             Ok(m) => m,
             Err(e) => format!("Dolphin: {e}"),
         }
@@ -392,12 +418,13 @@ fn run_configure(shared: &SharedState, n: usize) {
 pub fn maybe_auto_configure(shared: &SharedState) {
     let shared = shared.clone();
     std::thread::spawn(move || {
-        let (auto, mode, n) = {
+        let (auto, mode, layout) = {
             let s = shared.lock().unwrap();
-            (s.config.auto_dolphin, s.mode, s.player_count())
+            (s.config.auto_dolphin, s.mode, crate::state::player_layout(&s.players))
         };
-        if auto && mode == Mode::Dolphin && n >= 1 {
-            run_configure(&shared, n);
+        // al menos un mando: un Nunchuk solo no tiene a quién acompañar
+        if auto && mode == Mode::Dolphin && !layout.is_empty() {
+            run_configure(&shared, &layout);
         }
     });
 }
@@ -406,14 +433,22 @@ pub fn maybe_auto_configure(shared: &SharedState) {
 pub fn configure_now(shared: &SharedState) {
     let shared = shared.clone();
     std::thread::spawn(move || {
-        let n = shared.lock().unwrap().player_count().max(1);
-        run_configure(&shared, n);
+        let mut layout = crate::state::player_layout(&shared.lock().unwrap().players);
+        if layout.is_empty() {
+            layout.push((0, None));
+        }
+        run_configure(&shared, &layout);
     });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// n mandos sin Nunchuk en los slots 0..n.
+    fn wm(n: usize) -> Vec<(u8, Option<u8>)> {
+        (0..n as u8).map(|s| (s, None)).collect()
+    }
 
     fn tmp_dir(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("pepomote-test-{tag}-{}", std::process::id()));
@@ -431,7 +466,7 @@ mod tests {
         )
         .unwrap();
 
-        write_wiimotes(&dir, 2).unwrap();
+        write_wiimotes(&dir, &wm(2)).unwrap();
         let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
 
         assert!(out.contains("[Wiimote1]"));
@@ -454,7 +489,7 @@ Source = 0
         assert!(dir.join("WiimoteNew.ini.pepomote.bak").exists());
 
         // idempotente
-        write_wiimotes(&dir, 2).unwrap();
+        write_wiimotes(&dir, &wm(2)).unwrap();
         let out2 = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
         assert_eq!(out, out2);
     }
@@ -466,11 +501,11 @@ Source = 0
         std::fs::write(dir.join("WiimoteNew.ini"), original).unwrap();
         let bak = dir.join("WiimoteNew.ini.pepomote.bak");
 
-        write_wiimotes(&dir, 1).unwrap();
+        write_wiimotes(&dir, &wm(1)).unwrap();
         assert_eq!(std::fs::read_to_string(&bak).unwrap(), original);
 
         // segunda pasada con más jugadores: el backup sigue siendo el ORIGINAL
-        write_wiimotes(&dir, 3).unwrap();
+        write_wiimotes(&dir, &wm(3)).unwrap();
         assert_eq!(std::fs::read_to_string(&bak).unwrap(), original);
         let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
         assert!(out.contains("Device = DSUClient/2/PepoMote"));
@@ -479,11 +514,11 @@ Source = 0
     #[test]
     fn sin_cambios_no_se_reescribe() {
         let dir = tmp_dir("nochange");
-        write_wiimotes(&dir, 2).unwrap();
+        write_wiimotes(&dir, &wm(2)).unwrap();
         let path = dir.join("WiimoteNew.ini");
         let m1 = std::fs::metadata(&path).unwrap().modified().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(30));
-        write_wiimotes(&dir, 2).unwrap();
+        write_wiimotes(&dir, &wm(2)).unwrap();
         let m2 = std::fs::metadata(&path).unwrap().modified().unwrap();
         assert_eq!(m1, m2, "un INI idéntico no debe tocar el disco");
     }
@@ -492,7 +527,7 @@ Source = 0
     fn un_mando_por_movil_y_los_demas_apagados() {
         let dir = tmp_dir("uno-por-movil");
         // dos móviles: Wiimote1 y 2 emulados, 3 y 4 en Ninguno
-        write_wiimotes(&dir, 2).unwrap();
+        write_wiimotes(&dir, &wm(2)).unwrap();
         let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
         assert!(out.contains("[Wiimote1]
 Device = DSUClient/0/PepoMote
@@ -509,7 +544,7 @@ Source = 0
 Source = 0
 "), "{out}");
         // se va el segundo móvil: su mando se apaga (el mapeo queda para la próxima)
-        write_wiimotes(&dir, 1).unwrap();
+        write_wiimotes(&dir, &wm(1)).unwrap();
         let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
         assert!(out.contains("[Wiimote1]
 Device = DSUClient/0/PepoMote
@@ -521,9 +556,51 @@ Source = 0
 "), "{out}");
         assert_eq!(out.matches("Source = 1").count(), 1);
         // vuelve: se reactiva
-        write_wiimotes(&dir, 2).unwrap();
+        write_wiimotes(&dir, &wm(2)).unwrap();
         let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
         assert_eq!(out.matches("Source = 1").count(), 2);
+    }
+
+    #[test]
+    fn nunchuk_del_jugador_lee_del_pad_del_otro_movil() {
+        let dir = tmp_dir("nunchuk");
+        // J1 = mando en slot 0 con Nunchuk en slot 3
+        write_wiimotes(&dir, &[(0, Some(3))]).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(out.contains("[Wiimote1]
+Device = DSUClient/0/PepoMote
+Source = 1
+"), "{out}");
+        assert!(out.contains("Extension = Nunchuk
+"), "{out}");
+        assert!(out.contains("Nunchuk/Buttons/C = `DSUClient/3/PepoMote:Cross`
+"));
+        assert!(out.contains("Nunchuk/Stick/Up = `DSUClient/3/PepoMote:Left Y+`
+"));
+        assert!(out.contains("Nunchuk/IMUAccelerometer/Forward = `DSUClient/3/PepoMote:Accel Forward`
+"));
+        assert!(!out.contains("Extension = None"));
+        assert!(out.contains("[Wiimote2]
+Source = 0
+") && out.contains("[Wiimote4]
+Source = 0
+"), "{out}");
+        // se va el Nunchuk: el mando vuelve a Extension = None sin restos
+        write_wiimotes(&dir, &[(0, None)]).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(out.contains("Extension = None
+"));
+        assert!(!out.contains("Nunchuk/"), "{out}");
+        // dos jugadores con Nunchuk cada uno: slots 0/3 y 1/2
+        write_wiimotes(&dir, &[(0, Some(3)), (1, Some(2))]).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(out.contains("[Wiimote2]
+Device = DSUClient/1/PepoMote
+Source = 1
+"), "{out}");
+        assert!(out.contains("Nunchuk/Buttons/Z = `DSUClient/2/PepoMote:Circle`
+"));
+        assert_eq!(out.matches("Extension = Nunchuk").count(), 2);
     }
 
     #[test]

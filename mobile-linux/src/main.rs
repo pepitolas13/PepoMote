@@ -62,7 +62,8 @@ fn main() -> eframe::Result {
         std::process::exit(0);
     }
     let fake = args.iter().any(|a| a == "--fake-sensors");
-    // --autoconnect [pointer|dolphin] → directo al mando, conectado (lanzadores)
+    // --autoconnect [pointer|dolphin|nunchuk] → directo al mando (o al
+    // Nunchuk de la otra mano), conectado (lanzadores)
     let autoconnect = args
         .iter()
         .position(|a| a == "--autoconnect")

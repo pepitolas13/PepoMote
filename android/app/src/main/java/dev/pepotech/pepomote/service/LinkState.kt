@@ -12,7 +12,11 @@ sealed class UiLink {
         val rttMs: Float?,
         val sensorHz: Float,
         /** 0 = Jugador 1 (controla puntero y modo); 1..3 = jugadores extra */
-        val slot: Int = 0
+        val slot: Int = 0,
+        /** "wiimote" o "nunchuk" (lo que confirmó el receptor en el ok). */
+        val role: String = LinkState.ROLE_WIIMOTE,
+        /** Jugador (1..4) al que pertenece este móvil; un Nunchuk va con el Wiimote de ese jugador. */
+        val player: Int = slot + 1
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
@@ -20,8 +24,19 @@ sealed class UiLink {
 
 /** Estado observable del enlace, publicado por LinkForegroundService. */
 object LinkState {
+    const val ROLE_WIIMOTE = "wiimote"
+    const val ROLE_NUNCHUK = "nunchuk"
+
     private val _flow = MutableStateFlow<UiLink>(UiLink.Disconnected)
     val flow: StateFlow<UiLink> = _flow
+
+    /**
+     * Rol del enlace vivo (o arrancando). Lo fija el servicio al arrancar; la
+     * UI lo consulta para saber si hay que rehacer el enlace con otro rol.
+     */
+    @Volatile
+    var role: String = ROLE_WIIMOTE
+        internal set
 
     /** Cambia el modo pointer/dolphin; lo conecta el servicio al ControlClient. */
     @Volatile

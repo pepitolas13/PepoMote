@@ -42,7 +42,9 @@ pub fn to_dsu(accel_ms2: [f32; 3], gyro_rads: [f32; 3]) -> ([f32; 3], [f32; 3]) 
 ///
 /// buttons1: bit0 Share, bit3 Options, bit4 Up, bit5 Right, bit6 Down, bit7 Left
 /// buttons2: bit4 Triangle, bit5 Circle, bit6 Cross, bit7 Square
-/// Mapeo: A→Cross, B→Circle, 1→Square, 2→Triangle, +→Options, −→Share, Home→PS
+/// Mapeo: A→Cross, B→Circle, 1→Square, 2→Triangle, +→Options, −→Share, Home→PS.
+/// Nunchuk (bits 17/18): C→Cross, Z→Circle (mismos bytes que A/B: cada
+/// Nunchuk va en su propio pad DSU y Dolphin lee de ahí sus C/Z).
 pub fn buttons_to_dsu(pmp: u32) -> (u8, u8, u8, [u8; 4], [u8; 4]) {
     let bit = |b: u32| pmp & (1 << b) != 0;
 
@@ -70,11 +72,11 @@ pub fn buttons_to_dsu(pmp: u32) -> (u8, u8, u8, [u8; 4], [u8; 4]) {
     if bit(10) {
         b2 |= 1 << 4; // Dos → Triangle
     }
-    if bit(1) {
-        b2 |= 1 << 5; // B → Circle
+    if bit(1) || bit(18) {
+        b2 |= 1 << 5; // B (o Z del Nunchuk) → Circle
     }
-    if bit(0) {
-        b2 |= 1 << 6; // A → Cross
+    if bit(0) || bit(17) {
+        b2 |= 1 << 6; // A (o C del Nunchuk) → Cross
     }
     if bit(9) {
         b2 |= 1 << 7; // Uno → Square
@@ -89,7 +91,7 @@ pub fn buttons_to_dsu(pmp: u32) -> (u8, u8, u8, [u8; 4], [u8; 4]) {
     // caras analógicas en el orden del struct de Dolphin (PadDataResponse):
     // square, cross, circle, triangle — Dolphin lee los botones de cara de
     // AQUÍ (los bits de button_states2 los ignora)
-    let face = [on(bit(9)), on(bit(0)), on(bit(1)), on(bit(10))];
+    let face = [on(bit(9)), on(bit(0) || bit(17)), on(bit(1) || bit(18)), on(bit(10))];
 
     (b1, b2, ps, dpad, face)
 }

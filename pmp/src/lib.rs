@@ -20,6 +20,8 @@ pub const HERE_PREFIX: &[u8] = b"PMPHERE1 ";
 
 /// flags bit0: el quaternion es válido (el móvil tiene rotation vector / fusión)
 pub const FLAG_QUAT_VALID: u8 = 1 << 0;
+/// flags bit1: los bytes 6-7 llevan el stick (el emisor es un Nunchuk)
+pub const FLAG_STICK_VALID: u8 = 1 << 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct InputPacket {
@@ -34,6 +36,11 @@ pub struct InputPacket {
     pub recenter_count: u8,
     pub battery_pct: u8,
     pub touch_scroll_dy: i16,
+    /// Stick del Nunchuk (bytes 6-7, antes reservados): +X derecha, +Y
+    /// arriba, −127..127. Solo con FLAG_STICK_VALID; los emisores Wiimote
+    /// mandan 0,0.
+    pub stick_x: i8,
+    pub stick_y: i8,
 }
 
 // Bits de botones (PROTOCOL.md 4.2)
@@ -54,6 +61,9 @@ pub const BTN_MEDIA_MUTE: u32 = 1 << 13;
 pub const BTN_MEDIA_PLAY_PAUSE: u32 = 1 << 14;
 pub const BTN_MEDIA_NEXT: u32 = 1 << 15;
 pub const BTN_MEDIA_PREV: u32 = 1 << 16;
+/// Nunchuk (PROTOCOL.md 4.2): C y Z
+pub const BTN_C: u32 = 1 << 17;
+pub const BTN_Z: u32 = 1 << 18;
 
 #[derive(Debug, PartialEq)]
 pub enum Packet {
@@ -76,6 +86,8 @@ pub fn parse(buf: &[u8]) -> Option<Packet> {
             let f32_at = |off: usize| f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
             Some(Packet::Input(InputPacket {
                 flags: buf[5],
+                stick_x: buf[6] as i8,
+                stick_y: buf[7] as i8,
                 session_id: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
                 seq: u32::from_le_bytes(buf[12..16].try_into().unwrap()),
                 t_sensor_us: u64::from_le_bytes(buf[16..24].try_into().unwrap()),
@@ -107,7 +119,8 @@ pub fn build_input(p: &InputPacket) -> [u8; INPUT_LEN] {
     out[0..4].copy_from_slice(&MAGIC.to_le_bytes());
     out[4] = TYPE_INPUT;
     out[5] = p.flags;
-    // 6..8 reservado = 0
+    out[6] = p.stick_x as u8; // stick del Nunchuk (0 en un Wiimote)
+    out[7] = p.stick_y as u8;
     out[8..12].copy_from_slice(&p.session_id.to_le_bytes());
     out[12..16].copy_from_slice(&p.seq.to_le_bytes());
     out[16..24].copy_from_slice(&p.t_sensor_us.to_le_bytes());
@@ -168,6 +181,7 @@ mod tests {
             "input_buttons_all" => {
                 from_hex(include_str!("../../protocol/vectors/input_buttons_all.hex"))
             }
+            "input_nunchuk" => from_hex(include_str!("../../protocol/vectors/input_nunchuk.hex")),
             "ping" => from_hex(include_str!("../../protocol/vectors/ping.hex")),
             "pong" => from_hex(include_str!("../../protocol/vectors/pong.hex")),
             _ => unreachable!(),
@@ -192,6 +206,21 @@ mod tests {
         assert_eq!(p.recenter_count, 0);
         assert_eq!(p.battery_pct, 100);
         assert_eq!(p.touch_scroll_dy, 0);
+        assert_eq!((p.stick_x, p.stick_y), (0, 0), "sin stick: bytes reservados a 0");
+    }
+
+    #[test]
+    fn vector_input_nunchuk() {
+        let Packet::Input(p) = parse(&vector("input_nunchuk")).unwrap() else {
+            panic!("no es INPUT")
+        };
+        assert_eq!(p.flags, FLAG_QUAT_VALID | FLAG_STICK_VALID);
+        assert_eq!(p.seq, 10);
+        assert_eq!(p.t_sensor_us, 4_000_000);
+        assert_eq!((p.stick_x, p.stick_y), (100, -50));
+        assert_eq!(p.buttons, BTN_C | BTN_Z);
+        assert_eq!(p.accel, [0.0, 0.0, 9.5]);
+        assert_eq!(p.battery_pct, 77);
     }
 
     #[test]
@@ -227,7 +256,7 @@ mod tests {
     fn build_reproduce_los_vectores_byte_a_byte() {
         // parse → build debe devolver EXACTAMENTE el vector: el emisor Linux
         // genera lo mismo que el Kotlin de Android
-        for name in ["input_neutral", "input_motion", "input_buttons_all"] {
+        for name in ["input_neutral", "input_motion", "input_buttons_all", "input_nunchuk"] {
             let buf = vector(name);
             let Packet::Input(p) = parse(&buf).unwrap() else {
                 panic!("no es INPUT")
