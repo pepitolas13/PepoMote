@@ -72,7 +72,7 @@ impl ScreenHub {
             running: AtomicBool::new(false),
             latest: Mutex::new(None),
             changed: Condvar::new(),
-            status: Mutex::new("Conectando la pantalla…".to_owned()),
+            status: Mutex::new(String::new()),
             quality: AtomicU8::new(DEFAULT_QUALITY),
             max_w: AtomicU32::new(MAX_W),
             max_h: AtomicU32::new(MAX_H),
@@ -129,6 +129,9 @@ impl ScreenHub {
         }
     }
 
+    /// Problema actual para el móvil ("" = hay imágenes, nada que decir).
+    /// El móvil oculta la imagen al recibir un estado: aquí solo van motivos
+    /// de que NO haya imagen, nunca los fps.
     pub fn status(&self) -> String {
         self.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
@@ -139,8 +142,15 @@ impl ScreenHub {
             *st = s.clone();
             drop(st);
             self.changed.notify_all();
-            self.shared.lock().unwrap().cemu_screen_status = Some(s);
+            if !s.is_empty() {
+                self.shared.lock().unwrap().cemu_screen_status = Some(s);
+            }
         }
+    }
+
+    /// Solo para la ventana del PC (fps, tamaño).
+    fn set_ui_status(&self, s: String) {
+        self.shared.lock().unwrap().cemu_screen_status = Some(s);
     }
 }
 
@@ -194,6 +204,8 @@ fn capture_loop(hub: Arc<ScreenHub>) {
                 let same = prev
                     .as_ref()
                     .is_some_and(|p| p.w == frame.w && p.h == frame.h && p.bgra == frame.bgra);
+                // hay imagen: al móvil no se le manda ningún estado
+                hub.set_status(String::new());
                 if !same {
                     let (w, h, data) = fit(
                         &frame,
@@ -215,7 +227,7 @@ fn capture_loop(hub: Arc<ScreenHub>) {
                 }
                 if fps_window.elapsed() >= Duration::from_secs(1) {
                     let fps = fps_count as f32 / fps_window.elapsed().as_secs_f32();
-                    hub.set_status(format!(
+                    hub.set_ui_status(format!(
                         "Pantalla del GamePad: {fps:.0} fps · {}×{} → {} móvil(es)",
                         last_dims.0,
                         last_dims.1,
@@ -242,7 +254,8 @@ fn capture_loop(hub: Arc<ScreenHub>) {
         }
     }
     hub.running.store(false, Ordering::SeqCst);
-    hub.set_status("Pantalla del GamePad: sin móvil suscrito".to_owned());
+    hub.set_status(String::new());
+    hub.set_ui_status("Pantalla del GamePad: sin móvil suscrito".to_owned());
 }
 
 #[cfg(test)]

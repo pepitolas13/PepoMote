@@ -84,10 +84,11 @@ pub fn handle(
     let mut last_sent = Instant::now();
     let mut ack = [0u8; 1];
     loop {
-        // estado nuevo (sin ventana, minimizada…) antes que nada
+        // estado nuevo (sin ventana, minimizada…) antes que nada; "" = hay
+        // imágenes y no se manda (el móvil oculta la imagen al recibir estado)
         let status = hub.status();
         if status != last_status {
-            if writer.write_all(&frame(FRAME_STATUS, status.as_bytes())).is_err() {
+            if !status.is_empty() && writer.write_all(&frame(FRAME_STATUS, status.as_bytes())).is_err() {
                 break;
             }
             last_status = status;
