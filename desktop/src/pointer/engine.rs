@@ -89,6 +89,13 @@ const BRIDGE_DISSOLVE_FRACTION: f32 = 0.12;
 /// pantalla) de donde lo dejamos, es que el SO lo recortó en un borde o el
 /// ratón lo movió: se sigue desde donde está de verdad.
 const HINT_TOL: f32 = 0.01;
+/// …y si se aleja más que esto (fracción de pantalla), no es un borde sino
+/// el ratón real: ese desplazamiento es permanente (`shift`). Lo de los
+/// bordes va al puente y se disuelve con el movimiento: el apuntado absoluto
+/// vuelve a su sitio. Si no, con un monitor encima el recorte de abajo (el de
+/// arriba no recorta: el cursor pasa al otro monitor) hace de trinquete y el
+/// cursor acaba arriba del todo haciendo círculos.
+const HINT_MOUSE_JUMP: f32 = 0.08;
 
 /// λ (1/s) del estimador de sesgo del gyro (solo aprende congelado: ahí el
 /// gyro debería leer cero y lo que lee es sesgo).
@@ -431,17 +438,26 @@ impl PointerEngine {
 
     /// Apuntado absoluto: si el cursor real no está donde lo dejamos (el SO
     /// lo recortó en un borde, o el ratón lo movió), se sigue desde donde
-    /// está DE VERDAD, sin zona muerta ni salto. Ese desplazamiento es
-    /// permanente (`shift`): no se disuelve, como no lo haría un ratón.
+    /// está DE VERDAD, sin zona muerta ni salto. Un salto grande es el ratón:
+    /// desplazamiento permanente (`shift`). Lo pequeño y continuo es un
+    /// borde: va al puente, que se disuelve con el movimiento, y el apuntado
+    /// absoluto recupera su sitio.
     fn follow_real_cursor(&mut self, sens_deg: f32, aspect: f32) {
         let (Some((cx, cy)), Some((py, pp))) = (self.cursor_hint, self.last_emitted) else {
             return;
         };
         let hy = (cx - 0.5) * sens_deg;
         let hp = (0.5 - cy) * sens_deg / aspect;
-        if (hy - py).abs() > HINT_TOL * sens_deg || (hp - pp).abs() > HINT_TOL * sens_deg / aspect {
-            self.shift.0 += hy - py;
-            self.shift.1 += hp - pp;
+        let (dy, dp) = (hy - py, hp - pp);
+        let (ny, np) = (dy / sens_deg, dp * aspect / sens_deg); // en pantallas
+        if ny.abs() > HINT_TOL || np.abs() > HINT_TOL {
+            if ny.abs() > HINT_MOUSE_JUMP || np.abs() > HINT_MOUSE_JUMP {
+                self.shift.0 += dy;
+                self.shift.1 += dp;
+            } else {
+                self.offset.0 += dy;
+                self.offset.1 += dp;
+            }
             self.last_emitted = Some((hy, hp));
         }
     }
@@ -1467,6 +1483,66 @@ mod tests {
         }
         let p = ph.make(qrot_z(-10.0), 1); // Home: nuevo recentrado
         assert_eq!(e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+    }
+
+    #[test]
+    fn los_bordes_no_hacen_de_trinquete() {
+        // Con un monitor encima, el SO recorta el cursor abajo pero no arriba.
+        // Barridos verticales que se pasan por abajo: el apuntado NO debe ir
+        // subiendo vuelta tras vuelta (antes el desplazamiento era permanente
+        // y el cursor acababa arriba del todo).
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_x(0.0), 0);
+        ap(&mut e, &p);
+        ph.hold(&mut e, 200);
+        // el SO: recorta solo por abajo (ny ≤ 1), arriba deja pasar
+        let os = |e: &mut PointerEngine, out: PointerOutput| {
+            if let PointerOutput::Abs { nx, ny } = out {
+                e.set_cursor_hint(Some((nx.clamp(0.0, 1.0), ny.min(1.0))));
+            }
+        };
+        let mut at_start = Vec::new();
+        for _cycle in 0..6 {
+            // abajo 14° (se pasa del borde inferior: 14/35·16/9 = 0,71 > 0,5)
+            let (axis, ang) = delta_axis_angle(ph.q, qrot_x(-14.0));
+            let q0 = ph.q;
+            for i in 1..=40 {
+                let qi = q0.mul(qrot_axis(axis, ang * i as f32 / 40.0));
+                let p = ph.make(qi, 0);
+                let out = ap(&mut e, &p);
+                os(&mut e, out);
+            }
+            // y arriba hasta +8° (sin recorte arriba)
+            let (axis, ang) = delta_axis_angle(ph.q, qrot_x(8.0));
+            let q0 = ph.q;
+            for i in 1..=40 {
+                let qi = q0.mul(qrot_axis(axis, ang * i as f32 / 40.0));
+                let p = ph.make(qi, 0);
+                let out = ap(&mut e, &p);
+                os(&mut e, out);
+            }
+            // vuelta al punto de partida
+            let (axis, ang) = delta_axis_angle(ph.q, qrot_x(0.0));
+            let q0 = ph.q;
+            let mut last = None;
+            for i in 1..=20 {
+                let qi = q0.mul(qrot_axis(axis, ang * i as f32 / 20.0));
+                let p = ph.make(qi, 0);
+                let out = ap(&mut e, &p);
+                os(&mut e, out);
+                if let PointerOutput::Abs { ny, .. } = out {
+                    last = Some(ny);
+                }
+            }
+            at_start.push(last.unwrap());
+        }
+        // apuntando al mismo sitio, el cursor debe estar (casi) en el mismo
+        // sitio en cada vuelta: nada de subir 0,2 de pantalla por vuelta
+        let first = at_start[0];
+        let last = *at_start.last().unwrap();
+        assert!((last - first).abs() < 0.08, "el apuntado derivó: ny {first:.3} → {last:.3} en 6 vueltas ({at_start:?})");
+        assert!(last > 0.3, "el cursor acabó arriba: ny={last:.3} ({at_start:?})");
     }
 
     #[test]

@@ -99,6 +99,24 @@ Android detecta solo hacia qué lado giraste el móvil. En un móvil Linux, el
 ajuste **Giro** de la pantalla del GamePad (izquierda / derecha) tiene que
 coincidir con el lado hacia el que queda el borde superior del móvil.
 
+## Apuntado absoluto o relativo: cuál usar
+
+Los dos mueven el cursor exactamente igual (1:1 con el giroscopio). La
+diferencia es qué pasa con la posición:
+
+- **Absoluto** (por defecto): el cursor está donde apunta el móvil, y vuelve al
+  mismo sitio si vuelves a apuntar igual (la altura la fija la gravedad; el
+  giro horizontal, el recentrado). Ni la aceleración del ratón de Windows ni
+  nada del sistema tocan el recorrido. Al pasarte de un borde, el cursor
+  responde al instante al volver (como un ratón) y el apuntado recupera su
+  sitio con el propio movimiento.
+- **Relativo**: como un ratón: solo cuentan los desplazamientos; el sistema le
+  aplica su aceleración si la tienes activada, y no hay noción de «dónde
+  apunta el móvil». Es el modo para juegos que capturan el ratón.
+
+Con varios monitores, en absoluto, el cursor sale por los bordes que dan a
+otro monitor, como haría el ratón.
+
 ## El cursor da un tirón al parar, o no va fluido
 
 Desde 1.3.0 el cursor lo mueve el giroscopio, 1:1 con la mano, y el rotation

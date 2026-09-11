@@ -83,15 +83,24 @@ pub fn replay_from_args() -> bool {
             // El cursor real que vería el receptor: la última posición emitida,
             // recortada a la pantalla (el SO no deja salir el cursor)
             let mut last_abs: Option<(f32, f32)> = None;
+            // PEPOMOTE_REPLAY_HINT_LAG=k: el SO tarda k paquetes en aplicar el
+            // movimiento (para reproducir carreras SendInput/GetCursorPos)
+            let hint_lag: usize = std::env::var("PEPOMOTE_REPLAY_HINT_LAG").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+            let mut abs_history: std::collections::VecDeque<(f32, f32)> = std::collections::VecDeque::new();
             let stdout = std::io::stdout();
             let mut w = stdout.lock();
             let _ = writeln!(w, "t_sensor_us,llegada_us,flags,gx,gy,gz,qw,qx,qy,qz,salida,nx_o_dx,ny_o_dy");
             for (arrival, raw) in recs {
                 let Some(Packet::Input(p)) = codec::parse(&raw) else { continue };
-                engine.set_cursor_hint(last_abs.map(|(x, y)| (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0))));
+                let seen = if hint_lag == 0 { last_abs } else { abs_history.front().copied().or(last_abs) };
+                engine.set_cursor_hint(seen.map(|(x, y)| (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0))));
                 let out = engine.apply(&p, sens, 16.0 / 9.0, true, 2560.0);
                 if let PointerOutput::Abs { nx, ny } = out {
                     last_abs = Some((nx, ny));
+                    abs_history.push_back((nx, ny));
+                    while abs_history.len() > hint_lag.max(1) {
+                        abs_history.pop_front();
+                    }
                 }
                 let (kind, a, b) = match out {
                     PointerOutput::Abs { nx, ny } => ("abs", nx, ny),
