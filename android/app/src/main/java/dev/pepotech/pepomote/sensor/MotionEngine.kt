@@ -6,11 +6,28 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.BatteryManager
-import android.os.HandlerThread
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.SystemClock
+import android.view.Surface
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.net.PmpCodec
+
+/** Qué emula este móvil: decide qué lleva cada paquete INPUT. */
+enum class SenderKind {
+    /** Wiimote (puntero / Dolphin): 72 bytes, sin stick. */
+    WIIMOTE,
+
+    /** Nunchuk: 72 bytes, stick en los bytes 6-7 (FLAG_STICK_VALID). */
+    NUNCHUK,
+
+    /**
+     * GamePad / Pro Controller de Wii U (Cemu): 80 bytes con el bloque de
+     * extensión (stick derecho + táctil) y los sensores remapeados al marco
+     * del mando apaisado ([Frame]).
+     */
+    GAMEPAD
+}
 
 /**
  * Sensores a máxima frecuencia. La cadencia de envío la marca el gyro:
@@ -19,10 +36,25 @@ import dev.pepotech.pepomote.net.PmpCodec
 class MotionEngine(
     context: Context,
     private val sessionId: Int,
-    /** Emisor Nunchuk: el paquete lleva el stick (bytes 6-7) y flags bit1. */
-    private val nunchuk: Boolean = false,
+    kind: SenderKind = SenderKind.WIIMOTE,
     private val onPacket: (ByteArray) -> Unit
 ) : SensorEventListener {
+
+    /**
+     * Qué se emula. El servicio lo fija al conectar (Wiimote o Nunchuk según
+     * el rol); la pantalla GamePad lo pone en GAMEPAD al entrar y lo restaura
+     * al salir (y con él vuelven los paquetes de 72 bytes).
+     */
+    @Volatile
+    var kind: SenderKind = kind
+
+    /**
+     * Rotación de la pantalla (`Surface.ROTATION_*`) mientras se es GamePad:
+     * decide el remapeo de los sensores (contrato §4). La fija la pantalla
+     * GamePad; en cualquier otra pantalla no se usa.
+     */
+    @Volatile
+    var rotation: Int = Surface.ROTATION_0
 
     private val sensorManager =
         context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -35,6 +67,12 @@ class MotionEngine(
     private val quat = floatArrayOf(1f, 0f, 0f, 0f) // w, x, y, z
     private val gyro = FloatArray(3)
     private val accel = FloatArray(3)
+
+    // Sensores ya remapeados al marco del GamePad (sin reservar memoria por paquete)
+    private val quatOut = FloatArray(4)
+    private val gyroOut = FloatArray(3)
+    private val accelOut = FloatArray(3)
+
     private var seq = 0
     private var hasRotationVector = false
     private var lastSendNs = 0L
@@ -104,22 +142,67 @@ class MotionEngine(
 
     private fun sendPacket(tSensorNs: Long) {
         seq++
-        val packet = PmpCodec.encodeInput(
-            sessionId = sessionId,
-            seq = seq,
-            tSensorUs = tSensorNs / 1000,
-            quat = quat,
-            gyro = gyro,
-            accel = accel,
-            buttons = ButtonState.current(),
-            recenterCount = ButtonState.recenterCount(),
-            batteryPct = battery(),
-            touchScrollDy = ButtonState.drainScroll(),
-            flags = (if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0) or
-                (if (nunchuk) PmpCodec.FLAG_STICK_VALID else 0),
-            stickX = if (nunchuk) ButtonState.stickX() else 0,
-            stickY = if (nunchuk) ButtonState.stickY() else 0
-        )
+        val quatFlag = if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0
+        val packet = when (kind) {
+            SenderKind.GAMEPAD -> {
+                // Marco del mando apaisado (contrato §4) ANTES de escribir el paquete
+                val rot = rotation
+                Frame.remapQuat(quat, rot, quatOut)
+                Frame.remapGyro(gyro, rot, gyroOut)
+                Frame.remapAccel(accel, rot, accelOut)
+                val touch = ButtonState.touch()
+                PmpCodec.encodeInput(
+                    sessionId = sessionId,
+                    seq = seq,
+                    tSensorUs = tSensorNs / 1000,
+                    quat = quatOut,
+                    gyro = gyroOut,
+                    accel = accelOut,
+                    buttons = ButtonState.current(),
+                    recenterCount = ButtonState.recenterCount(),
+                    batteryPct = battery(),
+                    touchScrollDy = ButtonState.drainScroll(),
+                    flags = quatFlag or PmpCodec.FLAG_STICK_VALID or PmpCodec.FLAG_EXT or
+                        (if (touch.down) PmpCodec.FLAG_TOUCH else 0),
+                    stickX = ButtonState.stickX(),
+                    stickY = ButtonState.stickY(),
+                    stick2X = ButtonState.stickRX(),
+                    stick2Y = ButtonState.stickRY(),
+                    touchX = touch.x,
+                    touchY = touch.y
+                )
+            }
+
+            SenderKind.NUNCHUK -> PmpCodec.encodeInput(
+                sessionId = sessionId,
+                seq = seq,
+                tSensorUs = tSensorNs / 1000,
+                quat = quat,
+                gyro = gyro,
+                accel = accel,
+                buttons = ButtonState.current(),
+                recenterCount = ButtonState.recenterCount(),
+                batteryPct = battery(),
+                touchScrollDy = ButtonState.drainScroll(),
+                flags = quatFlag or PmpCodec.FLAG_STICK_VALID,
+                stickX = ButtonState.stickX(),
+                stickY = ButtonState.stickY()
+            )
+
+            SenderKind.WIIMOTE -> PmpCodec.encodeInput(
+                sessionId = sessionId,
+                seq = seq,
+                tSensorUs = tSensorNs / 1000,
+                quat = quat,
+                gyro = gyro,
+                accel = accel,
+                buttons = ButtonState.current(),
+                recenterCount = ButtonState.recenterCount(),
+                batteryPct = battery(),
+                touchScrollDy = ButtonState.drainScroll(),
+                flags = quatFlag
+            )
+        }
         onPacket(packet)
     }
 

@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.net.PairStore
@@ -27,14 +28,18 @@ import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
-import dev.pepotech.pepomote.ui.components.RoundButton
+import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.TriggerZone
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 /**
- * Nunchuk: el móvil de la otra mano. Stick analógico, C encima y el gatillo Z
- * abajo (como el B del mando). Sin selector de modo ni puntero: eso lo decide
- * el móvil-Wiimote. Mismo layout vertical y de lado, solo escalado.
+ * Nunchuk: el móvil de la otra mano, en vertical o de lado (mismo orden,
+ * solo escalado). Stick centrado para el pulgar de cualquier mano; C es una
+ * banda ancha justo encima del stick y Z la banda inferior (como el gatillo B
+ * del mando): las dos se aciertan sin mirar. Sin selector de modo ni puntero:
+ * eso lo decide el móvil-Wiimote; el modo real (le llega por difusión) y el
+ * jugador van en la cabecera. En Wii U, si el mando de su jugador no es Mando
+ * de Wii, el Nunchuk no tiene a quién acompañar y lo avisa.
  */
 @Composable
 fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
@@ -58,7 +63,7 @@ fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
         // De lado hay poca altura: todo más pequeño, mismo orden
         val compact = maxHeight < 520.dp
         val stickSize = if (compact) maxHeight * 0.40f else minOf(maxWidth * 0.66f, 264.dp)
-        val cSize = if (compact) 56.dp else 76.dp
+        val cHeight = if (compact) 48.dp else 64.dp
         val zHeight = if (compact) 64.dp else 96.dp
 
         Column(
@@ -70,19 +75,44 @@ fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Header(link, onDisconnect)
 
+            // Aviso permanente: en Wii U el Nunchuk solo acompaña a un Mando de Wii
+            if (link is UiLink.Connected && link.mode == LinkState.MODE_CEMU &&
+                link.pad != LinkState.PAD_WIIMOTE
+            ) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "En Wii U el Nunchuk solo funciona si el mando elige Mando de Wii",
+                    style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Warn),
+                    textAlign = TextAlign.Center
+                )
+            }
+
             Spacer(Modifier.weight(1f))
-            RoundButton("C", cSize, ButtonState.C, textSize = if (compact) 20 else 26)
-            Spacer(Modifier.height(if (compact) 10.dp else 22.dp))
+            // C: banda ancha encima del stick, se acierta con el pulgar sin mirar
+            TriggerZone(
+                bit = ButtonState.C, label = "C", height = cHeight,
+                background = PepoColors.CardBorder,
+                pressedColor = PepoColors.Glow,
+                textColor = PepoColors.Text
+            )
+            Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
             AnalogStick(stickSize) { x, y -> ButtonState.setStick(x, y) }
             Spacer(Modifier.weight(1f))
 
+            // Z: banda inferior, como el gatillo B del mando
             TriggerZone(bit = ButtonState.Z, label = "Z", height = zHeight)
             Spacer(Modifier.height(12.dp))
         }
+
+        NoticeBanner(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 64.dp, start = 24.dp, end = 24.dp)
+        )
     }
 }
 
-/** Cabecera: PC · "Nunchuk · Jugador N" (+ RTT) / Conectando… / Sin conexión, y Salir. */
+/** Cabecera: PC · "Nunchuk · Jugador N · modo" (+ RTT) / Conectando… / Sin conexión, y Salir. */
 @Composable
 private fun Header(link: UiLink, onDisconnect: () -> Unit) {
     Row(
@@ -95,7 +125,7 @@ private fun Header(link: UiLink, onDisconnect: () -> Unit) {
                     Text(link.pcName, style = MaterialTheme.typography.titleMedium)
                     Text(
                         buildString {
-                            append("Nunchuk · Jugador ${link.player}")
+                            append("Nunchuk · Jugador ${link.player} · ${modeLabel(link.mode)}")
                             link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
                         },
                         style = MaterialTheme.typography.bodyMedium

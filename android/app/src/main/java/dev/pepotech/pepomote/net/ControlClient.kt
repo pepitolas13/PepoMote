@@ -10,7 +10,7 @@ import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** Canal de control TCP (PROTOCOL.md §3): hello/ok/err, ping 1 Hz, mode. */
+/** Canal de control TCP (PROTOCOL.md §3): hello/ok/err, ping 1 Hz, mode, pad, notice. */
 class ControlClient(
     private val host: String,
     private val port: Int,
@@ -21,11 +21,34 @@ class ControlClient(
     private val role: String,
     private val callbacks: Callbacks
 ) {
+    /** Lo que confirma el receptor en el `ok`. */
+    data class Ok(
+        val sessionId: Int,
+        val udpPort: Int,
+        val mode: String,
+        val slot: Int,
+        /** El rol que confirma el receptor. */
+        val role: String,
+        /** 1..4 (0 si el ok no lo trae). */
+        val player: Int,
+        /** `modes` contiene "cemu": el receptor sabe de Wii U (ausente en receptores antiguos). */
+        val supportsCemu: Boolean,
+        /** Mando efectivo en modo Wii U: gamepad / pro / wiimote (ausente = gamepad). */
+        val pad: String
+    )
+
     interface Callbacks {
-        /** `role`: el que confirma el receptor; `player`: 1..4 (0 si el ok no lo trae). */
-        fun onOk(sessionId: Int, udpPort: Int, mode: String, slot: Int, role: String, player: Int)
+        fun onOk(ok: Ok)
         fun onError(code: String, msg: String)
+
+        /** Eco del `mode` pedido o difusión del receptor al cambiarlo otro móvil: autoritativo. */
         fun onModeChanged(mode: String)
+
+        /** Eco del `pad`: mando efectivo (gamepad / pro / wiimote). */
+        fun onPadChanged(pad: String)
+
+        /** Aviso transitorio del receptor (banner ~6 s). */
+        fun onNotice(text: String)
         fun onClosed()
     }
 
@@ -64,20 +87,30 @@ class ControlClient(
                     .put("model", deviceModel)
                     // Ausente = wiimote (receptores anteriores no lo conocen)
                     .apply { if (role == "nunchuk") put("role", role) }
+                // Sin `pad`: en Wii U se empieza siempre como GamePad/Pro (lo dice el ok)
             )
 
             while (running) {
                 val line = r.readLine() ?: break
                 if (line.isBlank()) continue
-                val msg = JSONObject(line)
+                // Una línea que no sea JSON no rompe el bucle
+                val msg = try {
+                    JSONObject(line)
+                } catch (_: Exception) {
+                    continue
+                }
                 when (msg.optString("m")) {
                     "ok" -> callbacks.onOk(
-                        msg.getInt("session_id"),
-                        msg.optInt("udp_port", port),
-                        msg.optString("mode", "pointer"),
-                        msg.optInt("slot", 0),
-                        msg.optString("role", role),
-                        msg.optInt("player", 0)
+                        Ok(
+                            sessionId = msg.getInt("session_id"),
+                            udpPort = msg.optInt("udp_port", port),
+                            mode = msg.optString("mode", "pointer"),
+                            slot = msg.optInt("slot", 0),
+                            role = msg.optString("role", role),
+                            player = msg.optInt("player", 0),
+                            supportsCemu = supportsCemu(msg),
+                            pad = msg.optString("pad", "gamepad")
+                        )
                     )
 
                     "err" -> {
@@ -88,6 +121,9 @@ class ControlClient(
                     "ping" -> sendJson(JSONObject().put("m", "pong").put("t", msg.opt("t")))
                     "pong" -> Unit
                     "mode" -> callbacks.onModeChanged(msg.optString("mode", "pointer"))
+                    "pad" -> callbacks.onPadChanged(msg.optString("pad", "gamepad"))
+                    "notice" -> msg.optString("text").takeIf { it.isNotBlank() }?.let(callbacks::onNotice)
+                    else -> Unit // mensaje desconocido: se ignora
                 }
             }
         } catch (e: Exception) {
@@ -112,6 +148,11 @@ class ControlClient(
 
     fun sendMode(mode: String) {
         sendJson(JSONObject().put("m", "mode").put("mode", mode))
+    }
+
+    /** Modo Wii U: "wiimote" (Mando Wii) o "gamepad" (volver a GamePad/Pro). */
+    fun sendPad(pad: String) {
+        sendJson(JSONObject().put("m", "pad").put("pad", pad))
     }
 
     private fun sendJson(obj: JSONObject) {
@@ -146,5 +187,16 @@ class ControlClient(
         } catch (_: Exception) {
         }
         thread.join(500)
+    }
+
+    private companion object {
+        /** `ok.modes` contiene "cemu" (un receptor antiguo no manda `modes`). */
+        fun supportsCemu(ok: JSONObject): Boolean {
+            val modes = ok.optJSONArray("modes") ?: return false
+            for (i in 0 until modes.length()) {
+                if (modes.optString(i) == "cemu") return true
+            }
+            return false
+        }
     }
 }

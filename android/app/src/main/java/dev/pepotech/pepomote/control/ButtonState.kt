@@ -33,13 +33,47 @@ object ButtonState {
     const val C = 1 shl 17
     const val Z = 1 shl 18
 
+    /** Wii U GamePad / Pro Controller (modo Cemu). */
+    const val X = 1 shl 19
+    const val Y = 1 shl 20
+    const val L = 1 shl 21
+    const val R = 1 shl 22
+    const val ZL = 1 shl 23
+    const val ZR = 1 shl 24
+
+    /** Click del stick izquierdo / derecho (L3 / R3). */
+    const val STICK_L = 1 shl 25
+    const val STICK_R = 1 shl 26
+
+    /** Soplar al micrófono del GamePad. */
+    const val MIC = 1 shl 27
+
+    /** Cambiar la vista TV ↔ pantalla del GamePad (función de Cemu). */
+    const val SCREEN = 1 shl 28
+
+    /**
+     * Dedo en la pantalla táctil del GamePad: instantánea inmutable, así el
+     * hilo de sensores lee x, y y `down` coherentes entre sí de una sola vez.
+     * x, y = fracción de la pantalla en 0..65535, origen arriba-izquierda.
+     */
+    class Touch(val x: Int, val y: Int, val down: Boolean)
+
+    private val NO_TOUCH = Touch(0, 0, false)
+
     private val mask = AtomicInteger(0)
     private val recenter = AtomicInteger(0)
     private val scrollAcc = AtomicInteger(0)
 
-    /** Stick del Nunchuk, −127..127, +x derecha, +y arriba. Solo lo escribe la pantalla Nunchuk. */
+    /** Stick del Nunchuk o izquierdo del GamePad, −127..127, +x derecha, +y arriba. */
     private val stickXv = AtomicInteger(0)
     private val stickYv = AtomicInteger(0)
+
+    /** Stick derecho del GamePad, misma convención. */
+    private val stick2Xv = AtomicInteger(0)
+    private val stick2Yv = AtomicInteger(0)
+
+    @Volatile
+    private var touchV: Touch = NO_TOUCH
 
     private val handler = Handler(Looper.getMainLooper())
     private val latch = PressLatch(object : PressLatch.Scheduler {
@@ -80,11 +114,36 @@ object ButtonState {
     fun stickX(): Int = stickXv.get()
     fun stickY(): Int = stickYv.get()
 
+    /** Stick derecho del GamePad (solo lo escribe la pantalla GamePad). */
+    fun setStick2(x: Int, y: Int) {
+        stick2Xv.set(x.coerceIn(-127, 127))
+        stick2Yv.set(y.coerceIn(-127, 127))
+    }
+
+    fun stickRX(): Int = stick2Xv.get()
+    fun stickRY(): Int = stick2Yv.get()
+
+    /**
+     * Pantalla táctil del GamePad: `x`, `y` en 0..65535 (se recortan) y
+     * `down` = hay dedo. Al soltar se conservan las últimas coordenadas
+     * (al receptor le da igual: sin FLAG_TOUCH no las mira).
+     */
+    fun setTouch(x: Int, y: Int, down: Boolean) {
+        touchV = Touch(x.coerceIn(0, 65535), y.coerceIn(0, 65535), down)
+    }
+
+    /** Instantánea atómica del táctil. */
+    fun touch(): Touch = touchV
+
+    /** Todo suelto: botones, scroll, ambos sticks y táctil. */
     fun reset() {
         latch.reset()
         mask.set(0)
         scrollAcc.set(0)
         stickXv.set(0)
         stickYv.set(0)
+        stick2Xv.set(0)
+        stick2Yv.set(0)
+        touchV = NO_TOUCH
     }
 }

@@ -22,14 +22,18 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
+import dev.pepotech.pepomote.ui.components.PadSelector
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 /**
  * Mando apaisado estilo "de lado" (NES): cruceta a la izquierda, 1 y 2
  * grandes a la derecha. Para juegos 2D en Dolphin con el Wiimote de lado.
- * `showChips`: selector Puntero/Dolphin, mismas condiciones que en vertical.
+ * `showChips`: selector Puntero/Dolphin/Wii U, mismas condiciones que en
+ * vertical. Dentro de Wii U como Mando de Wii: cabecera «Wii U · Mando de
+ * Wii» y el selector «En Cemu soy» debajo.
  */
 @Composable
 fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
@@ -46,28 +50,41 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        // Cabecera compacta
-        Row(
+        // Cabecera compacta (+ selector de mando dentro de Wii U)
+        Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Text(
-                when (link) {
-                    is UiLink.Connected -> link.pcName
-                    is UiLink.Connecting -> "Conectando…"
-                    else -> "Sin conexión"
-                },
-                style = MaterialTheme.typography.bodyMedium
-            )
-            // Selector Puntero/Dolphin también de lado (solo el Jugador 1)
-            if (link is UiLink.Connected && showChips && link.slot == 0) {
-                ModeChips(current = link.mode)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    when (link) {
+                        is UiLink.Connected -> link.pcName
+                        is UiLink.Connecting -> "Conectando…"
+                        else -> "Sin conexión"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (link is UiLink.Connected) {
+                    if (isWiiUAsWiimote(link)) {
+                        Text("Wii U · Mando de Wii", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    // Selector Puntero/Dolphin/Wii U también de lado (solo el Jugador 1)
+                    if (showModeChips(link, showChips)) {
+                        ModeChips(current = link.mode, supportsCemu = link.supportsCemu, compact = true)
+                    }
+                }
+                TextButton(onClick = onDisconnect) {
+                    Text("Salir", color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
+                }
             }
-            TextButton(onClick = onDisconnect) {
-                Text("Salir", color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
+            if (link is UiLink.Connected && isWiiUAsWiimote(link)) {
+                PadSelector(link, compact = true)
             }
         }
 
@@ -125,6 +142,12 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 8.dp)
+        )
+
+        NoticeBanner(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 84.dp)
         )
     }
 }

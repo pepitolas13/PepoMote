@@ -35,10 +35,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
+import dev.pepotech.pepomote.ui.components.PadSelector
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.TriggerZone
+import dev.pepotech.pepomote.ui.components.WII_PAD_HELP
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -47,9 +51,11 @@ import kotlin.math.roundToInt
 
 /**
  * Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/2, multimedia, B.
- * `showChips`: mostrar el selector Puntero/Dolphin (entrada por Conectar con
- * el ajuste activo). Entrando por la tarjeta Dolphin no hay selector: esa
- * pantalla es solo-Dolphin.
+ * `showChips`: mostrar el selector Puntero/Dolphin/Wii U (entrada por Conectar
+ * con el ajuste activo). Entrando por la tarjeta Dolphin no hay selector: esa
+ * pantalla es solo-Dolphin. Dentro de Wii U como Mando de Wii, la cabecera lo
+ * dice, los chips se ven siempre (Jugador 1) y debajo va el selector
+ * «En Cemu soy» con su ayuda; el puntero se recentra como en Dolphin.
  */
 @Composable
 fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
@@ -101,13 +107,15 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                             )
                             Text(
                                 buildString {
-                                    if (link.mode == "dolphin") {
-                                        append("Dolphin")
-                                    } else if (link.slot > 0) {
-                                        append("Puntero: apunta el Jugador 1")
-                                    } else {
-                                        append("Puntero")
-                                    }
+                                    append(
+                                        when {
+                                            isWiiUAsWiimote(link) -> "Wii U · Mando de Wii"
+                                            link.mode == LinkState.MODE_CEMU -> "Wii U"
+                                            link.mode == LinkState.MODE_DOLPHIN -> "Dolphin"
+                                            link.slot > 0 -> "Puntero: apunta el Jugador 1"
+                                            else -> "Puntero"
+                                        }
+                                    )
                                     link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
                                 },
                                 style = MaterialTheme.typography.bodyMedium
@@ -133,9 +141,17 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 }
             }
 
-            if (link is UiLink.Connected && showChips && link.slot == 0) {
-                Spacer(Modifier.height(6.dp))
-                ModeChips(current = link.mode)
+            if (link is UiLink.Connected) {
+                // Chips de modo: Jugador 1 con el ajuste activo, y siempre dentro de Wii U
+                if (showModeChips(link, showChips)) {
+                    Spacer(Modifier.height(6.dp))
+                    ModeChips(current = link.mode, supportsCemu = link.supportsCemu)
+                }
+                // Wii U como Mando de Wii: qué mando soy en Cemu, con su ayuda
+                if (isWiiUAsWiimote(link)) {
+                    Spacer(Modifier.height(8.dp))
+                    PadSelector(link, help = WII_PAD_HELP)
+                }
             }
 
             Spacer(Modifier.height(10.dp))
@@ -181,25 +197,55 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 .fillMaxHeight(0.45f)
                 .width(30.dp)
         )
+
+        NoticeBanner(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 64.dp, start = 24.dp, end = 24.dp)
+        )
     }
 }
 
-/** Selector de modo: Puntero (controla el PC) / Dolphin (Wiimote virtual).
- *  Lo comparten el mando vertical y el apaisado. */
+/** Modo Wii U actuando como Mando de Wii (layouts Wii de siempre, 72 bytes). */
+internal fun isWiiUAsWiimote(link: UiLink.Connected): Boolean =
+    link.mode == LinkState.MODE_CEMU && link.pad == LinkState.PAD_WIIMOTE
+
+/** Chips de modo: solo el Jugador 1; con el ajuste activo o, siempre, dentro de Wii U. */
+internal fun showModeChips(link: UiLink.Connected, showChips: Boolean): Boolean =
+    link.slot == 0 && (showChips || link.mode == LinkState.MODE_CEMU)
+
+/** Nombre del modo del receptor para las cabeceras. */
+internal fun modeLabel(mode: String): String = when (mode) {
+    LinkState.MODE_DOLPHIN -> "Dolphin"
+    LinkState.MODE_CEMU -> "Wii U"
+    else -> "Puntero"
+}
+
+/**
+ * Selector de modo: Puntero (controla el PC) / Dolphin (Wiimote virtual) /
+ * Wii U (GamePad para Cemu, solo si el receptor lo soporta). Selección por
+ * igualdad exacta del modo. Wii U pasa al GamePad al instante (optimista) y
+ * el eco lo confirma. Lo comparten el mando vertical, el apaisado y el GamePad.
+ */
 @Composable
-internal fun ModeChips(current: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        ModeChip("Puntero", selected = current != "dolphin") {
-            dev.pepotech.pepomote.service.LinkState.sendMode?.invoke("pointer")
+internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean = false) {
+    Row(horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)) {
+        ModeChip("Puntero", selected = current == LinkState.MODE_POINTER, compact = compact) {
+            LinkState.requestMode(LinkState.MODE_POINTER)
         }
-        ModeChip("Dolphin", selected = current == "dolphin") {
-            dev.pepotech.pepomote.service.LinkState.sendMode?.invoke("dolphin")
+        ModeChip("Dolphin", selected = current == LinkState.MODE_DOLPHIN, compact = compact) {
+            LinkState.requestMode(LinkState.MODE_DOLPHIN)
+        }
+        if (supportsCemu) {
+            ModeChip("Wii U", selected = current == LinkState.MODE_CEMU, compact = compact) {
+                LinkState.requestMode(LinkState.MODE_CEMU)
+            }
         }
     }
 }
 
 @Composable
-private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ModeChip(label: String, selected: Boolean, compact: Boolean = false, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .background(
@@ -209,13 +255,17 @@ private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
             .pointerInput(label) {
                 detectTapGestures(onTap = { onClick() })
             }
-            .padding(horizontal = 18.dp, vertical = 8.dp)
+            .padding(
+                horizontal = if (compact) 12.dp else 18.dp,
+                vertical = if (compact) 6.dp else 8.dp
+            )
     ) {
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = if (selected) PepoColors.Card else PepoColors.TextDim
-            )
+            ),
+            maxLines = 1
         )
     }
 }

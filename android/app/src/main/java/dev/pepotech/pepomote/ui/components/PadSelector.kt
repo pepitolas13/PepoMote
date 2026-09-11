@@ -1,0 +1,140 @@
+package dev.pepotech.pepomote.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import dev.pepotech.pepomote.service.LinkState
+import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.ui.theme.PepoColors
+import kotlinx.coroutines.delay
+
+/** Línea de ayuda del selector en el layout Wii dentro de Wii U. */
+const val WII_PAD_HELP = "Para juegos de Wii U que se juegan con el mando de Wii (Wii Sports Club, Wii Party U…)"
+
+/** Sin eco de `pad` en este tiempo (PC antiguo), se vuelve a marcar el mando actual. */
+private const val PAD_ECHO_TIMEOUT_MS = 2000L
+
+/**
+ * «En Cemu soy: [ GamePad ] [ Mando de Wii ]»: qué mando es este móvil
+ * dentro del modo Wii U (nada que ver con el modo, que va en sus chips).
+ * Segmento activo relleno en azul; el pedido y aún sin eco, a medio tono
+ * ("pendiente"). Jugadores 2-4: «Pro Controller» en vez de «GamePad».
+ * Tocar envía `pad wiimote` / `pad gamepad`; la pantalla cambia con el eco.
+ */
+@Composable
+fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? = null) {
+    val wiimote = link.pad == LinkState.PAD_WIIMOTE
+    var pending by remember { mutableStateOf<String?>(null) }
+
+    // El eco de `pad` (cambie o no el mando) cierra la espera…
+    LaunchedEffect(link.pad) { pending = null }
+    // …y si no llega, se deja de esperar
+    LaunchedEffect(pending) {
+        if (pending != null) {
+            delay(PAD_ECHO_TIMEOUT_MS)
+            pending = null
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
+        ) {
+            Text(
+                "En Cemu soy:",
+                style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
+                maxLines = 1
+            )
+            val shape = RoundedCornerShape(20.dp)
+            Row(
+                modifier = Modifier
+                    .background(PepoColors.Card, shape)
+                    .border(1.5.dp, PepoColors.CardBorder, shape)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Segment(
+                    label = if (link.player == 1) "GamePad" else "Pro Controller",
+                    selected = !wiimote,
+                    pending = pending == LinkState.PAD_GAMEPAD,
+                    compact = compact
+                ) {
+                    if (wiimote) {
+                        pending = LinkState.PAD_GAMEPAD
+                        LinkState.sendPad?.invoke(LinkState.PAD_GAMEPAD)
+                    }
+                }
+                Segment(
+                    label = "Mando de Wii",
+                    selected = wiimote,
+                    pending = pending == LinkState.PAD_WIIMOTE,
+                    compact = compact
+                ) {
+                    if (!wiimote) {
+                        pending = LinkState.PAD_WIIMOTE
+                        LinkState.sendPad?.invoke(LinkState.PAD_WIIMOTE)
+                    }
+                }
+            }
+        }
+        if (help != null) {
+            Text(
+                help,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp, start = 12.dp, end = 12.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun Segment(label: String, selected: Boolean, pending: Boolean, compact: Boolean, onClick: () -> Unit) {
+    val bg = when {
+        selected -> PepoColors.Blue
+        pending -> PepoColors.Glow
+        else -> PepoColors.Card
+    }
+    val fg = when {
+        selected -> PepoColors.Card
+        pending -> PepoColors.Text
+        else -> PepoColors.TextDim
+    }
+    Box(
+        modifier = Modifier
+            .background(bg, RoundedCornerShape(17.dp))
+            .pointerInput(label) {
+                detectTapGestures(onTap = { onClick() })
+            }
+            .padding(
+                horizontal = if (compact) 12.dp else 16.dp,
+                vertical = if (compact) 6.dp else 8.dp
+            )
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge.copy(color = fg),
+            maxLines = 1
+        )
+    }
+}

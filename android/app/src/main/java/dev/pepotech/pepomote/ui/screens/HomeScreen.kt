@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +33,7 @@ fun HomeScreen(
     onConnect: () -> Unit,
     onController: () -> Unit,
     onDolphin: () -> Unit,
+    onWiiU: () -> Unit,
     onNunchuk: () -> Unit,
     onNewPairing: () -> Unit
 ) {
@@ -64,6 +64,7 @@ fun HomeScreen(
             )
         }
         Spacer(Modifier.height(24.dp))
+        // Tres filas de pares: Conectar | Mando, Dolphin | Wii U, Nunchuk | Ajustes
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -96,6 +97,16 @@ fun HomeScreen(
                     onClick = onDolphin
                 )
             }
+            // Wii U: el móvil como GamePad (o Pro Controller) para Cemu
+            item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_wiiu),
+                    subtitle = stringResource(R.string.channel_wiiu_sub),
+                    glyph = ChannelGlyph.GamePad,
+                    accent = PepoColors.Ok,
+                    onClick = onWiiU
+                )
+            }
             // Con Dolphin: el segundo móvil, en la otra mano
             item {
                 ChannelCard(
@@ -106,15 +117,12 @@ fun HomeScreen(
                     onClick = onNunchuk
                 )
             }
-            // Ajustes a todo el ancho: dos filas de pares (PC / Dolphin) y
-            // una tira debajo, en vez de una tarjeta huérfana
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item {
                 ChannelCard(
                     title = stringResource(R.string.channel_settings),
                     subtitle = stringResource(R.string.channel_settings_sub),
                     glyph = ChannelGlyph.Gear,
                     accent = PepoColors.TextDim,
-                    wide = true,
                     onClick = onNewPairing
                 )
             }

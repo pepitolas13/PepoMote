@@ -22,6 +22,7 @@ import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.net.UdpSender
 import dev.pepotech.pepomote.sensor.MotionEngine
+import dev.pepotech.pepomote.sensor.SenderKind
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -129,27 +130,34 @@ class LinkForegroundService : Service() {
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
             role = role,
             callbacks = object : ControlClient.Callbacks {
-                override fun onOk(
-                    sessionId: Int, udpPort: Int, mode: String, slot: Int, okRole: String, player: Int
-                ) {
+                override fun onOk(ok: ControlClient.Ok) {
                     if (gen != generation) return
-                    val nunchuk = okRole == LinkState.ROLE_NUNCHUK
-                    val sender = UdpSender(pairing.host, udpPort, sessionId) { rtt ->
+                    val nunchuk = ok.role == LinkState.ROLE_NUNCHUK
+                    val sender = UdpSender(pairing.host, ok.udpPort, ok.sessionId) { rtt ->
                         LinkState.updateConnected { it.copy(rttMs = rtt) }
                     }
                     udp = sender
-                    val engine = MotionEngine(this@LinkForegroundService, sessionId, nunchuk) { packet ->
+                    val engine = MotionEngine(
+                        this@LinkForegroundService, ok.sessionId,
+                        if (nunchuk) SenderKind.NUNCHUK else SenderKind.WIIMOTE
+                    ) { packet ->
                         sender.send(packet)
                     }
                     motion = engine
+                    // Antes de publicar Connected: la pantalla GamePad lo busca al entrar
+                    LinkState.motion = engine
                     engine.start()
                     LinkState.sendMode = { m -> control?.sendMode(m) }
+                    // Solo para esta sesión: cada conexión empieza como GamePad/Pro
+                    LinkState.sendPad = { p -> control?.sendPad(p) }
                     LinkState.publish(
                         UiLink.Connected(
-                            pairing.pcName, mode, null, 0f, slot,
-                            role = okRole,
+                            pairing.pcName, ok.mode, null, 0f, ok.slot,
+                            role = ok.role,
                             // Receptor sin "player" en el ok: el jugador es el slot
-                            player = if (player > 0) player else slot + 1
+                            player = if (ok.player > 0) ok.player else ok.slot + 1,
+                            supportsCemu = ok.supportsCemu,
+                            pad = ok.pad
                         )
                     )
                     LinkState.pendingMode?.let { m ->
@@ -187,9 +195,25 @@ class LinkForegroundService : Service() {
                     }
                 }
 
+                /**
+                 * Eco o difusión: el modo del receptor manda (cambia de pantalla
+                 * si toca) y consume la intención Wii U pendiente, avisando si
+                 * el PC no pudo.
+                 */
                 override fun onModeChanged(mode: String) {
                     if (gen != generation) return
                     LinkState.updateConnected { it.copy(mode = mode) }
+                    LinkState.resolveIntent(mode)
+                }
+
+                override fun onPadChanged(pad: String) {
+                    if (gen != generation) return
+                    LinkState.updateConnected { it.copy(pad = pad) }
+                }
+
+                override fun onNotice(text: String) {
+                    if (gen != generation) return
+                    LinkState.publishNotice(text)
                 }
 
                 override fun onClosed() {
@@ -226,6 +250,8 @@ class LinkForegroundService : Service() {
     private fun teardownLink() {
         generation++
         LinkState.sendMode = null
+        LinkState.sendPad = null
+        LinkState.motion = null
         motion?.stop()
         udp?.close()
         control?.close()

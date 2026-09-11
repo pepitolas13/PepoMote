@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 // Glifos propios, dibujados a mano — nada de iconografía ajena.
-enum class ChannelGlyph { Qr, Pad, Pointer, Stick, Gear }
+enum class ChannelGlyph { Qr, Pad, Pointer, Stick, GamePad, Gear }
 
 /** `wide`: tarjeta apaisada a todo el ancho (glifo a la izquierda, textos al lado). */
 @Composable
@@ -88,6 +88,7 @@ private fun DrawScope.drawGlyph(glyph: ChannelGlyph, accent: Color) {
         ChannelGlyph.Pad -> drawPadGlyph(accent)
         ChannelGlyph.Pointer -> drawPointerGlyph(accent)
         ChannelGlyph.Stick -> drawStickGlyph(accent)
+        ChannelGlyph.GamePad -> drawGamePadGlyph(accent)
         ChannelGlyph.Gear -> drawGearGlyph(accent)
     }
 }
@@ -145,6 +146,34 @@ private fun DrawScope.drawStickGlyph(accent: Color) {
     val knob = androidx.compose.ui.geometry.Offset(c.x + w * 0.15f, c.y - w * 0.15f)
     drawLine(color = accent, start = c, end = knob, strokeWidth = w * 0.11f, cap = StrokeCap.Round)
     drawCircle(color = accent, radius = w * 0.17f, center = knob)
+}
+
+/** GamePad de Wii U: cuerpo apaisado con la pantalla en medio y un stick a cada lado. */
+private fun DrawScope.drawGamePadGlyph(accent: Color) {
+    val w = size.width
+    val stroke = w * 0.08f
+    val bodyH = w * 0.64f
+    val top = (size.height - bodyH) / 2f
+    drawRoundRect(
+        color = accent,
+        topLeft = androidx.compose.ui.geometry.Offset(stroke / 2f, top + stroke / 2f),
+        size = androidx.compose.ui.geometry.Size(w - stroke, bodyH - stroke),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.14f),
+        style = Stroke(width = stroke)
+    )
+    // Pantalla táctil
+    drawRoundRect(
+        color = accent,
+        topLeft = androidx.compose.ui.geometry.Offset(w * 0.31f, top + bodyH * 0.24f),
+        size = androidx.compose.ui.geometry.Size(w * 0.38f, bodyH * 0.52f),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.04f)
+    )
+    // Sticks
+    drawCircle(color = accent, radius = w * 0.075f, center = androidx.compose.ui.geometry.Offset(w * 0.17f, top + bodyH * 0.40f))
+    drawCircle(color = accent, radius = w * 0.075f, center = androidx.compose.ui.geometry.Offset(w * 0.83f, top + bodyH * 0.40f))
+    // Cruceta y botones, insinuados
+    drawCircle(color = accent, radius = w * 0.04f, center = androidx.compose.ui.geometry.Offset(w * 0.17f, top + bodyH * 0.72f))
+    drawCircle(color = accent, radius = w * 0.04f, center = androidx.compose.ui.geometry.Offset(w * 0.83f, top + bodyH * 0.72f))
 }
 
 private fun DrawScope.drawGearGlyph(accent: Color) {

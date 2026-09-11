@@ -8,6 +8,8 @@
     <string name="channel_controller_sub">Puntero y botones</string>
     <string name="channel_dolphin">Dolphin</string>
     <string name="channel_dolphin_sub">Juega a la Wii de verdad</string>
+    <string name="channel_wiiu">Wii U</string>
+    <string name="channel_wiiu_sub">GamePad para Cemu</string>
     <string name="channel_nunchuk">Nunchuk</string>
     <string name="channel_nunchuk_sub">La otra mano</string>
     <string name="channel_settings">Ajustes</string>

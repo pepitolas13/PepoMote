@@ -22,13 +22,22 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.PepoMote">
 
+        <!-- singleTop: un enlace profundo con la app ya abierta llega por onNewIntent -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Enlace profundo pepomote://pair?v=1 (host, port, t, name): el mismo contenido del QR -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="pepomote" android:host="pair" />
             </intent-filter>
         </activity>
 
