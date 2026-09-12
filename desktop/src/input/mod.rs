@@ -92,6 +92,13 @@ pub trait Injector: Send {
     fn cursor_pos(&mut self) -> Option<(f32, f32)> {
         None
     }
+    /// Límites reales del cursor (x0, y0, x1, y1) en pantallas de la
+    /// primaria: el escritorio virtual entero (con un monitor encima, y0 es
+    /// negativo). None = solo la primaria. Distingue el recorte del SO en un
+    /// borde de un salto del ratón real.
+    fn cursor_bounds(&mut self) -> Option<(f32, f32, f32, f32)> {
+        None
+    }
     /// Linux multi-monitor: rect [x0, y0, w, h] (0..1) de la pantalla de
     /// apuntado dentro del escritorio completo que cubre el dispositivo
     /// absoluto. Windows ya apunta a la primaria: no hace nada.

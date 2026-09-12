@@ -257,4 +257,24 @@ impl Injector for WinInjector {
         }
         None
     }
+
+    fn cursor_bounds(&mut self) -> Option<(f32, f32, f32, f32)> {
+        // El escritorio virtual entero, en pantallas de la primaria (misma
+        // normalización que cursor_pos/move_abs)
+        unsafe {
+            let w = GetSystemMetrics(SM_CXSCREEN) as f32;
+            let h = GetSystemMetrics(SM_CYSCREEN) as f32;
+            if w <= 0.0 || h <= 0.0 {
+                return None;
+            }
+            let vx = GetSystemMetrics(SM_XVIRTUALSCREEN) as f32;
+            let vy = GetSystemMetrics(SM_YVIRTUALSCREEN) as f32;
+            let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN) as f32;
+            let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN) as f32;
+            if vw <= 0.0 || vh <= 0.0 {
+                return None;
+            }
+            Some((vx / w, vy / h, (vx + vw) / w, (vy + vh) / h))
+        }
+    }
 }

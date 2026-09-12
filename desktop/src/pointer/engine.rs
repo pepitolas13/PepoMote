@@ -44,11 +44,26 @@ const FREEZE_EXIT_QUAT_DEG_S: f32 = 0.3;
 /// se mueve, diga lo que diga el quat (que puede haberse quedado colgado).
 const FREEZE_BIAS_TOLERANCE_DEG_S: f32 = 3.0;
 /// El sesgo del gyro solo se aprende con el móvil quieto DE VERDAD: llevando
-/// congelado al menos esto (µs) y con el quat sin haberse movido más de
-/// `BIAS_LEARN_QUAT_DEG` desde que se congeló. (Un quat «pegajoso» durante un
-/// movimiento lento parece quieto un instante; en 400 ms ya no.)
+/// congelado al menos esto (µs) y con el quat QUIETO EN 3D (roll incluido)
+/// en los últimos `QUIET_TAU_S`: su giro acumulado con fuga por debajo de
+/// `BIAS_LEARN_QUAT_DEG`. Un quat que aún está «sanando» tras un gesto no
+/// está quieto (y un quat «pegajoso» durante un movimiento lento parece
+/// quieto un instante; en 400 ms ya no).
 const BIAS_LEARN_AFTER_US: u64 = 400_000;
 const BIAS_LEARN_QUAT_DEG: f32 = 0.1;
+/// τ (s) de la acumulación con fuga del giro 3D del quat del sensor: mide
+/// si el sensor está quieto de verdad (también en roll).
+const QUIET_TAU_S: f32 = 0.4;
+/// El sesgo se aprende de muestras del gyro RETRASADAS esto (muestras, ~0,2
+/// s a 200 Hz): al arrancar un movimiento lento el gyro ya lo ve y el quat
+/// aún no (parece sesgo); para cuando el quat lo confirma, esas muestras
+/// todavía no se han usado. Solo cuenta lo que tuvo 0,2 s de quietud detrás.
+const BIAS_DELAY_SAMPLES: usize = 40;
+/// λ (1/s) con el que el marco de proyección propio (`q_est`) converge al
+/// quat del sensor: SOLO congelado y con el sensor quieto en 3D, y despacio.
+/// Nunca en movimiento: ahí el roll del sensor va en fase con el giro (la
+/// aceleración del gesto lo tuerce) y seguirlo colaría yaw en pitch.
+const EST_ANCHOR_LAMBDA: f32 = 1.0;
 /// Escape por movimiento sostenido: acumulación con fuga (τ = 1 s) del giro
 /// del gyro y del quat desde que se congeló; el ruido no la llena, un
 /// movimiento lento sí. Hace falta que gyro Y quat lo vean (ni el sesgo del
@@ -97,9 +112,12 @@ const HINT_TOL: f32 = 0.01;
 /// cursor acaba arriba del todo haciendo círculos.
 const HINT_MOUSE_JUMP: f32 = 0.08;
 
-/// λ (1/s) del estimador de sesgo del gyro (solo aprende congelado: ahí el
-/// gyro debería leer cero y lo que lee es sesgo).
-const BIAS_LAMBDA: f32 = 0.7;
+/// λ (1/s) del estimador de sesgo del gyro (solo aprende congelado y quieto:
+/// ahí el gyro debería leer cero y lo que lee es sesgo). Rápido: lo que el
+/// sesgo suma durante un barrido horizontal es permanente (el puente
+/// vertical no se disuelve con movimiento horizontal), así que en 1-2 s de
+/// reposo tiene que quedar por debajo de 0,02°/s.
+const BIAS_LAMBDA: f32 = 2.0;
 /// Sesgo máximo creíble (rad/s ≈ 6°/s): más que eso no es sesgo, es que el
 /// móvil se mueve aunque el quat aún no lo diga.
 const BIAS_MAX_RADS: f32 = 0.1;
@@ -173,7 +191,6 @@ impl Quat {
         Self { w: self.w / n, x: self.x / n, y: self.y / n, z: self.z / n }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     fn mul(self, o: Self) -> Self {
         Self {
             w: self.w * o.w - self.x * o.x - self.y * o.y - self.z * o.z,
@@ -181,6 +198,54 @@ impl Quat {
             y: self.w * o.y - self.x * o.z + self.y * o.w + self.z * o.x,
             z: self.w * o.z + self.x * o.y - self.y * o.x + self.z * o.w,
         }
+    }
+
+    fn conj(self) -> Self {
+        Self { w: self.w, x: -self.x, y: -self.y, z: -self.z }
+    }
+
+    fn dot(self, o: Self) -> f32 {
+        self.w * o.w + self.x * o.x + self.y * o.y + self.z * o.z
+    }
+
+    /// Giro `v` (rad, ejes del dispositivo, eje·ángulo) como quaternion:
+    /// `q ⊗ exp_body(ω·dt)` integra el gyro en el marco del cuerpo.
+    fn exp_body(v: [f32; 3]) -> Self {
+        let ang = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        if ang < 1e-7 {
+            return Self { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
+        }
+        let (s, c) = (ang / 2.0).sin_cos();
+        let k = s / ang;
+        Self { w: c, x: v[0] * k, y: v[1] * k, z: v[2] * k }
+    }
+
+    /// Interpolación normalizada de `a` hacia `b` (fracción `l`), por el
+    /// camino corto.
+    fn nlerp(a: Self, b: Self, l: f32) -> Self {
+        let b = if a.dot(b) < 0.0 { Self { w: -b.w, x: -b.x, y: -b.y, z: -b.z } } else { b };
+        Self {
+            w: a.w + (b.w - a.w) * l,
+            x: a.x + (b.x - a.x) * l,
+            y: a.y + (b.y - a.y) * l,
+            z: a.z + (b.z - a.z) * l,
+        }
+        .normalized()
+    }
+
+    /// Ángulo (rad) del giro entre dos orientaciones. Con atan2 sobre la
+    /// parte vectorial: `acos(dot)` en f32 no ve nada por debajo de ~0,04°.
+    fn step_angle(prev: Self, cur: Self) -> f32 {
+        let d = prev.conj().mul(cur);
+        let s = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
+        2.0 * s.atan2(d.w.abs())
+    }
+
+    /// Roll (°) de `other` respecto a `self` alrededor del eje de apuntado
+    /// (device +Y): descomposición swing-twist. Solo para diagnóstico.
+    fn twist_about_y(self, other: Self) -> f32 {
+        let d = self.conj().mul(other);
+        (2.0 * d.y.atan2(d.w)).to_degrees()
     }
 
     /// Rota un vector del marco del dispositivo al mundo: R(q)·v.
@@ -291,9 +356,48 @@ pub struct PointerEngine {
     last_quat: Option<(f32, f32)>,
     /// Sesgo estimado del gyro (rad/s, ejes del dispositivo).
     bias: [f32; 3],
+    /// Últimas muestras crudas del gyro (anillo): el sesgo se aprende de la
+    /// más antigua, ver `BIAS_DELAY_SAMPLES`.
+    gyro_hist: [[f32; 3]; BIAS_DELAY_SAMPLES],
+    gyro_hist_i: usize,
+    gyro_hist_n: usize,
+    /// Marco de PROYECCIÓN propio: la actitud integrada del gyro (sin sesgo),
+    /// que converge al quat del sensor solo congelado y quieto. Con él se
+    /// proyecta el gyro al mundo, en vez de con el quat crudo de cada
+    /// paquete: la aceleración de un gesto tuerce el roll del sensor EN FASE
+    /// con el giro, y proyectar con ese roll colaba yaw en pitch (rectificado:
+    /// `dpitch = Ω·sinφ` con φ ∝ Ω) — el móvil plano sobre la mesa, movido
+    /// solo en horizontal, acababa subiendo.
+    q_est: Option<Quat>,
+    last_q_sensor: Option<Quat>,
+    /// Giro 3D del quat del sensor acumulado con fuga (°): quieto de verdad
+    /// (roll incluido) si está por debajo de `BIAS_LEARN_QUAT_DEG`.
+    quat_motion_leaky: f32,
+    quiet: bool,
+    /// Límites reales del cursor en pantallas de la primaria (x0, y0, x1,
+    /// y1): con un monitor encima, y0 es negativo y arriba no se recorta.
+    cursor_bounds: (f32, f32, f32, f32),
     // fallback relativo
     acc_x: f32,
     acc_y: f32,
+}
+
+/// Estado interno para `--replay` (diagnóstico de grabaciones reales).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PointerDebug {
+    pub qyaw: f32,
+    pub qpitch: f32,
+    pub fyaw: f32,
+    pub fpitch: f32,
+    /// Roll del quat del sensor respecto al marco propio (°): en fase con
+    /// `gz` durante un barrido = la causa del «sube solo».
+    pub twist_deg: f32,
+    pub offset: (f32, f32),
+    pub shift: (f32, f32),
+    pub hint: Option<(f32, f32)>,
+    pub frozen: bool,
+    pub quiet: bool,
+    pub bias: [f32; 3],
 }
 
 impl PointerEngine {
@@ -327,8 +431,59 @@ impl PointerEngine {
             quat_rate: None,
             last_quat: None,
             bias: [0.0; 3],
+            gyro_hist: [[0.0; 3]; BIAS_DELAY_SAMPLES],
+            gyro_hist_i: 0,
+            gyro_hist_n: 0,
+            q_est: None,
+            last_q_sensor: None,
+            quat_motion_leaky: 0.0,
+            quiet: false,
+            cursor_bounds: (0.0, 0.0, 1.0, 1.0),
             acc_x: 0.0,
             acc_y: 0.0,
+        }
+    }
+
+    /// Motor nuevo que arranca con el sesgo ya aprendido (el mismo móvil se
+    /// ha reconectado): no vuelve a derivar hasta el primer reposo.
+    pub fn with_bias(bias: [f32; 3]) -> Self {
+        let mut e = Self::new();
+        e.bias = bias.map(|b| b.clamp(-BIAS_MAX_RADS, BIAS_MAX_RADS));
+        e
+    }
+
+    /// Sesgo estimado del gyro (rad/s, ejes del dispositivo).
+    pub fn bias(&self) -> [f32; 3] {
+        self.bias
+    }
+
+    /// Límites reales del cursor (pantallas de la primaria; None = solo la
+    /// primaria). Distingue un recorte del SO en un borde de un salto del
+    /// ratón real.
+    pub fn set_cursor_bounds(&mut self, bounds: Option<(f32, f32, f32, f32)>) {
+        self.cursor_bounds = bounds.unwrap_or((0.0, 0.0, 1.0, 1.0));
+    }
+
+    /// Estado interno (para `--replay`).
+    pub fn debug(&self) -> PointerDebug {
+        let (qyaw, qpitch) = self.last_q_sensor.map_or((0.0, 0.0), |q| q.world_angles());
+        let (fyaw, fpitch) = self.fused.unwrap_or((0.0, 0.0));
+        let twist_deg = match (self.q_est, self.last_q_sensor) {
+            (Some(e), Some(s)) => e.twist_about_y(s),
+            _ => 0.0,
+        };
+        PointerDebug {
+            qyaw,
+            qpitch,
+            fyaw,
+            fpitch,
+            twist_deg,
+            offset: self.offset,
+            shift: self.shift,
+            hint: self.cursor_hint,
+            frozen: self.frozen,
+            quiet: self.quiet,
+            bias: self.bias,
         }
     }
 
@@ -342,6 +497,11 @@ impl PointerEngine {
             self.fused = Some((qyaw, qpitch));
             self.quat_rate = None;
             self.last_quat = Some((qyaw, qpitch));
+            self.q_est = Some(q);
+            self.last_q_sensor = Some(q);
+            self.quat_motion_leaky = 0.0;
+            self.quiet = false;
+            self.gyro_hist_n = 0;
             return (qyaw, qpitch, 0.0, 0.0);
         };
         let (mut fy, mut fp) = self.fused.unwrap_or((qyaw, qpitch));
@@ -355,23 +515,43 @@ impl PointerEngine {
             lowpass(prev.map(|r| r.0), ry, RATE_CUTOFF_HZ, dt),
             lowpass(prev.map(|r| r.1), rp, RATE_CUTOFF_HZ, dt),
         ));
+        // Quietud 3D del sensor (roll incluido): giro por paquete acumulado
+        // con fuga. Un quat sanando tras un gesto NO está quieto.
+        let step = self.last_q_sensor.replace(q).map_or(0.0, |lq| Quat::step_angle(lq, q).to_degrees());
+        self.quat_motion_leaky += step - self.quat_motion_leaky * dt / QUIET_TAU_S;
+        self.quiet = self.quat_motion_leaky < BIAS_LEARN_QUAT_DEG;
 
+        // Muestra retrasada del gyro (anillo): solo se aprende de lo que tuvo
+        // quietud DESPUÉS (el arranque de un movimiento lento no cuenta)
+        let oldest = self.gyro_hist[self.gyro_hist_i];
+        self.gyro_hist[self.gyro_hist_i] = p.gyro;
+        self.gyro_hist_i = (self.gyro_hist_i + 1) % BIAS_DELAY_SAMPLES;
+        let history_full = self.gyro_hist_n >= BIAS_DELAY_SAMPLES;
+        if !history_full {
+            self.gyro_hist_n += 1;
+        }
         let truly_still = self.frozen
-            && self.frozen_at.is_some_and(|(t0, y0, p0)| {
-                p.t_sensor_us.saturating_sub(t0) >= BIAS_LEARN_AFTER_US
-                    && wrap180(qyaw - y0).hypot(qpitch - p0) < BIAS_LEARN_QUAT_DEG
-            });
+            && self.quiet
+            && history_full
+            && self.frozen_at.is_some_and(|(t0, _, _)| p.t_sensor_us.saturating_sub(t0) >= BIAS_LEARN_AFTER_US);
         if truly_still {
-            // Quieto de verdad: lo que lee el gyro es sesgo. Acotado: más
-            // que eso no es sesgo, es movimiento.
+            // Quieto de verdad: lo que leía el gyro hace 0,2 s es sesgo.
+            // Acotado: más que eso no es sesgo, es movimiento.
             let l = 1.0 - (-dt * BIAS_LAMBDA).exp();
             for i in 0..3 {
-                let target = p.gyro[i].clamp(-BIAS_MAX_RADS, BIAS_MAX_RADS);
+                let target = oldest[i].clamp(-BIAS_MAX_RADS, BIAS_MAX_RADS);
                 self.bias[i] += (target - self.bias[i]) * l;
             }
         }
         let gyro = [p.gyro[0] - self.bias[0], p.gyro[1] - self.bias[1], p.gyro[2] - self.bias[2]];
-        let (dyaw, dpitch, pole) = q.world_rates(gyro);
+        // Marco de proyección propio: el gyro integrado en el cuerpo (exacto
+        // para el giro real), no el quat del sensor con su roll torcido por
+        // la aceleración del gesto
+        let qe = match self.q_est {
+            Some(qe) => qe.mul(Quat::exp_body([gyro[0] * dt, gyro[1] * dt, gyro[2] * dt])).normalized(),
+            None => q,
+        };
+        let (dyaw, dpitch, pole) = qe.world_rates(gyro);
         let (gy, gp) = (dyaw * dt, dpitch * dt);
         fy += gy;
         fp += gp;
@@ -395,6 +575,16 @@ impl PointerEngine {
                 fy += wrap180(qyaw - fy) * l;
             }
             fp += (qpitch - fp) * l;
+            // El marco propio solo se acerca al sensor con este QUIETO en 3D
+            // (roll incluido) y despacio: nunca a un roll que aún está sanando
+            if self.quiet {
+                let le = 1.0 - (-dt * EST_ANCHOR_LAMBDA).exp();
+                self.q_est = Some(Quat::nlerp(qe, q, le));
+            } else {
+                self.q_est = Some(qe);
+            }
+        } else {
+            self.q_est = Some(qe);
         }
 
         self.fused = Some((fy, fp));
@@ -438,26 +628,43 @@ impl PointerEngine {
 
     /// Apuntado absoluto: si el cursor real no está donde lo dejamos (el SO
     /// lo recortó en un borde, o el ratón lo movió), se sigue desde donde
-    /// está DE VERDAD, sin zona muerta ni salto. Un salto grande es el ratón:
-    /// desplazamiento permanente (`shift`). Lo pequeño y continuo es un
-    /// borde: va al puente, que se disuelve con el movimiento, y el apuntado
-    /// absoluto recupera su sitio.
+    /// está DE VERDAD, sin zona muerta ni salto. Por eje: si emitimos fuera
+    /// de los límites reales por ese lado y el cursor está clavado en ese
+    /// borde, es un RECORTE del SO → puente (se disuelve con el movimiento y
+    /// el apuntado absoluto recupera su sitio), sea del tamaño que sea (tras
+    /// una congelación puede ser grande: lo último emitido se queda viejo).
+    /// Si no, un salto grande es el ratón real: desplazamiento permanente
+    /// (`shift`); lo pequeño, puente.
     fn follow_real_cursor(&mut self, sens_deg: f32, aspect: f32) {
         let (Some((cx, cy)), Some((py, pp))) = (self.cursor_hint, self.last_emitted) else {
             return;
         };
+        // lo último emitido, en pantallas de la primaria
+        let ex = 0.5 + py / sens_deg;
+        let ey = 0.5 - pp * aspect / sens_deg;
+        let (x0, y0, x1, y1) = self.cursor_bounds;
+        let clamped = |e: f32, h: f32, lo: f32, hi: f32| {
+            (e >= hi - HINT_TOL && (h - hi).abs() <= HINT_TOL) || (e <= lo + HINT_TOL && (h - lo).abs() <= HINT_TOL)
+        };
         let hy = (cx - 0.5) * sens_deg;
         let hp = (0.5 - cy) * sens_deg / aspect;
-        let (dy, dp) = (hy - py, hp - pp);
-        let (ny, np) = (dy / sens_deg, dp * aspect / sens_deg); // en pantallas
-        if ny.abs() > HINT_TOL || np.abs() > HINT_TOL {
-            if ny.abs() > HINT_MOUSE_JUMP || np.abs() > HINT_MOUSE_JUMP {
-                self.shift.0 += dy;
-                self.shift.1 += dp;
-            } else {
-                self.offset.0 += dy;
-                self.offset.1 += dp;
+        let mut changed = false;
+        for (d_screen, d_deg, is_clamp, axis) in [
+            (cx - ex, hy - py, clamped(ex, cx, x0, x1), 0usize),
+            (cy - ey, hp - pp, clamped(ey, cy, y0, y1), 1usize),
+        ] {
+            if d_screen.abs() <= HINT_TOL {
+                continue;
             }
+            changed = true;
+            let target = if !is_clamp && d_screen.abs() > HINT_MOUSE_JUMP { &mut self.shift } else { &mut self.offset };
+            if axis == 0 {
+                target.0 += d_deg;
+            } else {
+                target.1 += d_deg;
+            }
+        }
+        if changed {
             self.last_emitted = Some((hy, hp));
         }
     }
@@ -537,8 +744,9 @@ impl PointerEngine {
             let qdev_pitch = qpitch - pitch_ref - self.raw_int.1;
             if qdev_yaw.abs() > lim || qdev_pitch.abs() * aspect_w_over_h > lim {
                 // El salto de asentamiento es una corrección del móvil, no un
-                // giro: re-anclar DIRECTO al quat.
+                // giro: re-anclar DIRECTO al quat (también el marco propio).
                 self.rebase(qyaw, qpitch);
+                self.q_est = Some(q);
                 return PointerOutput::Abs { nx: 0.5, ny: 0.5 };
             }
         }
@@ -562,15 +770,19 @@ impl PointerEngine {
                 || (speed > FREEZE_EXIT_DEG_S && quat_speed > FREEZE_EXIT_QUAT_DEG_S);
             if moving || creeping {
                 // Liberar recuperando lo que la mano giró mientras estaba
-                // congelado (unos píxeles), medido por el QUAT (con sesgo del
-                // gyro no se ha movido nada y el quat lo sabe): el puente
-                // absorbe SOLO lo que el anclaje movió el estado (se disuelve
-                // con el movimiento). Si el ratón real movió el cursor, lo
-                // recoge `follow_real_cursor`.
-                let (ry, rp) = match self.frozen_at {
+                // congelado (unos píxeles): lo que dicen el QUAT y el GYRO a
+                // la vez, y solo hasta donde coinciden. El sesgo del gyro no
+                // engaña (el quat no lo ve) y la «sanación» del quat tras un
+                // gesto tampoco (el gyro no la ve): ninguna de las dos mueve
+                // el cursor. El puente absorbe el resto (se disuelve con el
+                // movimiento). Si el ratón real movió el cursor, lo recoge
+                // `follow_real_cursor`.
+                let (rqy, rqp) = match self.frozen_at {
                     Some((_, y0, p0)) => (wrap180(qyaw - y0), qpitch - p0),
                     None => (0.0, 0.0),
                 };
+                let agree = |rq: f32, rg: f32| if rq * rg > 0.0 { rq.signum() * rq.abs().min(rg.abs()) } else { 0.0 };
+                let (ry, rp) = (agree(rqy, self.freeze_gyro.0), agree(rqp, self.freeze_gyro.1));
                 self.frozen = false;
                 self.still_since = None;
                 self.frozen_at = None;
@@ -1757,5 +1969,337 @@ mod tests {
         }
         let (i, _) = moved.expect("el movimiento lento debe descongelar");
         assert!(i < 200, "tardó {i} muestras (1 s) en descongelar");
+    }
+
+    // ---- Móvil DIVERGENTE: el gyro mide el giro REAL; el paquete lleva el
+    // quat que el sensor CREE (con sus errores), y un sesgo opcional ----
+
+    struct DivergentPhone {
+        true_q: Quat,
+        t: u64,
+    }
+
+    impl DivergentPhone {
+        fn new() -> Self {
+            Self { true_q: Quat { w: 1.0, x: 0.0, y: 0.0, z: 0.0 }, t: 0 }
+        }
+
+        fn send(&mut self, e: &mut PointerEngine, true_q: Quat, sent_q: Quat, bias: [f32; 3], sens: f32) -> PointerOutput {
+            let (axis, ang) = delta_axis_angle(self.true_q, true_q);
+            self.true_q = true_q;
+            self.t += DT_US;
+            let dt = DT_US as f32 / 1e6;
+            let k = ang / dt;
+            let mut p = packet(arr(sent_q), 0, self.t, FLAG_QUAT_VALID);
+            p.gyro = [axis[0] * k + bias[0], axis[1] * k + bias[1], axis[2] * k + bias[2]];
+            e.apply(&p, sens, 16.0 / 9.0, true, 1920.0)
+        }
+    }
+
+    /// El SO: recorta el cursor entre `y_lo` (negativo = monitor encima) y 1.
+    fn os_hint(e: &mut PointerEngine, out: PointerOutput, y_lo: f32) {
+        if let PointerOutput::Abs { nx, ny } = out {
+            e.set_cursor_hint(Some((nx.clamp(0.0, 1.0), ny.clamp(y_lo, 1.0))));
+        }
+    }
+
+    /// Primer orden: `prev` se acerca a `target` con constante de tiempo `tau`.
+    fn lag(prev: f32, target: f32, dt: f32, tau: f32) -> f32 {
+        target + (prev - target) * (-dt / tau).exp()
+    }
+
+    /// Coseno alzado de `a` a `b` (`s` en 0..1): arranca y para suave.
+    fn raised_cos(a: f32, b: f32, s: f32) -> f32 {
+        a + (b - a) * (1.0 - (std::f32::consts::PI * s).cos()) / 2.0
+    }
+
+    /// El móvil plano sobre la mesa, con lo que le pasa al sensor al
+    /// deslizarlo: roll torcido EN FASE con el giro (φ ∝ Ω), pitch hundido
+    /// (δ ∝ Ω²), ambos sanando con τ = 0,5 s en cuanto para; y un sesgo del
+    /// gyro. El cursor real lo recorta el SO solo por abajo (monitor encima).
+    struct Table {
+        e: PointerEngine,
+        ph: DivergentPhone,
+        phi: f32,
+        delta: f32,
+        max_dy: f32,
+        last: (f32, f32),
+        sens: f32,
+        bias: [f32; 3],
+        omega_pk: f32,
+    }
+
+    impl Table {
+        fn new(sens: f32, bias: [f32; 3]) -> Self {
+            let mut e = PointerEngine::new();
+            e.set_cursor_bounds(Some((0.0, -1.0, 1.0, 1.0)));
+            Self {
+                e,
+                ph: DivergentPhone::new(),
+                phi: 0.0,
+                delta: 0.0,
+                max_dy: 0.0,
+                last: (0.5, 0.5),
+                sens,
+                bias,
+                // pico de velocidad del coseno alzado de 40° en 1 s (°/s)
+                omega_pk: 40.0 * std::f32::consts::PI / 2.0,
+            }
+        }
+
+        fn step(&mut self, theta: f32, omega: f32) {
+            let dt = DT_US as f32 / 1e6;
+            let phi_t = 4.0 * omega / self.omega_pk;
+            let delta_t = -2.0 * (omega / self.omega_pk).powi(2);
+            self.phi = lag(self.phi, phi_t, dt, 0.5);
+            self.delta = lag(self.delta, delta_t, dt, 0.5);
+            let true_q = qrot_z(theta);
+            let sent = qrot_z(theta).mul(qrot_y(self.phi)).mul(qrot_x(self.delta));
+            let out = self.ph.send(&mut self.e, true_q, sent, self.bias, self.sens);
+            os_hint(&mut self.e, out, -1.0);
+            if let PointerOutput::Abs { nx, ny } = out {
+                self.max_dy = self.max_dy.max((ny - 0.5).abs());
+                self.last = (nx, ny);
+            }
+        }
+
+        /// Barrido de `a` a `b` grados en `secs`; devuelve |Δnx|.
+        fn segment(&mut self, a: f32, b: f32, secs: f32) -> f32 {
+            let dt = DT_US as f32 / 1e6;
+            let start = self.last.0;
+            let n = (secs / dt).round() as u32;
+            for i in 1..=n {
+                let s = i as f32 / n as f32;
+                let theta = raised_cos(a, b, s);
+                let omega = (b - a) * std::f32::consts::PI / (2.0 * secs) * (std::f32::consts::PI * s).sin();
+                self.step(theta, omega);
+            }
+            (self.last.0 - start).abs()
+        }
+
+        fn pause(&mut self, theta: f32, secs: f32) {
+            let n = (secs / (DT_US as f32 / 1e6)).round() as u32;
+            for _ in 0..n {
+                self.step(theta, 0.0);
+            }
+        }
+    }
+
+    #[test]
+    fn movil_plano_en_la_mesa_barriendo_horizontal_no_sube() {
+        // El caso reportado: móvil plano sobre la mesa, barridos SOLO en
+        // horizontal (con pausas), y el cursor acababa arriba del todo.
+        let sens = 50.0; // 40° = 0,8 pantalla: los barridos no tocan los bordes
+        let mut tb = Table::new(sens, [0.1_f32.to_radians(), 0.0, 0.0]);
+        tb.pause(0.0, 2.0); // recentrar, congelar, aprender el sesgo
+        let mut sweeps = Vec::new();
+        for cycle in 0..12 {
+            tb.segment(0.0, 20.0, 0.5);
+            sweeps.push(tb.segment(20.0, -20.0, 1.0));
+            sweeps.push(tb.segment(-20.0, 20.0, 1.0));
+            sweeps.push(tb.segment(20.0, -20.0, 1.0));
+            tb.segment(-20.0, 0.0, 0.5);
+            tb.pause(0.0, if cycle % 4 == 3 { 2.0 } else { 0.8 });
+        }
+        let (nx, ny) = tb.last;
+        assert!((ny - 0.5).abs() < 0.03, "el cursor derivó en vertical: ny={ny:.3} (nx={nx:.3})");
+        assert!(tb.max_dy < 0.06, "excursión vertical máxima {:.3}", tb.max_dy);
+        for (i, s) in sweeps.iter().enumerate() {
+            assert!((s - 0.8).abs() < 0.024, "barrido {i}: recorrió {s:.3} en vez de 0,8");
+        }
+    }
+
+    #[test]
+    fn la_recuperacion_al_descongelar_no_se_traga_la_sanacion_del_quat() {
+        // Tras un gesto el quat llega con el pitch hundido y lo «sana» en la
+        // pausa; el gyro no ve nada. Al descongelar, eso NO es movimiento.
+        let mut e = PointerEngine::new();
+        let mut ph = DivergentPhone::new();
+        let dt = DT_US as f32 / 1e6;
+        let z = [0.0; 3];
+        for _ in 0..200 {
+            ph.send(&mut e, qrot_z(0.0), qrot_z(0.0), z, 35.0);
+        }
+        let mut last = (0.5, 0.5);
+        for i in 1..=40 {
+            let th = -20.0 * i as f32 / 40.0;
+            if let PointerOutput::Abs { nx, ny } = ph.send(&mut e, qrot_z(th), qrot_z(th).mul(qrot_x(-2.0)), z, 35.0) {
+                last = (nx, ny);
+            }
+        }
+        // parada en seco: gyro a cero, el pitch del quat sana (τ 0,5 s)
+        let mut delta = -2.0f32;
+        let mut frozen_seen = false;
+        for i in 0..400 {
+            delta = lag(delta, 0.0, dt, 0.5);
+            match ph.send(&mut e, qrot_z(-20.0), qrot_z(-20.0).mul(qrot_x(delta)), z, 35.0) {
+                PointerOutput::None => frozen_seen = true,
+                PointerOutput::Abs { nx, ny } => {
+                    assert!(!frozen_seen, "muestra {i}: la sanación del quat descongeló y movió el cursor");
+                    last = (nx, ny);
+                }
+                _ => {}
+            }
+        }
+        assert!(frozen_seen, "no llegó a congelar");
+        let before = last;
+        // arrastre lento de verdad: 1°/s durante 1 s (real = enviado)
+        let mut first = None;
+        let mut end = before;
+        for i in 1..=200 {
+            let th = -20.0 - 1.0 * i as f32 / 200.0;
+            if let PointerOutput::Abs { nx, ny } = ph.send(&mut e, qrot_z(th), qrot_z(th), z, 35.0) {
+                if first.is_none() {
+                    first = Some((nx, ny));
+                }
+                end = (nx, ny);
+            }
+        }
+        let (_, fy) = first.expect("el arrastre debe descongelar");
+        assert!((fy - before.1).abs() < 0.005, "al descongelar el cursor saltó en vertical: {:.3} → {fy:.3}", before.1);
+        let travel = end.0 - before.0;
+        let ideal = 1.0 / 35.0;
+        assert!((travel - ideal).abs() < ideal * 0.15, "arrastre: recorrió {travel:.4} esperado {ideal:.4}");
+    }
+
+    #[test]
+    fn el_recorte_de_abajo_tras_congelar_no_es_un_salto_de_raton() {
+        // Como `los_bordes_no_hacen_de_trinquete`, pero con un latigazo hacia
+        // abajo (más de 0,08 de pantalla por muestra) y una pausa congelado
+        // con el cursor recortado en el borde inferior: al reanudar, esa
+        // diferencia es un RECORTE (puente), no un salto del ratón (que
+        // sería permanente y haría subir el apuntado vuelta tras vuelta).
+        let mut e = PointerEngine::new();
+        e.set_cursor_bounds(Some((0.0, -1.0, 1.0, 1.0)));
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_x(0.0), 0);
+        ap(&mut e, &p);
+        ph.hold(&mut e, 200);
+        let mut at_start = Vec::new();
+        for _cycle in 0..6 {
+            // latigazo abajo 14° en 4 muestras (se pasa del borde inferior)
+            let (axis, ang) = delta_axis_angle(ph.q, qrot_x(-14.0));
+            let q0 = ph.q;
+            for i in 1..=4 {
+                let qi = q0.mul(qrot_axis(axis, ang * i as f32 / 4.0));
+                let p = ph.make(qi, 0);
+                let out = ap(&mut e, &p);
+                os_hint(&mut e, out, -1.0);
+            }
+            // quieto 1,5 s con el cursor clavado abajo
+            for _ in 0..300 {
+                let q = ph.q;
+                let p = ph.make(q, 0);
+                let out = ap(&mut e, &p);
+                os_hint(&mut e, out, -1.0);
+            }
+            // arriba 22° y de vuelta 8°: al mismo sitio que al empezar
+            for (target, steps) in [(qrot_x(8.0), 40u32), (qrot_x(0.0), 20u32)] {
+                let (axis, ang) = delta_axis_angle(ph.q, target);
+                let q0 = ph.q;
+                let mut last = None;
+                for i in 1..=steps {
+                    let qi = q0.mul(qrot_axis(axis, ang * i as f32 / steps as f32));
+                    let p = ph.make(qi, 0);
+                    let out = ap(&mut e, &p);
+                    os_hint(&mut e, out, -1.0);
+                    if let PointerOutput::Abs { ny, .. } = out {
+                        last = Some(ny);
+                    }
+                }
+                if steps == 20 {
+                    at_start.push(last.unwrap());
+                }
+            }
+        }
+        let first = at_start[0];
+        let last = *at_start.last().unwrap();
+        assert!((last - first).abs() < 0.08, "el apuntado derivó: ny {first:.3} → {last:.3} ({at_start:?})");
+        assert!(last > 0.3, "el cursor acabó arriba: ny={last:.3} ({at_start:?})");
+    }
+
+    #[test]
+    fn el_sesgo_sobrevive_a_la_reconexion() {
+        // El mismo móvil se reconecta: el motor nuevo arranca con el sesgo
+        // ya aprendido y el primer barrido no se pasa de largo.
+        let bias = [0.0, 0.0, 2.0_f32.to_radians()];
+        let mut e1 = PointerEngine::new();
+        let mut ph = DivergentPhone::new();
+        for _ in 0..600 {
+            ph.send(&mut e1, qrot_z(0.0), qrot_z(0.0), bias, 35.0);
+        }
+        let b = e1.bias();
+        assert!((b[2] - bias[2]).abs() < 0.002, "sesgo aprendido {b:?}, real {bias:?}");
+        let mut e2 = PointerEngine::with_bias(b);
+        let mut ph2 = DivergentPhone::new();
+        ph2.send(&mut e2, qrot_z(0.0), qrot_z(0.0), bias, 35.0); // recentra
+        let mut last = (0.5, 0.5);
+        for i in 1..=100 {
+            let th = -0.2 * i as f32;
+            if let PointerOutput::Abs { nx, ny } = ph2.send(&mut e2, qrot_z(th), qrot_z(th), bias, 35.0) {
+                last = (nx, ny);
+            }
+        }
+        for _ in 0..30 {
+            if let PointerOutput::Abs { nx, ny } = ph2.send(&mut e2, qrot_z(-20.0), qrot_z(-20.0), bias, 35.0) {
+                last = (nx, ny);
+            }
+        }
+        let expected = 0.5 + 20.0 / 35.0;
+        assert!((last.0 - expected).abs() < 0.01, "con el sesgo heredado: nx={:.4} esperado={expected:.4}", last.0);
+    }
+
+    #[test]
+    fn un_error_de_roll_estatico_no_desvia_los_barridos() {
+        // El sensor cree que el móvil va rolado 3° (error fijo): los barridos
+        // salen un poco inclinados, pero vuelven a su sitio y no acumulan.
+        struct Run {
+            e: PointerEngine,
+            ph: DivergentPhone,
+            last: (f32, f32),
+            max_dy: f32,
+            roll: Quat,
+            sens: f32,
+        }
+        impl Run {
+            fn send(&mut self, theta: f32) {
+                let (e, roll, sens) = (&mut self.e, self.roll, self.sens);
+                if let PointerOutput::Abs { nx, ny } = self.ph.send(e, qrot_z(theta), qrot_z(theta).mul(roll), [0.0; 3], sens) {
+                    self.max_dy = self.max_dy.max((ny - 0.5).abs());
+                    self.last = (nx, ny);
+                }
+            }
+            fn sweep(&mut self, a: f32, b: f32, secs: f32) -> f32 {
+                let start = self.last.0;
+                let n = (secs / (DT_US as f32 / 1e6)).round() as u32;
+                for i in 1..=n {
+                    self.send(raised_cos(a, b, i as f32 / n as f32));
+                }
+                (self.last.0 - start).abs()
+            }
+        }
+        let sens = 50.0;
+        let mut r = Run { e: PointerEngine::new(), ph: DivergentPhone::new(), last: (0.5, 0.5), max_dy: 0.0, roll: qrot_y(3.0), sens };
+        for _ in 0..300 {
+            r.send(0.0);
+        }
+        let bound = 40.0 * 3.0_f32.to_radians().sin() / sens * (16.0 / 9.0) + 0.02;
+        r.sweep(0.0, 20.0, 0.5);
+        let mut at_pair: Vec<f32> = Vec::new();
+        for pair in 0..4 {
+            let d1 = r.sweep(20.0, -20.0, 1.0);
+            let d2 = r.sweep(-20.0, 20.0, 1.0);
+            assert!((d1 - 0.8).abs() < 0.024 && (d2 - 0.8).abs() < 0.024, "par {pair}: recorridos {d1:.3} y {d2:.3}");
+            at_pair.push(r.last.1);
+            for _ in 0..300 {
+                r.send(20.0);
+            }
+        }
+        for (i, ny) in at_pair.iter().enumerate() {
+            assert!((ny - at_pair[0]).abs() < 0.01, "par {i}: ny {ny:.3} frente a {:.3}: acumula", at_pair[0]);
+        }
+        r.sweep(20.0, 0.0, 0.5);
+        assert!((r.last.1 - 0.5).abs() < 0.01, "de vuelta al origen el cursor no está en el centro: ny={:.3}", r.last.1);
+        assert!(r.max_dy <= bound, "inclinación {:.3} por encima de lo geométrico {bound:.3}", r.max_dy);
     }
 }

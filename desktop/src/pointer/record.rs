@@ -89,7 +89,14 @@ pub fn replay_from_args() -> bool {
             let mut abs_history: std::collections::VecDeque<(f32, f32)> = std::collections::VecDeque::new();
             let stdout = std::io::stdout();
             let mut w = stdout.lock();
-            let _ = writeln!(w, "t_sensor_us,llegada_us,flags,gx,gy,gz,qw,qx,qy,qz,salida,nx_o_dx,ny_o_dy");
+            // Columnas de diagnóstico al final: los parsers por índice siguen
+            // valiendo. twist = roll del quat del sensor respecto al marco
+            // propio del motor (en fase con gz durante un barrido = el sensor
+            // torcido por la aceleración del gesto).
+            let _ = writeln!(
+                w,
+                "t_sensor_us,llegada_us,flags,gx,gy,gz,qw,qx,qy,qz,salida,nx_o_dx,ny_o_dy,qyaw,qpitch,fyaw,fpitch,twist,off_y,off_p,shift_y,shift_p,hint_x,hint_y,congelado,quieto,bias_x,bias_y,bias_z"
+            );
             for (arrival, raw) in recs {
                 let Some(Packet::Input(p)) = codec::parse(&raw) else { continue };
                 let seen = if hint_lag == 0 { last_abs } else { abs_history.front().copied().or(last_abs) };
@@ -107,11 +114,14 @@ pub fn replay_from_args() -> bool {
                     PointerOutput::Rel { dx, dy } => ("rel", dx as f32, dy as f32),
                     PointerOutput::None => ("-", 0.0, 0.0),
                 };
+                let d = engine.debug();
+                let (hx, hy) = d.hint.unwrap_or((f32::NAN, f32::NAN));
                 let _ = writeln!(
                     w,
-                    "{},{},{},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{},{:.5},{:.5}",
+                    "{},{},{},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{},{:.5},{:.5},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{:.5},{:.5},{:.5}",
                     p.t_sensor_us, arrival, p.flags, p.gyro[0], p.gyro[1], p.gyro[2], p.quat[0], p.quat[1], p.quat[2],
-                    p.quat[3], kind, a, b
+                    p.quat[3], kind, a, b, d.qyaw, d.qpitch, d.fyaw, d.fpitch, d.twist_deg, d.offset.0, d.offset.1,
+                    d.shift.0, d.shift.1, hx, hy, d.frozen as u8, d.quiet as u8, d.bias[0], d.bias[1], d.bias[2]
                 );
             }
         }

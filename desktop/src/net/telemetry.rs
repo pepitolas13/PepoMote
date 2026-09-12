@@ -81,8 +81,11 @@ pub fn run(
     // Si su sesión muere o el modo deja de ser puntero con A/B/tecla
     // sostenidos, hay que soltarlos: si no, el clic queda atascado en el SO.
     let mut held: u32 = 0;
-    // El motor de puntero pertenece al Jugador 1: se resetea si cambia su sesión
+    // El motor de puntero pertenece al Jugador 1: se resetea si cambia su
+    // sesión; si es el mismo móvil que se reconecta, hereda el sesgo del
+    // gyro que ya había aprendido
     let mut engine_session: Option<u32> = None;
+    let mut engine_device: Option<String> = None;
     // Modo Wii U con «Mando Wii»: cada uno de esos móviles tiene su propio
     // motor de puntero (su IR va a Cemu por el touchpad DSU, no al SO)
     let mut ir_engines: HashMap<u32, IrPointer> = HashMap::new();
@@ -185,6 +188,11 @@ pub fn run(
                 .collect();
             for (id, addr) in targets {
                 let _ = socket.send_to(&codec::build_ping(id, now_us(start)), addr);
+            }
+            // Límites reales del cursor (pueden cambiar: monitores que van y
+            // vienen); barato, cada 500 ms
+            if let Some(inj) = injector.as_deref_mut() {
+                engine.set_cursor_bounds(inj.cursor_bounds());
             }
             // El Jugador 1 se ha ido (bye o timeout): nada puede quedar pulsado
             let j1_gone = match engine_session {
@@ -338,7 +346,11 @@ pub fn run(
                     };
                     if engine_session != Some(p.session_id) {
                         engine_session = Some(p.session_id);
-                        engine = PointerEngine::new();
+                        let device = sessions.lock().unwrap().get(&p.session_id).map(|s| s.device.clone());
+                        let same_phone = device.is_some() && device == engine_device;
+                        engine = if same_phone { PointerEngine::with_bias(engine.bias()) } else { PointerEngine::new() };
+                        engine_device = device;
+                        engine.set_cursor_bounds(inj.cursor_bounds());
                         release_all(inj, &mut held);
                         inj.move_abs(0.5, 0.5);
                     }

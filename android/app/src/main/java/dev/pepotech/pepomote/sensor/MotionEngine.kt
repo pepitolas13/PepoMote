@@ -76,6 +76,10 @@ class MotionEngine(
     private var seq = 0
     private var hasRotationVector = false
     private var lastSendNs = 0L
+    /** Media ponderada por tiempo del gyro entre envíos (∑ω·Δt y ∑Δt). */
+    private val gyroSum = FloatArray(3)
+    private var gyroSumNs = 0L
+    private var lastGyroNs = 0L
 
     private var batteryPct = 100
     private var batteryReadAtMs = 0L
@@ -126,14 +130,29 @@ class MotionEngine(
             }
 
             Sensor.TYPE_GYROSCOPE -> {
-                gyro[0] = event.values[0]
-                gyro[1] = event.values[1]
-                gyro[2] = event.values[2]
                 trackHz(event.timestamp)
+                // Media ponderada por tiempo de las muestras entre envíos: un
+                // gyro a 400-500 Hz decimado a 250 Hz sin promediar tiraba
+                // muestras (y el receptor integra la que llega sobre todo el
+                // intervalo). Con un hueco raro se reinicia.
+                val gap = event.timestamp - lastGyroNs
+                if (lastGyroNs != 0L && gap in 1..50_000_000L) {
+                    for (i in 0..2) gyroSum[i] += event.values[i] * gap
+                    gyroSumNs += gap
+                } else {
+                    gyroSum.fill(0f); gyroSumNs = 0L
+                }
+                lastGyroNs = event.timestamp
                 // Tope de 250 Hz del protocolo: móviles con gyro a 400-500 Hz
                 // saturan el Wi-Fi y provocan ráfagas/pérdidas (cursor errático)
                 if (event.timestamp - lastSendNs >= 3_900_000L) {
                     lastSendNs = event.timestamp
+                    if (gyroSumNs > 0L) {
+                        for (i in 0..2) gyro[i] = gyroSum[i] / gyroSumNs
+                    } else {
+                        for (i in 0..2) gyro[i] = event.values[i]
+                    }
+                    gyroSum.fill(0f); gyroSumNs = 0L
                     sendPacket(event.timestamp)
                 }
             }
