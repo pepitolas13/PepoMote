@@ -263,7 +263,7 @@ impl PepoMoteApp {
         ui.label(
             RichText::new(
                 "¿Dolphin enseña el mando desconectado? Modo Dolphin en el móvil, juego de Wii, y reinicia \
-                 Dolphin; la carpeta configurada tiene que ser la suya (Archivo → Abrir carpeta de usuario).",
+                 Dolphin; la carpeta configurada tiene que ser la suya (en Dolphin: Archivo, «Abrir carpeta de usuario»).",
             )
             .size(11.0)
             .color(theme::TEXT_DIM),

@@ -125,7 +125,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             // qué el móvil no entra (token.txt regenerado, PC reinstalado…)
             let who = hello["name"].as_str().filter(|n| !n.trim().is_empty()).unwrap_or("Un móvil");
             shared.lock().unwrap().last_error = Some(format!(
-                "{who} ({peer_ip}) trae un QR antiguo: en la app, Conectar → «Escanear QR del PC»"
+                "{who} ({peer_ip}) trae un QR antiguo: en la app, Conectar y luego «Escanear QR del PC»"
             ));
             ("bad_token", "Vuelve a escanear el QR")
         };
