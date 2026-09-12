@@ -23,7 +23,7 @@ pub(super) fn map_abs(nx: f32, ny: f32, target: [f32; 4]) -> (i32, i32) {
 pub(super) const ASCII_KEYS: &str = "abcdefghijklmnopqrstuvwxyz0123456789-=.,';/[]`\\";
 
 /// Teclas sin carácter del teclado virtual.
-pub(super) const FIXED_KEYS: [KeyCode; 15] = [
+pub(super) const FIXED_KEYS: [KeyCode; 17] = [
     KeyCode::ArrowUp,
     KeyCode::ArrowDown,
     KeyCode::ArrowLeft,
@@ -39,6 +39,8 @@ pub(super) const FIXED_KEYS: [KeyCode; 15] = [
     KeyCode::Backspace,
     KeyCode::Space,
     KeyCode::Shift,
+    KeyCode::BrowserBack,
+    KeyCode::BrowserForward,
 ];
 
 /// Todas las teclas que existen en ambos backends: las fijas y una por
@@ -68,6 +70,8 @@ pub(super) fn evdev_key(key: KeyCode) -> Option<Key> {
         KeyCode::Backspace => Key::KEY_BACKSPACE,
         KeyCode::Space => Key::KEY_SPACE,
         KeyCode::Shift => Key::KEY_LEFTSHIFT,
+        KeyCode::BrowserBack => Key::KEY_BACK,
+        KeyCode::BrowserForward => Key::KEY_FORWARD,
         KeyCode::Char(c) => return ascii_key(c),
     })
 }
@@ -159,7 +163,7 @@ mod tests {
         let codes: BTreeSet<u16> = all_keys()
             .map(|k| evdev_key(k).unwrap_or_else(|| panic!("{k:?} sin tecla")).code())
             .collect();
-        assert_eq!(all_keys().count(), 15 + ASCII_KEYS.chars().count());
+        assert_eq!(all_keys().count(), 17 + ASCII_KEYS.chars().count());
         assert_eq!(codes.len(), all_keys().count());
         assert!(evdev_key(KeyCode::Char('ñ')).is_none());
     }

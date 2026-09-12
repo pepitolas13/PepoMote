@@ -15,7 +15,7 @@ pub mod linux_wayland;
 #[cfg(windows)]
 mod windows_input;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MouseButton {
     Left,
     Right,
@@ -25,7 +25,11 @@ pub enum MouseButton {
 pub enum KeyCode {
     ArrowUp,
     ArrowDown,
+    // Sin uso en Windows desde que la cruceta ←/→ es atrás/adelante; siguen
+    // en las tablas de teclas de Linux (keymap virtual y uinput)
+    #[allow(dead_code)]
     ArrowLeft,
+    #[allow(dead_code)]
     ArrowRight,
     Enter,
     Escape,
@@ -35,6 +39,10 @@ pub enum KeyCode {
     PlayPause,
     NextTrack,
     PrevTrack,
+    /// Atrás / adelante del navegador (cruceta ←/→ en modo puntero); en
+    /// Windows también navegan el Explorador de archivos.
+    BrowserBack,
+    BrowserForward,
     Backspace,
     Space,
     Shift,

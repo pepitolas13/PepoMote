@@ -13,7 +13,7 @@ use evdev::{
 ///   (BTN_TOOL_PEN) NO vale: KWin/libinput lo ignoran por completo; el
 ///   ratón absoluto pasa por el fallback de libinput y funciona en X11 y
 ///   Wayland en todos los compositores (verificado en KWin 6)
-/// - teclado (flechas, Enter/Esc, multimedia, QWERTY)
+/// - teclado (flechas, atrás/adelante del navegador, Enter/Esc, multimedia, QWERTY)
 ///
 /// Necesita poder abrir /dev/uinput (regla udev `uaccess` o ACL): es el
 /// respaldo para GNOME, KDE y X11, donde no hay puntero virtual de Wayland.

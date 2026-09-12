@@ -211,12 +211,13 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 .width(30.dp)
         )
 
-        // Espejo de la de scroll: mantener = puntero al 40 %
+        // Espejo de la de scroll, algo más ancha: mantener = puntero al 40 %
+        // (sigue aunque el dedo se salga de la tira)
         PrecisionStrip(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .fillMaxHeight(0.45f)
-                .width(30.dp)
+                .width(40.dp)
         )
 
         NoticeBanner(

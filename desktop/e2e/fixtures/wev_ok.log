@@ -39,6 +39,14 @@
 [14:     wl_pointer] frame
 [15:    wl_keyboard] keymap: format: 1 (xkb_v1), size: 3000
 [15:    wl_keyboard] enter: serial: 18; surface: 3
+[15:    wl_keyboard] key: serial: 15; time: 2400; key: 166; state: 1 (pressed)
+                      sym: XF86Back     (269025062), utf8: ''
+[15:    wl_keyboard] key: serial: 16; time: 2405; key: 166; state: 0 (released)
+                      sym: XF86Back     (269025062), utf8: ''
+[15:    wl_keyboard] key: serial: 17; time: 2410; key: 167; state: 1 (pressed)
+                      sym: XF86Forward  (269025063), utf8: ''
+[15:    wl_keyboard] key: serial: 18; time: 2415; key: 167; state: 0 (released)
+                      sym: XF86Forward  (269025063), utf8: ''
 [15:    wl_keyboard] key: serial: 19; time: 2500; key: 38; state: 1 (pressed)
                       sym: a            (97), utf8: 'a'
 [15:    wl_keyboard] key: serial: 20; time: 2505; key: 38; state: 0 (released)

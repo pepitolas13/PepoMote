@@ -44,7 +44,8 @@ See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold 
 - One QR pairing; reconnects with one tap; auto-discovery on your LAN
 - Synthesized UI sounds + haptics (both optional)
 - **Automatic mode** (1.4): open Dolphin or Cemu and the receiver switches mode by itself; close it and the pointer is back
-- **Precision**: hold the magnifier strip and the cursor moves at 40 %, with no jump when you let go
+- **Precision**: hold the crosshair strip and the cursor moves at 40 %, with no jump when you let go; it keeps working even if your finger drifts off the strip
+- **Browser back/forward and volume that repeats**: in pointer mode the D-pad ← / → go back / forward in the browser (↑ / ↓ stay arrow keys), and holding − / + or the media 🔉 / 🔊 keeps stepping the volume
 - **Several PCs and automatic reconnection**: the app keeps all your PCs and, if the Wi-Fi drops or the receiver restarts, it comes back by itself without losing the screen or the mode
 - **Dark theme and English**: both follow the system; ES/EN at the top right of every app
 - **A chime per player, a tray icon that tells the state, a heartbeat with the RTT** in the receiver window; on Android a themed icon, launcher shortcuts and a Quick Settings tile

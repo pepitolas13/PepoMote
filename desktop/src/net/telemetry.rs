@@ -20,13 +20,13 @@ enum Action {
     Key(KeyCode),
 }
 
-const BUTTON_MAP: [(u32, Action); 15] = [
+const BUTTON_MAP: [(u32, Action); 16] = [
     (1 << 0, Action::Mouse(MouseButton::Left)),   // A
     (1 << 1, Action::Mouse(MouseButton::Right)),  // B
     (1 << 2, Action::Key(KeyCode::ArrowUp)),
     (1 << 3, Action::Key(KeyCode::ArrowDown)),
-    (1 << 4, Action::Key(KeyCode::ArrowLeft)),
-    (1 << 5, Action::Key(KeyCode::ArrowRight)),
+    (1 << 4, Action::Key(KeyCode::BrowserBack)),    // cruceta ←: atrás en el navegador
+    (1 << 5, Action::Key(KeyCode::BrowserForward)), // cruceta →: adelante
     (1 << 6, Action::Key(KeyCode::VolumeUp)),     // Plus
     (1 << 7, Action::Key(KeyCode::VolumeDown)),   // Minus
     (1 << 9, Action::Key(KeyCode::Enter)),        // Uno
@@ -36,8 +36,57 @@ const BUTTON_MAP: [(u32, Action); 15] = [
     (1 << 13, Action::Key(KeyCode::Mute)),
     (1 << 14, Action::Key(KeyCode::PlayPause)),
     (1 << 15, Action::Key(KeyCode::NextTrack)),
+    (1 << 16, Action::Key(KeyCode::PrevTrack)),
 ];
-// bit 16 (prev) se trata aparte.
+
+/// El SO no repite las teclas inyectadas: mantener el volumen sería un solo
+/// paso. Mientras el móvil sostiene el bit, el receptor re-toca la tecla
+/// (soltar + pulsar) cada [`REPEAT_EVERY`] a partir de [`REPEAT_DELAY`].
+/// 350 ms: más que un toque deliberado (el latch del móvil da ≥ 70 ms) y
+/// menos que el retardo de teclado de Windows (500 ms). 100 ms: Windows sube
+/// un 2 % por pulsación → 20 %/s (de 0 a 100 en 5 s).
+const REPEAT_DELAY: Duration = Duration::from_millis(350);
+const REPEAT_EVERY: Duration = Duration::from_millis(100);
+
+/// Repetición en curso: la tecla y cuándo toca el siguiente re-toque.
+struct Repeat {
+    key: KeyCode,
+    next: Instant,
+}
+
+/// Solo repite el volumen: por tecla, no por bit (Plus/Minus y vol± dan las mismas).
+fn repeats(key: KeyCode) -> bool {
+    matches!(key, KeyCode::VolumeUp | KeyCode::VolumeDown)
+}
+
+/// Primera tecla repetible entre las que el SO ve pulsadas (`held`).
+fn repeat_after(held: u32) -> Option<KeyCode> {
+    BUTTON_MAP.iter().find_map(|(bit, action)| match action {
+        Action::Key(k) if held & bit != 0 && repeats(*k) => Some(*k),
+        _ => None,
+    })
+}
+
+/// Un tic del repetidor. Todo sale de `held`: `release_all` lo deja a 0 y
+/// con eso muere la repetición (cambio de modo, sesión nueva, Jugador 1
+/// ido) sin más avisos. Un re-toque por tic y el siguiente a contar desde
+/// ahora: tras un parón no hay ráfaga de recuperación.
+fn repeat_tick(rep: &mut Option<Repeat>, held: u32, injector: &mut dyn input::Injector, now: Instant) {
+    let Some(key) = repeat_after(held) else {
+        *rep = None;
+        return;
+    };
+    match rep {
+        Some(r) if r.key == key => {
+            if now >= r.next {
+                injector.key(key, false);
+                injector.key(key, true);
+                r.next = now + REPEAT_EVERY;
+            }
+        }
+        _ => *rep = Some(Repeat { key, next: now + REPEAT_DELAY }),
+    }
+}
 
 pub fn run(
     shared: SharedState,
@@ -82,6 +131,8 @@ pub fn run(
     // Si su sesión muere o el modo deja de ser puntero con A/B/tecla
     // sostenidos, hay que soltarlos: si no, el clic queda atascado en el SO.
     let mut held: u32 = 0;
+    // Volumen mantenido: la repetición en curso (nace y muere con `held`)
+    let mut repeat: Option<Repeat> = None;
     // El motor de puntero pertenece al Jugador 1: se resetea si cambia su
     // sesión; si es el mismo móvil que se reconecta, hereda el sesgo del
     // gyro que ya había aprendido
@@ -178,6 +229,7 @@ pub fn run(
                 crate::log_line!("Inyección de entrada: conexión Wayland perdida; se vuelve a crear el inyector");
                 injector = None;
                 held = 0;
+                repeat = None;
                 injector_err_seen = None;
                 let mut s = shared.lock().unwrap();
                 s.injector = None;
@@ -231,6 +283,12 @@ pub fn run(
             win_start = Instant::now();
             win_packets = 0;
             win_first_t = None;
+        }
+
+        // Volumen mantenido: re-toque periódico (tras cada paquete y, sin
+        // paquetes, cada 100 ms por el timeout de lectura)
+        if let Some(inj) = injector.as_deref_mut() {
+            repeat_tick(&mut repeat, held, inj, Instant::now());
         }
 
         let (len, from) = match socket.recv_from(&mut buf) {
@@ -450,9 +508,6 @@ fn apply_buttons(injector: &mut dyn input::Injector, held: &mut u32, target: u32
             }
         }
     }
-    if changed & (1 << 16) != 0 {
-        injector.key(KeyCode::PrevTrack, target & (1 << 16) != 0);
-    }
     *held = target;
 }
 
@@ -491,4 +546,180 @@ fn screen_width() -> f32 {
 #[cfg(not(windows))]
 fn screen_aspect() -> f32 {
     16.0 / 9.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Inyector de mentira: apunta cada tecla y botón con su flanco, en orden.
+    #[derive(Default)]
+    struct Fake {
+        keys: Vec<(KeyCode, bool)>,
+        mouse: Vec<(MouseButton, bool)>,
+    }
+
+    impl input::Injector for Fake {
+        fn move_rel(&mut self, _dx: i32, _dy: i32) {}
+        fn move_abs(&mut self, _nx: f32, _ny: f32) {}
+        fn button(&mut self, btn: MouseButton, down: bool) {
+            self.mouse.push((btn, down));
+        }
+        fn key(&mut self, key: KeyCode, down: bool) {
+            self.keys.push((key, down));
+        }
+        fn wheel(&mut self, _delta: i32) {}
+        fn name(&self) -> &'static str {
+            "fake"
+        }
+    }
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    /// Pulsa y suelta `bit`; devuelve las teclas que salieron.
+    fn tap(bit: u32) -> Vec<(KeyCode, bool)> {
+        let mut inj = Fake::default();
+        let mut held = 0;
+        apply_buttons(&mut inj, &mut held, bit);
+        apply_buttons(&mut inj, &mut held, 0);
+        assert_eq!(held, 0);
+        inj.keys
+    }
+
+    #[test]
+    fn la_cruceta_izquierda_y_derecha_son_atras_y_adelante_del_navegador() {
+        assert_eq!(tap(codec::BTN_DPAD_LEFT), vec![(KeyCode::BrowserBack, true), (KeyCode::BrowserBack, false)]);
+        assert_eq!(
+            tap(codec::BTN_DPAD_RIGHT),
+            vec![(KeyCode::BrowserForward, true), (KeyCode::BrowserForward, false)]
+        );
+    }
+
+    #[test]
+    fn la_cruceta_arriba_y_abajo_siguen_siendo_flechas() {
+        assert_eq!(tap(codec::BTN_DPAD_UP), vec![(KeyCode::ArrowUp, true), (KeyCode::ArrowUp, false)]);
+        assert_eq!(tap(codec::BTN_DPAD_DOWN), vec![(KeyCode::ArrowDown, true), (KeyCode::ArrowDown, false)]);
+    }
+
+    #[test]
+    fn a_y_b_son_los_clics_y_prev_va_en_la_tabla() {
+        let mut inj = Fake::default();
+        let mut held = 0;
+        apply_buttons(&mut inj, &mut held, codec::BTN_A | codec::BTN_B);
+        apply_buttons(&mut inj, &mut held, 0);
+        assert_eq!(
+            inj.mouse,
+            vec![
+                (MouseButton::Left, true),
+                (MouseButton::Right, true),
+                (MouseButton::Left, false),
+                (MouseButton::Right, false)
+            ]
+        );
+        assert_eq!(tap(codec::BTN_MEDIA_PREV), vec![(KeyCode::PrevTrack, true), (KeyCode::PrevTrack, false)]);
+    }
+
+    #[test]
+    fn mantener_volumen_repite_tras_el_retardo_y_para_al_soltar() {
+        let mut inj = Fake::default();
+        let mut held = 0;
+        let mut rep = None;
+        let t0 = Instant::now();
+        apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_UP);
+        for t in [0, 100, 200, 349] {
+            repeat_tick(&mut rep, held, &mut inj, t0 + ms(t));
+        }
+        assert_eq!(inj.keys, vec![(KeyCode::VolumeUp, true)], "antes del retardo, solo el flanco");
+        for t in [350, 450, 550] {
+            repeat_tick(&mut rep, held, &mut inj, t0 + ms(t));
+        }
+        assert_eq!(inj.keys.len(), 7, "tres re-toques (soltar + pulsar)");
+        assert_eq!(&inj.keys[1..3], &[(KeyCode::VolumeUp, false), (KeyCode::VolumeUp, true)]);
+        assert_eq!(inj.keys.last(), Some(&(KeyCode::VolumeUp, true)), "tras un re-toque la tecla queda pulsada");
+        // un tic antes de tiempo no hace nada
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(600));
+        assert_eq!(inj.keys.len(), 7);
+        apply_buttons(&mut inj, &mut held, 0);
+        assert_eq!(inj.keys.last(), Some(&(KeyCode::VolumeUp, false)));
+        let n = inj.keys.len();
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(2000));
+        assert_eq!(inj.keys.len(), n, "soltado: no repite más");
+        assert!(rep.is_none());
+    }
+
+    #[test]
+    fn un_toque_corto_no_repite() {
+        let mut inj = Fake::default();
+        let mut held = 0;
+        let mut rep = None;
+        let t0 = Instant::now();
+        apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_DOWN);
+        repeat_tick(&mut rep, held, &mut inj, t0);
+        apply_buttons(&mut inj, &mut held, 0);
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(80));
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(400));
+        assert_eq!(inj.keys, vec![(KeyCode::VolumeDown, true), (KeyCode::VolumeDown, false)]);
+    }
+
+    #[test]
+    fn mas_y_menos_repiten_como_las_teclas_de_volumen() {
+        for (bit, key) in [(codec::BTN_PLUS, KeyCode::VolumeUp), (codec::BTN_MINUS, KeyCode::VolumeDown)] {
+            let mut inj = Fake::default();
+            let mut held = 0;
+            let mut rep = None;
+            let t0 = Instant::now();
+            apply_buttons(&mut inj, &mut held, bit);
+            repeat_tick(&mut rep, held, &mut inj, t0);
+            repeat_tick(&mut rep, held, &mut inj, t0 + ms(350));
+            assert_eq!(inj.keys, vec![(key, true), (key, false), (key, true)]);
+        }
+        // lo que no es volumen no repite
+        let mut inj = Fake::default();
+        let mut held = 0;
+        let mut rep = None;
+        let t0 = Instant::now();
+        apply_buttons(&mut inj, &mut held, codec::BTN_DPAD_LEFT | codec::BTN_MEDIA_NEXT);
+        repeat_tick(&mut rep, held, &mut inj, t0);
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(1000));
+        assert_eq!(inj.keys.len(), 2);
+        assert!(rep.is_none());
+    }
+
+    #[test]
+    fn soltar_todo_corta_la_repeticion() {
+        let mut inj = Fake::default();
+        let mut held = 0;
+        let mut rep = None;
+        let t0 = Instant::now();
+        apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_DOWN);
+        repeat_tick(&mut rep, held, &mut inj, t0);
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(350));
+        release_all(&mut inj, &mut held);
+        assert_eq!(held, 0);
+        assert_eq!(inj.keys.last(), Some(&(KeyCode::VolumeDown, false)));
+        let n = inj.keys.len();
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(450));
+        assert_eq!(inj.keys.len(), n);
+        assert!(rep.is_none());
+    }
+
+    #[test]
+    fn cambiar_de_tecla_reinicia_el_retardo() {
+        let mut inj = Fake::default();
+        let mut held = 0;
+        let mut rep = None;
+        let t0 = Instant::now();
+        apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_UP);
+        repeat_tick(&mut rep, held, &mut inj, t0);
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(350)); // primer re-toque de vol+
+        apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_DOWN); // suelta vol+, pulsa vol−
+        let n = inj.keys.len();
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(420));
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(700));
+        assert_eq!(inj.keys.len(), n, "vol− aún en su retardo");
+        repeat_tick(&mut rep, held, &mut inj, t0 + ms(770));
+        assert_eq!(&inj.keys[n..], &[(KeyCode::VolumeDown, false), (KeyCode::VolumeDown, true)]);
+    }
 }

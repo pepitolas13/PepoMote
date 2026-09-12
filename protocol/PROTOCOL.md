@@ -86,15 +86,15 @@ Cadencia: la del sensor (típico 100-200 Hz), tope 250 Hz, mínimo keepalive 1 H
 | 1 | B (gatillo) | clic derecho |
 | 2 | cruceta ↑ | flecha ↑ |
 | 3 | cruceta ↓ | flecha ↓ |
-| 4 | cruceta ← | flecha ← |
-| 5 | cruceta → | flecha → |
-| 6 | Plus | volumen + |
-| 7 | Minus | volumen − |
+| 4 | cruceta ← | atrás en el navegador (antes de 1.4.1: flecha ←) |
+| 5 | cruceta → | adelante en el navegador (antes de 1.4.1: flecha →) |
+| 6 | Plus | volumen + (mantener = repite: el receptor re-toca la tecla cada 100 ms a partir de los 350 ms) |
+| 7 | Minus | volumen − (mantener = repite) |
 | 8 | Home | (local en el móvil: abre su menú; se envía igualmente) |
 | 9 | Uno | Enter |
 | 10 | Dos | Esc |
-| 11 | media vol+ | volumen + |
-| 12 | media vol− | volumen − |
+| 11 | media vol+ | volumen + (mantener = repite) |
+| 12 | media vol− | volumen − (mantener = repite) |
 | 13 | media mute | mute |
 | 14 | media play/pausa | play/pausa |
 | 15 | media next | siguiente pista |

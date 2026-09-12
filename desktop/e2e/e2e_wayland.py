@@ -1,9 +1,10 @@
 """Móvil simulado contra el receptor aislado dentro de un sway sin cabeza
 (ver e2e_wayland.sh): empareja por código, envía reposo, un barrido de yaw,
-un clic, rueda y texto, y comprueba en la salida de wev (la ventana a
-pantalla completa) que el cursor se centró, recorrió lo que toca hacia la
-izquierda, que llegó el botón izquierdo, la rueda con el signo de Wayland y
-las teclas a, b e Intro.
+un clic, la cruceta ← y →, rueda y texto, y comprueba en la salida de wev (la
+ventana a pantalla completa) que el cursor se centró, recorrió lo que toca
+hacia la izquierda, que llegó el botón izquierdo, las teclas XF86Back y
+XF86Forward (atrás/adelante del navegador), la rueda con el signo de Wayland
+y las teclas a, b e Intro.
 
 Uso: python3 e2e_wayland.py --e2e-dir /tmp/pepomote-e2e --port 26771 --outputs outputs.json
      python3 e2e_wayland.py --parse-only fixtures/wev_ok.log   (solo el parser)
@@ -14,6 +15,8 @@ HOST = "127.0.0.1"
 DT = 0.005          # 200 Hz, como el móvil
 FLAG_QUAT = 1
 BTN_A = 1 << 0
+BTN_DPAD_LEFT = 1 << 4
+BTN_DPAD_RIGHT = 1 << 5
 
 fails = 0
 def check(cond, msg):
@@ -36,6 +39,8 @@ RE_SYM = re.compile(r"^\s+sym:\s+(\S+)")
 BTN_LEFT = 272
 # Teclas esperadas: (keysym, código evdev); wev puede dar evdev o evdev+8
 KEY_A, KEY_B, KEY_ENTER = ("a", 30), ("b", 48), ("Return", 28)
+# cruceta ← / → en modo puntero (el keysym de xkb; KEY_BACK / KEY_FORWARD de evdev)
+KEY_BACK, KEY_FORWARD = ("XF86Back", 158), ("XF86Forward", 159)
 
 def parse_wev(text):
     """Eventos de wev en orden: [('motion', x, y)|('enter', x, y)|('button', code, state)|('axis', value)|('key', code, state, sym)]"""
@@ -100,11 +105,12 @@ def rules(ev, W, H, sens, yaw_deg):
     out.append((bool(axes) and all(v < 0 for v in axes),
                 f"rueda: {len(axes)} eventos de eje vertical, todos negativos (scroll arriba)"))
     keys = [e for e in ev if e[0] == "key"]
-    want = [(KEY_A, 1), (KEY_A, 0), (KEY_B, 1), (KEY_B, 0), (KEY_ENTER, 1), (KEY_ENTER, 0)]
+    want = [(KEY_BACK, 1), (KEY_BACK, 0), (KEY_FORWARD, 1), (KEY_FORWARD, 0),
+            (KEY_A, 1), (KEY_A, 0), (KEY_B, 1), (KEY_B, 0), (KEY_ENTER, 1), (KEY_ENTER, 0)]
     it = iter(keys)
     ordered = all(any(key_is(k, w) and k[2] == s for k in it) for w, s in want)
     seen = [(k[3] or k[1], k[2]) for k in keys]
-    out.append((ordered, f"teclas a, b, Intro pulsadas y soltadas en orden (llegaron {seen})"))
+    out.append((ordered, f"teclas atrás, adelante, a, b, Intro pulsadas y soltadas en orden (llegaron {seen})"))
     return out
 
 def outputs_size(path):
@@ -224,6 +230,11 @@ def drive(args):
     for _ in range(140): phone.send(args.yaw, 0.0)
     # D. clic: A pulsada 20 paquetes, soltada 20
     for _ in range(20): phone.send(args.yaw, 0.0, buttons=BTN_A)
+    for _ in range(20): phone.send(args.yaw, 0.0)
+    # D2. cruceta ← y →: atrás/adelante del navegador (XF86Back / XF86Forward)
+    for _ in range(20): phone.send(args.yaw, 0.0, buttons=BTN_DPAD_LEFT)
+    for _ in range(20): phone.send(args.yaw, 0.0)
+    for _ in range(20): phone.send(args.yaw, 0.0, buttons=BTN_DPAD_RIGHT)
     for _ in range(20): phone.send(args.yaw, 0.0)
     # E. rueda: +30 por paquete = wheel(120) = una muesca hacia arriba, 10 veces
     for _ in range(10): phone.send(args.yaw, 0.0, scroll=30)

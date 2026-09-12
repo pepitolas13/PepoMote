@@ -4,7 +4,9 @@ import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,7 +41,8 @@ import dev.pepotech.pepomote.R
 /**
  * Precisión (PROTOCOL.md §4.2, bit 29): mientras se mantiene, el puntero del
  * PC se mueve al 40 %. Tira del borde izquierdo en vertical (espejo de la de
- * scroll) y píldora en apaisado. Solo tiene efecto en modo puntero.
+ * scroll) y píldora en apaisado; mantener sigue valiendo aunque el dedo se
+ * salga. Solo tiene efecto en modo puntero.
  */
 @Composable
 fun PrecisionStrip(modifier: Modifier) {
@@ -55,7 +58,7 @@ fun PrecisionStrip(modifier: Modifier) {
             .precisionHold(view) { active = it },
         contentAlignment = Alignment.Center
     ) {
-        MagnifierGlyph(PepoColors.TextDim, 16.dp)
+        CrosshairGlyph(PepoColors.TextDim, 16.dp)
     }
 }
 
@@ -75,42 +78,57 @@ fun PrecisionPill(modifier: Modifier) {
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MagnifierGlyph(PepoColors.TextDim, 14.dp)
+        CrosshairGlyph(PepoColors.TextDim, 14.dp)
         Spacer(Modifier.width(8.dp))
         Text(stringResource(R.string.precision), style = MaterialTheme.typography.bodyMedium)
     }
 }
 
-/** Mantener = bit de precisión; háptico y tic al activar. */
+/**
+ * Mantener = bit de precisión; háptico y tic al activar. El gesto sigue al
+ * dedo hasta que lo levanta, aunque se salga de la tira (como la de scroll);
+ * el `finally` suelta el bit también si el gesto se cancela (ACTION_CANCEL,
+ * cambio de pantalla): sin él el puntero se quedaría al 40 % para siempre.
+ */
 private fun Modifier.precisionHold(view: View, onActive: (Boolean) -> Unit): Modifier =
     pointerInput(Unit) {
-        detectTapGestures(onPress = {
-            onActive(true)
-            ButtonState.set(ButtonState.PRECISION, true)
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            UiSounds.tick()
-            tryAwaitRelease()
-            onActive(false)
-            ButtonState.set(ButtonState.PRECISION, false)
-        })
+        awaitEachGesture {
+            val down = awaitFirstDown()
+            down.consume()
+            try {
+                onActive(true)
+                ButtonState.set(ButtonState.PRECISION, true)
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                UiSounds.tick()
+                // hasta levantar el dedo: sin umbral de arrastre ni límites
+                drag(down.id) { it.consume() }
+            } finally {
+                onActive(false)
+                ButtonState.set(ButtonState.PRECISION, false)
+            }
+        }
     }
 
-/** Lupa: aro y asa, del color del texto tenue. */
+/** Mirilla de francotirador: aro, cuatro marcas que lo cruzan y punto central. */
 @Composable
-private fun MagnifierGlyph(color: Color, size: Dp) {
+private fun CrosshairGlyph(color: Color, size: Dp) {
     Canvas(Modifier.size(size)) {
         val px = size.toPx()
-        val stroke = px * 0.14f
-        val r = px * 0.3f
-        val c = Offset(px * 0.42f, px * 0.42f)
-        drawCircle(color, r, c, style = Stroke(width = stroke))
-        val d = 0.7071f
-        drawLine(
-            color,
-            Offset(c.x + r * d, c.y + r * d),
-            Offset(px * 0.92f, px * 0.92f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
+        val c = Offset(px / 2f, px / 2f)
+        val stroke = px * 0.11f
+        drawCircle(color, px * 0.30f, c, style = Stroke(width = stroke))
+        // marcas N/S/E/O: nacen dentro del aro y lo cruzan hacia fuera
+        val inner = px * 0.19f
+        val outer = px * 0.47f
+        for ((dx, dy) in listOf(0f to -1f, 0f to 1f, -1f to 0f, 1f to 0f)) {
+            drawLine(
+                color,
+                Offset(c.x + dx * inner, c.y + dy * inner),
+                Offset(c.x + dx * outer, c.y + dy * outer),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+        }
+        drawCircle(color, px * 0.06f, c)
     }
 }

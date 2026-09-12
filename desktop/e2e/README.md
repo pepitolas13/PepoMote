@@ -41,9 +41,10 @@ Linux, compositor wlroots de verdad (lo que corre la CI en `desktop.yml`):
 (`WLR_BACKENDS=headless`, sin GPU) con `wev` a pantalla completa, un
 receptor aislado sin ventana (`PEPOMOTE_NO_UI=1`) que debe elegir el backend
 Wayland (línea `Inyección: Wayland` en `receptor.log`), y
-`e2e_wayland.py`: hello por código, barrido de yaw, clic, rueda y `text`,
-comprobando en la salida de `wev` los `motion` (centro y recorrido), el
-`button 272`, el `axis` con el signo de Wayland y las teclas `a`, `b`, Intro.
+`e2e_wayland.py`: hello por código, barrido de yaw, clic, cruceta ← → (atrás y
+adelante del navegador), rueda y `text`, comprobando en la salida de `wev` los
+`motion` (centro y recorrido), el `button 272`, las teclas `XF86Back` y
+`XF86Forward`, el `axis` con el signo de Wayland y las teclas `a`, `b`, Intro.
 Necesita `sway`, `wev` y `python3`; deja `wev.log`, `sway.log`,
 `receptor.out` y `config/receptor.log` en `/tmp/pepomote-e2e`.
 `python3 e2e_wayland.py --parse-only fixtures/wev_ok.log` prueba solo el

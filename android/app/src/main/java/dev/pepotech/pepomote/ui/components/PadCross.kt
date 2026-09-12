@@ -24,7 +24,10 @@ import androidx.compose.ui.unit.sp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
-/** Cruceta interactiva: cuatro brazos momentáneos (flechas del PC). */
+/**
+ * Cruceta interactiva: cuatro brazos momentáneos. En modo puntero el
+ * receptor hace ↑/↓ = flechas del PC y ←/→ = atrás/adelante del navegador.
+ */
 @Composable
 fun PadCross(sizeDp: Dp) {
     val arm = sizeDp / 3

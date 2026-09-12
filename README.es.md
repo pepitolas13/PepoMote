@@ -44,7 +44,8 @@ Mira [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — toca **Wii U** en la app, sost
 - Emparejado por QR una vez; reconexión de un toque; autodescubrimiento en tu red
 - Sonidos UI sintetizados + háptica (ambos opcionales)
 - **Modo automático** (1.4): abre Dolphin o Cemu y el receptor cambia de modo solo; ciérralo y vuelve el puntero
-- **Precisión**: mantén la tira de la lupa y el cursor va al 40 %, sin salto al soltar
+- **Precisión**: mantén la tira de la mirilla y el cursor va al 40 %, sin salto al soltar; sigue aunque el dedo se salga de la tira
+- **Atrás/adelante y volumen que repite**: en modo puntero la cruceta ← / → va atrás / adelante en el navegador (↑ / ↓ siguen siendo flechas) y mantener − / + o el 🔉 / 🔊 de multimedia sigue bajando o subiendo el volumen
 - **Varios PCs y reconexión automática**: la app guarda todos tus PCs y, si se cae la Wi-Fi o reinicias el receptor, vuelve sola sin perder la pantalla ni el modo
 - **Tema oscuro e inglés**: siguen al sistema; ES/EN arriba a la derecha en las tres apps
 - **Campanita por jugador, bandeja que cuenta el estado, latido con el RTT** en la ventana del receptor; en Android icono temático, accesos directos y tile de Ajustes rápidos

@@ -360,11 +360,12 @@ impl ControllerUi {
         }
         self.hits.push((Shape::Rect(strip), Target::Scroll));
 
-        // Tira de precisión: borde izquierdo, simétrica. Mantener = el
-        // puntero va al 40 % (bit 29, solo en modo puntero)
+        // Tira de precisión: borde izquierdo, simétrica a la de scroll pero
+        // algo más ancha. Mantener = el puntero va al 40 % (bit 29, solo en
+        // modo puntero); sigue aunque el dedo se salga (el toque es pegajoso)
         let strip = Rect::from_min_max(
             Pos2::new(rect.left() + 2.0, rect.top() + rect.height() * 0.25),
-            Pos2::new(rect.left() + 28.0 * s, rect.top() + rect.height() * 0.72),
+            Pos2::new(rect.left() + 36.0 * s, rect.top() + rect.height() * 0.72),
         );
         let precise = pressed & pmp::BTN_PRECISION != 0;
         painter.rect(
@@ -373,15 +374,14 @@ impl ControllerUi {
             if precise { theme::glow() } else { theme::card_border() },
             Stroke::NONE,
         );
-        // lupa: aro y asa
-        let c = strip.center() + Vec2::new(-1.5 * s, -1.5 * s);
-        let r = 4.5 * s;
-        painter.circle_stroke(c, r, Stroke::new(1.8 * s, theme::text_dim()));
-        let d = std::f32::consts::FRAC_1_SQRT_2;
-        painter.line_segment(
-            [c + Vec2::new(r * d, r * d), c + Vec2::new(r * d + 4.5 * s, r * d + 4.5 * s)],
-            Stroke::new(2.0 * s, theme::text_dim()),
-        );
+        // mirilla de francotirador: aro, cuatro marcas que lo cruzan y punto central
+        let c = strip.center();
+        let dim = Stroke::new(1.8 * s, theme::text_dim());
+        painter.circle_stroke(c, 4.8 * s, dim);
+        for d in [Vec2::new(0.0, -1.0), Vec2::new(0.0, 1.0), Vec2::new(-1.0, 0.0), Vec2::new(1.0, 0.0)] {
+            painter.line_segment([c + d * (3.0 * s), c + d * (7.5 * s)], dim);
+        }
+        painter.circle_filled(c, 1.0 * s, theme::text_dim());
         self.hits.push((Shape::Rect(strip), Target::Button(pmp::BTN_PRECISION)));
     }
 

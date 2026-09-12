@@ -51,8 +51,9 @@ jobs:
           name: PepoMote-linux
           path: dist/PepoMote-x86_64.AppImage
       # Compositor wlroots de verdad, sin GPU: el receptor tiene que elegir el
-      # puntero virtual de Wayland y mover el cursor, hacer clic, girar la
-      # rueda y teclear en wev (desktop/e2e/README.md)
+      # puntero virtual de Wayland y mover el cursor, hacer clic, ir atrás y
+      # adelante con la cruceta, girar la rueda y teclear en wev
+      # (desktop/e2e/README.md)
       - name: e2e Wayland (sway sin cabeza + wev)
         run: |
           sudo apt-get install -y --no-install-recommends sway wev xkb-data

@@ -290,10 +290,19 @@ receptor → «Cambiar de modo al abrir o cerrar Dolphin o Cemu» desactivado.
 
 ## Modo precisión (el cursor va al 40 %)
 
-Mantén la tira de la lupa: borde izquierdo del mando vertical (espejo de la
-de scroll) o la píldora «Precisión» del mando apaisado; en el móvil Linux,
-la tira izquierda. Al soltar no hay salto: el apuntado queda corrido hasta
+Mantén la tira de la mirilla: borde izquierdo del mando vertical (espejo de
+la de scroll) o la píldora «Precisión» del mando apaisado; en el móvil Linux,
+la tira izquierda. Sigue activo mientras no levantes el dedo, aunque se
+salga de la tira. Al soltar no hay salto: el apuntado queda corrido hasta
 que recentres con la diana. En Dolphin y Wii U no hace nada.
+
+## Cruceta y volumen en modo puntero
+
+Cruceta ← y → = atrás y adelante en el navegador (en Windows también en el
+Explorador); ↑ y ↓ siguen siendo las flechas del teclado. Mantener − / + o
+🔉 / 🔊 sigue bajando o subiendo el volumen: el receptor repite la tecla cada
+100 ms a partir de los 350 ms (el sistema no repite las teclas inyectadas).
+En Dolphin y Wii U la cruceta va al emulador como siempre.
 
 ## Varios PCs
 

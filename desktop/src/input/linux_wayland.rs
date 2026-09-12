@@ -420,6 +420,8 @@ fn keysyms(key: KeyCode) -> Option<(&'static str, Option<&'static str>)> {
         KeyCode::Backspace => ("BackSpace", None),
         KeyCode::Space => ("space", None),
         KeyCode::Shift => ("Shift_L", None),
+        KeyCode::BrowserBack => ("XF86Back", None),
+        KeyCode::BrowserForward => ("XF86Forward", None),
         KeyCode::Char(c) => match c {
             'a'..='z' => {
                 let (base, upper) = LETTERS[(c as u8 - b'a') as usize];
@@ -550,8 +552,8 @@ mod tests {
             assert_eq!(text.matches(&sym).count(), 1, "{k:?}: {sym}");
             n_keys += 1;
         }
-        assert_eq!(n_keys, 62);
-        assert_eq!(text.matches("\t\tkey <").count(), 62);
+        assert_eq!(n_keys, 64);
+        assert_eq!(text.matches("\t\tkey <").count(), 64);
         assert!(text.contains("minimum = 8;"));
         let max = all_keys().map(keycode).max().unwrap();
         assert!(text.contains(&format!("maximum = {max};")));
@@ -572,6 +574,9 @@ mod tests {
             "[ Return ]",
             "[ BackSpace ]",
             "[ space ]",
+            // atrás/adelante del navegador (un keysym mal escrito queda en NoSymbol sin error)
+            "[ XF86Back ]",
+            "[ XF86Forward ]",
         ] {
             assert!(text.contains(needle), "{needle}");
         }
