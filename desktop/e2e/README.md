@@ -36,6 +36,19 @@ en el entorno:
   el receptor NORMAL (token real por `PEPOMOTE_TOKEN`), para ver en Cemu el
   mando moviéndose. Un archivo `cemu_live.cmd` junto al script cambia el patrón.
 
+Linux, compositor wlroots de verdad (lo que corre la CI en `desktop.yml`):
+`bash desktop/e2e/e2e_wayland.sh` arranca un `sway` sin cabeza
+(`WLR_BACKENDS=headless`, sin GPU) con `wev` a pantalla completa, un
+receptor aislado sin ventana (`PEPOMOTE_NO_UI=1`) que debe elegir el backend
+Wayland (línea `Inyección: Wayland` en `receptor.log`), y
+`e2e_wayland.py`: hello por código, barrido de yaw, clic, rueda y `text`,
+comprobando en la salida de `wev` los `motion` (centro y recorrido), el
+`button 272`, el `axis` con el signo de Wayland y las teclas `a`, `b`, Intro.
+Necesita `sway`, `wev` y `python3`; deja `wev.log`, `sway.log`,
+`receptor.out` y `config/receptor.log` en `/tmp/pepomote-e2e`.
+`python3 e2e_wayland.py --parse-only fixtures/wev_ok.log` prueba solo el
+parser (vale en Windows).
+
 Puntero: `PEPOMOTE_RECORD=<archivo>` en el receptor graba cada INPUT del
 Jugador 1 (llegada + paquete crudo) y `PepoMote --replay <archivo> [sens_deg]`
 lo pasa por el motor del puntero y saca un CSV (sensor, llegada, gyro, quat,

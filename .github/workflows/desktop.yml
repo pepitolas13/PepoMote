@@ -50,3 +50,21 @@ jobs:
         with:
           name: PepoMote-linux
           path: dist/PepoMote-x86_64.AppImage
+      # Compositor wlroots de verdad, sin GPU: el receptor tiene que elegir el
+      # puntero virtual de Wayland y mover el cursor, hacer clic, girar la
+      # rueda y teclear en wev (desktop/e2e/README.md)
+      - name: e2e Wayland (sway sin cabeza + wev)
+        run: |
+          sudo apt-get install -y --no-install-recommends sway wev xkb-data
+          bash desktop/e2e/e2e_wayland.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-wayland-logs
+          path: |
+            /tmp/pepomote-e2e/wev.log
+            /tmp/pepomote-e2e/config/receptor.log
+            /tmp/pepomote-e2e/sway.log
+            /tmp/pepomote-e2e/receptor.out
+            /tmp/pepomote-e2e/outputs.json
+          if-no-files-found: warn
