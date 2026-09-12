@@ -5,7 +5,9 @@ import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import android.content.Context
 import dev.pepotech.pepomote.MainActivity
+import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.net.PairStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +22,10 @@ import kotlinx.coroutines.launch
 class PepoTileService : TileService() {
 
     private var scope: CoroutineScope? = null
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
 
     override fun onStartListening() {
         super.onStartListening()
@@ -40,7 +46,9 @@ class PepoTileService : TileService() {
         val m = TileModel.of(link, PairStore.load(this) != null)
         tile.state = if (m.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.label = "PepoMote"
-        if (Build.VERSION.SDK_INT >= 29) tile.subtitle = m.subtitle
+        if (Build.VERSION.SDK_INT >= 29) {
+            tile.subtitle = if (m.arg != null) getString(m.subtitle, m.arg) else getString(m.subtitle)
+        }
         tile.updateTile()
     }
 

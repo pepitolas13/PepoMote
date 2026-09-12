@@ -42,6 +42,8 @@ import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.net.ReceiverInfo
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlinx.coroutines.delay
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /**
  * Conectar: tus PCs guardados (toca uno para conectar; mantén pulsado para
@@ -81,12 +83,12 @@ fun PairScreen(
     ) {
         Spacer(Modifier.height(24.dp))
         Text(
-            if (reason != null) "Conectar con otro PC" else "Conectar",
+            if (reason != null) stringResource(R.string.pair_title_other) else stringResource(R.string.channel_connect),
             style = MaterialTheme.typography.headlineMedium
         )
         Text(
-            if (saved.isEmpty()) "Abre PepoMote en tu PC y escanea su QR"
-            else "Toca uno de tus PCs, o escanea el QR de otro",
+            if (saved.isEmpty()) stringResource(R.string.pair_sub_scan)
+            else stringResource(R.string.pair_sub_saved),
             style = MaterialTheme.typography.bodyMedium
         )
         if (reason != null) {
@@ -112,7 +114,7 @@ fun PairScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (saved.isNotEmpty()) {
-                item { Text("Tus PCs", style = MaterialTheme.typography.titleMedium) }
+                item { Text(stringResource(R.string.your_pcs), style = MaterialTheme.typography.titleMedium) }
                 items(saved, key = { it.token }) { p ->
                     SavedPcCard(
                         p,
@@ -134,7 +136,7 @@ fun PairScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = PepoColors.Blue)
                 ) {
                     Text(
-                        if (saved.isEmpty()) "Escanear QR del PC" else "Escanear el QR de otro PC",
+                        if (saved.isEmpty()) stringResource(R.string.scan_qr) else stringResource(R.string.scan_qr_other),
                         style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.OnAccent)
                     )
                 }
@@ -143,10 +145,10 @@ fun PairScreen(
                 Spacer(Modifier.height(10.dp))
                 Text(
                     when {
-                        scanning && receivers.isEmpty() -> "Buscando receptores en tu red…"
-                        unknown.isEmpty() && saved.isEmpty() -> "Ningún receptor a la vista (el QR funciona igualmente)"
-                        unknown.isEmpty() -> "Ningún PC nuevo a la vista"
-                        else -> "En tu red:"
+                        scanning && receivers.isEmpty() -> stringResource(R.string.searching)
+                        unknown.isEmpty() && saved.isEmpty() -> stringResource(R.string.no_receivers)
+                        unknown.isEmpty() -> stringResource(R.string.no_new_pcs)
+                        else -> stringResource(R.string.on_your_network)
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -162,7 +164,7 @@ fun PairScreen(
                         Column {
                             Text(r.name, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "${r.host}:${r.tcpPort} — escanea su QR para emparejar",
+                                stringResource(R.string.receiver_hint, "${r.host}:${r.tcpPort}"),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -172,7 +174,7 @@ fun PairScreen(
         }
 
         TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("Volver", color = PepoColors.TextDim)
+            Text(stringResource(R.string.back), color = PepoColors.TextDim)
         }
         Spacer(Modifier.height(16.dp))
     }
@@ -181,10 +183,10 @@ fun PairScreen(
         AlertDialog(
             onDismissRequest = { forgetting = null },
             containerColor = PepoColors.Card,
-            title = { Text("¿Olvidar ${p.pcName}?", style = MaterialTheme.typography.titleLarge) },
+            title = { Text(stringResource(R.string.forget_title, p.pcName), style = MaterialTheme.typography.titleLarge) },
             text = {
                 Text(
-                    "Para volver a usarlo tendrás que escanear su QR otra vez.",
+                    stringResource(R.string.forget_body),
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -192,10 +194,10 @@ fun PairScreen(
                 TextButton(onClick = {
                     onForget(p)
                     forgetting = null
-                }) { Text("Olvidar", color = PepoColors.Error) }
+                }) { Text(stringResource(R.string.forget), color = PepoColors.Error) }
             },
             dismissButton = {
-                TextButton(onClick = { forgetting = null }) { Text("Cancelar", color = PepoColors.TextDim) }
+                TextButton(onClick = { forgetting = null }) { Text(stringResource(R.string.cancel), color = PepoColors.TextDim) }
             }
         )
     }
@@ -233,12 +235,12 @@ private fun SavedPcCard(
             Column(Modifier.weight(1f)) {
                 Text(p.pcName, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    if (online) "${p.host}:${p.port} · en la red" else "${p.host}:${p.port}",
+                    if (online) stringResource(R.string.pc_online, "${p.host}:${p.port}") else "${p.host}:${p.port}",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
             if (current) {
-                Text("actual", style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Blue))
+                Text(stringResource(R.string.current), style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Blue))
             }
         }
     }

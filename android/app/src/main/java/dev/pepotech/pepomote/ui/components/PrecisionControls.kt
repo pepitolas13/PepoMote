@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /**
  * Precisión (PROTOCOL.md §4.2, bit 29): mientras se mantiene, el puntero del
@@ -75,7 +77,7 @@ fun PrecisionPill(modifier: Modifier) {
     ) {
         MagnifierGlyph(PepoColors.TextDim, 14.dp)
         Spacer(Modifier.width(8.dp))
-        Text("Precisión", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.precision), style = MaterialTheme.typography.bodyMedium)
     }
 }
 

@@ -1,5 +1,8 @@
 package dev.pepotech.pepomote.service
 
+import androidx.annotation.StringRes
+import dev.pepotech.pepomote.R
+
 /** Pantalla del mando que toca enseñar. */
 enum class PadScreen { GamePad, Wii, Nunchuk }
 
@@ -15,8 +18,11 @@ enum class PadIntent { None, WiiU }
  * sin Android, testeada en RouteTest.
  */
 object Route {
-    const val WARN_NEEDS_13 = "El PC necesita PepoMote 1.3 para Wii U"
-    const val WARN_PLAYER_1 = "Solo el Jugador 1 cambia el modo"
+    @StringRes
+    val WARN_NEEDS_13: Int = R.string.warn_needs_13
+
+    @StringRes
+    val WARN_PLAYER_1: Int = R.string.warn_player_1
 
     /**
      * Modo Wii U activo como GamePad/Pro: el receptor confirmó `cemu` y este
@@ -40,8 +46,8 @@ object Route {
         return PadScreen.Wii
     }
 
-    /** Intención resultante y, si toca, el aviso a enseñar. */
-    data class Outcome(val intent: PadIntent, val warning: String?)
+    /** Intención resultante y, si toca, el aviso a enseñar (recurso de texto). */
+    data class Outcome(val intent: PadIntent, @StringRes val warning: Int?)
 
     /**
      * Llega un eco/difusión de `mode`: consume la intención Wii U. Si el modo

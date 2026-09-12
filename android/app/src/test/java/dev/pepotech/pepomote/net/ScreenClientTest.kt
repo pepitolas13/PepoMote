@@ -218,7 +218,7 @@ class ScreenClientTest {
             try {
                 rx.accept()
                 rx.send("{\"m\":\"err\",\"code\":\"bad_session\",\"msg\":\"sesión desconocida\"}\n".toByteArray())
-                assertEquals("Sin pantalla: sesión desconocida", c.status.await { it != null })
+                assertEquals(ScreenClient.STATUS_DETAIL + "sesión desconocida", c.status.await { it != null })
             } finally {
                 c.close()
             }

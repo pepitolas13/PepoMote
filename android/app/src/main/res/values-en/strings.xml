@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English -->
+<resources>
+    <string name="app_name">PepoMote</string>
+
+    <!-- home -->
+    <string name="home_subtitle">Your phone, your PC\'s controller</string>
+    <string name="channel_connect">Connect</string>
+    <string name="channel_connect_sub">Scan the PC\'s QR</string>
+    <string name="channel_controller">Controller</string>
+    <string name="channel_controller_sub">Pointer and buttons</string>
+    <string name="channel_dolphin">Dolphin</string>
+    <string name="channel_dolphin_sub">Play real Wii games</string>
+    <string name="channel_wiiu">Wii U</string>
+    <string name="channel_wiiu_sub">GamePad for Cemu</string>
+    <string name="channel_nunchuk">Nunchuk</string>
+    <string name="channel_nunchuk_sub">The other hand</string>
+    <string name="channel_settings">Settings</string>
+    <string name="channel_settings_sub">Sensitivity and more</string>
+    <string name="status_disconnected">No connection</string>
+    <string name="status_disconnected_pc">No connection · %1$s</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_reconnecting">Reconnecting to %1$s…</string>
+    <string name="status_connected_to">Connected to %1$s</string>
+    <string name="lang_switch_to">Switch to %1$s</string>
+
+    <!-- launcher shortcuts -->
+    <string name="shortcut_pointer">Pointer</string>
+    <string name="shortcut_pointer_long">Controller with pointer</string>
+    <string name="shortcut_dolphin">Dolphin</string>
+    <string name="shortcut_dolphin_long">Wii Remote for Dolphin</string>
+    <string name="shortcut_wiiu">Wii U</string>
+    <string name="shortcut_wiiu_long">GamePad for Cemu</string>
+    <string name="shortcut_nunchuk">Nunchuk</string>
+    <string name="shortcut_nunchuk_long">Nunchuk, the other hand</string>
+
+    <!-- activity and service -->
+    <string name="error_prefix">Error: %1$s</string>
+    <string name="qr_not_pepomote">That QR is not from PepoMote</string>
+    <string name="scan_prompt">Point at PepoMote\'s QR on your PC</string>
+    <string name="your_pc">Your PC</string>
+    <string name="re_pair_reason">%1$s no longer recognises this phone: its QR has changed (PepoMote reinstalled or reset on the PC). Scan it again and you continue where you were.</string>
+    <string name="pc_not_responding">%1$s is not responding. Pick another PC or scan a QR.</string>
+    <string name="notif_channel">Link with the PC</string>
+    <string name="notif_connecting">Connecting to %1$s…</string>
+    <string name="notif_nunchuk_connected">Nunchuk connected to %1$s</string>
+    <string name="notif_retrying">Retrying connection (%1$d/%2$d)…</string>
+    <string name="notif_disconnect">Disconnect</string>
+    <string name="lost_connection">Lost the connection to %1$s</string>
+    <string name="warn_needs_13">The PC needs PepoMote 1.3 for Wii U</string>
+    <string name="warn_player_1">Only Player 1 changes the mode</string>
+    <string name="reconnecting_short">Reconnecting…</string>
+    <string name="tile_no_pc">No PC</string>
+
+    <!-- connect -->
+    <string name="pair_title_other">Connect to another PC</string>
+    <string name="pair_sub_scan">Open PepoMote on your PC and scan its QR</string>
+    <string name="pair_sub_saved">Tap one of your PCs, or scan another one\'s QR</string>
+    <string name="your_pcs">Your PCs</string>
+    <string name="scan_qr">Scan the PC\'s QR</string>
+    <string name="scan_qr_other">Scan another PC\'s QR</string>
+    <string name="searching">Looking for receivers on your network…</string>
+    <string name="no_receivers">No receiver in sight (the QR works anyway)</string>
+    <string name="no_new_pcs">No new PC in sight</string>
+    <string name="on_your_network">On your network:</string>
+    <string name="receiver_hint">%1$s — scan its QR to pair</string>
+    <string name="back">Back</string>
+    <string name="forget_title">Forget %1$s?</string>
+    <string name="forget_body">To use it again you will have to scan its QR again.</string>
+    <string name="forget">Forget</string>
+    <string name="cancel">Cancel</string>
+    <string name="pc_online">%1$s · on the network</string>
+    <string name="current">current</string>
+
+    <!-- settings -->
+    <string name="vol_title">Volume buttons = A / B</string>
+    <string name="vol_sub">With the controller open: volume up = A, volume down = B trigger. Physical buttons, zero latency</string>
+    <string name="sounds_title">Sounds</string>
+    <string name="sounds_sub">Button beeps and the connect/disconnect melody (vibration stays)</string>
+    <string name="chips_title">Dolphin mode on the controller</string>
+    <string name="chips_sub">Shows the Pointer/Dolphin selector when entering via Connect. Turn it off for a pointer-only controller, no selector</string>
+    <string name="link_other_pc">Pair with another PC</string>
+    <string name="link_other_pc_sub">Scan a new QR</string>
+    <string name="sens_note">The pointer sensitivity is set in PepoMote\'s window on the PC.</string>
+    <string name="about">PepoMote · GPL-3.0 · made by PepoTech</string>
+
+    <!-- first run -->
+    <string name="onboarding_sub">Your phone, your PC\'s controller in 3 steps</string>
+    <string name="ob1_title">Open PepoMote on your PC</string>
+    <string name="ob1_body">A single file, nothing to install. In PepoMote you will see a QR.</string>
+    <string name="ob2_title">Scan the QR</string>
+    <string name="ob2_body">Connect → point the camera. Paired for good.</string>
+    <string name="ob3_title">Point. Click. Play.</string>
+    <string name="ob3_body">The phone moves the cursor like a Wii Remote. And in Dolphin, you really play.</string>
+    <string name="lets_go">Let\'s go!</string>
+
+    <!-- controller -->
+    <string name="pc_player">%1$s · Player %2$d</string>
+    <string name="wiiu_as_wiimote">Wii U · Wii Remote</string>
+    <string name="mode_wiiu">Wii U</string>
+    <string name="mode_dolphin">Dolphin</string>
+    <string name="mode_pointer">Pointer</string>
+    <string name="pointer_player1_points">Pointer: Player 1 points</string>
+    <string name="reconnect">Reconnect</string>
+    <string name="exit">Exit</string>
+    <string name="keyboard">Keyboard</string>
+    <string name="media_open">Media ▲</string>
+    <string name="media_closed">Media ▼</string>
+    <string name="rotate_hint">Turn the phone to go back to the upright controller</string>
+    <string name="in_cemu">In Cemu I am:</string>
+    <string name="wii_remote">Wii Remote</string>
+    <string name="gamepad">GamePad</string>
+    <string name="pro_controller">Pro Controller</string>
+    <string name="wii_pad_help">For Wii U games played with the Wii Remote (Wii Sports Club, Wii Party U…)</string>
+    <string name="nunchuk_line">Nunchuk · Player %1$d · %2$s</string>
+    <string name="nunchuk_help">On Wii U the Nunchuk only works if the controller picks Wii Remote</string>
+    <string name="precision">Precision</string>
+
+    <!-- GamePad -->
+    <string name="activating_wiiu">Activating Wii U…</string>
+    <string name="screen_fps">screen · %1$d fps</string>
+    <string name="blow">Blow</string>
+    <string name="tv_pad">TV/Pad</string>
+    <string name="home_btn">Home</string>
+    <string name="touch_screen">Touch screen</string>
+    <string name="screen_connecting">Connecting the screen…</string>
+    <string name="screen_unavailable">No screen (the PC is not sending it)</string>
+    <string name="screen_unavailable_detail">No screen: %1$s</string>
+    <string name="screen_reconnecting">Reconnecting the screen…</string>
+
+    <!-- Cemu keyboard -->
+    <string name="kb_title">Cemu keyboard</string>
+    <string name="kb_help">For the game\'s on-screen keyboard. Delete removes a character in Cemu, Type sends the text and continues, Accept sends the text and Enter.</string>
+    <string name="kb_placeholder">Text for the game</string>
+    <string name="kb_delete">Delete</string>
+    <string name="kb_write">Type</string>
+    <string name="kb_close">Close</string>
+    <string name="kb_accept">Accept</string>
+</resources>

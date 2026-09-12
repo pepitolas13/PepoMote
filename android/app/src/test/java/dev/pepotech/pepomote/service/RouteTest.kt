@@ -2,6 +2,7 @@ package dev.pepotech.pepomote.service
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import dev.pepotech.pepomote.R
 import org.junit.Test
 
 /** Routing del mando (addendum UX v2): función pura de enlace + intención. */

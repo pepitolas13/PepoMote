@@ -85,6 +85,8 @@ import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.ShoulderButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlin.math.roundToInt
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /**
  * GamePad de Wii U (modo Cemu), siempre apaisado. Como el mando real: L/ZL
@@ -259,7 +261,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                     ) {
                         if (pro) {
                             Text(
-                                "Pro Controller",
+                                stringResource(R.string.pro_controller),
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center
                             )
@@ -278,11 +280,11 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(rowGap)
                         ) {
-                            if (!pro) ShoulderButton("TV/Pad", ButtonState.SCREEN, pillW, 30.dp, textSize = 12)
+                            if (!pro) ShoulderButton(stringResource(R.string.tv_pad), ButtonState.SCREEN, pillW, 30.dp, textSize = 12)
                             RoundButton("−", roundBtn, ButtonState.MINUS, textSize = 19)
-                            RoundButton("Home", roundBtn, ButtonState.HOME, textSize = 12)
+                            RoundButton(stringResource(R.string.home_btn), roundBtn, ButtonState.HOME, textSize = 12)
                             RoundButton("+", roundBtn, ButtonState.PLUS, textSize = 19)
-                            if (!pro) ShoulderButton("Soplar", ButtonState.MIC, pillW, 30.dp, textSize = 12)
+                            if (!pro) ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, 30.dp, textSize = 12)
                         }
                     }
 
@@ -383,15 +385,17 @@ private fun Header(
                         modifier = Modifier.widthIn(max = 160.dp)
                     )
                 }
+                val padName = if (link.pad == LinkState.PAD_PRO) stringResource(R.string.pro_controller) else stringResource(R.string.gamepad)
+                val activating = stringResource(R.string.activating_wiiu)
                 Text(
                     if (operative) buildString {
                         append("J${link.player}")
                         if (showPad) {
                             append(" · ")
-                            append(if (link.pad == LinkState.PAD_PRO) "Pro Controller" else "GamePad")
+                            append(padName)
                         }
                         if (showRtt) link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
-                    } else "Activando Wii U…",
+                    } else activating,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1
                 )
@@ -399,7 +403,7 @@ private fun Header(
                 val fps = screen?.fps?.collectAsState()?.value ?: 0
                 if (showFps && fps > 0) {
                     Text(
-                        "pantalla · $fps fps",
+                        stringResource(R.string.screen_fps, fps),
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
                         maxLines = 1
                     )
@@ -418,7 +422,7 @@ private fun Header(
             }
 
             is UiLink.Connecting -> {
-                Text("Conectando…", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.status_connecting), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.weight(1f))
             }
 
@@ -428,12 +432,12 @@ private fun Header(
             }
 
             else -> {
-                Text("Sin conexión", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.status_disconnected), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.weight(1f))
             }
         }
         TextButton(onClick = onDisconnect) {
-            Text("Salir", color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -539,10 +543,10 @@ private fun TouchScreen(width: Dp, height: Dp, screen: ScreenClient<Bitmap>?) {
     ) {
         if (!hasImage) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Pantalla táctil", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.touch_screen), style = MaterialTheme.typography.bodyMedium)
                 if (screen != null) {
                     Text(
-                        status?.value ?: "Conectando la pantalla…",
+                        screenStatusText(status?.value),
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 2.dp, start = 12.dp, end = 12.dp)
@@ -592,4 +596,14 @@ private fun rememberDisplayRotation(): Int {
         onDispose { dm.unregisterDisplayListener(listener) }
     }
     return rotation
+}
+
+/** Estado del canal de pantalla, traducido (los centinelas de [ScreenClient]). */
+@Composable
+private fun screenStatusText(status: String?): String = when {
+    status == null -> stringResource(R.string.screen_connecting)
+    status == ScreenClient.STATUS_UNAVAILABLE -> stringResource(R.string.screen_unavailable)
+    status == ScreenClient.STATUS_RECONNECTING -> stringResource(R.string.screen_reconnecting)
+    status.startsWith(ScreenClient.STATUS_DETAIL) -> stringResource(R.string.screen_unavailable_detail, status.removePrefix(ScreenClient.STATUS_DETAIL))
+    else -> status
 }

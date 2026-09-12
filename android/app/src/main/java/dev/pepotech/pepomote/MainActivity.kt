@@ -1,5 +1,6 @@
 package dev.pepotech.pepomote
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -35,6 +36,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
@@ -105,16 +107,15 @@ class MainActivity : ComponentActivity() {
      */
     internal fun onLinkFailed(failure: UiLink.Failed) {
         LinkState.clearFailure()
-        val pcName = PairStore.load(this)?.pcName
-        val other = LinkFailure.afterIo(failure.code, pcName, PairStore.all(this).size)
+        val pc = LinkFailure.pcLabel(PairStore.load(this)?.pcName, getString(R.string.your_pc))
         if (LinkFailure.needsNewQr(failure.code)) {
-            openPair(LinkFailure.rePairReason(pcName))
-        } else if (other != null) {
+            openPair(getString(R.string.re_pair_reason, pc))
+        } else if (LinkFailure.offerAnotherPc(failure.code, PairStore.all(this).size)) {
             // Con varios PCs guardados, un PC que no responde no es el final:
             // a Conectar a elegir otro (lo pedido se conserva)
-            openPair(other)
+            openPair(getString(R.string.pc_not_responding, pc))
         } else {
-            Toast.makeText(this, "Error: ${failure.msg}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.error_prefix, failure.msg), Toast.LENGTH_LONG).show()
             LinkState.pendingMode = null
             currentScreen = Screen.Home
         }
@@ -205,6 +206,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
+    /** Botón ES/EN del inicio: guarda el otro idioma y recrea la actividad con él. */
+    internal fun toggleLanguage() {
+        AppPrefs.setLang(this, LocaleHelper.otherCode(this))
+        recreate()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -274,7 +285,7 @@ class MainActivity : ComponentActivity() {
     internal fun onPairContent(contents: String) {
         val pairing = PairStore.parsePairUrl(contents)
         if (pairing == null) {
-            Toast.makeText(this, "Ese QR no es de PepoMote", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.qr_not_pepomote), Toast.LENGTH_LONG).show()
             return
         }
         PairStore.save(this, pairing)
@@ -362,7 +373,7 @@ private fun Root(activity: MainActivity) {
         qrLauncher.launch(
             ScanOptions()
                 .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                .setPrompt("Apunta al QR de PepoMote en tu PC")
+                .setPrompt(context.getString(R.string.scan_prompt))
                 .setBeepEnabled(false)
                 .setOrientationLocked(true)
                 .setCaptureActivity(PortraitCaptureActivity::class.java)
@@ -406,6 +417,9 @@ private fun Root(activity: MainActivity) {
             }
             HomeScreen(
                 status = status,
+                langLabel = LocaleHelper.activeCode(context).uppercase(),
+                langSwitchHint = stringResource(R.string.lang_switch_to, LocaleHelper.name(LocaleHelper.otherCode(context))),
+                onToggleLang = { activity.toggleLanguage() },
                 onConnect = { activity.openController(LinkState.MODE_POINTER, dolphinOnly = false) },
                 onController = { activity.openPad() },
                 onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },

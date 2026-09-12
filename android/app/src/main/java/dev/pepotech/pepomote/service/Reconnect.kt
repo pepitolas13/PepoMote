@@ -17,7 +17,4 @@ object Reconnect {
 
     /** Ya toca rendirse: la caída fue en `droppedAtMs` y ahora es `nowMs` (mismo reloj). */
     fun giveUp(droppedAtMs: Long, nowMs: Long): Boolean = nowMs - droppedAtMs >= GIVE_UP_MS
-
-    /** Mensaje del error con el que se rinde. */
-    fun lostMessage(pcName: String): String = "Se perdió la conexión con $pcName"
 }

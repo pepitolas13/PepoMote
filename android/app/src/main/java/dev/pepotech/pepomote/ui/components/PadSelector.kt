@@ -31,9 +31,8 @@ import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlinx.coroutines.delay
-
-/** Línea de ayuda del selector en el layout Wii dentro de Wii U. */
-const val WII_PAD_HELP = "Para juegos de Wii U que se juegan con el mando de Wii (Wii Sports Club, Wii Party U…)"
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /** Sin eco de `pad` en este tiempo (PC antiguo), se vuelve a marcar el mando actual. */
 private const val PAD_ECHO_TIMEOUT_MS = 2000L
@@ -71,7 +70,7 @@ fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (!inlinePrefix) {
                 Text(
-                    "En Cemu soy:",
+                    stringResource(R.string.in_cemu),
                     style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.TextDim, fontSize = 11.sp),
                     maxLines = 1
                 )
@@ -82,7 +81,7 @@ fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? 
             ) {
                 if (inlinePrefix) {
                     Text(
-                        "En Cemu soy:",
+                        stringResource(R.string.in_cemu),
                         style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
                         maxLines = 1
                     )
@@ -97,7 +96,7 @@ fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? 
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Segment(
-                        label = if (link.player == 1) "GamePad" else "Pro Controller",
+                        label = if (link.player == 1) stringResource(R.string.gamepad) else stringResource(R.string.pro_controller),
                         selected = !wiimote,
                         pending = pending == LinkState.PAD_GAMEPAD,
                         compact = compact
@@ -108,7 +107,7 @@ fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? 
                         }
                     }
                     Segment(
-                        label = "Mando de Wii",
+                        label = stringResource(R.string.wii_remote),
                         selected = wiimote,
                         pending = pending == LinkState.PAD_WIIMOTE,
                         compact = compact

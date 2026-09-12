@@ -32,6 +32,8 @@ import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.TriggerZone
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /**
  * Nunchuk: el móvil de la otra mano, en vertical o de lado (mismo orden,
@@ -82,7 +84,7 @@ fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
             ) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "En Wii U el Nunchuk solo funciona si el mando elige Mando de Wii",
+                    stringResource(R.string.nunchuk_help),
                     style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Warn),
                     textAlign = TextAlign.Center
                 )
@@ -124,32 +126,33 @@ private fun Header(link: UiLink, onDisconnect: () -> Unit) {
             when (link) {
                 is UiLink.Connected -> {
                     Text(link.pcName, style = MaterialTheme.typography.titleMedium)
+                    val line = stringResource(R.string.nunchuk_line, link.player, modeLabel(link.mode))
                     Text(
                         buildString {
-                            append("Nunchuk · Jugador ${link.player} · ${modeLabel(link.mode)}")
+                            append(line)
                             link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
                         },
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
 
-                is UiLink.Connecting -> Text("Conectando…", style = MaterialTheme.typography.titleMedium)
+                is UiLink.Connecting -> Text(stringResource(R.string.status_connecting), style = MaterialTheme.typography.titleMedium)
                 is UiLink.Reconnecting -> ReconnectingLabel(link)
                 else -> {
-                    Text("Sin conexión", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.status_disconnected), style = MaterialTheme.typography.titleMedium)
                     val ctx = LocalContext.current
                     if (PairStore.load(ctx) != null) {
                         TextButton(onClick = {
                             LinkForegroundService.start(ctx, LinkState.ROLE_NUNCHUK)
                         }) {
-                            Text("Reconectar", color = PepoColors.Blue)
+                            Text(stringResource(R.string.reconnect), color = PepoColors.Blue)
                         }
                     }
                 }
             }
         }
         TextButton(onClick = onDisconnect) {
-            Text("Salir", color = PepoColors.Error)
+            Text(stringResource(R.string.exit), color = PepoColors.Error)
         }
     }
 }

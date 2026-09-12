@@ -38,6 +38,8 @@ import dev.pepotech.pepomote.ui.components.PrecisionPill
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /**
  * Mando apaisado estilo "de lado" (NES): cruceta a la izquierda, 1 y 2
@@ -81,8 +83,8 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                     Text(
                         when (link) {
                             is UiLink.Connected -> link.pcName
-                            is UiLink.Connecting -> "Conectando…"
-                            else -> "Sin conexión"
+                            is UiLink.Connecting -> stringResource(R.string.status_connecting)
+                            else -> stringResource(R.string.status_disconnected)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         // Un nombre de PC largo no echa a «Salir» fuera de la pantalla
@@ -93,7 +95,7 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 }
                 if (link is UiLink.Connected) {
                     if (isWiiUAsWiimote(link)) {
-                        Text("Wii U · Mando de Wii", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.wiiu_as_wiimote), style = MaterialTheme.typography.bodyMedium)
                     }
                     // Selector Puntero/Dolphin/Wii U también de lado (solo el Jugador 1)
                     if (showModeChips(link, showChips)) {
@@ -105,7 +107,7 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                     }
                 }
                 TextButton(onClick = onDisconnect) {
-                    Text("Salir", color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (link is UiLink.Connected && isWiiUAsWiimote(link)) {
@@ -162,7 +164,7 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
         }
 
         Text(
-            "Gira el móvil para volver al mando vertical",
+            stringResource(R.string.rotate_hint),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier
                 .align(Alignment.BottomCenter)

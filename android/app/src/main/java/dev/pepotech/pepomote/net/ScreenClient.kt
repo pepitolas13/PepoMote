@@ -71,8 +71,11 @@ class ScreenClient<I : Any>(
         /** La respuesta es una línea corta; más que esto sin `\n` no es un receptor. */
         private const val MAX_LINE = 4096
 
-        const val STATUS_UNAVAILABLE = "Sin pantalla (el PC no la envía)"
-        const val STATUS_RECONNECTING = "Reconectando la pantalla…"
+        /** Estados centinela: la pantalla los traduce (`GamePadScreen`). */
+        const val STATUS_UNAVAILABLE = "\u0000unavailable"
+        const val STATUS_RECONNECTING = "\u0000reconnecting"
+        /** Prefijo + detalle que manda el PC («sesión desconocida»…). */
+        const val STATUS_DETAIL = "\u0000detail:"
 
         /** Línea `screen` (PROTOCOL.md §4.4); `session_id` va como u32. */
         internal fun helloLine(sessionId: Int, w: Int, h: Int, q: Int): String =
@@ -301,7 +304,7 @@ class ScreenClient<I : Any>(
         if (!running) return
         _image.value = null
         resetFps()
-        _status.value = if (msg.isNullOrBlank()) STATUS_UNAVAILABLE else "Sin pantalla: $msg"
+        _status.value = if (msg.isNullOrBlank()) STATUS_UNAVAILABLE else STATUS_DETAIL + msg
     }
 
     private fun dropped() {

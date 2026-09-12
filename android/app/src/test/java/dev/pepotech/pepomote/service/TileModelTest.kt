@@ -3,6 +3,7 @@ package dev.pepotech.pepomote.service
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import dev.pepotech.pepomote.R
 import org.junit.Test
 
 class TileModelTest {
@@ -11,12 +12,12 @@ class TileModelTest {
 
     @Test
     fun elTileDiceElEstado() {
-        assertEquals(TileModel(true, "Conectado a SALON-PC"), TileModel.of(connected, true))
-        assertEquals(TileModel(true, "Conectando…"), TileModel.of(UiLink.Connecting, true))
-        assertEquals(TileModel(true, "Reconectando…"), TileModel.of(UiLink.Reconnecting("SALON-PC", 3), true))
-        assertEquals(TileModel(false, "Sin conexión"), TileModel.of(UiLink.Disconnected, true))
-        assertEquals(TileModel(false, "Sin conexión"), TileModel.of(UiLink.Failed("io", "x"), true))
-        assertEquals(TileModel(false, "Sin PC"), TileModel.of(UiLink.Disconnected, false))
+        assertEquals(TileModel(true, R.string.status_connected_to, "SALON-PC"), TileModel.of(connected, true))
+        assertEquals(TileModel(true, R.string.status_connecting), TileModel.of(UiLink.Connecting, true))
+        assertEquals(TileModel(true, R.string.reconnecting_short), TileModel.of(UiLink.Reconnecting("SALON-PC", 3), true))
+        assertEquals(TileModel(false, R.string.status_disconnected), TileModel.of(UiLink.Disconnected, true))
+        assertEquals(TileModel(false, R.string.status_disconnected), TileModel.of(UiLink.Failed("io", "x"), true))
+        assertEquals(TileModel(false, R.string.tile_no_pc), TileModel.of(UiLink.Disconnected, false))
     }
 
     @Test

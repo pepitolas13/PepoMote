@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import dev.pepotech.pepomote.MainActivity
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.ControlClient
 import dev.pepotech.pepomote.net.Discovery
@@ -95,6 +96,10 @@ class LinkForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopSelf()
@@ -109,7 +114,7 @@ class LinkForegroundService : Service() {
         LinkState.role = role
 
         createChannel()
-        val notif = buildNotification("Conectando con ${pairing.pcName}…")
+        val notif = buildNotification(getString(R.string.notif_connecting, pairing.pcName))
         ServiceCompat.startForeground(
             this, NOTIF_ID, notif,
             if (Build.VERSION.SDK_INT >= 29)
@@ -211,8 +216,8 @@ class LinkForegroundService : Service() {
                     // y centra el cursor con los primeros paquetes ya fluyendo
                     mainHandler.postDelayed({ ButtonState.bumpRecenter() }, 300)
                     updateNotification(
-                        if (nunchuk) "Nunchuk conectado a $pcName"
-                        else "Conectado a $pcName"
+                        if (nunchuk) getString(R.string.notif_nunchuk_connected, pcName)
+                        else getString(R.string.status_connected_to, pcName)
                     )
                 }
 
@@ -238,7 +243,7 @@ class LinkForegroundService : Service() {
                         // Este cliente ya está muerto: su onClosed no debe
                         // parar el servicio mientras el reintento vive
                         val retryGen = ++generation
-                        updateNotification("Reintentando conexión ($attempt/$MAX_ATTEMPTS)…")
+                        updateNotification(getString(R.string.notif_retrying, attempt, MAX_ATTEMPTS))
                         Thread({
                             val next = relocate(pairing)
                             mainHandler.post { if (retryGen == generation) connect(next) }
@@ -258,7 +263,7 @@ class LinkForegroundService : Service() {
                 override fun onModeChanged(mode: String, byPc: Boolean) {
                     if (gen != generation) return
                     LinkState.updateConnected { it.copy(mode = mode) }
-                    LinkState.resolveIntent(mode, byPc)
+                    LinkState.resolveIntent(this@LinkForegroundService, mode, byPc)
                 }
 
                 override fun onPadChanged(pad: String) {
@@ -303,7 +308,7 @@ class LinkForegroundService : Service() {
         teardownLink()
         ButtonState.reset()
         if (Reconnect.giveUp(droppedAtMs, now)) {
-            LinkState.publish(UiLink.Failed("io", Reconnect.lostMessage(pairing.pcName)))
+            LinkState.publish(UiLink.Failed("io", getString(R.string.lost_connection, pairing.pcName)))
             stopSelf()
             return
         }
@@ -311,7 +316,7 @@ class LinkForegroundService : Service() {
         LinkState.publish(UiLink.Reconnecting(pairing.pcName, reconnectAttempt))
         // Lo que el usuario había pedido se vuelve a pedir en cuanto llegue el ok
         lastMode?.takeIf { it != LinkState.MODE_POINTER }?.let { LinkState.requestMode(it) }
-        updateNotification("Reconectando con ${pairing.pcName}…")
+        updateNotification(getString(R.string.status_reconnecting, pairing.pcName))
         scheduleReconnect(pairing)
     }
 
@@ -400,7 +405,7 @@ class LinkForegroundService : Service() {
     private fun createChannel() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Enlace con el PC", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, getString(R.string.notif_channel), NotificationManager.IMPORTANCE_LOW)
         )
     }
 
@@ -420,7 +425,7 @@ class LinkForegroundService : Service() {
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(pi)
-            .addAction(0, "Desconectar", stopPi)
+            .addAction(0, getString(R.string.notif_disconnect), stopPi)
             .build()
     }
 

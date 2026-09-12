@@ -42,6 +42,8 @@ import androidx.compose.ui.window.Dialog
 import dev.pepotech.pepomote.control.TextInput
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlinx.coroutines.delay
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /**
  * Botón pequeño «Teclado» de las cabeceras en modo Wii U (GamePad, Pro y
@@ -64,7 +66,7 @@ fun KeyboardButton(compact: Boolean = false, onClick: () -> Unit) {
             )
     ) {
         Text(
-            "Teclado",
+            stringResource(R.string.keyboard),
             style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
             maxLines = 1
         )
@@ -113,10 +115,9 @@ fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Teclado de Cemu", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.kb_title), style = MaterialTheme.typography.titleMedium)
             Text(
-                "Para el teclado en pantalla del juego. Borrar quita un carácter en Cemu, " +
-                    "Escribir manda el texto y sigue, Aceptar manda el texto e Intro.",
+                stringResource(R.string.kb_help),
                 style = MaterialTheme.typography.bodyMedium
             )
             OutlinedTextField(
@@ -126,7 +127,7 @@ fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit) {
                     .fillMaxWidth()
                     .focusRequester(focusRequester),
                 singleLine = true,
-                placeholder = { Text("Texto para el juego", style = MaterialTheme.typography.bodyMedium) },
+                placeholder = { Text(stringResource(R.string.kb_placeholder), style = MaterialTheme.typography.bodyMedium) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { apply(TextInput.accept(field)) }),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -141,10 +142,10 @@ fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 TextButton(onClick = { apply(TextInput.delete(field)) }) {
-                    Text("Borrar", color = PepoColors.Text)
+                    Text(stringResource(R.string.kb_delete), color = PepoColors.Text)
                 }
                 TextButton(onClick = { apply(TextInput.write(field)) }) {
-                    Text("Escribir", color = PepoColors.Text)
+                    Text(stringResource(R.string.kb_write), color = PepoColors.Text)
                 }
                 Spacer(Modifier.weight(1f))
             }
@@ -155,7 +156,7 @@ fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit) {
             ) {
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { apply(TextInput.close(field)) }) {
-                    Text("Cerrar", color = PepoColors.TextDim)
+                    Text(stringResource(R.string.kb_close), color = PepoColors.TextDim)
                 }
                 Button(
                     onClick = { apply(TextInput.accept(field)) },
@@ -164,7 +165,7 @@ fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit) {
                         contentColor = PepoColors.OnAccent
                     )
                 ) {
-                    Text("Aceptar", color = PepoColors.OnAccent)
+                    Text(stringResource(R.string.kb_accept), color = PepoColors.OnAccent)
                 }
             }
         }

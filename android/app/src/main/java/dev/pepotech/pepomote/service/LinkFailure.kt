@@ -17,19 +17,12 @@ object LinkFailure {
 
     /**
      * Fallo de red con varios PCs guardados: en vez de un aviso y al inicio,
-     * la pantalla Conectar con la explicación (quizá otro PC sí está). null =
+     * la pantalla Conectar con la explicación (quizá otro PC sí está). false =
      * un solo PC, o un error que no es de red: aviso y al inicio, como siempre.
      */
-    fun afterIo(code: String, pcName: String?, savedCount: Int): String? {
-        if (code != "io" || savedCount < 2) return null
-        val pc = pcName?.trim()?.takeIf { it.isNotEmpty() } ?: "Tu PC"
-        return "$pc no responde. Elige otro PC o escanea un QR."
-    }
+    fun offerAnotherPc(code: String, savedCount: Int): Boolean = code == "io" && savedCount >= 2
 
-    /** Explicación para la pantalla Conectar cuando toca volver a escanear. */
-    fun rePairReason(pcName: String?): String {
-        val pc = pcName?.trim()?.takeIf { it.isNotEmpty() } ?: "Tu PC"
-        return "$pc ya no reconoce este móvil: su QR ha cambiado (PepoMote reinstalado o " +
-            "restablecido en el PC). Escanéalo otra vez y sigues donde estabas."
-    }
+    /** Nombre del PC para las explicaciones, o `fallback` («Tu PC») si no se sabe. */
+    fun pcLabel(pcName: String?, fallback: String): String =
+        pcName?.trim()?.takeIf { it.isNotEmpty() } ?: fallback
 }

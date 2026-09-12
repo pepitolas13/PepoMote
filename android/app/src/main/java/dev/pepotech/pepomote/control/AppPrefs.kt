@@ -35,6 +35,18 @@ object AppPrefs {
         UiSounds.enabled = value
     }
 
+    const val LANG_SYSTEM = "system"
+
+    /** Idioma: "system", "es" o "en". */
+    fun lang(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("lang", LANG_SYSTEM) ?: LANG_SYSTEM
+
+    fun setLang(context: Context, code: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString("lang", code).apply()
+    }
+
     fun onboarded(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean("onboarded", false)

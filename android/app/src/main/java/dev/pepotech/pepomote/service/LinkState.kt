@@ -1,5 +1,6 @@
 package dev.pepotech.pepomote.service
 
+import android.content.Context
 import android.os.SystemClock
 import dev.pepotech.pepomote.sensor.MotionEngine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -122,10 +123,10 @@ object LinkState {
     }
 
     /** Eco o difusión de `mode`: consume la intención Wii U y avisa si no era cemu (salvo si lo decidió el PC). */
-    internal fun resolveIntent(mode: String, byPc: Boolean = false) {
+    internal fun resolveIntent(context: Context, mode: String, byPc: Boolean = false) {
         val out = Route.afterModeEcho(_intent.value, mode, _flow.value, byPc)
         _intent.value = out.intent
-        out.warning?.let { publishNotice(it) }
+        out.warning?.let { publishNotice(context.getString(it)) }
     }
 
     internal fun publish(state: UiLink) {

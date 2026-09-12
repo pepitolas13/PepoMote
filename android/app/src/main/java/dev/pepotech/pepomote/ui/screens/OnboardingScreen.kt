@@ -26,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 @Composable
 fun OnboardingScreen(onDone: () -> Unit) {
@@ -40,16 +42,16 @@ fun OnboardingScreen(onDone: () -> Unit) {
         Spacer(Modifier.height(48.dp))
         Text("PepoMote", style = MaterialTheme.typography.displayLarge)
         Text(
-            "Tu móvil, mando de tu PC en 3 pasos",
+            stringResource(R.string.onboarding_sub),
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(32.dp))
 
-        Step(1, "Abre PepoMote en tu PC", "Un solo archivo, sin instalar nada. En pepomote verás un QR.")
+        Step(1, stringResource(R.string.ob1_title), stringResource(R.string.ob1_body))
         Spacer(Modifier.height(14.dp))
-        Step(2, "Escanea el QR", "Conectar → apunta con la cámara. Emparejado para siempre.")
+        Step(2, stringResource(R.string.ob2_title), stringResource(R.string.ob2_body))
         Spacer(Modifier.height(14.dp))
-        Step(3, "Apunta. Haz clic. Juega.", "El móvil mueve el cursor como un mando de Wii. Y en Dolphin, juegas de verdad.")
+        Step(3, stringResource(R.string.ob3_title), stringResource(R.string.ob3_body))
 
         Spacer(Modifier.weight(1f))
         Button(
@@ -60,7 +62,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
             shape = MaterialTheme.shapes.medium,
             colors = ButtonDefaults.buttonColors(containerColor = PepoColors.Blue)
         ) {
-            Text("¡Vamos!", style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.OnAccent))
+            Text(stringResource(R.string.lets_go), style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.OnAccent))
         }
         Spacer(Modifier.height(24.dp))
     }

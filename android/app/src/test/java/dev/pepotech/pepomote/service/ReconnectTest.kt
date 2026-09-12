@@ -20,9 +20,4 @@ class ReconnectTest {
         assertTrue(Reconnect.giveUp(dropped, dropped + Reconnect.GIVE_UP_MS))
         assertTrue(Reconnect.giveUp(dropped, dropped + 300_000L))
     }
-
-    @Test
-    fun elMensajeNombraAlPc() {
-        assertEquals("Se perdió la conexión con SALON-PC", Reconnect.lostMessage("SALON-PC"))
-    }
 }

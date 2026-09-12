@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /** Punto que late (algo está en marcha: conectando, reconectando…). */
 @Composable
@@ -53,7 +55,7 @@ fun ReconnectingLabel(link: UiLink.Reconnecting, style: TextStyle = MaterialThem
         PulsingDot(PepoColors.Warn)
         Spacer(Modifier.width(8.dp))
         Text(
-            "Reconectando con ${link.pcName}…",
+            stringResource(R.string.status_reconnecting, link.pcName),
             style = style,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

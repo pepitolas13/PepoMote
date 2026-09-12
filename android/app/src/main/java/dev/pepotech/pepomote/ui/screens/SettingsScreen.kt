@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 @Composable
 fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
@@ -44,7 +46,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(24.dp))
-        Text("Ajustes", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.channel_settings), style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(20.dp))
 
         Card(
@@ -60,9 +62,9 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Botones de volumen = A / B", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.vol_title), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Con el mando abierto: subir volumen = A, bajar = gatillo B. Botones físicos, latencia cero",
+                        stringResource(R.string.vol_sub),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -91,9 +93,9 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Sonidos", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.sounds_title), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)",
+                        stringResource(R.string.sounds_sub),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -122,9 +124,9 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Modo Dolphin en el mando", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.chips_title), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector",
+                        stringResource(R.string.chips_sub),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -148,25 +150,25 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                Text("Vincular con otro PC", style = MaterialTheme.typography.titleMedium)
-                Text("Escanear un QR nuevo", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.link_other_pc), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.link_other_pc_sub), style = MaterialTheme.typography.bodyMedium)
             }
         }
 
         Spacer(Modifier.height(14.dp))
         Text(
-            "La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.",
+            stringResource(R.string.sens_note),
             style = MaterialTheme.typography.bodyMedium
         )
 
         Spacer(Modifier.weight(1f))
         Text(
-            "PepoMote · GPL-3.0 · hecho por PepoTech",
+            stringResource(R.string.about),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
         TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("Volver", color = PepoColors.TextDim)
+            Text(stringResource(R.string.back), color = PepoColors.TextDim)
         }
         Spacer(Modifier.height(16.dp))
     }

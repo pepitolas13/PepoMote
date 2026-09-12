@@ -46,12 +46,13 @@ import dev.pepotech.pepomote.ui.components.PrecisionStrip
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.TriggerZone
-import dev.pepotech.pepomote.ui.components.WII_PAD_HELP
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.compose.ui.res.stringResource
+import dev.pepotech.pepomote.R
 
 /**
  * Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/2, multimedia, B.
@@ -108,37 +109,36 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                     when (link) {
                         is UiLink.Connected -> {
                             Text(
-                                if (link.slot > 0) "${link.pcName} · Jugador ${link.slot + 1}"
+                                if (link.slot > 0) stringResource(R.string.pc_player, link.pcName, link.slot + 1)
                                 else link.pcName,
                                 style = MaterialTheme.typography.titleMedium
                             )
+                            val modeText = when {
+                                isWiiUAsWiimote(link) -> stringResource(R.string.wiiu_as_wiimote)
+                                link.mode == LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
+                                link.mode == LinkState.MODE_DOLPHIN -> stringResource(R.string.mode_dolphin)
+                                link.slot > 0 -> stringResource(R.string.pointer_player1_points)
+                                else -> stringResource(R.string.mode_pointer)
+                            }
                             Text(
                                 buildString {
-                                    append(
-                                        when {
-                                            isWiiUAsWiimote(link) -> "Wii U · Mando de Wii"
-                                            link.mode == LinkState.MODE_CEMU -> "Wii U"
-                                            link.mode == LinkState.MODE_DOLPHIN -> "Dolphin"
-                                            link.slot > 0 -> "Puntero: apunta el Jugador 1"
-                                            else -> "Puntero"
-                                        }
-                                    )
+                                    append(modeText)
                                     link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
                                 },
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
 
-                        is UiLink.Connecting -> Text("Conectando…", style = MaterialTheme.typography.titleMedium)
+                        is UiLink.Connecting -> Text(stringResource(R.string.status_connecting), style = MaterialTheme.typography.titleMedium)
                         is UiLink.Reconnecting -> ReconnectingLabel(link)
                         else -> {
-                            Text("Sin conexión", style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.status_disconnected), style = MaterialTheme.typography.titleMedium)
                             val ctx = androidx.compose.ui.platform.LocalContext.current
                             if (dev.pepotech.pepomote.net.PairStore.load(ctx) != null) {
                                 TextButton(onClick = {
                                     dev.pepotech.pepomote.service.LinkForegroundService.start(ctx)
                                 }) {
-                                    Text("Reconectar", color = PepoColors.Blue)
+                                    Text(stringResource(R.string.reconnect), color = PepoColors.Blue)
                                 }
                             }
                         }
@@ -150,7 +150,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                     Spacer(Modifier.width(4.dp))
                 }
                 TextButton(onClick = onDisconnect) {
-                    Text("Salir", color = PepoColors.Error)
+                    Text(stringResource(R.string.exit), color = PepoColors.Error)
                 }
             }
 
@@ -163,7 +163,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 // Wii U como Mando de Wii: qué mando soy en Cemu, con su ayuda
                 if (isWiiUAsWiimote(link)) {
                     Spacer(Modifier.height(8.dp))
-                    PadSelector(link, help = WII_PAD_HELP)
+                    PadSelector(link, help = stringResource(R.string.wii_pad_help))
                 }
             }
 
@@ -243,10 +243,11 @@ internal fun showModeChips(link: UiLink.Connected, showChips: Boolean): Boolean 
     link.slot == 0 && (showChips || link.mode == LinkState.MODE_CEMU)
 
 /** Nombre del modo del receptor para las cabeceras. */
+@Composable
 internal fun modeLabel(mode: String): String = when (mode) {
-    LinkState.MODE_DOLPHIN -> "Dolphin"
-    LinkState.MODE_CEMU -> "Wii U"
-    else -> "Puntero"
+    LinkState.MODE_DOLPHIN -> stringResource(R.string.mode_dolphin)
+    LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
+    else -> stringResource(R.string.mode_pointer)
 }
 
 /**
@@ -258,14 +259,14 @@ internal fun modeLabel(mode: String): String = when (mode) {
 @Composable
 internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean = false) {
     Row(horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)) {
-        ModeChip("Puntero", selected = current == LinkState.MODE_POINTER, compact = compact) {
+        ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact) {
             LinkState.requestMode(LinkState.MODE_POINTER)
         }
-        ModeChip("Dolphin", selected = current == LinkState.MODE_DOLPHIN, compact = compact) {
+        ModeChip(stringResource(R.string.mode_dolphin), selected = current == LinkState.MODE_DOLPHIN, compact = compact) {
             LinkState.requestMode(LinkState.MODE_DOLPHIN)
         }
         if (supportsCemu) {
-            ModeChip("Wii U", selected = current == LinkState.MODE_CEMU, compact = compact) {
+            ModeChip(stringResource(R.string.mode_wiiu), selected = current == LinkState.MODE_CEMU, compact = compact) {
                 LinkState.requestMode(LinkState.MODE_CEMU)
             }
         }
@@ -349,7 +350,7 @@ private fun MediaRow() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         TextButton(onClick = { expanded = !expanded }) {
             Text(
-                if (expanded) "Multimedia ▲" else "Multimedia ▼",
+                if (expanded) stringResource(R.string.media_open) else stringResource(R.string.media_closed),
                 color = PepoColors.TextDim,
                 style = MaterialTheme.typography.bodyMedium
             )

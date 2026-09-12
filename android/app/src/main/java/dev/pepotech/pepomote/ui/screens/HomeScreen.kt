@@ -27,6 +27,11 @@ import dev.pepotech.pepomote.ui.components.ChannelCard
 import dev.pepotech.pepomote.ui.components.ChannelGlyph
 import dev.pepotech.pepomote.ui.components.PulsingDot
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 /** Estado del enlace en el inicio: el punto (apagado, en marcha, encendido) y su texto. */
 enum class HomeTone { Off, Busy, On }
@@ -36,6 +41,9 @@ data class HomeStatus(val tone: HomeTone, val text: String)
 @Composable
 fun HomeScreen(
     status: HomeStatus,
+    langLabel: String,
+    langSwitchHint: String,
+    onToggleLang: () -> Unit,
     onConnect: () -> Unit,
     onController: () -> Unit,
     onDolphin: () -> Unit,
@@ -51,7 +59,21 @@ fun HomeScreen(
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(28.dp))
-        Text("PepoMote", style = MaterialTheme.typography.displayLarge)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("PepoMote", style = MaterialTheme.typography.displayLarge, modifier = Modifier.weight(1f))
+            // Idioma: ES / EN (toca para cambiar)
+            val pill = RoundedCornerShape(14.dp)
+            Text(
+                langLabel,
+                style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
+                modifier = Modifier
+                    .semantics { contentDescription = langSwitchHint }
+                    .background(PepoColors.Card, pill)
+                    .border(1.5.dp, PepoColors.CardBorder, pill)
+                    .clickable(onClick = onToggleLang)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
         Text(
             stringResource(R.string.home_subtitle),
             style = MaterialTheme.typography.bodyMedium
