@@ -12,6 +12,7 @@
 | Piece | Platform | File |
 |---|---|---|
 | Sender | Android 8.0+ | `PepoMote.apk` |
+| Sender | iPhone / iPad, iOS 15+ (up to iPadOS 26) | `PepoMote.ipa` — sideloaded with AltStore or Sideloadly, see [docs/IOS.md](docs/IOS.md) |
 | Sender | Linux phones: Mobian, postmarketOS… (aarch64) | `pepomote-mobile_*_arm64.deb` (Mobian: tap to install) · `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receiver | Windows 10/11 | `PepoMote.exe` — single portable file |
 | Receiver | Linux, X11 & Wayland | `PepoMote-x86_64.AppImage` |
@@ -23,6 +24,8 @@
 **PC (Linux)** — download the AppImage, make it executable and run it. On Sway, Hyprland, MangoWC, river, labwc, niri and other wlroots compositors nothing else is needed: the cursor is a Wayland virtual pointer. On GNOME, KDE or X11 the cursor goes through uinput: if that (or a firewall silently dropping the phone's traffic — many distros ship one enabled) needs setup, PepoMote detects it and asks for your admin password **once** in the system dialog, then fixes it by itself; if your session has no password dialog, the window shows the one-line command to paste in a terminal. Prefer a scripted install with a launcher entry? `packaging/linux/install.sh PepoMote-x86_64.AppImage` does the same setup non-interactively. Something odd? `./PepoMote-x86_64.AppImage --diag` prints a report to paste in an issue.
 
 **Phone** — install `PepoMote.apk` (enable "install from unknown sources"). Open it, tap **Conectar**, scan the QR shown on your PC. Paired forever.
+
+**iPhone / iPad** — not on the App Store: install `PepoMote.ipa` with [AltStore](https://altstore.io) (add the source `https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` and tap Install; it re-signs itself every 7 days) or with Sideloadly. Step by step, permissions and what differs from Android in [docs/IOS.md](docs/IOS.md).
 
 **Linux phone** (Mobian, postmarketOS…) — Mobian: download `pepomote-mobile_*_arm64.deb` on the phone, tap it and press **Install**. Any other distro, one command in the terminal: `wget -qO- https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh | sh`. Then open it like any app: **Conectar** → pick your PC → type the 4-digit code shown under the QR. See [docs/MOBILE-LINUX.md](docs/MOBILE-LINUX.md).
 
@@ -53,6 +56,7 @@ See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold 
 
 - Receiver: `cd desktop && cargo build --release`
 - Android: `cd android && ./gradlew assembleDebug`
+- iOS (Mac): `brew install xcodegen && cd ios && xcodegen generate && xcodebuild -scheme PepoMote build` (the CI builds the unsigned IPA on macOS runners)
 - Protocol spec: [protocol/PROTOCOL.md](protocol/PROTOCOL.md) · DSU notes: [protocol/DSU.md](protocol/DSU.md)
 
 ## Legal

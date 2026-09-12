@@ -1,0 +1,89 @@
+# Proyecto Xcode generado con XcodeGen (`xcodegen generate` en ios/).
+# Sin Mac a mano: la CI (.github/workflows/ios.yml) lo genera, compila,
+# pasa los tests en el simulador y empaqueta el IPA sin firmar para AltStore.
+name: PepoMote
+options:
+  bundleIdPrefix: dev.pepotech
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  xcodeVersion: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.4.1"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    SWIFT_STRICT_CONCURRENCY: minimal
+targets:
+  PepoMote:
+    type: application
+    platform: iOS
+    sources:
+      - path: PepoMote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.pepotech.pepomote
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: PepoMote
+    info:
+      path: PepoMote/Info.plist
+      properties:
+        CFBundleDisplayName: PepoMote
+        CFBundleName: PepoMote
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: es
+        CFBundleLocalizations: [es, en]
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIViewControllerBasedStatusBarAppearance: true
+        UIAppFonts: [Nunito.ttf]
+        NSCameraUsageDescription: "Para escanear el QR de PepoMote en tu PC. / To scan the PepoMote QR on your PC."
+        NSLocalNetworkUsageDescription: "PepoMote habla con el receptor de tu PC por la red local (Wi-Fi). / PepoMote talks to the receiver on your PC over the local network (Wi-Fi)."
+        NSBonjourServices: [_pepomote._tcp]
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.pepotech.pepomote.pair
+            CFBundleURLSchemes: [pepomote]
+        ITSAppUsesNonExemptEncryption: false
+  PepoMoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PepoMoteTests
+      # Vectores dorados del protocolo, como recursos del bundle de tests
+      - path: ../protocol/vectors
+        buildPhase: resources
+    dependencies:
+      - target: PepoMote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.pepotech.pepomote.tests
+schemes:
+  PepoMote:
+    build:
+      targets:
+        PepoMote: all
+        PepoMoteTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PepoMoteTests
+    archive:
+      config: Release

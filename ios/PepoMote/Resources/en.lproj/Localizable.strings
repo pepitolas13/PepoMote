@@ -1,0 +1,120 @@
+/* English. Same keys as Android. */
+
+/* home */
+"home_subtitle" = "Your phone, your PC's controller";
+"channel_connect" = "Connect";
+"channel_connect_sub" = "Scan the PC's QR";
+"channel_controller" = "Controller";
+"channel_controller_sub" = "Pointer and buttons";
+"channel_dolphin" = "Dolphin";
+"channel_dolphin_sub" = "Play real Wii games";
+"channel_wiiu" = "Wii U";
+"channel_wiiu_sub" = "GamePad for Cemu";
+"channel_nunchuk" = "Nunchuk";
+"channel_nunchuk_sub" = "The other hand";
+"channel_settings" = "Settings";
+"channel_settings_sub" = "Sounds and more";
+"status_disconnected" = "No connection";
+"status_disconnected_pc" = "No connection · %1$@";
+"status_connecting" = "Connecting…";
+"status_reconnecting" = "Reconnecting to %1$@…";
+"status_connected_to" = "Connected to %1$@";
+"lang_switch_to" = "Switch to %1$@";
+
+/* app and link */
+"error_prefix" = "Error: %1$@";
+"qr_not_pepomote" = "That QR is not from PepoMote";
+"scan_prompt" = "Point at PepoMote's QR on your PC";
+"your_pc" = "Your PC";
+"re_pair_reason" = "%1$@ no longer recognises this device: its QR has changed (PepoMote reinstalled or reset on the PC). Scan it again and you continue where you were.";
+"pc_not_responding" = "%1$@ is not responding. Pick another PC or scan a QR.";
+"lost_connection" = "Lost the connection to %1$@";
+"warn_needs_13" = "The PC needs PepoMote 1.3 for Wii U";
+"warn_player_1" = "Only Player 1 changes the mode";
+"reconnecting_short" = "Reconnecting…";
+"camera_denied" = "PepoMote has no camera permission. Turn it on in Settings → PepoMote → Camera.";
+"local_network_hint" = "If the PC does not answer, check that PepoMote has the Local Network permission (Settings → PepoMote) and that phone and PC are on the same Wi-Fi.";
+
+/* connect */
+"pair_title_other" = "Connect to another PC";
+"pair_sub_scan" = "Open PepoMote on your PC and scan its QR";
+"pair_sub_saved" = "Tap one of your PCs, or scan another one's QR";
+"your_pcs" = "Your PCs";
+"scan_qr" = "Scan the PC's QR";
+"scan_qr_other" = "Scan another PC's QR";
+"searching" = "Looking for receivers on your network…";
+"no_receivers" = "No receiver in sight (the QR works anyway)";
+"no_new_pcs" = "No new PC in sight";
+"on_your_network" = "On your network:";
+"receiver_hint" = "%1$@ — scan its QR to pair";
+"back" = "Back";
+"forget_title" = "Forget %1$@?";
+"forget_body" = "To use it again you will have to scan its QR again.";
+"forget" = "Forget";
+"cancel" = "Cancel";
+"pc_online" = "%1$@ · on the network";
+"current" = "current";
+
+/* settings */
+"sounds_title" = "Sounds";
+"sounds_sub" = "Button beeps and the connect/disconnect melody (vibration stays)";
+"chips_title" = "Dolphin mode on the controller";
+"chips_sub" = "Shows the Pointer/Dolphin selector when entering via Connect. Turn it off for a pointer-only controller, no selector";
+"link_other_pc" = "Pair with another PC";
+"link_other_pc_sub" = "Scan a new QR";
+"sens_note" = "The pointer sensitivity is set in PepoMote's window on the PC.";
+"ios_note" = "On iPhone and iPad the controller works while the app is on screen (in the background iOS cuts the connection) and the physical volume buttons cannot be used as A/B.";
+"about" = "PepoMote · GPL-3.0 · made by PepoTech";
+
+/* first run */
+"onboarding_sub" = "Your phone, your PC's controller in 3 steps";
+"ob1_title" = "Open PepoMote on your PC";
+"ob1_body" = "A single file, nothing to install. In PepoMote you will see a QR.";
+"ob2_title" = "Scan the QR";
+"ob2_body" = "Connect → point the camera. Paired for good.";
+"ob3_title" = "Point. Click. Play.";
+"ob3_body" = "The phone moves the cursor like a Wii Remote. And in Dolphin, you really play.";
+"lets_go" = "Let's go!";
+
+/* controller */
+"pc_player" = "%1$@ · Player %2$d";
+"wiiu_as_wiimote" = "Wii U · Wii Remote";
+"mode_wiiu" = "Wii U";
+"mode_dolphin" = "Dolphin";
+"mode_pointer" = "Pointer";
+"pointer_player1_points" = "Pointer: Player 1 points";
+"reconnect" = "Reconnect";
+"exit" = "Exit";
+"keyboard" = "Keyboard";
+"media_open" = "Media ▲";
+"media_closed" = "Media ▼";
+"rotate_hint" = "Turn the phone to go back to the upright controller";
+"in_cemu" = "In Cemu I am:";
+"wii_remote" = "Wii Remote";
+"gamepad" = "GamePad";
+"pro_controller" = "Pro Controller";
+"wii_pad_help" = "For Wii U games played with the Wii Remote (Wii Sports Club, Wii Party U…)";
+"nunchuk_line" = "Nunchuk · Player %1$d · %2$@";
+"nunchuk_help" = "On Wii U the Nunchuk only works if the controller picks Wii Remote";
+"precision" = "Precision";
+
+/* GamePad */
+"activating_wiiu" = "Activating Wii U…";
+"screen_fps" = "screen · %1$d fps";
+"blow" = "Blow";
+"tv_pad" = "TV/Pad";
+"home_btn" = "Home";
+"touch_screen" = "Touch screen";
+"screen_connecting" = "Connecting the screen…";
+"screen_unavailable" = "No screen (the PC is not sending it)";
+"screen_unavailable_detail" = "No screen: %1$@";
+"screen_reconnecting" = "Reconnecting the screen…";
+
+/* Cemu keyboard */
+"kb_title" = "Cemu keyboard";
+"kb_help" = "For the game's on-screen keyboard. Delete removes a character in Cemu, Type sends the text and continues, Accept sends the text and Enter.";
+"kb_placeholder" = "Text for the game";
+"kb_delete" = "Delete";
+"kb_write" = "Type";
+"kb_close" = "Close";
+"kb_accept" = "Accept";

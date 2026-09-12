@@ -1,0 +1,120 @@
+/* Español: el idioma por defecto (también para cualquier sistema que no sea inglés). Mismas claves que Android. */
+
+/* inicio */
+"home_subtitle" = "Tu móvil, mando de tu PC";
+"channel_connect" = "Conectar";
+"channel_connect_sub" = "Escanea el QR del PC";
+"channel_controller" = "Mando";
+"channel_controller_sub" = "Puntero y botones";
+"channel_dolphin" = "Dolphin";
+"channel_dolphin_sub" = "Juega a la Wii de verdad";
+"channel_wiiu" = "Wii U";
+"channel_wiiu_sub" = "GamePad para Cemu";
+"channel_nunchuk" = "Nunchuk";
+"channel_nunchuk_sub" = "La otra mano";
+"channel_settings" = "Ajustes";
+"channel_settings_sub" = "Sonidos y más";
+"status_disconnected" = "Sin conexión";
+"status_disconnected_pc" = "Sin conexión · %1$@";
+"status_connecting" = "Conectando…";
+"status_reconnecting" = "Reconectando con %1$@…";
+"status_connected_to" = "Conectado a %1$@";
+"lang_switch_to" = "Cambiar a %1$@";
+
+/* app y enlace */
+"error_prefix" = "Error: %1$@";
+"qr_not_pepomote" = "Ese QR no es de PepoMote";
+"scan_prompt" = "Apunta al QR de PepoMote en tu PC";
+"your_pc" = "Tu PC";
+"re_pair_reason" = "%1$@ ya no reconoce este móvil: su QR ha cambiado (PepoMote reinstalado o restablecido en el PC). Escanéalo otra vez y sigues donde estabas.";
+"pc_not_responding" = "%1$@ no responde. Elige otro PC o escanea un QR.";
+"lost_connection" = "Se perdió la conexión con %1$@";
+"warn_needs_13" = "El PC necesita PepoMote 1.3 para Wii U";
+"warn_player_1" = "Solo el Jugador 1 cambia el modo";
+"reconnecting_short" = "Reconectando…";
+"camera_denied" = "PepoMote no tiene permiso de cámara. Actívalo en Ajustes → PepoMote → Cámara.";
+"local_network_hint" = "Si el PC no responde, comprueba que PepoMote tiene permiso de Red local (Ajustes → PepoMote) y que móvil y PC están en la misma Wi-Fi.";
+
+/* conectar */
+"pair_title_other" = "Conectar con otro PC";
+"pair_sub_scan" = "Abre PepoMote en tu PC y escanea su QR";
+"pair_sub_saved" = "Toca uno de tus PCs, o escanea el QR de otro";
+"your_pcs" = "Tus PCs";
+"scan_qr" = "Escanear QR del PC";
+"scan_qr_other" = "Escanear el QR de otro PC";
+"searching" = "Buscando receptores en tu red…";
+"no_receivers" = "Ningún receptor a la vista (el QR funciona igualmente)";
+"no_new_pcs" = "Ningún PC nuevo a la vista";
+"on_your_network" = "En tu red:";
+"receiver_hint" = "%1$@ — escanea su QR para emparejar";
+"back" = "Volver";
+"forget_title" = "¿Olvidar %1$@?";
+"forget_body" = "Para volver a usarlo tendrás que escanear su QR otra vez.";
+"forget" = "Olvidar";
+"cancel" = "Cancelar";
+"pc_online" = "%1$@ · en la red";
+"current" = "actual";
+
+/* ajustes */
+"sounds_title" = "Sonidos";
+"sounds_sub" = "Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)";
+"chips_title" = "Modo Dolphin en el mando";
+"chips_sub" = "Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector";
+"link_other_pc" = "Vincular con otro PC";
+"link_other_pc_sub" = "Escanear un QR nuevo";
+"sens_note" = "La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.";
+"ios_note" = "En iPhone y iPad el mando funciona con la app en pantalla (en segundo plano iOS corta la conexión) y los botones físicos de volumen no se pueden usar como A/B.";
+"about" = "PepoMote · GPL-3.0 · hecho por PepoTech";
+
+/* primer arranque */
+"onboarding_sub" = "Tu móvil, mando de tu PC en 3 pasos";
+"ob1_title" = "Abre PepoMote en tu PC";
+"ob1_body" = "Un solo archivo, sin instalar nada. En PepoMote verás un QR.";
+"ob2_title" = "Escanea el QR";
+"ob2_body" = "Conectar → apunta con la cámara. Emparejado para siempre.";
+"ob3_title" = "Apunta. Haz clic. Juega.";
+"ob3_body" = "El móvil mueve el cursor como un mando de Wii. Y en Dolphin, juegas de verdad.";
+"lets_go" = "¡Vamos!";
+
+/* mando */
+"pc_player" = "%1$@ · Jugador %2$d";
+"wiiu_as_wiimote" = "Wii U · Mando de Wii";
+"mode_wiiu" = "Wii U";
+"mode_dolphin" = "Dolphin";
+"mode_pointer" = "Puntero";
+"pointer_player1_points" = "Puntero: apunta el Jugador 1";
+"reconnect" = "Reconectar";
+"exit" = "Salir";
+"keyboard" = "Teclado";
+"media_open" = "Multimedia ▲";
+"media_closed" = "Multimedia ▼";
+"rotate_hint" = "Gira el móvil para volver al mando vertical";
+"in_cemu" = "En Cemu soy:";
+"wii_remote" = "Mando de Wii";
+"gamepad" = "GamePad";
+"pro_controller" = "Pro Controller";
+"wii_pad_help" = "Para juegos de Wii U que se juegan con el mando de Wii (Wii Sports Club, Wii Party U…)";
+"nunchuk_line" = "Nunchuk · Jugador %1$d · %2$@";
+"nunchuk_help" = "En Wii U el Nunchuk solo funciona si el mando elige Mando de Wii";
+"precision" = "Precisión";
+
+/* GamePad */
+"activating_wiiu" = "Activando Wii U…";
+"screen_fps" = "pantalla · %1$d fps";
+"blow" = "Soplar";
+"tv_pad" = "TV/Pad";
+"home_btn" = "Home";
+"touch_screen" = "Pantalla táctil";
+"screen_connecting" = "Conectando la pantalla…";
+"screen_unavailable" = "Sin pantalla (el PC no la envía)";
+"screen_unavailable_detail" = "Sin pantalla: %1$@";
+"screen_reconnecting" = "Reconectando la pantalla…";
+
+/* teclado de Cemu */
+"kb_title" = "Teclado de Cemu";
+"kb_help" = "Para el teclado en pantalla del juego. Borrar quita un carácter en Cemu, Escribir manda el texto y sigue, Aceptar manda el texto e Intro.";
+"kb_placeholder" = "Texto para el juego";
+"kb_delete" = "Borrar";
+"kb_write" = "Escribir";
+"kb_close" = "Cerrar";
+"kb_accept" = "Aceptar";

@@ -1,0 +1,88 @@
+name: ios
+
+# Sin Mac a mano: aquí se genera el proyecto (XcodeGen), se compila, pasan los
+# tests en el simulador y se empaqueta el IPA SIN FIRMAR para AltStore /
+# Sideloadly (ellos lo firman con el Apple ID de quien lo instala).
+on:
+  push:
+    branches: [main, ios]
+    paths: ["ios/**", "protocol/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["ios/**", "protocol/**"]
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode
+        run: |
+          latest="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$latest" ]; then sudo xcode-select -s "$latest"; fi
+          xcodebuild -version
+          swift --version | head -1
+
+      - name: XcodeGen
+        run: brew install xcodegen
+
+      - name: Generar proyecto
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Simulador
+        id: sim
+        run: |
+          name="$(xcrun simctl list devices available | grep -E '^\s+iPhone' | grep -v unavailable | head -1 | sed -E 's/^\s+//; s/ \(.*$//')"
+          if [ -z "$name" ]; then name="iPhone 16"; fi
+          echo "Simulador: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Tests en el simulador
+        working-directory: ios
+        run: |
+          mkdir -p ../build
+          set +e
+          xcodebuild test -project PepoMote.xcodeproj -scheme PepoMote \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -resultBundlePath ../build/tests.xcresult \
+            CODE_SIGNING_ALLOWED=NO > ../build/test.log 2>&1
+          status=$?
+          set -e
+          grep -E "error:|warning: .*Swift|Test Suite|Test Case .* (passed|failed)|Executed|\*\* (TEST|BUILD)" ../build/test.log || true
+          exit $status
+
+      - name: IPA sin firmar (dispositivo)
+        working-directory: ios
+        run: |
+          set +e
+          xcodebuild build -project PepoMote.xcodeproj -scheme PepoMote -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath ../build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" > ../build/device.log 2>&1
+          status=$?
+          set -e
+          grep -E "error:|\*\* BUILD" ../build/device.log || true
+          if [ $status -ne 0 ]; then exit $status; fi
+          app="$(find ../build/dd/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)"
+          test -n "$app"
+          rm -rf ../dist/Payload
+          mkdir -p ../dist/Payload
+          cp -R "$app" ../dist/Payload/
+          (cd ../dist && rm -f PepoMote.ipa && zip -qr PepoMote.ipa Payload && rm -rf Payload)
+          ls -la ../dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PepoMote-ios
+          path: dist/PepoMote.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-logs
+          path: |
+            build/test.log
+            build/device.log
