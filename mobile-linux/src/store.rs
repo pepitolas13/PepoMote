@@ -23,6 +23,8 @@ pub struct Pairing {
 pub struct Settings {
     /// Giro del móvil apaisado en el GamePad de Wii U (izquierda por defecto).
     pub rotation: Rotation,
+    /// Tema: como el sistema (en Linux móvil = claro), claro u oscuro.
+    pub theme: crate::theme::ThemePref,
 }
 
 fn config_file(name: &str) -> Option<PathBuf> {
@@ -112,7 +114,11 @@ mod tests {
         assert_eq!(s.rotation, Rotation::Right);
         let s: Settings = serde_json::from_str(r#"{"otro":1,"pad_wii":true}"#).unwrap();
         assert_eq!(s.rotation, Rotation::Left, "campo ausente: por defecto; los desconocidos se ignoran");
-        let back: Settings = serde_json::from_str(&serde_json::to_string(&Settings { rotation: Rotation::Right }).unwrap()).unwrap();
-        assert_eq!(back, Settings { rotation: Rotation::Right });
+        let mine = Settings { rotation: Rotation::Right, theme: crate::theme::ThemePref::Dark };
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&mine).unwrap()).unwrap();
+        assert_eq!(back, mine);
+        let s: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
+        assert_eq!(s.theme, crate::theme::ThemePref::Light, "el tema se guarda en minúsculas");
+        assert_eq!(s.rotation, Rotation::Left);
     }
 }

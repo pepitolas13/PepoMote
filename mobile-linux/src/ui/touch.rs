@@ -278,9 +278,9 @@ pub fn fit(text: &str, max_w: f32, measure: impl Fn(&str) -> f32) -> String {
 
 fn button_colors(down: bool, primary: bool) -> (Color32, Color32) {
     if primary {
-        (if down { theme::BLUE_HOVER } else { theme::BLUE }, theme::CARD)
+        (if down { theme::blue_hover() } else { theme::blue() }, theme::ON_ACCENT)
     } else {
-        (if down { theme::GLOW } else { theme::CARD }, theme::TEXT)
+        (if down { theme::glow() } else { theme::card() }, theme::text())
     }
 }
 
@@ -288,7 +288,7 @@ fn button_colors(down: bool, primary: bool) -> (Color32, Color32) {
 /// etiqueta centrada; devuelve su forma (virtual) para el hit-test.
 pub fn circle_button(cv: &Canvas, c: Pos2, r: f32, label: &str, font: f32, down: bool, primary: bool) -> Shape {
     let (fill, text) = button_colors(down, primary);
-    cv.circle(c, if down { r * 0.94 } else { r }, fill, Stroke::new(1.0_f32, theme::CARD_BORDER));
+    cv.circle(c, if down { r * 0.94 } else { r }, fill, Stroke::new(1.0_f32, theme::card_border()));
     cv.text(c, Align2::CENTER_CENTER, label, FontId::proportional(font), text);
     Shape::Circle { c, r }
 }
@@ -296,7 +296,7 @@ pub fn circle_button(cv: &Canvas, c: Pos2, r: f32, label: &str, font: f32, down:
 /// Botón rectangular redondeado con etiqueta centrada.
 pub fn rect_button(cv: &Canvas, r: Rect, rounding: f32, label: &str, font: f32, down: bool, primary: bool) -> Shape {
     let (fill, text) = button_colors(down, primary);
-    cv.rounded_rect(r, rounding, fill, Stroke::new(1.0_f32, theme::CARD_BORDER));
+    cv.rounded_rect(r, rounding, fill, Stroke::new(1.0_f32, theme::card_border()));
     cv.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(font), text);
     Shape::Rect(r)
 }
@@ -304,8 +304,8 @@ pub fn rect_button(cv: &Canvas, r: Rect, rounding: f32, label: &str, font: f32, 
 /// Chip de cabecera (como `selectable_label`): azul si está seleccionado; si
 /// no, tarjeta con el texto en `color`.
 pub fn chip(cv: &Canvas, r: Rect, label: &str, font: f32, selected: bool, color: Color32) -> Shape {
-    let (fill, text) = if selected { (theme::BLUE, theme::CARD) } else { (theme::CARD, color) };
-    cv.rounded_rect(r, r.height() / 2.0, fill, Stroke::new(1.0_f32, theme::CARD_BORDER));
+    let (fill, text) = if selected { (theme::blue(), theme::card()) } else { (theme::card(), color) };
+    cv.rounded_rect(r, r.height() / 2.0, fill, Stroke::new(1.0_f32, theme::card_border()));
     cv.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(font), text);
     Shape::Rect(r)
 }
@@ -323,11 +323,11 @@ pub enum Seg {
 /// Segmento del selector: como un chip, con el estado pendiente a medio tono.
 pub fn segment(cv: &Canvas, r: Rect, label: &str, font: f32, state: Seg) -> Shape {
     let (fill, text) = match state {
-        Seg::On => (theme::BLUE, theme::CARD),
-        Seg::Pending => (theme::GLOW, theme::TEXT),
-        Seg::Off => (theme::CARD, theme::TEXT),
+        Seg::On => (theme::blue(), theme::ON_ACCENT),
+        Seg::Pending => (theme::glow(), theme::text()),
+        Seg::Off => (theme::card(), theme::text()),
     };
-    cv.rounded_rect(r, 8.0, fill, Stroke::new(1.0_f32, theme::CARD_BORDER));
+    cv.rounded_rect(r, 8.0, fill, Stroke::new(1.0_f32, theme::card_border()));
     cv.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(font), text);
     Shape::Rect(r)
 }

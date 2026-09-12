@@ -1215,7 +1215,7 @@ mod tests {
         let dt = DT_US as f32 / 1e6;
         let mut max_ny_dev = 0.0f32;
         let mut last = (0.5, 0.5);
-        let mut track = |out: PointerOutput, max_ny_dev: &mut f32, last: &mut (f32, f32)| {
+        let track = |out: PointerOutput, max_ny_dev: &mut f32, last: &mut (f32, f32)| {
             if let PointerOutput::Abs { nx, ny } = out {
                 *max_ny_dev = max_ny_dev.max((ny - 0.5).abs());
                 *last = (nx, ny);
@@ -1452,7 +1452,7 @@ mod tests {
         let mut history: Vec<Quat> = Vec::new();
         let dt = DT_US as f32 / 1e6;
         let mut prev_true = qrot_z(0.0);
-        let mut push = |e: &mut PointerEngine, true_q: Quat, sent_q: Quat, t: u64, out: &mut Vec<(u64, f32, f32)>, prev_true: &mut Quat| {
+        let push = |e: &mut PointerEngine, true_q: Quat, sent_q: Quat, t: u64, out: &mut Vec<(u64, f32, f32)>, prev_true: &mut Quat| {
             let (axis, ang) = delta_axis_angle(*prev_true, true_q);
             *prev_true = true_q;
             let mut p = packet(arr(sent_q), 0, t, FLAG_QUAT_VALID);
@@ -1527,7 +1527,7 @@ mod tests {
         let dt = DT_US as f32 / 1e6;
         let mut history: Vec<Quat> = Vec::new();
         let mut prev_true = qrot_z(0.0);
-        let mut emit = |e: &mut PointerEngine, true_q: Quat, sent: Quat, t: u64, prev_true: &mut Quat| {
+        let emit = |e: &mut PointerEngine, true_q: Quat, sent: Quat, t: u64, prev_true: &mut Quat| {
             let (axis, ang) = delta_axis_angle(*prev_true, true_q);
             *prev_true = true_q;
             let mut p = packet(arr(sent), 0, t, FLAG_QUAT_VALID);
@@ -1803,7 +1803,7 @@ mod tests {
         let mut t = 0u64;
         let dt = DT_US as f32 / 1e6;
         let mut prev_true = qrot_z(0.0);
-        let mut send = |e: &mut PointerEngine, true_q: Quat, t: u64, prev_true: &mut Quat| {
+        let send = |e: &mut PointerEngine, true_q: Quat, t: u64, prev_true: &mut Quat| {
             let (axis, ang) = delta_axis_angle(*prev_true, true_q);
             *prev_true = true_q;
             let mut p = packet(arr(true_q), 0, t, FLAG_QUAT_VALID);

@@ -149,6 +149,10 @@ pub struct Config {
     /// la primaria, o la mayor).
     #[serde(default)]
     pub screen: String,
+    /// Tema de la ventana: como el sistema (Windows lo sabe; en Linux, claro),
+    /// o claro/oscuro fijo.
+    #[serde(default)]
+    pub theme: crate::theme::ThemePref,
 }
 
 impl Default for Config {
@@ -162,6 +166,7 @@ impl Default for Config {
             dolphin_dir: String::new(),
             fix_attempted: false,
             screen: String::new(),
+            theme: crate::theme::ThemePref::System,
         }
     }
 }

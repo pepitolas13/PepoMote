@@ -69,22 +69,22 @@ pub fn mode_label(mode: &str) -> String {
 pub fn pad_selector(ui: &mut egui::Ui, player: u8, pad: &str, pending: Option<&str>) -> Option<&'static str> {
     let mut out = None;
     let wii = pad == "wiimote";
-    ui.label(RichText::new("En Cemu soy:").size(13.0).color(theme::TEXT_DIM));
+    ui.label(RichText::new("En Cemu soy:").size(13.0).color(theme::text_dim()));
     ui.horizontal(|ui| {
         let w = ((ui.available_width() - 8.0) / 2.0).max(90.0);
         let seg = |ui: &mut egui::Ui, label: &str, on: bool, pend: bool| -> bool {
             let (fill, color) = if on {
-                (theme::BLUE, theme::CARD)
+                (theme::blue(), theme::ON_ACCENT)
             } else if pend {
-                (theme::GLOW, theme::TEXT)
+                (theme::glow(), theme::text())
             } else {
-                (theme::CARD, theme::TEXT)
+                (theme::card(), theme::text())
             };
             ui.add_sized(
                 Vec2::new(w, 44.0),
                 egui::Button::new(RichText::new(label).size(15.0).color(color))
                     .fill(fill)
-                    .stroke(Stroke::new(1.0_f32, theme::CARD_BORDER)),
+                    .stroke(Stroke::new(1.0_f32, theme::card_border())),
             )
             .clicked()
         };
@@ -103,13 +103,13 @@ pub fn pad_selector(ui: &mut egui::Ui, player: u8, pad: &str, pending: Option<&s
 pub fn notice_banner(ui: &mut egui::Ui, status: &Status) {
     if let Some(n) = status.live_notice() {
         egui::Frame::none()
-            .fill(theme::CARD)
-            .stroke(Stroke::new(1.5_f32, theme::WARN))
+            .fill(theme::card())
+            .stroke(Stroke::new(1.5_f32, theme::warn()))
             .rounding(Rounding::same(12.0))
             .inner_margin(8.0)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.label(RichText::new(n).size(13.0).color(theme::TEXT));
+                ui.label(RichText::new(n).size(13.0).color(theme::text()));
             });
         ui.ctx().request_repaint_after(Duration::from_millis(500));
     }
@@ -154,7 +154,7 @@ impl ControllerUi {
                     } else {
                         pc_name.clone()
                     };
-                    ui.label(RichText::new(title).size(17.0).strong().color(theme::TEXT));
+                    ui.label(RichText::new(title).size(17.0).strong().color(theme::text()));
                     let mut line = match mode.as_str() {
                         "cemu" => "Wii U · Mando de Wii".to_owned(),
                         "pointer" if *slot > 0 => "Puntero: apunta el Jugador 1".to_owned(),
@@ -166,18 +166,18 @@ impl ControllerUi {
                     if sensor_hz > 0.0 {
                         line.push_str(&format!(" · {sensor_hz:.0} Hz"));
                     }
-                    ui.label(RichText::new(line).size(13.0).color(theme::TEXT_DIM));
+                    ui.label(RichText::new(line).size(13.0).color(theme::text_dim()));
                 }
                 Status::Connecting => {
-                    ui.label(RichText::new("Conectando…").size(17.0).strong().color(theme::TEXT));
+                    ui.label(RichText::new("Conectando…").size(17.0).strong().color(theme::text()));
                 }
                 _ => {
-                    ui.label(RichText::new("Sin conexión").size(17.0).strong().color(theme::TEXT));
+                    ui.label(RichText::new("Sin conexión").size(17.0).strong().color(theme::text()));
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .button(RichText::new("Salir").size(14.0).color(theme::ERROR))
+                    .button(RichText::new("Salir").size(14.0).color(theme::error()))
                     .clicked()
                 {
                     action = Action::Exit;
@@ -185,7 +185,7 @@ impl ControllerUi {
                 // Mando de Wii dentro de Wii U: el teclado para el teclado en
                 // pantalla de Cemu, como en el GamePad
                 if matches!(status, Status::Connected { mode, .. } if mode == "cemu")
-                    && ui.button(RichText::new("Teclado").size(14.0).color(theme::TEXT)).clicked()
+                    && ui.button(RichText::new("Teclado").size(14.0).color(theme::text())).clicked()
                 {
                     action = Action::Keyboard;
                 }
@@ -216,7 +216,7 @@ impl ControllerUi {
                 ui.label(
                     RichText::new("Para juegos de Wii U que se juegan con el mando de Wii (Wii Sports Club, Wii Party U…)")
                         .size(11.0)
-                        .color(theme::TEXT_DIM),
+                        .color(theme::text_dim()),
                 );
             }
         }
@@ -255,16 +255,16 @@ impl ControllerUi {
             painter.rect(
                 r.shrink(2.0),
                 Rounding::same(10.0),
-                if down { theme::GLOW } else { theme::CARD },
-                Stroke::new(1.0_f32, theme::CARD_BORDER),
+                if down { theme::glow() } else { theme::card() },
+                Stroke::new(1.0_f32, theme::card_border()),
             );
-            painter.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(14.0 * s), theme::TEXT_DIM);
+            painter.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(14.0 * s), theme::text_dim());
             self.hits.push((Shape::Rect(r), Target::Button(bit)));
         }
         painter.rect(
             Rect::from_center_size(pad_c, Vec2::splat(arm)).shrink(2.0),
             Rounding::same(6.0),
-            theme::CARD,
+            theme::card(),
             Stroke::NONE,
         );
         y += arm * 3.0 + 14.0 * s;
@@ -276,9 +276,9 @@ impl ControllerUi {
         // diana de recentrado
         let rc = Pos2::new(cx, row_y);
         let holding = self.touches.values().any(|t| t.target == Target::Recenter);
-        painter.circle(rc, 32.0 * s, if holding { theme::GLOW } else { theme::CARD }, Stroke::new(1.0_f32, theme::CARD_BORDER));
-        painter.circle_filled(rc, 13.0 * s, theme::BACKGROUND);
-        painter.circle_filled(rc, 5.0 * s, theme::BLUE);
+        painter.circle(rc, 32.0 * s, if holding { theme::glow() } else { theme::card() }, Stroke::new(1.0_f32, theme::card_border()));
+        painter.circle_filled(rc, 13.0 * s, theme::background());
+        painter.circle_filled(rc, 5.0 * s, theme::blue());
         self.hits.push((Shape::Circle { c: rc, r: 32.0 * s }, Target::Recenter));
         y += 64.0 * s + 14.0 * s;
 
@@ -304,7 +304,7 @@ impl ControllerUi {
             Align2::CENTER_CENTER,
             if self.show_media { "Multimedia ▲" } else { "Multimedia ▼" },
             FontId::proportional(13.0 * s),
-            theme::TEXT_DIM,
+            theme::text_dim(),
         );
         y += 28.0 * s;
         if self.show_media {
@@ -335,10 +335,10 @@ impl ControllerUi {
         painter.rect(
             b_rect,
             Rounding::same(22.0 * s),
-            if b_down { theme::BLUE_HOVER } else { theme::BLUE },
+            if b_down { theme::blue_hover() } else { theme::blue() },
             Stroke::NONE,
         );
-        painter.text(b_rect.center(), Align2::CENTER_CENTER, "B", FontId::proportional(30.0 * s), theme::CARD);
+        painter.text(b_rect.center(), Align2::CENTER_CENTER, "B", FontId::proportional(30.0 * s), theme::ON_ACCENT);
         self.hits.push((Shape::Rect(b_rect), Target::Button(pmp::BTN_B)));
 
         // Tira de scroll: borde derecho
@@ -350,11 +350,11 @@ impl ControllerUi {
         painter.rect(
             strip,
             Rounding::same(13.0 * s),
-            if scrolling { theme::GLOW } else { theme::CARD_BORDER },
+            if scrolling { theme::glow() } else { theme::card_border() },
             Stroke::NONE,
         );
         for i in -1..=1 {
-            painter.circle_filled(strip.center() + Vec2::new(0.0, 10.0 * s * i as f32), 2.5 * s, theme::TEXT_DIM);
+            painter.circle_filled(strip.center() + Vec2::new(0.0, 10.0 * s * i as f32), 2.5 * s, theme::text_dim());
         }
         self.hits.push((Shape::Rect(strip), Target::Scroll));
     }

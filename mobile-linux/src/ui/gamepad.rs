@@ -144,8 +144,11 @@ pub fn touch_fraction(r: Rect, p: Pos2) -> (u16, u16) {
 }
 
 /// Velo sobre los controles cuando aún no se juega (conectando o esperando
-/// el eco de Wii U).
-const VEIL: Color32 = Color32::from_rgba_premultiplied(0xF4, 0xF6, 0xF7, 0xA0);
+/// el eco de Wii U): el fondo del tema, translúcido.
+fn veil() -> Color32 {
+    let b = theme::background();
+    Color32::from_rgba_unmultiplied(b.r(), b.g(), b.b(), 0xA0)
+}
 
 impl GamePadUi {
     pub fn new() -> Self {
@@ -295,25 +298,25 @@ impl GamePadUi {
             right -= w + gap;
             rc
         };
-        self.chip(cv, place(52.0 * s), "Salir", chip_font, false, theme::ERROR, Chip::Exit);
+        self.chip(cv, place(52.0 * s), "Salir", chip_font, false, theme::error(), Chip::Exit);
         let giro = match rotation {
             Rotation::Left => "Giro ◀",
             Rotation::Right => "Giro ▶",
         };
-        self.chip(cv, place(66.0 * s), giro, chip_font, false, theme::TEXT, Chip::Rotate);
+        self.chip(cv, place(66.0 * s), giro, chip_font, false, theme::text(), Chip::Rotate);
         if v.mode == "cemu" {
             // teclado del móvil para el teclado en pantalla de Cemu (GamePad y Pro)
-            self.chip(cv, place(64.0 * s), "Teclado", chip_font, false, theme::TEXT, Chip::Keyboard);
+            self.chip(cv, place(64.0 * s), "Teclado", chip_font, false, theme::text(), Chip::Keyboard);
         }
         if v.show_chips {
             // esta ES la pantalla Wii U: su chip va marcado (también mientras
             // se espera el eco); los otros dos, por igualdad exacta
             if v.supports_cemu || v.optimistic {
                 let on = v.mode == "cemu" || v.optimistic;
-                self.chip(cv, place(58.0 * s), "Wii U", chip_font, on, theme::TEXT, Chip::Mode("cemu"));
+                self.chip(cv, place(58.0 * s), "Wii U", chip_font, on, theme::text(), Chip::Mode("cemu"));
             }
-            self.chip(cv, place(66.0 * s), "Dolphin", chip_font, v.mode == "dolphin" && !v.optimistic, theme::TEXT, Chip::Mode("dolphin"));
-            self.chip(cv, place(66.0 * s), "Puntero", chip_font, v.mode == "pointer" && !v.optimistic, theme::TEXT, Chip::Mode("pointer"));
+            self.chip(cv, place(66.0 * s), "Dolphin", chip_font, v.mode == "dolphin" && !v.optimistic, theme::text(), Chip::Mode("dolphin"));
+            self.chip(cv, place(66.0 * s), "Puntero", chip_font, v.mode == "pointer" && !v.optimistic, theme::text(), Chip::Mode("pointer"));
         }
         let title_font = FontId::proportional(13.0 * s);
         let kind = if v.pro { "Pro Controller" } else { "GamePad" };
@@ -331,7 +334,7 @@ impl GamePadUi {
             }
         }
         let avail = right - x0 - 4.0 * s;
-        cv.text(Pos2::new(x0 + 4.0 * s, hy), Align2::LEFT_CENTER, &cv.fit_text(&line, title_font.clone(), avail), title_font, theme::TEXT);
+        cv.text(Pos2::new(x0 + 4.0 * s, hy), Align2::LEFT_CENTER, &cv.fit_text(&line, title_font.clone(), avail), title_font, theme::text());
 
         // ---- Selector «En Cemu soy» bajo la cabecera, centrado ----
         let sel_h = 26.0 * s;
@@ -342,7 +345,7 @@ impl GamePadUi {
         let seg_w = 104.0 * s;
         let total = label_w + 8.0 * s + seg_w * 2.0 + 4.0 * s;
         let mut x = cx - total / 2.0;
-        cv.text(Pos2::new(x, sel_y + sel_h / 2.0), Align2::LEFT_CENTER, label, label_font, theme::TEXT_DIM);
+        cv.text(Pos2::new(x, sel_y + sel_h / 2.0), Align2::LEFT_CENTER, label, label_font, theme::text_dim());
         x += label_w + 8.0 * s;
         let wii = v.pad == "wiimote";
         let seg = |key: &str, on: bool| -> Seg {
@@ -403,13 +406,13 @@ impl GamePadUi {
             cv.rounded_rect(
                 rc.shrink(2.0),
                 8.0 * s,
-                if down { theme::GLOW } else { theme::CARD },
-                Stroke::new(1.0_f32, theme::CARD_BORDER),
+                if down { theme::glow() } else { theme::card() },
+                Stroke::new(1.0_f32, theme::card_border()),
             );
-            cv.text(rc.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0 * s), theme::TEXT_DIM);
+            cv.text(rc.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0 * s), theme::text_dim());
             self.hits.push((Shape::Rect(rc), Target::Button(bit)));
         }
-        cv.rounded_rect(Rect::from_center_size(dc, Vec2::splat(arm)).shrink(2.0), 5.0 * s, theme::CARD, Stroke::NONE);
+        cv.rounded_rect(Rect::from_center_size(dc, Vec2::splat(arm)).shrink(2.0), 5.0 * s, theme::card(), Stroke::NONE);
 
         // A/B/X/Y en rombo bajo el stick derecho (A a la derecha, azul)
         let ac = Pos2::new(rx, dc.y);
@@ -425,7 +428,7 @@ impl GamePadUi {
         let zone_w = (zone_r - zone_l).max(60.0 * s);
         let rows_y = if v.pro {
             let y = by + (r.bottom() - by) / 2.0 - 10.0 * s;
-            cv.text(Pos2::new(cx, y - 44.0 * s), Align2::CENTER_CENTER, "Pro Controller", FontId::proportional(12.0 * s), theme::TEXT_DIM);
+            cv.text(Pos2::new(cx, y - 44.0 * s), Align2::CENTER_CENTER, "Pro Controller", FontId::proportional(12.0 * s), theme::text_dim());
             y
         } else {
             let tw = (zone_w - 8.0 * s).min(0.42 * vw);
@@ -452,7 +455,7 @@ impl GamePadUi {
         // Aún no se juega: velo sobre los controles y el porqué
         if !v.active {
             let body = Rect::from_min_max(Pos2::new(x0, by - 2.0 * s), r.max);
-            cv.rounded_rect(body, 0.0, VEIL, Stroke::NONE);
+            cv.rounded_rect(body, 0.0, veil(), Stroke::NONE);
             let why = if v.mode.is_empty() {
                 "Conectando…"
             } else if v.pad == "wiimote" {
@@ -460,16 +463,16 @@ impl GamePadUi {
             } else {
                 "Cambiando el PC a Wii U…"
             };
-            cv.text(Pos2::new(cx, by + (r.bottom() - by) * 0.42), Align2::CENTER_CENTER, why, FontId::proportional(15.0 * s), theme::TEXT_DIM);
+            cv.text(Pos2::new(cx, by + (r.bottom() - by) * 0.42), Align2::CENTER_CENTER, why, FontId::proportional(15.0 * s), theme::text_dim());
         }
 
         // Aviso transitorio del receptor (o local)
         if let Some(n) = v.notice {
             let w = (0.5 * vw).min(360.0 * s).max(zone_w);
             let nr = Rect::from_center_size(Pos2::new(cx, r.bottom() - 22.0 * s), Vec2::new(w, 28.0 * s));
-            cv.rounded_rect(nr, 14.0 * s, theme::CARD, Stroke::new(1.5_f32, theme::WARN));
+            cv.rounded_rect(nr, 14.0 * s, theme::card(), Stroke::new(1.5_f32, theme::warn()));
             let font = FontId::proportional(12.0 * s);
-            cv.text(nr.center(), Align2::CENTER_CENTER, &cv.fit_text(n, font.clone(), w - 16.0 * s), font, theme::TEXT);
+            cv.text(nr.center(), Align2::CENTER_CENTER, &cv.fit_text(n, font.clone(), w - 16.0 * s), font, theme::text());
         }
     }
 
@@ -494,16 +497,16 @@ impl GamePadUi {
         self.sticks[i].travel = travel;
         let knob = self.sticks[i].knob;
         let held = self.touches.values().any(|t| *t == Target::Stick(side));
-        cv.circle(c, ring_r, theme::CARD, Stroke::new(1.5_f32, if held { theme::BLUE } else { theme::CARD_BORDER }));
-        cv.circle_filled(c, 3.0 * s, theme::CARD_BORDER);
+        cv.circle(c, ring_r, theme::card(), Stroke::new(1.5_f32, if held { theme::blue() } else { theme::card_border() }));
+        cv.circle_filled(c, 3.0 * s, theme::card_border());
         for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
-            cv.circle_filled(c + Vec2::new(dx, dy) * (ring_r - 8.0 * s), 2.5 * s, theme::CARD_BORDER);
+            cv.circle_filled(c + Vec2::new(dx, dy) * (ring_r - 8.0 * s), 2.5 * s, theme::card_border());
         }
         cv.circle(
             c + knob * travel,
             knob_r,
-            if held { theme::BLUE_HOVER } else { theme::BLUE },
-            Stroke::new(1.0_f32, theme::CARD_BORDER),
+            if held { theme::blue_hover() } else { theme::blue() },
+            Stroke::new(1.0_f32, theme::card_border()),
         );
         self.hits.push((Shape::Circle { c, r: ring_r + 10.0 * s }, Target::Stick(side)));
     }
@@ -513,7 +516,7 @@ impl GamePadUi {
     /// no, el fondo y la etiqueta de siempre más la línea de estado del canal.
     fn touch_area(&mut self, cv: &Canvas, tr: Rect, buttons: &Buttons, s: f32, screen: Option<&screen::Client>) {
         let (tx, ty, down) = buttons.touch();
-        let border = Stroke::new(1.0_f32, if down { theme::BLUE } else { theme::CARD_BORDER });
+        let border = Stroke::new(1.0_f32, if down { theme::blue() } else { theme::card_border() });
         let live = screen.is_some_and(|c| c.showing());
         match (&self.texture, live) {
             (Some(tex), true) => {
@@ -522,18 +525,18 @@ impl GamePadUi {
                 cv.rounded_rect(tr, 6.0 * s, Color32::TRANSPARENT, border);
             }
             _ => {
-                cv.rounded_rect(tr, 6.0 * s, theme::CARD, border);
+                cv.rounded_rect(tr, 6.0 * s, theme::card(), border);
                 cv.text(
                     Pos2::new(tr.center().x, tr.top() + 5.0 * s),
                     Align2::CENTER_TOP,
                     "Pantalla táctil",
                     FontId::proportional(11.0 * s),
-                    theme::TEXT_DIM,
+                    theme::text_dim(),
                 );
                 if let Some(c) = screen {
                     let font = FontId::proportional(12.0 * s);
                     let text = cv.fit_text(&c.placeholder(), font.clone(), tr.width() - 12.0 * s);
-                    cv.text(tr.center(), Align2::CENTER_CENTER, &text, font, theme::TEXT_DIM);
+                    cv.text(tr.center(), Align2::CENTER_CENTER, &text, font, theme::text_dim());
                 }
             }
         }
@@ -542,7 +545,7 @@ impl GamePadUi {
                 tr.left() + tx as f32 / 65535.0 * tr.width(),
                 tr.top() + ty as f32 / 65535.0 * tr.height(),
             );
-            cv.circle_filled(p, 6.0 * s, theme::BLUE);
+            cv.circle_filled(p, 6.0 * s, theme::blue());
         }
         self.hits.push((Shape::Rect(tr), Target::Touch));
         self.touch_rect = tr;

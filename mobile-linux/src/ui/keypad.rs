@@ -25,7 +25,7 @@ pub fn keypad(ui: &mut egui::Ui, extra: &[char], show_ok: bool) -> Option<Key> {
     let key = |ui: &mut egui::Ui, label: &str| -> bool {
         ui.add_sized(
             Vec2::new(bw, bh),
-            egui::Button::new(RichText::new(label).size(26.0).color(theme::TEXT)),
+            egui::Button::new(RichText::new(label).size(26.0).color(theme::text())),
         )
         .clicked()
     };
@@ -70,8 +70,8 @@ pub fn keypad(ui: &mut egui::Ui, extra: &[char], show_ok: bool) -> Option<Key> {
                     && ui
                         .add_sized(
                             Vec2::new(bw * 2.0 + gap, bh),
-                            egui::Button::new(RichText::new("OK").size(24.0).color(theme::CARD))
-                                .fill(theme::BLUE),
+                            egui::Button::new(RichText::new("OK").size(24.0).color(theme::ON_ACCENT))
+                                .fill(theme::blue()),
                         )
                         .clicked()
                 {
@@ -109,12 +109,12 @@ pub fn qwerty(ui: &mut egui::Ui, shift: bool, key_h: f32) -> Option<Key> {
     let bw = (w - gap * (COLS - 1.0)) / COLS;
     let font = (key_h * 0.42).clamp(15.0, 20.0);
     let key = |ui: &mut egui::Ui, label: &str, kw: f32, on: bool| -> bool {
-        let (fill, color) = if on { (theme::BLUE, theme::CARD) } else { (theme::CARD, theme::TEXT) };
+        let (fill, color) = if on { (theme::blue(), theme::card()) } else { (theme::card(), theme::text()) };
         ui.add_sized(
             Vec2::new(kw, key_h),
             egui::Button::new(RichText::new(label).size(font).color(color))
                 .fill(fill)
-                .stroke(Stroke::new(1.0_f32, theme::CARD_BORDER)),
+                .stroke(Stroke::new(1.0_f32, theme::card_border())),
         )
         .clicked()
     };

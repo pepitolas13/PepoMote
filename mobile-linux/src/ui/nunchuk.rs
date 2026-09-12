@@ -98,13 +98,13 @@ impl NunchukUi {
         ui.horizontal(|ui| {
             ui.vertical(|ui| match status {
                 Status::Connected { pc_name, mode, player, role, rtt_ms, pad, .. } => {
-                    ui.label(RichText::new(pc_name).size(17.0).strong().color(theme::TEXT));
+                    ui.label(RichText::new(pc_name).size(17.0).strong().color(theme::text()));
                     // un receptor anterior ignora el role del hello y nos da
                     // un slot de mando: que se vea, no que se sufra. El modo
                     // lo decide el mando; nos llega por difusión
                     let (mut line, color) = match role {
-                        Role::Nunchuk => (format!("Nunchuk · Jugador {player} · {}", mode_label(mode)), theme::TEXT_DIM),
-                        Role::Wiimote => ("El PC te ve como mando: actualiza el receptor".to_owned(), theme::WARN),
+                        Role::Nunchuk => (format!("Nunchuk · Jugador {player} · {}", mode_label(mode)), theme::text_dim()),
+                        Role::Wiimote => ("El PC te ve como mando: actualiza el receptor".to_owned(), theme::warn()),
                     };
                     if let Some(r) = rtt_ms {
                         line.push_str(&format!(" · {r:.0} ms"));
@@ -118,20 +118,20 @@ impl NunchukUi {
                         ui.label(
                             RichText::new("En Wii U el Nunchuk solo funciona si el mando elige Mando de Wii")
                                 .size(12.0)
-                                .color(theme::WARN),
+                                .color(theme::warn()),
                         );
                     }
                 }
                 Status::Connecting => {
-                    ui.label(RichText::new("Conectando…").size(17.0).strong().color(theme::TEXT));
+                    ui.label(RichText::new("Conectando…").size(17.0).strong().color(theme::text()));
                 }
                 _ => {
-                    ui.label(RichText::new("Sin conexión").size(17.0).strong().color(theme::TEXT));
+                    ui.label(RichText::new("Sin conexión").size(17.0).strong().color(theme::text()));
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .button(RichText::new("Salir").size(14.0).color(theme::ERROR))
+                    .button(RichText::new("Salir").size(14.0).color(theme::error()))
                     .clicked()
                 {
                     action = Action::Exit;
@@ -189,18 +189,18 @@ impl NunchukUi {
         painter.circle(
             stick_c,
             ring_r,
-            theme::CARD,
-            Stroke::new(1.5_f32, if held { theme::BLUE } else { theme::CARD_BORDER }),
+            theme::card(),
+            Stroke::new(1.5_f32, if held { theme::blue() } else { theme::card_border() }),
         );
-        painter.circle_filled(stick_c, 3.0 * s, theme::CARD_BORDER);
+        painter.circle_filled(stick_c, 3.0 * s, theme::card_border());
         for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
-            painter.circle_filled(stick_c + Vec2::new(dx, dy) * (ring_r - 9.0 * s), 2.5 * s, theme::CARD_BORDER);
+            painter.circle_filled(stick_c + Vec2::new(dx, dy) * (ring_r - 9.0 * s), 2.5 * s, theme::card_border());
         }
         painter.circle(
             stick_c + self.knob * travel,
             knob_r,
-            if held { theme::BLUE_HOVER } else { theme::BLUE },
-            Stroke::new(1.0_f32, theme::CARD_BORDER),
+            if held { theme::blue_hover() } else { theme::blue() },
+            Stroke::new(1.0_f32, theme::card_border()),
         );
         self.hits.push((Shape::Circle { c: stick_c, r: ring_r + 12.0 * s }, Target::Stick));
 
@@ -208,10 +208,10 @@ impl NunchukUi {
         painter.rect(
             z_rect,
             Rounding::same(22.0 * s),
-            if z_down { theme::BLUE_HOVER } else { theme::BLUE },
+            if z_down { theme::blue_hover() } else { theme::blue() },
             Stroke::NONE,
         );
-        painter.text(z_rect.center(), Align2::CENTER_CENTER, "Z", FontId::proportional(34.0 * s), theme::CARD);
+        painter.text(z_rect.center(), Align2::CENTER_CENTER, "Z", FontId::proportional(34.0 * s), theme::ON_ACCENT);
         self.hits.push((Shape::Rect(z_rect), Target::Button(pmp::BTN_Z)));
     }
 

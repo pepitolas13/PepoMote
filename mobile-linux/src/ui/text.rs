@@ -100,16 +100,16 @@ impl TextDialog {
         let key_h = ((ui.available_height() - 250.0) / 5.0 - 4.0).clamp(34.0, 48.0);
         egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
             ui.add_space(4.0);
-            ui.label(RichText::new("Teclado para Cemu").size(22.0).strong().color(theme::TEXT));
+            ui.label(RichText::new("Teclado para Cemu").size(22.0).strong().color(theme::text()));
             ui.label(
                 RichText::new("Lo que escribas va al teclado en pantalla del juego. El mando sigue funcionando.")
                     .size(12.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::text_dim()),
             );
             ui.add_space(6.0);
             egui::Frame::none()
-                .fill(theme::CARD)
-                .stroke(Stroke::new(1.5_f32, theme::CARD_BORDER))
+                .fill(theme::card())
+                .stroke(Stroke::new(1.5_f32, theme::card_border()))
                 .rounding(Rounding::same(12.0))
                 .inner_margin(egui::Margin::symmetric(12.0, 8.0))
                 .show(ui, |ui| {
@@ -120,9 +120,9 @@ impl TextDialog {
                         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                         .show(ui, |ui| {
                             if self.field.is_empty() {
-                                ui.label(RichText::new("Escribe aquí…").size(22.0).color(theme::TEXT_DIM));
+                                ui.label(RichText::new("Escribe aquí…").size(22.0).color(theme::text_dim()));
                             } else {
-                                ui.label(RichText::new(format!("{}|", self.field)).size(22.0).color(theme::TEXT));
+                                ui.label(RichText::new(format!("{}|", self.field)).size(22.0).color(theme::text()));
                             }
                         });
                 });
@@ -140,30 +140,30 @@ impl TextDialog {
                         Vec2::new(w, 46.0),
                         egui::Button::new(RichText::new(label).size(15.0).color(color))
                             .fill(fill)
-                            .stroke(Stroke::new(1.0_f32, theme::CARD_BORDER)),
+                            .stroke(Stroke::new(1.0_f32, theme::card_border())),
                     )
                     .clicked()
                 };
-                if btn(ui, "Borrar", theme::CARD, theme::TEXT) {
+                if btn(ui, "Borrar", theme::card(), theme::text()) {
                     out = Some(Button::Delete);
                 }
-                if btn(ui, "Escribir", theme::CARD, theme::TEXT) {
+                if btn(ui, "Escribir", theme::card(), theme::text()) {
                     out = Some(Button::Write);
                 }
-                if btn(ui, "Aceptar", theme::BLUE, theme::CARD) {
+                if btn(ui, "Aceptar", theme::blue(), theme::ON_ACCENT) {
                     out = Some(Button::Accept);
                 }
             });
             ui.label(
                 RichText::new("Borrar quita una letra en Cemu · Escribir la teclea · Aceptar la teclea y confirma")
                     .size(11.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::text_dim()),
             );
             ui.add_space(4.0);
             if ui
                 .add_sized(
                     Vec2::new(ui.available_width(), 40.0),
-                    egui::Button::new(RichText::new("Cerrar").size(14.0).color(theme::TEXT_DIM)).fill(theme::CARD),
+                    egui::Button::new(RichText::new("Cerrar").size(14.0).color(theme::text_dim())).fill(theme::card()),
                 )
                 .clicked()
             {

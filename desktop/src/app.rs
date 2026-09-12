@@ -1,7 +1,7 @@
 use crate::pairing::PairingInfo;
 use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use crate::theme;
-use egui::{Color32, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
+use egui::{Pos2, Rect, RichText, Rounding, Stroke, Vec2};
 use std::time::{Duration, Instant};
 
 pub struct PepoMoteApp {
@@ -25,6 +25,8 @@ pub struct PepoMoteApp {
 impl PepoMoteApp {
     pub fn new(cc: &eframe::CreationContext<'_>, shared: SharedState, pairing: PairingInfo) -> Self {
         theme::apply(&cc.egui_ctx);
+        let pref = shared.lock().unwrap().config.theme;
+        theme::set_preference(&cc.egui_ctx, pref);
         let (qr_modules, qr_width) = build_qr(&pairing.pair_url());
         Self {
             shared,
@@ -86,6 +88,7 @@ struct Snapshot {
 
 impl eframe::App for PepoMoteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        theme::sync(ctx);
         ctx.request_repaint_after(Duration::from_millis(100));
 
         // En Windows, cerrar = esconder a la bandeja ("Salir" está en el tray)
@@ -122,7 +125,7 @@ impl eframe::App for PepoMoteApp {
         };
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(24.0))
+            .frame(egui::Frame::default().fill(theme::background()).inner_margin(24.0))
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -133,12 +136,12 @@ impl eframe::App for PepoMoteApp {
                                 RichText::new("PepoMote")
                                     .size(34.0)
                                     .strong()
-                                    .color(theme::TEXT),
+                                    .color(theme::text()),
                             );
                             ui.label(
                                 RichText::new("Apunta. Haz clic. Juega.")
                                     .size(14.0)
-                                    .color(theme::TEXT_DIM),
+                                    .color(theme::text_dim()),
                             );
                             ui.add_space(18.0);
 
@@ -164,11 +167,11 @@ impl eframe::App for PepoMoteApp {
 
                             if let Some(err) = &snap.error {
                                 ui.add_space(10.0);
-                                ui.label(RichText::new(err).size(12.0).color(theme::ERROR));
+                                ui.label(RichText::new(err).size(12.0).color(theme::error()));
                             }
                             if let Some(n) = &snap.port_notice {
                                 ui.add_space(6.0);
-                                ui.label(RichText::new(n).size(12.0).color(theme::WARN));
+                                ui.label(RichText::new(n).size(12.0).color(theme::warn()));
                             }
 
                             ui.add_space(12.0);
@@ -179,7 +182,7 @@ impl eframe::App for PepoMoteApp {
                                     snap.injector.unwrap_or("ninguna")
                                 ))
                                 .size(11.0)
-                                .color(theme::TEXT_DIM),
+                                .color(theme::text_dim()),
                             );
                         });
                     });
@@ -202,7 +205,7 @@ impl PepoMoteApp {
         }
         ui.add_space(10.0);
         if let Some(hint) = &snap.firewall_hint {
-            ui.label(RichText::new(hint).size(12.0).color(theme::WARN));
+            ui.label(RichText::new(hint).size(12.0).color(theme::warn()));
         }
         if snap.uinput_missing {
             ui.label(
@@ -210,13 +213,13 @@ impl PepoMoteApp {
                     "El módulo uinput no está cargado (no existe /dev/uinput): sin él no puedo mover el cursor.",
                 )
                 .size(12.0)
-                .color(theme::WARN),
+                .color(theme::warn()),
             );
         } else if snap.uinput_denied {
             ui.label(
                 RichText::new("Sin permiso para mover el cursor (/dev/uinput).")
                     .size(12.0)
-                    .color(theme::WARN),
+                    .color(theme::warn()),
             );
         }
         #[cfg(target_os = "linux")]
@@ -226,7 +229,7 @@ impl PepoMoteApp {
                 ui.label(
                     RichText::new("Aplicando… responde al diálogo de contraseña")
                         .size(12.0)
-                        .color(theme::TEXT_DIM),
+                        .color(theme::text_dim()),
                 );
             } else if self.pkexec_ok {
                 let label = if snap.fix_failed.is_some() { "🔧 Reintentar" } else { "🔧 Reparar ahora" };
@@ -235,13 +238,13 @@ impl PepoMoteApp {
                 }
                 match &snap.fix_failed {
                     Some(why) => {
-                        ui.label(RichText::new(why).size(11.0).color(theme::WARN));
+                        ui.label(RichText::new(why).size(11.0).color(theme::warn()));
                     }
                     None => {
                         ui.label(
                             RichText::new("Un diálogo del sistema pedirá tu contraseña una sola vez")
                                 .size(11.0)
-                                .color(theme::TEXT_DIM),
+                                .color(theme::text_dim()),
                         );
                     }
                 }
@@ -255,12 +258,12 @@ impl PepoMoteApp {
                 } else {
                     "No hay pkexec en este sistema. Pega esto en un terminal (pide tu contraseña una vez):"
                 };
-                ui.label(RichText::new(intro).size(11.0).color(theme::TEXT_DIM));
+                ui.label(RichText::new(intro).size(11.0).color(theme::text_dim()));
                 ui.label(
                     RichText::new(crate::fixes::UINPUT_MANUAL_CMD)
                         .monospace()
                         .size(11.0)
-                        .color(theme::TEXT),
+                        .color(theme::text()),
                 );
                 ui.horizontal(|ui| {
                     if ui.button(RichText::new("Copiar comando").size(12.0)).clicked() {
@@ -268,7 +271,7 @@ impl PepoMoteApp {
                         self.copied_at = Some(Instant::now());
                     }
                     if self.copied_at.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
-                        ui.label(RichText::new("Copiado").size(11.0).color(theme::OK));
+                        ui.label(RichText::new("Copiado").size(11.0).color(theme::ok()));
                     }
                 });
                 ui.label(
@@ -276,7 +279,7 @@ impl PepoMoteApp {
                         "Si después sigue sin permiso, cierra sesión y vuelve a entrar (la regla se aplica al iniciar sesión).",
                     )
                     .size(11.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::text_dim()),
                 );
             }
         }
@@ -285,22 +288,22 @@ impl PepoMoteApp {
     fn ui_qr(&self, ui: &mut egui::Ui, size: f32, caption: &str) {
         draw_qr_card(ui, &self.qr_modules, self.qr_width, size);
         ui.add_space(8.0);
-        ui.label(RichText::new(caption).size(13.0).color(theme::TEXT_DIM));
+        ui.label(RichText::new(caption).size(13.0).color(theme::text_dim()));
         ui.label(
             RichText::new(format!("{} : {}", self.pairing.host, self.pairing.port))
                 .size(11.0)
-                .color(theme::TEXT_DIM),
+                .color(theme::text_dim()),
         );
         // Sin cámara (Linux móvil): código de 4 dígitos, un solo uso, 120 s
         let (code, left) = self.shared.lock().unwrap().pair_code.current();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Sin cámara: código").size(12.0).color(theme::TEXT_DIM));
-            ui.label(RichText::new(code).size(20.0).strong().color(theme::TEXT));
+            ui.label(RichText::new("Sin cámara: código").size(12.0).color(theme::text_dim()));
+            ui.label(RichText::new(code).size(20.0).strong().color(theme::text()));
             ui.label(
                 RichText::new(format!("({} s)", left.as_secs()))
                     .size(11.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::text_dim()),
             );
         });
     }
@@ -310,7 +313,7 @@ impl PepoMoteApp {
         ui.label(
             RichText::new(format!("Dolphin: {} cliente(s) DSU", snap.dsu_clients))
                 .size(13.0)
-                .color(theme::BLUE),
+                .color(theme::blue()),
         );
         if ui
             .button(RichText::new("Configurar Dolphin").size(13.0))
@@ -320,9 +323,9 @@ impl PepoMoteApp {
         }
         if let Some(msg) = &snap.dolphin_status {
             let color = if msg.starts_with("Dolphin configurado") {
-                theme::OK
+                theme::ok()
             } else {
-                theme::WARN
+                theme::warn()
             };
             ui.label(RichText::new(msg).size(12.0).color(color));
         }
@@ -332,7 +335,7 @@ impl PepoMoteApp {
                  Dolphin; la carpeta configurada tiene que ser la suya (en Dolphin: Archivo, «Abrir carpeta de usuario»).",
             )
             .size(11.0)
-            .color(theme::TEXT_DIM),
+            .color(theme::text_dim()),
         );
     }
 
@@ -341,7 +344,7 @@ impl PepoMoteApp {
         ui.label(
             RichText::new(format!("Cemu (Wii U): {} cliente(s) DSU", snap.dsu_clients))
                 .size(13.0)
-                .color(theme::BLUE),
+                .color(theme::blue()),
         );
         if ui
             .button(RichText::new("Configurar Cemu").size(13.0))
@@ -351,24 +354,24 @@ impl PepoMoteApp {
         }
         if let Some(msg) = &snap.cemu_status {
             let color = if msg.starts_with("Cemu configurado") || msg.starts_with("Cemu encontrado") {
-                theme::OK
+                theme::ok()
             } else {
-                theme::WARN
+                theme::warn()
             };
             ui.label(RichText::new(msg).size(12.0).color(color));
         }
         if let Some(msg) = &snap.cemu_screen {
             let color = if msg.starts_with("Pantalla del GamePad:") && !msg.contains("sin móvil") {
-                theme::OK
+                theme::ok()
             } else {
-                theme::TEXT_DIM
+                theme::text_dim()
             };
             ui.label(RichText::new(msg).size(12.0).color(color));
         }
         ui.label(
             RichText::new("Con Cemu cerrado. Jugador 1 = GamePad (y ve la pantalla del GamePad en el móvil), los demás Pro Controller; «Mando de Wii» se elige en el móvil.")
                 .size(11.0)
-                .color(theme::TEXT_DIM),
+                .color(theme::text_dim()),
         );
     }
 
@@ -377,11 +380,11 @@ impl PepoMoteApp {
         let before = config.clone();
 
         egui::CollapsingHeader::new(
-            RichText::new("Ajustes").size(14.0).color(theme::TEXT_DIM),
+            RichText::new("Ajustes").size(14.0).color(theme::text_dim()),
         )
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Sensibilidad").size(13.0).color(theme::TEXT_DIM));
+                ui.label(RichText::new("Sensibilidad").size(13.0).color(theme::text_dim()));
                 ui.add(
                     egui::Slider::new(&mut config.sens_deg, 15.0..=60.0)
                         .suffix("°")
@@ -391,7 +394,7 @@ impl PepoMoteApp {
             ui.label(
                 RichText::new("Grados de giro para cruzar la pantalla (menos = más rápido)")
                     .size(11.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::text_dim()),
             );
             ui.add_space(4.0);
             ui.horizontal(|ui| {
@@ -417,7 +420,7 @@ impl PepoMoteApp {
                 RichText::new("Configurar Cemu automáticamente (modo Wii U)").size(13.0),
             );
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Carpeta de Cemu").size(13.0).color(theme::TEXT_DIM));
+                ui.label(RichText::new("Carpeta de Cemu").size(13.0).color(theme::text_dim()));
                 ui.add(
                     egui::TextEdit::singleline(&mut config.cemu_dir)
                         .desired_width(200.0)
@@ -430,10 +433,10 @@ impl PepoMoteApp {
             ui.label(
                 RichText::new("Solo hace falta si Cemu está en un sitio raro; se aprende sola al verlo abierto.")
                     .size(11.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::text_dim()),
             );
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Carpeta de Dolphin").size(13.0).color(theme::TEXT_DIM));
+                ui.label(RichText::new("Carpeta de Dolphin").size(13.0).color(theme::text_dim()));
                 ui.add(
                     egui::TextEdit::singleline(&mut config.dolphin_dir)
                         .desired_width(200.0)
@@ -446,7 +449,7 @@ impl PepoMoteApp {
             ui.label(
                 RichText::new("La del Dolphin.exe. Un Dolphin portable (RetroBat, LaunchBox…) guarda su configuración ahí; se aprende sola al verlo abierto.")
                     .size(11.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::text_dim()),
             );
             // Linux con varios monitores: a cuál apunta el móvil
             #[cfg(target_os = "linux")]
@@ -455,7 +458,7 @@ impl PepoMoteApp {
                 if screens.len() > 1 {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Apuntado absoluto en").size(13.0).color(theme::TEXT_DIM));
+                        ui.label(RichText::new("Apuntado absoluto en").size(13.0).color(theme::text_dim()));
                         let current = if config.screen.is_empty() {
                             "Todas las pantallas".to_owned()
                         } else {
@@ -473,9 +476,23 @@ impl PepoMoteApp {
                     ui.label(
                         RichText::new("Todas = el cursor llega a los tres monitores. Una sola = apuntado preciso para jugar.")
                             .size(11.0)
-                            .color(theme::TEXT_DIM),
+                            .color(theme::text_dim()),
                     );
                 }
+            }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Tema").size(13.0).color(theme::text_dim()));
+                egui::ComboBox::from_id_salt("tema")
+                    .selected_text(theme_label(config.theme))
+                    .show_ui(ui, |ui| {
+                        for p in theme::ThemePref::ALL {
+                            ui.selectable_value(&mut config.theme, p, theme_label(p));
+                        }
+                    });
+            });
+            if config.theme != before.theme {
+                theme::set_preference(ui.ctx(), config.theme);
             }
             ui.add_space(4.0);
             let before_auto = self.autostart;
@@ -504,11 +521,19 @@ impl PepoMoteApp {
     }
 }
 
+fn theme_label(p: theme::ThemePref) -> &'static str {
+    match p {
+        theme::ThemePref::System => "Como el sistema",
+        theme::ThemePref::Light => "Claro",
+        theme::ThemePref::Dark => "Oscuro",
+    }
+}
+
 /// Circulito con una «i»: al pasar el ratón por encima enseña `text`.
 fn info_icon(ui: &mut egui::Ui, text: &str) {
     let size = 15.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), egui::Sense::hover());
-    let color = if resp.hovered() { theme::BLUE } else { theme::TEXT_DIM };
+    let color = if resp.hovered() { theme::blue() } else { theme::text_dim() };
     let painter = ui.painter();
     painter.circle_stroke(rect.center(), size / 2.0 - 1.0, Stroke::new(1.3_f32, color));
     painter.text(
@@ -530,8 +555,8 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
     ui.painter().rect(
         rect,
         Rounding::same(theme::RADIUS),
-        theme::CARD,
-        Stroke::new(1.5_f32, theme::CARD_BORDER),
+        theme::card(),
+        Stroke::new(1.5_f32, theme::card_border()),
     );
 
     let mut child = ui.child_ui(
@@ -546,14 +571,14 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
     };
     let cemu = snap.mode == Mode::Cemu;
     let cemu_layout = crate::state::cemu_layout(&snap.players);
-    child.label(RichText::new(mode_txt).size(13.0).color(theme::BLUE));
+    child.label(RichText::new(mode_txt).size(13.0).color(theme::blue()));
     child.label(
         RichText::new(format!(
             "{:.0} paquetes/s · sensor {:.0} Hz",
             snap.pps, snap.sensor_hz
         ))
         .size(11.0)
-        .color(theme::TEXT_DIM),
+        .color(theme::text_dim()),
     );
     child.add_space(6.0);
 
@@ -581,15 +606,15 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
                 RichText::new(badge)
                     .size(13.0)
                     .strong()
-                    .color(theme::CARD)
-                    .background_color(theme::BLUE),
+                    .color(theme::ON_ACCENT)
+                    .background_color(theme::blue()),
             );
             let name = if p.model.is_empty() {
                 p.name.clone()
             } else {
                 p.model.clone()
             };
-            ui.label(RichText::new(name).size(13.0).color(theme::TEXT));
+            ui.label(RichText::new(name).size(13.0).color(theme::text()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let rtt = p
                     .rtt_ms
@@ -598,7 +623,7 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
                 ui.label(
                     RichText::new(format!("{}% · {rtt}", p.battery_pct))
                         .size(12.0)
-                        .color(theme::TEXT_DIM),
+                        .color(theme::text_dim()),
                 );
             });
         });
@@ -625,11 +650,13 @@ fn draw_qr_card(ui: &mut egui::Ui, modules: &[bool], width: usize, size: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(card_size), egui::Sense::hover());
     let painter = ui.painter();
 
+    // El QR va SIEMPRE claro (módulos oscuros sobre blanco): con el tema
+    // oscuro invertido no lo lee cualquier cámara
     painter.rect(
         rect,
         Rounding::same(theme::RADIUS),
-        theme::CARD,
-        Stroke::new(1.5_f32, theme::CARD_BORDER),
+        theme::LIGHT.card,
+        Stroke::new(1.5_f32, theme::LIGHT.card_border),
     );
 
     if width == 0 {
@@ -651,7 +678,7 @@ fn draw_qr_card(ui: &mut egui::Ui, modules: &[bool], width: usize, size: f32) {
                 painter.rect_filled(
                     Rect::from_min_size(min, Vec2::splat(module + 0.5)),
                     0.0,
-                    Color32::from_rgb(0x3B, 0x47, 0x50),
+                    theme::LIGHT.text,
                 );
             }
         }

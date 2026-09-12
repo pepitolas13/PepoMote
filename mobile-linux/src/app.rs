@@ -241,6 +241,7 @@ impl MobileApp {
     pub fn new(cc: &eframe::CreationContext<'_>, fake: bool, autoconnect: Option<String>) -> Self {
         theme::apply(&cc.egui_ctx);
         let mut app = Self::build(fake);
+        theme::set_preference(&cc.egui_ctx, app.settings.theme);
         if let Some(m) = autoconnect {
             match m.as_str() {
                 "nunchuk" => app.open_nunchuk(),
@@ -633,21 +634,21 @@ impl MobileApp {
 
     fn ui_home(&mut self, ui: &mut egui::Ui) {
         ui.add_space(14.0);
-        ui.label(RichText::new("PepoMote").size(38.0).strong().color(theme::TEXT));
-        ui.label(RichText::new("Apunta. Haz clic. Juega.").size(14.0).color(theme::TEXT_DIM));
+        ui.label(RichText::new("PepoMote").size(38.0).strong().color(theme::text()));
+        ui.label(RichText::new("Apunta. Haz clic. Juega.").size(14.0).color(theme::text_dim()));
         ui.add_space(6.0);
         let (dot, txt) = match self.link.as_ref().map(|l| l.status()) {
-            Some(Status::Connected { pc_name, .. }) => (theme::OK, format!("Conectado a {pc_name}")),
-            Some(Status::Connecting) => (theme::WARN, "Conectando…".to_owned()),
+            Some(Status::Connected { pc_name, .. }) => (theme::ok(), format!("Conectado a {pc_name}")),
+            Some(Status::Connecting) => (theme::warn(), "Conectando…".to_owned()),
             _ => match &self.pairing {
-                Some(p) => (theme::TEXT_DIM, format!("Emparejado con {} · sin conexión", p.pc_name)),
-                None => (theme::TEXT_DIM, "Sin emparejar: toca Conectar".to_owned()),
+                Some(p) => (theme::text_dim(), format!("Emparejado con {} · sin conexión", p.pc_name)),
+                None => (theme::text_dim(), "Sin emparejar: toca Conectar".to_owned()),
             },
         };
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(Vec2::splat(12.0), egui::Sense::hover());
             ui.painter().circle_filled(r.center(), 5.0, dot);
-            ui.label(RichText::new(txt).size(13.0).color(theme::TEXT_DIM));
+            ui.label(RichText::new(txt).size(13.0).color(theme::text_dim()));
         });
         ui.add_space(18.0);
 
@@ -657,37 +658,37 @@ impl MobileApp {
             ui.add_sized(
                 size,
                 egui::Button::new(
-                    RichText::new(format!("{title}\n{sub}")).size(16.0).color(theme::TEXT),
+                    RichText::new(format!("{title}\n{sub}")).size(16.0).color(theme::text()),
                 )
-                .fill(theme::CARD)
+                .fill(theme::card())
                 .stroke(egui::Stroke::new(2.0_f32, accent)),
             )
             .clicked()
         };
         let mut go: Option<u8> = None;
         ui.horizontal(|ui| {
-            if card(ui, half, "Conectar", "apunta y haz clic", theme::BLUE) {
+            if card(ui, half, "Conectar", "apunta y haz clic", theme::blue()) {
                 go = Some(0);
             }
-            if card(ui, half, "Mando", "solo botones", theme::BLUE) {
+            if card(ui, half, "Mando", "solo botones", theme::blue()) {
                 go = Some(1);
             }
         });
         ui.add_space(12.0);
         ui.horizontal(|ui| {
-            if card(ui, half, "Dolphin", "Wiimote virtual", theme::OK) {
+            if card(ui, half, "Dolphin", "Wiimote virtual", theme::ok()) {
                 go = Some(2);
             }
-            if card(ui, half, "Nunchuk", "la otra mano", theme::OK) {
+            if card(ui, half, "Nunchuk", "la otra mano", theme::ok()) {
                 go = Some(4);
             }
         });
         ui.add_space(12.0);
         ui.horizontal(|ui| {
-            if card(ui, half, "Wii U", "GamePad para Cemu", theme::OK) {
+            if card(ui, half, "Wii U", "GamePad para Cemu", theme::ok()) {
                 go = Some(5);
             }
-            if card(ui, half, "Emparejar", "otro PC / código", theme::TEXT_DIM) {
+            if card(ui, half, "Emparejar", "otro PC / código", theme::text_dim()) {
                 go = Some(3);
             }
         });
@@ -708,22 +709,41 @@ impl MobileApp {
 
         ui.add_space(16.0);
         if let Some(e) = &self.error {
-            ui.label(RichText::new(e).size(13.0).color(theme::ERROR));
+            ui.label(RichText::new(e).size(13.0).color(theme::error()));
             ui.add_space(6.0);
         }
-        ui.label(RichText::new(format!("Sensores: {}", self.sensor_desc)).size(11.0).color(theme::TEXT_DIM));
+        ui.label(RichText::new(format!("Sensores: {}", self.sensor_desc)).size(11.0).color(theme::text_dim()));
         if ui
-            .add(egui::Button::new(RichText::new("Calibrar sensores").size(13.0).color(theme::TEXT)).fill(theme::CARD))
+            .add(egui::Button::new(RichText::new("Calibrar sensores").size(13.0).color(theme::text())).fill(theme::card()))
             .on_hover_text("Si el puntero va al revés o a tirones: seis posturas guiadas y listo")
             .clicked()
         {
             self.start_calibration();
         }
-        ui.label(RichText::new(&self.diag).size(11.0).color(theme::TEXT_DIM));
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Tema").size(12.0).color(theme::text_dim()));
+            let mut pref = self.settings.theme;
+            for p in theme::ThemePref::ALL {
+                let label = match p {
+                    theme::ThemePref::System => "Sistema",
+                    theme::ThemePref::Light => "Claro",
+                    theme::ThemePref::Dark => "Oscuro",
+                };
+                if ui.selectable_label(pref == p, RichText::new(label).size(12.0)).clicked() {
+                    pref = p;
+                }
+            }
+            if pref != self.settings.theme {
+                self.settings.theme = pref;
+                store::save_settings(&self.settings);
+                theme::set_preference(ui.ctx(), pref);
+            }
+        });
+        ui.label(RichText::new(&self.diag).size(11.0).color(theme::text_dim()));
         ui.label(
             RichText::new(format!("v{} · pv1 · Linux móvil", env!("CARGO_PKG_VERSION")))
                 .size(11.0)
-                .color(theme::TEXT_DIM),
+                .color(theme::text_dim()),
         );
     }
 
@@ -731,15 +751,15 @@ impl MobileApp {
         self.poll_scan();
         ui.add_space(10.0);
         let title = if self.pair_reason.is_some() { "Vuelve a emparejar" } else { "Conectar" };
-        ui.label(RichText::new(title).size(28.0).strong().color(theme::TEXT));
+        ui.label(RichText::new(title).size(28.0).strong().color(theme::text()));
         ui.label(
             RichText::new("Abre PepoMote en tu PC. Elige tu PC y teclea el código de 4 dígitos que hay bajo su QR.")
                 .size(13.0)
-                .color(theme::TEXT_DIM),
+                .color(theme::text_dim()),
         );
         if let Some(reason) = &self.pair_reason {
             ui.add_space(8.0);
-            ui.label(RichText::new(reason).size(13.0).color(theme::ERROR));
+            ui.label(RichText::new(reason).size(13.0).color(theme::error()));
         }
         ui.add_space(12.0);
         let msg = if self.discovered.is_empty() {
@@ -751,7 +771,7 @@ impl MobileApp {
         } else {
             "En tu red:"
         };
-        ui.label(RichText::new(msg).size(13.0).color(theme::TEXT_DIM));
+        ui.label(RichText::new(msg).size(13.0).color(theme::text_dim()));
         ui.add_space(6.0);
         let mut chosen: Option<Receiver> = None;
         for r in &self.discovered {
@@ -759,9 +779,9 @@ impl MobileApp {
                 .add_sized(
                     Vec2::new(ui.available_width(), 64.0),
                     egui::Button::new(
-                        RichText::new(format!("{}\n{}:{}", r.name, r.host, r.port)).size(15.0).color(theme::TEXT),
+                        RichText::new(format!("{}\n{}:{}", r.name, r.host, r.port)).size(15.0).color(theme::text()),
                     )
-                    .fill(theme::CARD),
+                    .fill(theme::card()),
                 )
                 .clicked()
             {
@@ -783,7 +803,7 @@ impl MobileApp {
             self.screen = Screen::Manual;
         }
         ui.add_space(8.0);
-        if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+        if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
             self.pair_reason = None;
             self.screen = Screen::Home;
         }
@@ -791,11 +811,11 @@ impl MobileApp {
 
     fn ui_manual(&mut self, ui: &mut egui::Ui) {
         ui.add_space(10.0);
-        ui.label(RichText::new("IP del PC").size(26.0).strong().color(theme::TEXT));
-        ui.label(RichText::new("La que muestra el receptor bajo el QR (IP : puerto)").size(13.0).color(theme::TEXT_DIM));
+        ui.label(RichText::new("IP del PC").size(26.0).strong().color(theme::text()));
+        ui.label(RichText::new("La que muestra el receptor bajo el QR (IP : puerto)").size(13.0).color(theme::text_dim()));
         ui.add_space(10.0);
         let shown = if self.manual.is_empty() { "…".to_owned() } else { self.manual.clone() };
-        ui.label(RichText::new(shown).size(30.0).strong().color(theme::TEXT));
+        ui.label(RichText::new(shown).size(30.0).strong().color(theme::text()));
         ui.add_space(10.0);
         match keypad(ui, &['.', ':'], true) {
             Some(Key::Char(c)) => {
@@ -823,7 +843,7 @@ impl MobileApp {
             Some(Key::Shift) | None => {}
         }
         ui.add_space(8.0);
-        if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+        if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
             self.screen = Screen::Pair;
         }
     }
@@ -832,34 +852,34 @@ impl MobileApp {
         self.poll_pairing();
         let name = self.target.as_ref().map(|t| t.name.clone()).unwrap_or_default();
         ui.add_space(10.0);
-        ui.label(RichText::new("Código").size(26.0).strong().color(theme::TEXT));
+        ui.label(RichText::new("Código").size(26.0).strong().color(theme::text()));
         ui.label(
             RichText::new(format!("Los 4 dígitos bajo el QR de {name}"))
                 .size(13.0)
-                .color(theme::TEXT_DIM),
+                .color(theme::text_dim()),
         );
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             ui.add_space((ui.available_width() - 4.0 * 58.0) / 2.0);
             for i in 0..4 {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(50.0, 60.0), egui::Sense::hover());
-                ui.painter().rect(r, egui::Rounding::same(12.0), theme::CARD, egui::Stroke::new(1.5_f32, theme::CARD_BORDER));
+                ui.painter().rect(r, egui::Rounding::same(12.0), theme::card(), egui::Stroke::new(1.5_f32, theme::card_border()));
                 if let Some(c) = self.code.chars().nth(i) {
                     ui.painter().text(
                         r.center(),
                         egui::Align2::CENTER_CENTER,
                         c,
                         egui::FontId::proportional(30.0),
-                        theme::TEXT,
+                        theme::text(),
                     );
                 }
             }
         });
         ui.add_space(10.0);
         if self.pair_rx.is_some() {
-            ui.label(RichText::new("Emparejando…").size(14.0).color(theme::BLUE));
+            ui.label(RichText::new("Emparejando…").size(14.0).color(theme::blue()));
         } else if let Some(e) = &self.pair_error {
-            ui.label(RichText::new(e).size(13.0).color(theme::ERROR));
+            ui.label(RichText::new(e).size(13.0).color(theme::error()));
         }
         ui.add_space(8.0);
         if self.pair_rx.is_none() {
@@ -877,7 +897,7 @@ impl MobileApp {
             }
         }
         ui.add_space(8.0);
-        if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+        if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
             self.pair_rx = None;
             self.screen = Screen::Pair;
         }
@@ -886,12 +906,12 @@ impl MobileApp {
     fn ui_controller(&mut self, ui: &mut egui::Ui) {
         let Some(link) = &self.link else {
             ui.add_space(10.0);
-            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::TEXT));
+            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::text()));
             ui.add_space(8.0);
-            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::BLUE)).clicked() {
+            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::blue())).clicked() {
                 self.open_controller(Some("pointer"), self.dolphin_only);
             }
-            if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+            if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
                 self.screen = Screen::Home;
             }
             return;
@@ -927,12 +947,12 @@ impl MobileApp {
     fn ui_gamepad(&mut self, ui: &mut egui::Ui) {
         let Some(link) = &self.link else {
             ui.add_space(10.0);
-            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::TEXT));
+            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::text()));
             ui.add_space(8.0);
-            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::BLUE)).clicked() {
+            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::blue())).clicked() {
                 self.open_gamepad();
             }
-            if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+            if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
                 self.screen = Screen::Home;
             }
             return;
@@ -973,12 +993,12 @@ impl MobileApp {
     fn ui_nunchuk(&mut self, ui: &mut egui::Ui) {
         let Some(link) = &self.link else {
             ui.add_space(10.0);
-            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::TEXT));
+            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::text()));
             ui.add_space(8.0);
-            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::BLUE)).clicked() {
+            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::blue())).clicked() {
                 self.open_nunchuk();
             }
-            if ui.button(RichText::new("Volver").size(14.0).color(theme::TEXT_DIM)).clicked() {
+            if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
                 self.screen = Screen::Home;
             }
             return;
@@ -1074,16 +1094,16 @@ impl MobileApp {
 
         let mut leave = false;
         ui.add_space(8.0);
-        ui.label(RichText::new("Calibrar sensores").size(26.0).strong().color(theme::TEXT));
+        ui.label(RichText::new("Calibrar sensores").size(26.0).strong().color(theme::text()));
         ui.label(
             RichText::new("Tres posturas quietas y tres gestos: así sé hacia dónde mira cada eje de tus sensores.")
                 .size(12.0)
-                .color(theme::TEXT_DIM),
+                .color(theme::text_dim()),
         );
         if let Some(axes) = c.done {
             ui.add_space(12.0);
-            ui.label(RichText::new("Listo. Calibración guardada:").size(16.0).color(theme::TEXT));
-            ui.label(RichText::new(axes.describe()).size(20.0).strong().color(theme::OK));
+            ui.label(RichText::new("Listo. Calibración guardada:").size(16.0).color(theme::text()));
+            ui.label(RichText::new(axes.describe()).size(20.0).strong().color(theme::ok()));
             ui.label(
                 RichText::new(if axes.is_identity() {
                     "Todos los ejes ya venían bien."
@@ -1091,22 +1111,22 @@ impl MobileApp {
                     "Los ejes marcados con - se invierten a partir de ahora."
                 })
                 .size(13.0)
-                .color(theme::TEXT_DIM),
+                .color(theme::text_dim()),
             );
             ui.add_space(16.0);
             if ui
-                .add_sized(Vec2::new(ui.available_width(), 56.0), egui::Button::new(RichText::new("Volver").size(18.0)).fill(theme::BLUE))
+                .add_sized(Vec2::new(ui.available_width(), 56.0), egui::Button::new(RichText::new("Volver").size(18.0)).fill(theme::blue()))
                 .clicked()
             {
                 leave = true;
             }
         } else {
             let step = &calib::STEPS[c.step];
-            ui.label(RichText::new(format!("Paso {} de {}", c.step + 1, calib::STEPS.len())).size(13.0).color(theme::TEXT_DIM));
+            ui.label(RichText::new(format!("Paso {} de {}", c.step + 1, calib::STEPS.len())).size(13.0).color(theme::text_dim()));
             ui.add_space(10.0);
-            ui.label(RichText::new(step.title).size(20.0).strong().color(theme::TEXT));
+            ui.label(RichText::new(step.title).size(20.0).strong().color(theme::text()));
             ui.add_space(6.0);
-            ui.label(RichText::new(step.text).size(16.0).color(theme::TEXT));
+            ui.label(RichText::new(step.text).size(16.0).color(theme::text()));
             ui.add_space(14.0);
             let left = c
                 .capture
@@ -1121,9 +1141,9 @@ impl MobileApp {
             };
             let btn = ui.add_enabled(
                 left.is_none() && c.last.is_some(),
-                egui::Button::new(RichText::new(label).size(20.0).strong().color(theme::TEXT))
+                egui::Button::new(RichText::new(label).size(20.0).strong().color(theme::text()))
                     .min_size(Vec2::new(ui.available_width(), 64.0))
-                    .fill(theme::BLUE),
+                    .fill(theme::blue()),
             );
             if btn.clicked() {
                 let dur = match step.kind {
@@ -1135,7 +1155,7 @@ impl MobileApp {
             }
             if let Some(m) = &c.msg {
                 ui.add_space(8.0);
-                ui.label(RichText::new(m).size(14.0).color(theme::ERROR));
+                ui.label(RichText::new(m).size(14.0).color(theme::error()));
             }
             ui.add_space(12.0);
             match c.last {
@@ -1145,9 +1165,9 @@ impl MobileApp {
                         s.accel[0], s.accel[1], s.accel[2], s.gyro[0], s.gyro[1], s.gyro[2]
                     ))
                     .size(11.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::text_dim()),
                 ),
-                None => ui.label(RichText::new("Esperando muestras del sensor…").size(12.0).color(theme::WARN)),
+                None => ui.label(RichText::new("Esperando muestras del sensor…").size(12.0).color(theme::warn())),
             };
             ui.add_space(12.0);
             ui.horizontal(|ui| {
@@ -1168,6 +1188,7 @@ impl MobileApp {
 
 impl eframe::App for MobileApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        theme::sync(ctx);
         ctx.request_repaint_after(Duration::from_millis(if self.screen == Screen::Calibrate { 30 } else { 100 }));
         self.poll_link();
         self.update_diag(ctx);
@@ -1201,7 +1222,7 @@ impl eframe::App for MobileApp {
 
         egui::CentralPanel::default()
             // el GamePad se pinta a mano y aprovecha hasta el borde
-            .frame(egui::Frame::default().fill(theme::BACKGROUND).inner_margin(if on_gamepad && !text_open { 6.0 } else { 16.0 }))
+            .frame(egui::Frame::default().fill(theme::background()).inner_margin(if on_gamepad && !text_open { 6.0 } else { 16.0 }))
             .show(ctx, |ui| {
                 if text_open {
                     return self.ui_text(ui);
