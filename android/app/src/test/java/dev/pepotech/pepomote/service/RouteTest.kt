@@ -61,6 +61,13 @@ class RouteTest {
     }
 
     @Test
+    fun reconectandoElGamePadSeQuedaSiHayIntencion() {
+        val re = UiLink.Reconnecting("PC", 2)
+        assertEquals(PadScreen.GamePad, Route.route(re, PadIntent.WiiU))
+        assertEquals(PadScreen.Wii, Route.route(re, PadIntent.None))
+    }
+
+    @Test
     fun ecoCemuConsumeLaIntencionSinAviso() {
         val out = Route.afterModeEcho(PadIntent.WiiU, "cemu", connected(mode = "cemu"))
         assertEquals(PadIntent.None, out.intent)

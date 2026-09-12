@@ -80,6 +80,7 @@ import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
+import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.ShoulderButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
@@ -418,6 +419,11 @@ private fun Header(
 
             is UiLink.Connecting -> {
                 Text("Conectando…", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+            }
+
+            is UiLink.Reconnecting -> {
+                ReconnectingLabel(link)
                 Spacer(Modifier.weight(1f))
             }
 

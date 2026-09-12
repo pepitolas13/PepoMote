@@ -30,15 +30,13 @@ object Route {
     /**
      * - Nunchuk si el enlace es un Nunchuk (nunca es GamePad, pida lo que pida);
      * - GamePad si el receptor confirmó `cemu` y este mando no es Mando de Wii;
-     * - GamePad si hay intención Wii U pendiente, conectando o conectado;
+     * - GamePad si hay intención Wii U pendiente y hay enlace (conectando, conectado o reconectando);
      * - si no, el layout Wii (vertical / NES apaisado según orientación).
      */
     fun route(link: UiLink, intent: PadIntent): PadScreen {
         if (link is UiLink.Connected && link.role == LinkState.ROLE_NUNCHUK) return PadScreen.Nunchuk
         if (isGamePad(link)) return PadScreen.GamePad
-        if (intent == PadIntent.WiiU && (link is UiLink.Connected || link is UiLink.Connecting)) {
-            return PadScreen.GamePad
-        }
+        if (intent == PadIntent.WiiU && link.alive) return PadScreen.GamePad
         return PadScreen.Wii
     }
 

@@ -29,6 +29,7 @@ import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
 import dev.pepotech.pepomote.ui.components.NoticeBanner
+import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.TriggerZone
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
@@ -133,6 +134,7 @@ private fun Header(link: UiLink, onDisconnect: () -> Unit) {
                 }
 
                 is UiLink.Connecting -> Text("Conectando…", style = MaterialTheme.typography.titleMedium)
+                is UiLink.Reconnecting -> ReconnectingLabel(link)
                 else -> {
                     Text("Sin conexión", style = MaterialTheme.typography.titleMedium)
                     val ctx = LocalContext.current

@@ -302,7 +302,7 @@ impl MobileApp {
     fn link_alive(&self) -> bool {
         self.link
             .as_ref()
-            .is_some_and(|l| matches!(l.status(), Status::Connected { .. } | Status::Connecting))
+            .is_some_and(|l| matches!(l.status(), Status::Connected { .. } | Status::Connecting | Status::Reconnecting { .. }))
     }
 
     /// Conecta (o cambia de modo si ya hay enlace) y va al mando.
@@ -509,7 +509,8 @@ impl MobileApp {
                     }
                 }
             }
-            Status::Connecting | Status::Connected { .. } => {
+            Status::Connecting | Status::Reconnecting { .. } | Status::Connected { .. } => {
+                let reconnecting = matches!(status, Status::Reconnecting { .. });
                 // ¿Ya contestó el receptor a la intención Wii U o al `pad`?
                 let (intent, notice) = settle(&status, self.intent, now);
                 if let Some(n) = notice {
@@ -517,11 +518,15 @@ impl MobileApp {
                 }
                 self.intent = intent;
                 self.pad_pending = settle_pad(&status, self.pad_pending, now);
-                // en las pantallas de juego manda el receptor (eco o difusión)
-                if matches!(self.screen, Screen::Controller | Screen::Nunchuk | Screen::GamePad) {
+                // en las pantallas de juego manda el receptor (eco o difusión);
+                // reconectando, la pantalla se queda como estaba
+                if !reconnecting && matches!(self.screen, Screen::Controller | Screen::Nunchuk | Screen::GamePad) {
                     self.screen = route(&status, self.link_role, self.intent);
                 }
-                if !matches!(status, Status::Connected { .. }) {
+                if reconnecting {
+                    // al volver se recentra otra vez
+                    self.was_connected = false;
+                } else if !matches!(status, Status::Connected { .. }) {
                     // conectando: nada más que hacer
                 } else if !self.was_connected {
                     self.was_connected = true;
@@ -529,11 +534,13 @@ impl MobileApp {
                     // móvil ya en la mano (igual que en Android)
                     self.recenter_at = Some(Instant::now() + Duration::from_millis(400));
                     // y la pantalla no se apaga en mitad de la partida
-                    self.inhibit = Inhibit::start();
-                    log_line(&match &self.inhibit {
-                        Some(i) => format!("pantalla encendida mientras dure la conexión ({})", i.tool),
-                        None => "sin inhibidor de pantalla (ni gnome-session-inhibit ni systemd/elogind-inhibit): la pantalla se apaga con el tiempo del sistema".to_owned(),
-                    });
+                    if self.inhibit.is_none() {
+                        self.inhibit = Inhibit::start();
+                        log_line(&match &self.inhibit {
+                            Some(i) => format!("pantalla encendida mientras dure la conexión ({})", i.tool),
+                            None => "sin inhibidor de pantalla (ni gnome-session-inhibit ni systemd/elogind-inhibit): la pantalla se apaga con el tiempo del sistema".to_owned(),
+                        });
+                    }
                 } else if self.inhibit.as_mut().is_some_and(|i| !i.alive()) {
                     // el inhibidor se ha ido (sesión cerrada, polkit…): que conste
                     let tool = self.inhibit.take().map(|i| i.tool).unwrap_or("?");
@@ -645,6 +652,7 @@ impl MobileApp {
         let (dot, txt) = match self.link.as_ref().map(|l| l.status()) {
             Some(Status::Connected { pc_name, .. }) => (theme::ok(), format!("Conectado a {pc_name}")),
             Some(Status::Connecting) => (theme::warn(), "Conectando…".to_owned()),
+            Some(Status::Reconnecting { pc_name, .. }) => (theme::warn(), format!("Reconectando con {pc_name}…")),
             _ => match &self.pairing {
                 Some(p) => (theme::text_dim(), format!("Emparejado con {} · sin conexión", p.pc_name)),
                 None => (theme::text_dim(), "Sin emparejar: toca Conectar".to_owned()),

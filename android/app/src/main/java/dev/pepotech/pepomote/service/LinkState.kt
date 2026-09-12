@@ -30,7 +30,18 @@ sealed class UiLink {
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
+
+    /**
+     * La sesión se cayó y el servicio la está rehaciendo solo (intento
+     * `attempt`, espera creciente, dos minutos como mucho). Las pantallas del
+     * mando se quedan y lo pedido (Wii U, Mando de Wii) se repone al volver.
+     */
+    data class Reconnecting(val pcName: String, val attempt: Int) : UiLink()
 }
+
+/** Hay enlace (vivo, arrancando o rehaciéndose): el mando tiene sentido en pantalla. */
+val UiLink.alive: Boolean
+    get() = this is UiLink.Connected || this is UiLink.Connecting || this is UiLink.Reconnecting
 
 /** Aviso transitorio (del receptor o propio): la UI lo enseña ~6 s desde [atMs] (elapsedRealtime). */
 data class Notice(val text: String, val atMs: Long)

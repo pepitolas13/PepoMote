@@ -122,8 +122,9 @@ impl NunchukUi {
                         );
                     }
                 }
-                Status::Connecting => {
-                    ui.label(RichText::new("Conectando…").size(17.0).strong().color(theme::text()));
+                Status::Connecting | Status::Reconnecting { .. } => {
+                    let txt = if matches!(status, Status::Reconnecting { .. }) { "Reconectando…" } else { "Conectando…" };
+                    ui.label(RichText::new(txt).size(17.0).strong().color(theme::text()));
                 }
                 _ => {
                     ui.label(RichText::new("Sin conexión").size(17.0).strong().color(theme::text()));

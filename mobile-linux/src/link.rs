@@ -25,6 +25,16 @@ use std::time::{Duration, Instant};
 
 const MAX_ATTEMPTS: u32 = 3;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
+/// Reconectando: tras este tiempo sin conseguir volver, la conexión se da
+/// por perdida.
+const RECONNECT_GIVE_UP: Duration = Duration::from_secs(120);
+
+/// Espera antes del intento `attempt` (1 = el primero) de reconexión:
+/// 1, 2, 4, 8, 15, 15… s.
+pub fn reconnect_delay(attempt: u32) -> Duration {
+    const S: [u64; 5] = [1, 2, 4, 8, 15];
+    Duration::from_secs(S[(attempt.max(1) as usize - 1).min(S.len() - 1)])
+}
 /// Tope del protocolo: 250 Hz.
 const MIN_PACKET_GAP: Duration = Duration::from_micros(3_900);
 /// Cuánto se muestra un aviso (`notice`) en pantalla.
@@ -81,6 +91,13 @@ pub enum Status {
         code: String,
         msg: String,
     },
+    /// La sesión se cayó y el enlace la rehace solo (intento `attempt`,
+    /// espera creciente, dos minutos como mucho). Las pantallas del mando se
+    /// quedan y el modo y el tipo de mando se reponen al volver.
+    Reconnecting {
+        pc_name: String,
+        attempt: u32,
+    },
 }
 
 impl Status {
@@ -127,6 +144,7 @@ impl Link {
                 stop: stop.clone(),
                 sensor_hz: sensor_hz.clone(),
                 endpoint: endpoint.clone(),
+                target: Arc::new(Mutex::new(None)),
                 buttons,
                 role,
             };
@@ -204,8 +222,29 @@ struct Ctx {
     stop: Arc<AtomicBool>,
     sensor_hz: Arc<AtomicU32>,
     endpoint: Arc<Mutex<Option<Endpoint>>>,
+    /// A dónde van los INPUT ahora mismo (None entre sesiones: no se envía).
+    target: Arc<Mutex<Option<Target>>>,
     buttons: Arc<Buttons>,
     role: Role,
+}
+
+/// Socket UDP y sesión de la conexión viva.
+#[derive(Clone)]
+struct Target {
+    udp: Arc<UdpSocket>,
+    session_id: u32,
+}
+
+/// Cómo terminó una sesión de control.
+enum End {
+    /// `disconnect()`: el usuario se va.
+    Stopped,
+    /// `err` del PC (token malo, ocupado…): no hay reintento que valga.
+    Rejected,
+    /// Nunca llegó el `ok`: desconectado, como siempre.
+    NeverOk,
+    /// Se cayó con la sesión viva: reconectar reponiendo modo y tipo de mando.
+    Dropped { mode: String, pad: String },
 }
 
 /// `hello` de sesión (PROTOCOL.md §3): `role` solo si somos Nunchuk; un
@@ -356,36 +395,103 @@ pub fn pair(host: &str, port: u16, code: &str, fallback_name: &str) -> Result<Pa
 fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: Option<String>, ctx: Ctx) {
     let mut source = Some(source);
     let mut pending_mode = pending_mode;
+    let mut restore_pad: Option<String> = None;
+    // (cuándo se cayó, intentos) mientras se reconecta
+    let mut reconnecting: Option<(Instant, u32)> = None;
+    loop {
+        let Some(stream) = connect_stream(&mut pairing, &ctx, &mut reconnecting) else {
+            break;
+        };
+        match session(&pairing, stream, &mut source, pending_mode.take(), restore_pad.take(), &ctx) {
+            End::Stopped | End::Rejected | End::NeverOk => break,
+            End::Dropped { mode, pad } => {
+                crate::app::log_line(&format!("enlace con {} caído: reconectando", pairing.pc_name));
+                pending_mode = Some(mode).filter(|m| m != "pointer");
+                restore_pad = Some(pad).filter(|p| p == "wiimote");
+                reconnecting = Some((Instant::now(), 0));
+                *ctx.status.lock().unwrap() = Status::Reconnecting { pc_name: pairing.pc_name.clone(), attempt: 1 };
+            }
+        }
+    }
+    // final: también los hilos del sensor y de paquetes
+    ctx.stop.store(true, Ordering::Relaxed);
+}
 
-    // Conectar con reintentos; entre ellos, buscar el PC por nombre por si
-    // cambió de IP (DHCP, otra Wi-Fi) y actualizar el emparejamiento solo
+/// Abre el TCP del control. Primera vez: 3 intentos seguidos, como siempre.
+/// Reconectando: espera creciente entre intentos hasta rendirse a los dos
+/// minutos; entre uno y otro se busca el PC por si cambió de IP. None = ya
+/// está puesto el estado final (Failed) o el usuario se fue.
+fn connect_stream(pairing: &mut Pairing, ctx: &Ctx, reconnecting: &mut Option<(Instant, u32)>) -> Option<TcpStream> {
     let mut attempt = 0;
-    let stream = loop {
+    loop {
+        if ctx.stop.load(Ordering::Relaxed) {
+            return None;
+        }
         attempt += 1;
+        if let Some((since, tries)) = reconnecting.as_mut() {
+            *tries += 1;
+            if since.elapsed() > RECONNECT_GIVE_UP {
+                *ctx.status.lock().unwrap() = Status::Failed {
+                    code: "io".into(),
+                    msg: format!("Se perdió la conexión con {}", pairing.pc_name),
+                };
+                return None;
+            }
+            *ctx.status.lock().unwrap() = Status::Reconnecting { pc_name: pairing.pc_name.clone(), attempt: *tries };
+            // espera troceada: «Salir» no debe esperar 15 s
+            let until = Instant::now() + reconnect_delay(*tries);
+            while Instant::now() < until {
+                if ctx.stop.load(Ordering::Relaxed) {
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
         let result = resolve(&pairing.host, pairing.port)
             .and_then(|a| TcpStream::connect_timeout(&a, CONNECT_TIMEOUT).map_err(|e| e.to_string()));
         match result {
-            Ok(s) => break s,
+            Ok(s) => return Some(s),
             Err(e) => {
-                if attempt >= MAX_ATTEMPTS || ctx.stop.load(Ordering::Relaxed) {
+                if reconnecting.is_none() && (attempt >= MAX_ATTEMPTS || ctx.stop.load(Ordering::Relaxed)) {
                     *ctx.status.lock().unwrap() = Status::Failed {
                         code: "io".into(),
                         msg: format!("No llego a {} ({}:{}): {e}", pairing.pc_name, pairing.host, pairing.port),
                     };
-                    return;
+                    return None;
                 }
-                if let Some(r) = discovery::scan(Duration::from_millis(1200))
-                    .into_iter()
-                    .find(|r| r.name == pairing.pc_name && (r.host != pairing.host || r.port != pairing.port))
-                {
-                    pairing.host = r.host;
-                    pairing.port = r.port;
-                    store::save(&pairing);
+                relocate(pairing);
+                if reconnecting.is_none() {
+                    std::thread::sleep(Duration::from_secs(1));
                 }
-                std::thread::sleep(Duration::from_secs(1));
             }
         }
-    };
+    }
+}
+
+/// Buscar el PC por nombre por si cambió de IP (DHCP, otra Wi-Fi) y
+/// actualizar el emparejamiento solo. El token no cambia: vive en el PC.
+fn relocate(pairing: &mut Pairing) {
+    if let Some(r) = discovery::scan(Duration::from_millis(1200))
+        .into_iter()
+        .find(|r| r.name == pairing.pc_name && (r.host != pairing.host || r.port != pairing.port))
+    {
+        pairing.host = r.host;
+        pairing.port = r.port;
+        store::save(pairing);
+    }
+}
+
+/// Una sesión de control sobre `stream`: hello, latido, y los mensajes del
+/// receptor hasta que la conexión se acabe. `pending_mode` y `restore_pad`
+/// se mandan nada más llegar el `ok`.
+fn session(
+    pairing: &Pairing,
+    stream: TcpStream,
+    source: &mut Option<Box<dyn Source>>,
+    pending_mode: Option<String>,
+    restore_pad: Option<String>,
+    ctx: &Ctx,
+) -> End {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(7)));
     let Ok(read_half) = stream.try_clone() else {
@@ -393,14 +499,14 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
             code: "io".into(),
             msg: "socket".into(),
         };
-        return;
+        return End::Rejected;
     };
     let mut reader = BufReader::new(read_half);
     *ctx.writer.lock().unwrap() = Some(stream);
 
     send_json(&ctx.writer, &hello(&pairing.token, ctx.role));
 
-    // Latido TCP 1 Hz
+    // Latido TCP 1 Hz (muere con el writer)
     {
         let writer = ctx.writer.clone();
         let stop = ctx.stop.clone();
@@ -414,6 +520,10 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
         });
     }
 
+    let session_stop = Arc::new(AtomicBool::new(false));
+    let mut pending_mode = pending_mode;
+    let mut restore_pad = restore_pad;
+    let mut had_ok = false;
     let mut line = String::new();
     loop {
         if ctx.stop.load(Ordering::Relaxed) {
@@ -429,20 +539,22 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
         };
         match msg["m"].as_str() {
             Some("ok") => {
+                had_ok = true;
                 let session_id = msg["session_id"].as_u64().unwrap_or(0) as u32;
                 let udp_port = msg["udp_port"].as_u64().map(|p| p as u16).unwrap_or(pairing.port);
                 let mode = msg["mode"].as_str().unwrap_or("pointer").to_owned();
                 let slot = msg["slot"].as_u64().unwrap_or(0) as u8;
                 let player = player_of(&msg, slot);
                 let role = Role::parse(msg["role"].as_str()).unwrap_or(ctx.role);
+                let mut pc_name = pairing.pc_name.clone();
                 if let Some(name) = msg["name"].as_str() {
                     if name != pairing.pc_name {
-                        pairing.pc_name = name.to_owned();
-                        store::save(&pairing);
+                        pc_name = name.to_owned();
+                        store::save(&Pairing { pc_name: pc_name.clone(), ..pairing.clone() });
                     }
                 }
                 *ctx.status.lock().unwrap() = Status::Connected {
-                    pc_name: pairing.pc_name.clone(),
+                    pc_name,
                     mode,
                     mode_by_pc: false,
                     slot,
@@ -463,11 +575,15 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
                     port: pairing.port,
                     session_id,
                 });
+                start_session_udp(&pairing.host, udp_port, session_id, &session_stop, ctx);
                 if let Some(src) = source.take() {
-                    start_hot_path(&pairing.host, udp_port, session_id, src, &ctx);
+                    start_hot_path(src, ctx);
                 }
                 if let Some(m) = pending_mode.take() {
                     send_json(&ctx.writer, &json!({"m":"mode","mode":m}));
+                }
+                if let Some(p) = restore_pad.take() {
+                    send_json(&ctx.writer, &json!({"m":"pad","pad":p}));
                 }
             }
             Some("err") => {
@@ -487,17 +603,33 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
         }
     }
 
-    ctx.stop.store(true, Ordering::Relaxed);
+    // Fin de la sesión: nada más sale por este socket
+    session_stop.store(true, Ordering::Relaxed);
+    ctx.target.lock().unwrap().take();
+    ctx.writer.lock().unwrap().take();
     ctx.buttons.release_all();
     ctx.endpoint.lock().unwrap().take();
     let mut st = ctx.status.lock().unwrap();
-    if !matches!(*st, Status::Failed { .. }) {
-        *st = Status::Disconnected;
+    if ctx.stop.load(Ordering::Relaxed) {
+        if !matches!(*st, Status::Failed { .. }) {
+            *st = Status::Disconnected;
+        }
+        return End::Stopped;
     }
+    if matches!(*st, Status::Failed { .. }) {
+        return End::Rejected;
+    }
+    if let (true, Status::Connected { mode, pad, .. }) = (had_ok, &*st) {
+        return End::Dropped { mode: mode.clone(), pad: pad.clone() };
+    }
+    *st = Status::Disconnected;
+    End::NeverOk
 }
 
-/// UDP: hilo del sensor → hilo de paquetes (fusión + INPUT) + oyente PING/PONG.
-fn start_hot_path(host: &str, port: u16, session_id: u32, source: Box<dyn Source>, ctx: &Ctx) {
+/// UDP de la sesión: socket conectado al receptor (lo usa el hilo de
+/// paquetes mientras `target` lo diga) y oyente de PING/PONG, que muere con
+/// la sesión.
+fn start_session_udp(host: &str, port: u16, session_id: u32, session_stop: &Arc<AtomicBool>, ctx: &Ctx) {
     let Ok(udp) = UdpSocket::bind("0.0.0.0:0") else {
         return;
     };
@@ -506,35 +638,37 @@ fn start_hot_path(host: &str, port: u16, session_id: u32, source: Box<dyn Source
     }
     let _ = udp.set_read_timeout(Some(Duration::from_millis(500)));
     let udp = Arc::new(udp);
+    *ctx.target.lock().unwrap() = Some(Target { udp: udp.clone(), session_id });
 
     // Oyente: eco de PING y RTT de nuestros PING
-    {
-        let udp = udp.clone();
-        let stop = ctx.stop.clone();
-        let status = ctx.status.clone();
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 128];
-            while !stop.load(Ordering::Relaxed) {
-                let Ok(n) = udp.recv(&mut buf) else { continue };
-                match pmp::parse(&buf[..n]) {
-                    Some(pmp::Packet::Ping { session_id, t_us }) => {
-                        let _ = udp.send(&pmp::build_pong(session_id, t_us));
-                    }
-                    Some(pmp::Packet::Pong { session_id: sid, t_us }) if sid == session_id => {
-                        let rtt = sensor::now_us().saturating_sub(t_us) as f32 / 1000.0;
-                        if rtt < 5000.0 {
-                            if let Status::Connected { rtt_ms, .. } = &mut *status.lock().unwrap() {
-                                *rtt_ms = Some(rtt);
-                            }
+    let stop = ctx.stop.clone();
+    let session_stop = session_stop.clone();
+    let status = ctx.status.clone();
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 128];
+        while !stop.load(Ordering::Relaxed) && !session_stop.load(Ordering::Relaxed) {
+            let Ok(n) = udp.recv(&mut buf) else { continue };
+            match pmp::parse(&buf[..n]) {
+                Some(pmp::Packet::Ping { session_id, t_us }) => {
+                    let _ = udp.send(&pmp::build_pong(session_id, t_us));
+                }
+                Some(pmp::Packet::Pong { session_id: sid, t_us }) if sid == session_id => {
+                    let rtt = sensor::now_us().saturating_sub(t_us) as f32 / 1000.0;
+                    if rtt < 5000.0 {
+                        if let Status::Connected { rtt_ms, .. } = &mut *status.lock().unwrap() {
+                            *rtt_ms = Some(rtt);
                         }
                     }
-                    _ => {}
                 }
+                _ => {}
             }
-        });
-    }
+        }
+    });
+}
 
-    // Sensor → canal
+/// Sensor → hilo de paquetes (fusión + INPUT), una vez por enlace: entre
+/// sesiones (reconectando) siguen vivos y simplemente no envían.
+fn start_hot_path(source: Box<dyn Source>, ctx: &Ctx) {
     let (tx, rx) = mpsc::channel::<Sample>();
     {
         let stop = ctx.stop.clone();
@@ -543,16 +677,15 @@ fn start_hot_path(host: &str, port: u16, session_id: u32, source: Box<dyn Source
             .spawn(move || source.run(tx, stop))
             .expect("hilo sensor");
     }
-
-    // Paquetes
     {
         let stop = ctx.stop.clone();
         let buttons = ctx.buttons.clone();
         let sensor_hz = ctx.sensor_hz.clone();
+        let target = ctx.target.clone();
         let role = ctx.role;
         std::thread::Builder::new()
             .name("pepomote-packets".into())
-            .spawn(move || packet_loop(udp, session_id, rx, buttons, stop, sensor_hz, role))
+            .spawn(move || packet_loop(target, rx, buttons, stop, sensor_hz, role))
             .expect("hilo paquetes");
     }
 }
@@ -622,10 +755,8 @@ fn packet_from_state(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn packet_loop(
-    udp: Arc<UdpSocket>,
-    session_id: u32,
+    target: Arc<Mutex<Option<Target>>>,
     rx: mpsc::Receiver<Sample>,
     buttons: Arc<Buttons>,
     stop: Arc<AtomicBool>,
@@ -702,6 +833,10 @@ fn packet_loop(
             continue;
         }
         next_send = now + MIN_PACKET_GAP;
+        // sin sesión (reconectando): se fusiona igual, pero no se envía
+        let Some(t) = target.lock().unwrap().clone() else {
+            continue;
+        };
         let idle = last_sample_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(1));
         if idle {
             // sin muestras: keepalive 1 Hz con lo último (PROTOCOL.md §4.1)
@@ -718,12 +853,12 @@ fn packet_loop(
         });
         last_sent = now;
         seq = seq.wrapping_add(1);
-        let packet = packet_from_state(&st, &buttons, role, now, session_id, seq, battery.pct());
-        let _ = udp.send(&pmp::build_input(&packet));
+        let packet = packet_from_state(&st, &buttons, role, now, t.session_id, seq, battery.pct());
+        let _ = t.udp.send(&pmp::build_input(&packet));
 
         if last_ping.elapsed() >= Duration::from_secs(1) {
             last_ping = Instant::now();
-            let _ = udp.send(&pmp::build_ping(session_id, sensor::now_us()));
+            let _ = t.udp.send(&pmp::build_ping(t.session_id, sensor::now_us()));
         }
     }
 }
@@ -1015,5 +1150,12 @@ mod tests {
         b.set_gamepad(true);
         let n = packet_from_state(&st, &b, Role::Nunchuk, Instant::now(), 1, 1, 100);
         assert_eq!(pmp::build_input(&n).len(), pmp::INPUT_LEN);
+    }
+
+    #[test]
+    fn la_espera_de_reconexion_crece_y_se_queda_en_15_s() {
+        let s: Vec<u64> = (1..=7).map(|a| reconnect_delay(a).as_secs()).collect();
+        assert_eq!(s, [1, 2, 4, 8, 15, 15, 15]);
+        assert_eq!(reconnect_delay(0).as_secs(), 1, "fuera de rango: como el primero");
     }
 }

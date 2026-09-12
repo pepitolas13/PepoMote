@@ -229,7 +229,11 @@ impl GamePadUi {
                 screen: inp.screen,
             },
             other => View {
-                pc_name: if matches!(other, Status::Connecting) { "Conectando…" } else { "Sin conexión" },
+                pc_name: match other {
+                    Status::Connecting => "Conectando…",
+                    Status::Reconnecting { .. } => "Reconectando…",
+                    _ => "Sin conexión",
+                },
                 player: 1,
                 pro: false,
                 pad: "gamepad",

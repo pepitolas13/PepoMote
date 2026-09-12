@@ -15,5 +15,8 @@
     <string name="channel_settings">Ajustes</string>
     <string name="channel_settings_sub">Sensibilidad y más</string>
     <string name="status_disconnected">Sin conexión</string>
-    <string name="status_connected">Conectado</string>
+    <string name="status_disconnected_pc">Sin conexión · %1$s</string>
+    <string name="status_connecting">Conectando…</string>
+    <string name="status_reconnecting">Reconectando con %1$s…</string>
+    <string name="status_connected_to">Conectado a %1$s</string>
 </resources>

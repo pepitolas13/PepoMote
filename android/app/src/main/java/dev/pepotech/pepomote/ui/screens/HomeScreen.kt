@@ -25,11 +25,17 @@ import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.ui.components.ChannelCard
 import dev.pepotech.pepomote.ui.components.ChannelGlyph
+import dev.pepotech.pepomote.ui.components.PulsingDot
 import dev.pepotech.pepomote.ui.theme.PepoColors
+
+/** Estado del enlace en el inicio: el punto (apagado, en marcha, encendido) y su texto. */
+enum class HomeTone { Off, Busy, On }
+
+data class HomeStatus(val tone: HomeTone, val text: String)
 
 @Composable
 fun HomeScreen(
-    connected: Boolean,
+    status: HomeStatus,
     onConnect: () -> Unit,
     onController: () -> Unit,
     onDolphin: () -> Unit,
@@ -52,16 +58,21 @@ fun HomeScreen(
         )
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(10.dp)
-                    .background(if (connected) PepoColors.Ok else PepoColors.TextDim, CircleShape)
-            )
+            when (status.tone) {
+                HomeTone.On -> Box(
+                    Modifier
+                        .size(10.dp)
+                        .background(PepoColors.Ok, CircleShape)
+                )
+                HomeTone.Busy -> PulsingDot(PepoColors.Warn)
+                HomeTone.Off -> Box(
+                    Modifier
+                        .size(10.dp)
+                        .background(PepoColors.TextDim, CircleShape)
+                )
+            }
             Spacer(Modifier.width(8.dp))
-            Text(
-                stringResource(if (connected) R.string.status_connected else R.string.status_disconnected),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Text(status.text, style = MaterialTheme.typography.bodyMedium)
         }
         Spacer(Modifier.height(24.dp))
         // Tres filas de pares: Conectar | Mando, Dolphin | Wii U, Nunchuk | Ajustes

@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.pepotech.pepomote.control.AppPrefs
@@ -33,6 +34,9 @@ import dev.pepotech.pepomote.service.PadScreen
 import dev.pepotech.pepomote.service.Route
 import dev.pepotech.pepomote.service.ScreenLink
 import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.service.alive
+import dev.pepotech.pepomote.ui.screens.HomeStatus
+import dev.pepotech.pepomote.ui.screens.HomeTone
 import dev.pepotech.pepomote.ui.screens.ControllerLandscapeScreen
 import dev.pepotech.pepomote.ui.screens.ControllerScreen
 import dev.pepotech.pepomote.ui.screens.GamePadScreen
@@ -92,6 +96,73 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "Error: ${failure.msg}", Toast.LENGTH_LONG).show()
             LinkState.pendingMode = null
             currentScreen = Screen.Home
+        }
+    }
+
+    /** Hay un enlace vivo (o arrancando o rehaciéndose) como Nunchuk. */
+    private fun linkIsNunchuk(): Boolean =
+        LinkState.flow.value.alive && LinkState.role == LinkState.ROLE_NUNCHUK
+
+    /**
+     * Al mando (wiimote) en el modo pedido. El rol no se cambia en caliente:
+     * un enlace vivo como Nunchuk se rehace como mando. `cemu` deja intención
+     * Wii U: el GamePad se abre al instante. `dolphinOnly`: se entra por la
+     * tarjeta Dolphin (pantalla solo-Dolphin, sin selector de modo).
+     */
+    internal fun openController(mode: String, dolphinOnly: Boolean) {
+        controllerDolphinOnly = dolphinOnly
+        linkRole = LinkState.ROLE_WIIMOTE
+        when {
+            // Ya conectado como mando (por Dolphin o lo que sea): al mando en
+            // ese modo — nunca al escáner
+            LinkState.flow.value.alive && !linkIsNunchuk() -> {
+                LinkState.requestMode(mode)
+                currentScreen = Screen.Controller
+            }
+
+            PairStore.load(this) != null -> {
+                LinkState.requestMode(mode) // se aplica al llegar el ok
+                LinkForegroundService.start(this)
+                currentScreen = Screen.Controller
+            }
+
+            // Sin emparejar: al escáner, y el modo pedido se aplica al
+            // conectar tras el QR (Wii U abre el GamePad)
+            else -> {
+                LinkState.requestMode(mode)
+                openPair()
+            }
+        }
+    }
+
+    /** Tarjeta «Mando»: al mando sin tocar el modo del receptor. */
+    internal fun openPad() {
+        controllerDolphinOnly = false
+        linkRole = LinkState.ROLE_WIIMOTE
+        when {
+            // Sin emparejar no hay mando que abrir: al escáner
+            PairStore.load(this) == null -> openPair()
+
+            else -> {
+                if (linkIsNunchuk()) LinkForegroundService.start(this)
+                currentScreen = Screen.Controller
+            }
+        }
+    }
+
+    /** Tarjeta «Nunchuk»: el móvil de la otra mano. */
+    internal fun openNunchuk() {
+        linkRole = LinkState.ROLE_NUNCHUK
+        when {
+            linkIsNunchuk() -> currentScreen = Screen.Nunchuk
+
+            PairStore.load(this) != null -> {
+                // Rehace el enlace si estaba vivo como mando
+                LinkForegroundService.start(this, LinkState.ROLE_NUNCHUK)
+                currentScreen = Screen.Nunchuk
+            }
+
+            else -> openPair()
         }
     }
 
@@ -195,6 +266,14 @@ private fun Root(activity: MainActivity) {
     val context = LocalContext.current
     val link by LinkState.flow.collectAsState()
 
+    // Error de conexión como EFECTO (no en plena composición, que lo
+    // repetía), esté la pantalla que esté: al escáner si el PC ya no
+    // reconoce el emparejamiento, o aviso y vuelta al inicio; el estado se
+    // limpia para que el próximo Conectar no rebote con el error viejo.
+    LaunchedEffect(link) {
+        (link as? UiLink.Failed)?.let { activity.onLinkFailed(it) }
+    }
+
     // Gesto/botón atrás: dentro de la app vuelve al inicio en vez de salir.
     // En Home (y en el onboarding) se comporta como siempre: sale.
     androidx.activity.compose.BackHandler(
@@ -230,78 +309,25 @@ private fun Root(activity: MainActivity) {
         })
 
         Screen.Home -> {
-            val linkAlive = link is UiLink.Connected || link is UiLink.Connecting
-            val linkIsNunchuk = linkAlive && LinkState.role == LinkState.ROLE_NUNCHUK
-
-            // Al mando (wiimote) en el modo pedido. El rol no se cambia en
-            // caliente: un enlace vivo como Nunchuk se rehace como mando.
-            // `cemu` deja intención Wii U: el GamePad se abre al instante.
-            fun openController(mode: String) {
-                activity.linkRole = LinkState.ROLE_WIIMOTE
-                when {
-                    // Ya conectado como mando (por Dolphin o lo que sea): al
-                    // mando en ese modo — nunca al escáner
-                    linkAlive && !linkIsNunchuk -> {
-                        LinkState.requestMode(mode)
-                        activity.currentScreen = Screen.Controller
-                    }
-
-                    PairStore.load(context) != null -> {
-                        LinkState.requestMode(mode) // se aplica al llegar el ok
-                        LinkForegroundService.start(context)
-                        activity.currentScreen = Screen.Controller
-                    }
-
-                    // Sin emparejar: al escáner, y el modo pedido se aplica
-                    // al conectar tras el QR (Wii U abre el GamePad)
-                    else -> {
-                        LinkState.requestMode(mode)
-                        activity.openPair()
-                    }
-                }
+            val l = link
+            val pcName = PairStore.load(context)?.pcName
+            val status = when (l) {
+                is UiLink.Connected -> HomeStatus(HomeTone.On, stringResource(R.string.status_connected_to, l.pcName))
+                is UiLink.Connecting -> HomeStatus(HomeTone.Busy, stringResource(R.string.status_connecting))
+                is UiLink.Reconnecting -> HomeStatus(HomeTone.Busy, stringResource(R.string.status_reconnecting, l.pcName))
+                else -> HomeStatus(
+                    HomeTone.Off,
+                    if (pcName != null) stringResource(R.string.status_disconnected_pc, pcName)
+                    else stringResource(R.string.status_disconnected)
+                )
             }
-
             HomeScreen(
-                connected = link is UiLink.Connected,
-                onConnect = {
-                    activity.controllerDolphinOnly = false
-                    openController(LinkState.MODE_POINTER)
-                },
-                onController = {
-                    activity.controllerDolphinOnly = false
-                    activity.linkRole = LinkState.ROLE_WIIMOTE
-                    when {
-                        // Sin emparejar no hay mando que abrir: al escáner
-                        PairStore.load(context) == null -> activity.openPair()
-
-                        else -> {
-                            if (linkIsNunchuk) LinkForegroundService.start(context)
-                            activity.currentScreen = Screen.Controller
-                        }
-                    }
-                },
-                onDolphin = {
-                    activity.controllerDolphinOnly = true
-                    openController(LinkState.MODE_DOLPHIN)
-                },
-                onWiiU = {
-                    activity.controllerDolphinOnly = false
-                    openController(LinkState.MODE_CEMU)
-                },
-                onNunchuk = {
-                    activity.linkRole = LinkState.ROLE_NUNCHUK
-                    when {
-                        linkIsNunchuk -> activity.currentScreen = Screen.Nunchuk
-
-                        PairStore.load(context) != null -> {
-                            // Rehace el enlace si estaba vivo como mando
-                            LinkForegroundService.start(context, LinkState.ROLE_NUNCHUK)
-                            activity.currentScreen = Screen.Nunchuk
-                        }
-
-                        else -> activity.openPair()
-                    }
-                },
+                status = status,
+                onConnect = { activity.openController(LinkState.MODE_POINTER, dolphinOnly = false) },
+                onController = { activity.openPad() },
+                onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
+                onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
+                onNunchuk = { activity.openNunchuk() },
                 onNewPairing = { activity.currentScreen = Screen.Settings }
             )
         }
@@ -325,10 +351,6 @@ private fun Root(activity: MainActivity) {
         )
 
         Screen.Nunchuk -> {
-            // Mismo trato del error que en el mando (ver onLinkFailed)
-            LaunchedEffect(link) {
-                (link as? UiLink.Failed)?.let { activity.onLinkFailed(it) }
-            }
             NunchukScreen(
                 link = link,
                 onDisconnect = {
@@ -351,14 +373,6 @@ private fun Root(activity: MainActivity) {
 private fun ControllerRoute(activity: MainActivity, link: UiLink) {
     val context = LocalContext.current
     val intent by LinkState.intent.collectAsState()
-
-    // Error de conexión como EFECTO (no en plena composición, que lo
-    // repetía): al escáner si el PC ya no reconoce el emparejamiento, o
-    // aviso y vuelta al inicio; el estado se limpia para que el próximo
-    // Conectar no rebote con el error viejo.
-    LaunchedEffect(link) {
-        (link as? UiLink.Failed)?.let { activity.onLinkFailed(it) }
-    }
 
     val onDisconnect = {
         LinkState.clearIntent()

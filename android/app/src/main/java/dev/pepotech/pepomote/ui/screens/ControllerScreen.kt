@@ -43,6 +43,7 @@ import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
 import dev.pepotech.pepomote.ui.components.PrecisionStrip
+import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.TriggerZone
 import dev.pepotech.pepomote.ui.components.WII_PAD_HELP
@@ -129,6 +130,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                         }
 
                         is UiLink.Connecting -> Text("Conectando…", style = MaterialTheme.typography.titleMedium)
+                        is UiLink.Reconnecting -> ReconnectingLabel(link)
                         else -> {
                             Text("Sin conexión", style = MaterialTheme.typography.titleMedium)
                             val ctx = androidx.compose.ui.platform.LocalContext.current

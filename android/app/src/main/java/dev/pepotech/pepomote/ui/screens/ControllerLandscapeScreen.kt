@@ -35,6 +35,7 @@ import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
 import dev.pepotech.pepomote.ui.components.PrecisionPill
+import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
@@ -74,18 +75,22 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    when (link) {
-                        is UiLink.Connected -> link.pcName
-                        is UiLink.Connecting -> "Conectando…"
-                        else -> "Sin conexión"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    // Un nombre de PC largo no echa a «Salir» fuera de la pantalla
-                    modifier = Modifier.widthIn(max = 160.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (link is UiLink.Reconnecting) {
+                    ReconnectingLabel(link, MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text(
+                        when (link) {
+                            is UiLink.Connected -> link.pcName
+                            is UiLink.Connecting -> "Conectando…"
+                            else -> "Sin conexión"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        // Un nombre de PC largo no echa a «Salir» fuera de la pantalla
+                        modifier = Modifier.widthIn(max = 160.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (link is UiLink.Connected) {
                     if (isWiiUAsWiimote(link)) {
                         Text("Wii U · Mando de Wii", style = MaterialTheme.typography.bodyMedium)

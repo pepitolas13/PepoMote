@@ -64,6 +64,22 @@ class LinkForegroundService : Service() {
     private var role = LinkState.ROLE_WIIMOTE
 
     /**
+     * Initial: aún no hubo `ok` (los fallos de red se reintentan 3 veces y
+     * se rinde). Live: sesión viva. Reconnecting: la sesión se cayó y se
+     * rehace sola (espera creciente, hasta dos minutos).
+     */
+    private enum class Phase { Initial, Live, Reconnecting }
+
+    private var phase = Phase.Initial
+    private var droppedAtMs = 0L
+    private var reconnectAttempt = 0
+    private var reconnectRunnable: Runnable? = null
+
+    /** Último modo y tipo de mando pedidos por la UI: se reponen al reconectar. */
+    private var lastMode: String? = null
+    private var lastPad: String? = null
+
+    /**
      * Generación del enlace. Cada connect() la sube; los callbacks de un
      * ControlClient anterior (su onClosed al cerrarlo, un reintento programado
      * tras "Salir") comparan su generación y se ignoran si ya no es la viva.
@@ -104,6 +120,10 @@ class LinkForegroundService : Service() {
         // reemplaza el enlace entero: antes se apilaban sensores y sockets del
         // anterior, que seguían enviando al PC viejo.
         teardownLink()
+        cancelReconnect()
+        phase = Phase.Initial
+        lastMode = null
+        lastPad = null
         if (wakeLock?.isHeld != true) acquireLocks()
         LinkState.publish(UiLink.Connecting)
         ButtonState.reset()
@@ -132,6 +152,9 @@ class LinkForegroundService : Service() {
             callbacks = object : ControlClient.Callbacks {
                 override fun onOk(ok: ControlClient.Ok) {
                     if (gen != generation) return
+                    val recovered = phase == Phase.Reconnecting
+                    phase = Phase.Live
+                    reconnectAttempt = 0
                     val nunchuk = ok.role == LinkState.ROLE_NUNCHUK
                     val sender = UdpSender(pairing.host, ok.udpPort, ok.sessionId) { rtt ->
                         LinkState.updateConnected { it.copy(rttMs = rtt) }
@@ -147,9 +170,16 @@ class LinkForegroundService : Service() {
                     // Antes de publicar Connected: la pantalla GamePad lo busca al entrar
                     LinkState.motion = engine
                     engine.start()
-                    LinkState.sendMode = { m -> control?.sendMode(m) }
-                    // Solo para esta sesión: cada conexión empieza como GamePad/Pro
-                    LinkState.sendPad = { p -> control?.sendPad(p) }
+                    LinkState.sendMode = { m ->
+                        lastMode = m
+                        control?.sendMode(m)
+                    }
+                    // Cada conexión empieza como GamePad/Pro; lo pedido se
+                    // recuerda para reponerlo si hay que reconectar
+                    LinkState.sendPad = { p ->
+                        lastPad = p
+                        control?.sendPad(p)
+                    }
                     LinkState.sendText = { t -> control?.sendText(t) }
                     LinkState.publish(
                         UiLink.Connected(
@@ -163,8 +193,11 @@ class LinkForegroundService : Service() {
                     )
                     LinkState.pendingMode?.let { m ->
                         LinkState.pendingMode = null
+                        lastMode = m
                         control?.sendMode(m)
                     }
+                    // Tras una caída, el Mando de Wii vuelve a serlo
+                    if (recovered && lastPad == LinkState.PAD_WIIMOTE) control?.sendPad(LinkState.PAD_WIIMOTE)
                     // Doble pantalla: la pantalla GamePad abre el canal cuando
                     // toca; va al mismo puerto que este control. Un Nunchuk no tiene.
                     if (!nunchuk) ScreenLink.bind(pairing.host, pairing.port, ok.sessionId)
@@ -181,10 +214,23 @@ class LinkForegroundService : Service() {
 
                 override fun onError(code: String, msg: String) {
                     if (gen != generation) return
+                    if (code != "io") {
+                        // El PC nos rechaza (token, código, ocupado…): no hay
+                        // reintento que valga
+                        LinkState.publish(UiLink.Failed(code, msg))
+                        stopSelf()
+                        return
+                    }
+                    if (phase != Phase.Initial) {
+                        // La sesión estaba viva (o se estaba rehaciendo): se
+                        // sigue intentando solo
+                        dropped(pairing)
+                        return
+                    }
                     // Fallos de red transitorios (el primer intento tras el
                     // escaneo suele pillar la radio saliendo de la cámara):
                     // reintenta antes de rendirse.
-                    if (code == "io" && attempt < MAX_ATTEMPTS) {
+                    if (attempt < MAX_ATTEMPTS) {
                         // Este cliente ya está muerto: su onClosed no debe
                         // parar el servicio mientras el reintento vive
                         val retryGen = ++generation
@@ -223,6 +269,11 @@ class LinkForegroundService : Service() {
 
                 override fun onClosed() {
                     if (gen != generation) return
+                    if (phase != Phase.Initial && LinkState.flow.value !is UiLink.Failed) {
+                        // El PC cerró (reinicio, red caída): se rehace sola
+                        dropped(pairing)
+                        return
+                    }
                     if (LinkState.flow.value !is UiLink.Failed) {
                         LinkState.publish(UiLink.Disconnected)
                     }
@@ -230,6 +281,52 @@ class LinkForegroundService : Service() {
                 }
             }
         )
+    }
+
+    /**
+     * La sesión se ha caído con el enlace vivo (o un intento de reconexión ha
+     * fallado): se vuelve a intentar sola, con espera creciente, hasta rendirse
+     * a los dos minutos. Las pantallas del mando se quedan («Reconectando…») y
+     * lo pedido (modo Wii U o Dolphin, Mando de Wii) se repone al volver.
+     */
+    private fun dropped(pairing: Pairing) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (phase != Phase.Reconnecting) {
+            droppedAtMs = now
+            reconnectAttempt = 0
+        }
+        phase = Phase.Reconnecting
+        teardownLink()
+        ButtonState.reset()
+        if (Reconnect.giveUp(droppedAtMs, now)) {
+            LinkState.publish(UiLink.Failed("io", Reconnect.lostMessage(pairing.pcName)))
+            stopSelf()
+            return
+        }
+        reconnectAttempt++
+        LinkState.publish(UiLink.Reconnecting(pairing.pcName, reconnectAttempt))
+        // Lo que el usuario había pedido se vuelve a pedir en cuanto llegue el ok
+        lastMode?.takeIf { it != LinkState.MODE_POINTER }?.let { LinkState.requestMode(it) }
+        updateNotification("Reconectando con ${pairing.pcName}…")
+        scheduleReconnect(pairing)
+    }
+
+    private fun scheduleReconnect(pairing: Pairing) {
+        val gen = generation
+        val r = Runnable {
+            if (gen != generation) return@Runnable
+            Thread({
+                val next = relocate(pairing)
+                mainHandler.post { if (gen == generation) connect(next) }
+            }, "pepomote-reconnect").start()
+        }
+        reconnectRunnable = r
+        mainHandler.postDelayed(r, Reconnect.delayMs(reconnectAttempt))
+    }
+
+    private fun cancelReconnect() {
+        reconnectRunnable?.let { mainHandler.removeCallbacks(it) }
+        reconnectRunnable = null
     }
 
     /**
@@ -271,10 +368,11 @@ class LinkForegroundService : Service() {
         if (LinkState.flow.value is UiLink.Connected) {
             UiSounds.disconnect()
         }
+        cancelReconnect()
         teardownLink()
         wakeLock?.release()
         wifiLock?.release()
-        if (LinkState.flow.value is UiLink.Connecting || LinkState.flow.value is UiLink.Connected) {
+        if (LinkState.flow.value.alive) {
             LinkState.publish(UiLink.Disconnected)
         }
         super.onDestroy()
