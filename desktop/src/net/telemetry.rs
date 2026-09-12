@@ -53,11 +53,14 @@ pub fn run(
     };
     let _ = socket.set_read_timeout(Some(Duration::from_millis(100)));
 
-    // El inyector puede no nacer a la primera (/dev/uinput sin permiso): el
-    // resto del receptor sigue vivo (Dolphin no lo necesita) y se reintenta
-    // en el bucle — la auto-reparación da permiso sin reiniciar la app.
+    // El inyector puede no nacer a la primera (/dev/uinput sin permiso, o el
+    // compositor aún sin arrancar): el resto del receptor sigue vivo (Dolphin
+    // no lo necesita) y se reintenta en el bucle — la auto-reparación da
+    // permiso sin reiniciar la app.
     let mut injector: Option<Box<dyn input::Injector>> = None;
     let mut injector_retry = Instant::now() - Duration::from_secs(60);
+    // Último error de creación ya enseñado (para no repetirlo cada 2 s)
+    let mut injector_err_seen: Option<String> = None;
 
     // En Linux, el hilo de pantallas (screens::watch) publica el mapeo del
     // apuntado en shared.pointing; aquí solo se lee (barato) y se aplica al
@@ -98,22 +101,35 @@ pub fn run(
             injector_retry = Instant::now();
             match input::new_injector() {
                 Ok(i) => {
-                    injector = Some(i);
                     // inyector nuevo: que reciba la pantalla de apuntado ya
                     #[cfg(target_os = "linux")]
                     {
                         last_norm = [-1.0, -1.0, -1.0, -1.0]; // forzar re-aplicar
                     }
+                    crate::log_line!("Inyección: {}", i.name());
                     let mut s = shared.lock().unwrap();
+                    s.injector = Some(i.name());
                     s.uinput_denied = false;
+                    s.uinput_missing = false;
                     if s.last_error.as_deref().is_some_and(|e| e.starts_with("Inyección")) {
                         s.last_error = None;
                     }
+                    drop(s);
+                    injector_err_seen = None;
+                    injector = Some(i);
                 }
                 Err(e) => {
+                    if injector_err_seen.as_deref() != Some(e.msg.as_str()) {
+                        crate::log_line!("Inyección de entrada: sin inyector: {}", e.msg);
+                        injector_err_seen = Some(e.msg.clone());
+                    }
                     let mut s = shared.lock().unwrap();
-                    s.uinput_denied = true;
-                    s.last_error = Some(format!("Inyección de entrada: {e}"));
+                    // solo si uinput se intentó de verdad y /dev/uinput falló:
+                    // enciende «Reparar ahora» (nunca con el backend Wayland)
+                    s.uinput_denied = e.uinput_denied;
+                    s.uinput_missing = e.uinput_missing;
+                    s.injector = None;
+                    s.last_error = Some(format!("Inyección de entrada: {}", e.msg));
                 }
             }
         }
@@ -149,6 +165,18 @@ pub fn run(
         // Ping de RTT a TODOS los jugadores
         if last_ping.elapsed() > Duration::from_millis(500) {
             last_ping = Instant::now();
+            // Backend Wayland: la conexión puede morir (compositor reiniciado,
+            // error de protocolo). Se tira el inyector y el reintento de
+            // arriba lo recrea en ≤2 s; lo que el SO viera pulsado ya no existe.
+            if injector.as_deref_mut().is_some_and(|i| !i.alive()) {
+                crate::log_line!("Inyección de entrada: conexión Wayland perdida; se vuelve a crear el inyector");
+                injector = None;
+                held = 0;
+                injector_err_seen = None;
+                let mut s = shared.lock().unwrap();
+                s.injector = None;
+                s.last_error = Some("Inyección de entrada: conexión Wayland perdida, reconectando…".into());
+            }
             let targets: Vec<(u32, std::net::SocketAddr)> = sessions
                 .lock()
                 .unwrap()
@@ -306,7 +334,7 @@ pub fn run(
                     // Modo puntero: el SO tiene UN cursor y es del Jugador 1
                     // (un Nunchuk nunca mueve el cursor)
                     let Some(inj) = injector.as_deref_mut() else {
-                        continue; // sin uinput aún: se está reintentando
+                        continue; // sin inyector aún: se está reintentando
                     };
                     if engine_session != Some(p.session_id) {
                         engine_session = Some(p.session_id);

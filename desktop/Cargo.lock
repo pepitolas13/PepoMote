@@ -3126,6 +3126,8 @@ dependencies = [
  "tray-icon",
  "wayland-client",
  "wayland-protocols",
+ "wayland-protocols-misc",
+ "wayland-protocols-wlr",
  "windows 0.58.0",
  "windows-capture",
  "winresource",

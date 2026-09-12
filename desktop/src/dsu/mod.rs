@@ -113,12 +113,17 @@ impl Dsu {
     }
 }
 
-pub fn start(shared: SharedState) -> Option<Arc<Dsu>> {
-    // Solo para los e2e en el propio equipo: un receptor de prueba junto al real
-    let port = std::env::var("PEPOMOTE_DSU_PORT")
+/// Puerto del servidor DSU (26760). `PEPOMOTE_DSU_PORT` lo cambia, solo para
+/// los e2e en el propio equipo: un receptor de prueba junto al real.
+pub fn port() -> u16 {
+    std::env::var("PEPOMOTE_DSU_PORT")
         .ok()
         .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(server::DSU_PORT);
+        .unwrap_or(server::DSU_PORT)
+}
+
+pub fn start(shared: SharedState) -> Option<Arc<Dsu>> {
+    let port = port();
     // Otro servidor DSU (DS4Windows, BetterJoy, un PepoMote colgado) en el
     // mismo puerto: se le cierra y se recupera el puerto
     let socket = match crate::ports::bind_udp(&shared, "127.0.0.1", port, "DSU") {

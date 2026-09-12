@@ -115,6 +115,10 @@ impl WinInjector {
 }
 
 impl Injector for WinInjector {
+    fn name(&self) -> &'static str {
+        "SendInput"
+    }
+
     fn move_rel(&mut self, dx: i32, dy: i32) {
         self.send_mouse(dx, dy, 0, MOUSEEVENTF_MOVE);
     }

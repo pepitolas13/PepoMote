@@ -41,6 +41,7 @@ windows = { version = "0.58", features = [
     "Win32_Graphics_Dwm",
     "Win32_System_Registry",
     "Win32_NetworkManagement_IpHelper",
+    "Win32_System_Console",
 ] }
 windows-capture = "2.0.1"
 
@@ -50,11 +51,18 @@ evdev = "0.12"
 # uinput cubre TODO el escritorio y hay que mapearlo a la pantalla de juego
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client"] }
+# Inyección sin permisos en compositores wlroots (Sway, Hyprland, MangoWC,
+# river, labwc, niri): puntero virtual (wlr-virtual-pointer) y teclado
+# virtual (virtual-keyboard-unstable-v1). GNOME/KDE no los ofrecen: uinput.
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
 x11rb = { version = "0.13", features = ["composite"] }
 
+# Sin `panic = "abort"`: un pánico en un hilo secundario (el audio de cpal
+# con ciertos drivers, por ejemplo) desenrolla ese hilo y el receptor sigue;
+# el hook de log.rs lo deja en receptor.log con archivo:línea.
 [profile.release]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
-panic = "abort"

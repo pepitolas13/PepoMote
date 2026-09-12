@@ -11,7 +11,7 @@ use std::sync::{Mutex, OnceLock};
 const SHOW: &[u8] = b"PMPSHOW1";
 
 /// Cerrojo = puerto PMP + 1 (26762 por defecto; sigue a PEPOMOTE_PORT).
-fn singleton_port() -> u16 {
+pub fn port() -> u16 {
     crate::pairing::port().wrapping_add(1)
 }
 
@@ -57,19 +57,20 @@ pub fn request_show() {
 pub enum Singleton {
     /// Somos la primera instancia; el socket es el cerrojo (mantener vivo).
     Primary(UdpSocket),
-    /// Ya hay otra: se le ha pedido que se muestre. Salir.
-    AlreadyRunning,
+    /// Ya hay otra (o el puerto del cerrojo no se pudo abrir: el error dice
+    /// cuál): se le ha pedido que se muestre. Salir.
+    AlreadyRunning(std::io::Error),
 }
 
 pub fn acquire() -> Singleton {
-    let port = singleton_port();
+    let port = port();
     match UdpSocket::bind(("127.0.0.1", port)) {
         Ok(sock) => Singleton::Primary(sock),
-        Err(_) => {
+        Err(e) => {
             if let Ok(s) = UdpSocket::bind(("127.0.0.1", 0)) {
                 let _ = s.send_to(SHOW, ("127.0.0.1", port));
             }
-            Singleton::AlreadyRunning
+            Singleton::AlreadyRunning(e)
         }
     }
 }

@@ -3,6 +3,7 @@
 mod app;
 mod autostart;
 mod cemu;
+mod diag;
 mod dolphin;
 mod dsu;
 #[cfg(target_os = "linux")]
@@ -13,6 +14,7 @@ mod fixes;
 mod screens;
 mod icon;
 mod input;
+mod log;
 mod net;
 mod pairing;
 mod pointer;
@@ -26,20 +28,46 @@ mod theme;
 mod tray;
 
 fn main() -> eframe::Result {
+    // Lo primero de todo: que ningún pánico se pierda ni cierre el receptor
+    // (el perfil release desenrolla; el hook lo deja en receptor.log)
+    log::install_panic_hook();
+    log::init();
+
     // --replay <grabación>: solo el motor del puntero sobre una grabación
-    // (PEPOMOTE_RECORD), CSV por stdout, y fuera.
-    if pointer::record::replay_from_args() || dolphin::print_dirs_from_args() {
+    // (PEPOMOTE_RECORD), CSV por stdout, y fuera. --dolphin-dirs y --diag:
+    // informes por stdout, y fuera.
+    if pointer::record::replay_from_args() || dolphin::print_dirs_from_args() || diag::run_from_args() {
         return Ok(());
     }
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    log_line!(
+        "PepoMote {} arranca · {} {} · args {:?} · XDG_SESSION_TYPE={} WAYLAND_DISPLAY={} DISPLAY={} XDG_CURRENT_DESKTOP={}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        args,
+        diag::env_or("XDG_SESSION_TYPE"),
+        diag::env_or("WAYLAND_DISPLAY"),
+        diag::env_or("DISPLAY"),
+        diag::env_or("XDG_CURRENT_DESKTOP")
+    );
 
     // Instancia única: si ya hay un PepoMote vivo (quizá solo en la
     // bandeja), se le pide que se muestre y este proceso termina.
     match singleton::acquire() {
         singleton::Singleton::Primary(lock) => singleton::watch(lock),
-        singleton::Singleton::AlreadyRunning => return Ok(()),
+        singleton::Singleton::AlreadyRunning(e) => {
+            log_line!(
+                "Ya hay un PepoMote escuchando en 127.0.0.1:{} ({e}): le pido que se muestre y salgo",
+                singleton::port()
+            );
+            return Ok(());
+        }
     }
 
     let shared = state::new_shared();
+    log::attach_shared(shared.clone());
     let pairing = pairing::PairingInfo::generate();
 
     let dsu = dsu::start(shared.clone());
@@ -75,11 +103,25 @@ fn main() -> eframe::Result {
         let _ = show_rx.recv();
     }
 
+    // PEPOMOTE_NO_UI (Linux, solo pruebas): red e inyección sin ventana. El
+    // e2e de CI corre en un sway sin cabeza donde no hay GPU ni EGL, y la
+    // ventana no aporta nada a lo que se prueba.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("PEPOMOTE_NO_UI").is_some() {
+        log_line!("PEPOMOTE_NO_UI: sin ventana (solo para pruebas)");
+        loop {
+            std::thread::park();
+        }
+    }
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([460.0, 640.0])
             .with_min_inner_size([360.0, 480.0])
             .with_title("PepoMote")
+            // app_id (Wayland) / WM_CLASS (X11): así el compositor casa la
+            // ventana con PepoMote.desktop (icono, agrupación, reglas)
+            .with_app_id("PepoMote")
             .with_icon(egui::IconData {
                 rgba: icon::logo_rgba(64),
                 width: 64,

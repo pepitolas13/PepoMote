@@ -38,8 +38,14 @@ pub fn watch(shared: SharedState, port: u16) {
                 };
                 let auto_fix = {
                     let mut s = shared.lock().unwrap();
+                    if s.firewall_hint != hint {
+                        match &hint {
+                            Some(h) => crate::log_line!("Firewall: {}", h.replace('\n', " ")),
+                            None => crate::log_line!("Firewall: el puerto ya no está bloqueado"),
+                        }
+                    }
                     s.firewall_hint = hint;
-                    let broken = s.firewall_hint.is_some() || s.uinput_denied;
+                    let broken = s.firewall_hint.is_some() || s.uinput_denied || s.uinput_missing;
                     if autofix && broken && !s.config.fix_attempted {
                         s.config.fix_attempted = true;
                         let cfg = s.config.clone();
@@ -51,6 +57,7 @@ pub fn watch(shared: SharedState, port: u16) {
                     }
                 };
                 if auto_fix {
+                    crate::log_line!("Reparación automática (pkexec): primer bloqueo detectado");
                     crate::fixes::fix_all(shared.clone(), port);
                 }
                 std::thread::sleep(Duration::from_secs(10));
@@ -59,7 +66,7 @@ pub fn watch(shared: SharedState, port: u16) {
 }
 
 /// None = sin firewall o puerto abierto. Some(aviso) = probablemente bloqueado.
-fn check(port: u16) -> Option<String> {
+pub fn check(port: u16) -> Option<String> {
     if let Some(hint) = check_ufw(port) {
         return Some(hint);
     }

@@ -1,11 +1,10 @@
-use super::{Injector, KeyCode, MouseButton};
+use super::linux_common::{all_keys, evdev_key, map_abs, WheelAcc, ABS_MAX};
+use super::{InjectError, Injector, KeyCode, MouseButton};
 use evdev::uinput::{VirtualDevice, VirtualDeviceBuilder};
 use evdev::{
     AbsInfo, AbsoluteAxisType, AttributeSet, EventType, InputEvent, Key, RelativeAxisType,
     UinputAbsSetup,
 };
-
-const ABS_MAX: i32 = 32767;
 
 /// Tres dispositivos virtuales:
 /// - ratón relativo (REL_X/Y, rueda, botones) — clics y modo relativo
@@ -14,30 +13,21 @@ const ABS_MAX: i32 = 32767;
 ///   (BTN_TOOL_PEN) NO vale: KWin/libinput lo ignoran por completo; el
 ///   ratón absoluto pasa por el fallback de libinput y funciona en X11 y
 ///   Wayland en todos los compositores (verificado en KWin 6)
-/// - teclado (flechas, Enter/Esc, multimedia)
+/// - teclado (flechas, Enter/Esc, multimedia, QWERTY)
+///
+/// Necesita poder abrir /dev/uinput (regla udev `uaccess` o ACL): es el
+/// respaldo para GNOME, KDE y X11, donde no hay puntero virtual de Wayland.
 pub struct UinputInjector {
     mouse: VirtualDevice,
     abs: VirtualDevice,
     keys: VirtualDevice,
-    /// Resto de rueda por debajo de una muesca (120 = una muesca).
-    wheel_acc: i32,
+    wheel: WheelAcc,
     /// Pantalla de apuntado dentro del escritorio completo ([x0,y0,w,h] 0..1).
     target: [f32; 4],
 }
 
-/// (nx, ny) de la pantalla objetivo → valor ABS del dispositivo, que cubre
-/// el escritorio entero.
-fn map_abs(nx: f32, ny: f32, target: [f32; 4]) -> (i32, i32) {
-    let x = target[0] + nx.clamp(0.0, 1.0) * target[2];
-    let y = target[1] + ny.clamp(0.0, 1.0) * target[3];
-    (
-        (x.clamp(0.0, 1.0) * ABS_MAX as f32).round() as i32,
-        (y.clamp(0.0, 1.0) * ABS_MAX as f32).round() as i32,
-    )
-}
-
 impl UinputInjector {
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, InjectError> {
         let mut buttons = AttributeSet::<Key>::new();
         buttons.insert(Key::BTN_LEFT);
         buttons.insert(Key::BTN_RIGHT);
@@ -71,31 +61,10 @@ impl UinputInjector {
             .build()
             .map_err(explain)?;
 
+        // Las mismas teclas que el teclado virtual de Wayland (tabla común)
         let mut kb = AttributeSet::<Key>::new();
-        for k in [
-            Key::KEY_UP,
-            Key::KEY_DOWN,
-            Key::KEY_LEFT,
-            Key::KEY_RIGHT,
-            Key::KEY_ENTER,
-            Key::KEY_ESC,
-            Key::KEY_VOLUMEUP,
-            Key::KEY_VOLUMEDOWN,
-            Key::KEY_MUTE,
-            Key::KEY_PLAYPAUSE,
-            Key::KEY_NEXTSONG,
-            Key::KEY_PREVIOUSSONG,
-            Key::KEY_BACKSPACE,
-            Key::KEY_SPACE,
-            Key::KEY_LEFTSHIFT,
-        ] {
+        for k in all_keys().filter_map(evdev_key) {
             kb.insert(k);
-        }
-        // teclado QWERTY para teclear texto (nombre del jugador en Cemu…)
-        for c in ASCII_KEYS.chars() {
-            if let Some(k) = ascii_key(c) {
-                kb.insert(k);
-            }
         }
         let keys = VirtualDeviceBuilder::new()
             .map_err(explain)?
@@ -109,17 +78,30 @@ impl UinputInjector {
             mouse,
             abs,
             keys,
-            wheel_acc: 0,
+            wheel: WheelAcc::default(),
             target: [0.0, 0.0, 1.0, 1.0],
         })
     }
 }
 
-fn explain(e: std::io::Error) -> String {
-    if e.kind() == std::io::ErrorKind::PermissionDenied {
-        "sin permiso para /dev/uinput — pulsa «Reparar ahora» (o ejecuta packaging/linux/install.sh)".into()
-    } else {
-        format!("uinput: {e}")
+/// ¿Se puede abrir /dev/uinput? El error distingue módulo sin cargar
+/// (NotFound) de permiso denegado (PermissionDenied). Para `--diag`.
+pub fn probe() -> std::io::Result<()> {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/uinput")
+        .map(|_| ())
+}
+
+fn explain(e: std::io::Error) -> InjectError {
+    let kind = e.kind();
+    InjectError {
+        msg: super::uinput_hint(kind)
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("uinput: {e}")),
+        uinput_denied: kind == std::io::ErrorKind::PermissionDenied,
+        uinput_missing: kind == std::io::ErrorKind::NotFound,
     }
 }
 
@@ -166,26 +148,8 @@ impl Injector for UinputInjector {
     }
 
     fn key(&mut self, key: KeyCode, down: bool) {
-        let k = match key {
-            KeyCode::ArrowUp => Key::KEY_UP,
-            KeyCode::ArrowDown => Key::KEY_DOWN,
-            KeyCode::ArrowLeft => Key::KEY_LEFT,
-            KeyCode::ArrowRight => Key::KEY_RIGHT,
-            KeyCode::Enter => Key::KEY_ENTER,
-            KeyCode::Escape => Key::KEY_ESC,
-            KeyCode::VolumeUp => Key::KEY_VOLUMEUP,
-            KeyCode::VolumeDown => Key::KEY_VOLUMEDOWN,
-            KeyCode::Mute => Key::KEY_MUTE,
-            KeyCode::PlayPause => Key::KEY_PLAYPAUSE,
-            KeyCode::NextTrack => Key::KEY_NEXTSONG,
-            KeyCode::PrevTrack => Key::KEY_PREVIOUSSONG,
-            KeyCode::Backspace => Key::KEY_BACKSPACE,
-            KeyCode::Space => Key::KEY_SPACE,
-            KeyCode::Shift => Key::KEY_LEFTSHIFT,
-            KeyCode::Char(c) => match ascii_key(c) {
-                Some(k) => k,
-                None => return,
-            },
+        let Some(k) = evdev_key(key) else {
+            return;
         };
         let _ = self.keys.emit(&[InputEvent::new(
             EventType::KEY,
@@ -195,8 +159,6 @@ impl Injector for UinputInjector {
     }
 
     fn wheel(&mut self, delta: i32) {
-        // La tira de scroll manda unas decenas de unidades por paquete: con
-        // solo `delta / 120` casi nunca llegaba a una muesca y no hacía nada.
         // REL_WHEEL_HI_RES (1/120 de muesca) da scroll suave donde el
         // escritorio lo soporta; las muescas enteras salen del acumulador
         // para el resto.
@@ -205,10 +167,8 @@ impl Injector for UinputInjector {
             RelativeAxisType::REL_WHEEL_HI_RES.0,
             delta,
         )];
-        self.wheel_acc += delta;
-        let notches = self.wheel_acc / 120;
+        let notches = self.wheel.push(delta);
         if notches != 0 {
-            self.wheel_acc -= notches * 120;
             events.push(InputEvent::new(
                 EventType::RELATIVE,
                 RelativeAxisType::REL_WHEEL.0,
@@ -217,95 +177,8 @@ impl Injector for UinputInjector {
         }
         let _ = self.mouse.emit(&events);
     }
-}
 
-/// Caracteres con tecla propia en el teclado virtual.
-const ASCII_KEYS: &str = "abcdefghijklmnopqrstuvwxyz0123456789-=.,';/[]`\\";
-
-/// Tecla evdev de un carácter ASCII en la disposición QWERTY (letras y
-/// dígitos coinciden en la española; los signos pueden variar).
-fn ascii_key(c: char) -> Option<Key> {
-    Some(match c {
-        'a' => Key::KEY_A,
-        'b' => Key::KEY_B,
-        'c' => Key::KEY_C,
-        'd' => Key::KEY_D,
-        'e' => Key::KEY_E,
-        'f' => Key::KEY_F,
-        'g' => Key::KEY_G,
-        'h' => Key::KEY_H,
-        'i' => Key::KEY_I,
-        'j' => Key::KEY_J,
-        'k' => Key::KEY_K,
-        'l' => Key::KEY_L,
-        'm' => Key::KEY_M,
-        'n' => Key::KEY_N,
-        'o' => Key::KEY_O,
-        'p' => Key::KEY_P,
-        'q' => Key::KEY_Q,
-        'r' => Key::KEY_R,
-        's' => Key::KEY_S,
-        't' => Key::KEY_T,
-        'u' => Key::KEY_U,
-        'v' => Key::KEY_V,
-        'w' => Key::KEY_W,
-        'x' => Key::KEY_X,
-        'y' => Key::KEY_Y,
-        'z' => Key::KEY_Z,
-        '0' => Key::KEY_0,
-        '1' => Key::KEY_1,
-        '2' => Key::KEY_2,
-        '3' => Key::KEY_3,
-        '4' => Key::KEY_4,
-        '5' => Key::KEY_5,
-        '6' => Key::KEY_6,
-        '7' => Key::KEY_7,
-        '8' => Key::KEY_8,
-        '9' => Key::KEY_9,
-        '-' => Key::KEY_MINUS,
-        '=' => Key::KEY_EQUAL,
-        '.' => Key::KEY_DOT,
-        ',' => Key::KEY_COMMA,
-        '\'' => Key::KEY_APOSTROPHE,
-        ';' => Key::KEY_SEMICOLON,
-        '/' => Key::KEY_SLASH,
-        '[' => Key::KEY_LEFTBRACE,
-        ']' => Key::KEY_RIGHTBRACE,
-        '`' => Key::KEY_GRAVE,
-        '\\' => Key::KEY_BACKSLASH,
-        _ => return None,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn todas_las_teclas_de_texto_tienen_codigo() {
-        for c in ASCII_KEYS.chars() {
-            assert!(ascii_key(c).is_some(), "{c:?}");
-        }
-        assert!(ascii_key('ñ').is_none());
-    }
-
-    #[test]
-    fn el_apuntado_cae_dentro_de_la_pantalla_objetivo() {
-        // Escritorio 3968×2232 con la pantalla de juego en (1920,1080) 2048×1152
-        // (el caso real: tres monitores en L)
-        let t = [1920.0 / 3968.0, 1080.0 / 2232.0, 2048.0 / 3968.0, 1152.0 / 2232.0];
-        let (cx, cy) = map_abs(0.5, 0.5, t);
-        // centro de la pantalla objetivo = (2944, 1656) del escritorio
-        assert_eq!(cx, (2944.0 / 3968.0 * ABS_MAX as f32).round() as i32);
-        assert_eq!(cy, (1656.0 / 2232.0 * ABS_MAX as f32).round() as i32);
-        // esquinas: nunca se sale de la pantalla objetivo aunque nx se pase
-        let (x0, y0) = map_abs(-1.0, -1.0, t);
-        assert_eq!((x0, y0), map_abs(0.0, 0.0, t));
-        let (x1, y1) = map_abs(2.0, 2.0, t);
-        assert_eq!((x1, y1), map_abs(1.0, 1.0, t));
-        assert_eq!(x1, ABS_MAX);
-        assert_eq!(y1, ABS_MAX);
-        // una sola pantalla: identidad
-        assert_eq!(map_abs(0.25, 0.75, [0.0, 0.0, 1.0, 1.0]), (8192, 24575));
+    fn name(&self) -> &'static str {
+        "uinput"
     }
 }

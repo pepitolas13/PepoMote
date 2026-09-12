@@ -73,6 +73,7 @@ fn bind_evicting<T>(
                     owner.pid
                 );
                 shared.lock().unwrap().port_notice = Some(msg.clone());
+                crate::log_line!("{msg}");
                 crate::net::notify_all(&msg);
                 return Ok(s);
             }

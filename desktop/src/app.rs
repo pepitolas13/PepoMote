@@ -70,9 +70,15 @@ struct Snapshot {
     error: Option<String>,
     port_notice: Option<String>,
     firewall_hint: Option<String>,
+    /// Backend de inyección activo (pie de la ventana).
+    injector: Option<&'static str>,
     uinput_denied: bool,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    uinput_missing: bool,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fixing: bool,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    fix_failed: Option<String>,
 }
 
 impl eframe::App for PepoMoteApp {
@@ -104,8 +110,11 @@ impl eframe::App for PepoMoteApp {
                 error: s.last_error.clone(),
                 port_notice: s.port_notice.clone(),
                 firewall_hint: s.firewall_hint.clone(),
+                injector: s.injector,
                 uinput_denied: s.uinput_denied,
+                uinput_missing: s.uinput_missing,
                 fixing: s.fixing,
+                fix_failed: s.fix_failed.clone(),
             }
         };
 
@@ -161,9 +170,13 @@ impl eframe::App for PepoMoteApp {
 
                             ui.add_space(12.0);
                             ui.label(
-                                RichText::new(format!("v{} · pv1", env!("CARGO_PKG_VERSION")))
-                                    .size(11.0)
-                                    .color(theme::TEXT_DIM),
+                                RichText::new(format!(
+                                    "v{} · pv1 · Inyección: {}",
+                                    env!("CARGO_PKG_VERSION"),
+                                    snap.injector.unwrap_or("ninguna")
+                                ))
+                                .size(11.0)
+                                .color(theme::TEXT_DIM),
                             );
                         });
                     });

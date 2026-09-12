@@ -124,6 +124,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             // Que el PC también lo diga: quien mira la ventana entiende por
             // qué el móvil no entra (token.txt regenerado, PC reinstalado…)
             let who = hello["name"].as_str().filter(|n| !n.trim().is_empty()).unwrap_or("Un móvil");
+            crate::log_line!("Móvil «{who}» ({peer_ip}) trae un QR antiguo: token rechazado");
             shared.lock().unwrap().last_error = Some(format!(
                 "{who} ({peer_ip}) trae un QR antiguo: en la app, Conectar y luego «Escanear QR del PC»"
             ));
@@ -182,12 +183,11 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         );
         (slot, evicted)
     };
-    if debug() {
-        eprintln!(
-            "[control] hello de {device_name} ({peer_ip}) → slot {slot}{}",
-            if evicted_slots.is_empty() { String::new() } else { format!(" (fantasma desalojada en slot {evicted_slots:?})") }
-        );
-    }
+    crate::log_line!(
+        "Móvil «{device_name}» ({peer_ip}) conectado: slot {slot}, {}{}",
+        if role == Role::Nunchuk { "Nunchuk" } else { "mando" },
+        if evicted_slots.is_empty() { String::new() } else { format!(" (fantasma desalojada en slot {evicted_slots:?})") }
+    );
 
     let (mode, player) = {
         let mut s = shared.lock().unwrap();
@@ -331,12 +331,10 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     // Limpieza de ESTA sesión. Si otra conexión del mismo móvil ya la
     // desalojó, la plaza es suya: no tocar nada.
     let still_mine = sessions.lock().unwrap().remove(&session_id).is_some();
-    if debug() {
-        eprintln!(
-            "[control] {device_name} (slot {slot}) se va{}",
-            if still_mine { "" } else { " — ya desalojada por su reconexión" }
-        );
-    }
+    crate::log_line!(
+        "Móvil «{device_name}» (slot {slot}) se va{}",
+        if still_mine { "" } else { " — ya desalojada por su reconexión" }
+    );
     if !still_mine {
         return;
     }

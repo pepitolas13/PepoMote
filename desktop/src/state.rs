@@ -362,10 +362,17 @@ pub struct Shared {
     pub last_error: Option<String>,
     /// Aviso de firewall Linux bloqueando el puerto (None = todo bien).
     pub firewall_hint: Option<String>,
+    /// Backend de inyección activo (pie de la ventana y log); None = sin
+    /// inyector todavía.
+    pub injector: Option<&'static str>,
     /// Linux: /dev/uinput denegado (telemetría reintenta cada pocos segundos).
     pub uinput_denied: bool,
+    /// Linux: no existe /dev/uinput (módulo uinput sin cargar).
+    pub uinput_missing: bool,
     /// Hay un diálogo de reparación (pkexec) abierto ahora mismo.
     pub fixing: bool,
+    /// Linux: por qué falló la última reparación (None = nunca, bien o cancelada).
+    pub fix_failed: Option<String>,
     /// Linux: monitores detectados (nombre, ancho, alto lógicos) para el
     /// selector de pantalla de apuntado.
     pub screens: Vec<(String, i32, i32)>,
@@ -395,8 +402,11 @@ impl Shared {
             text_queue: Vec::new(),
             last_error: None,
             firewall_hint: None,
+            injector: None,
             uinput_denied: false,
+            uinput_missing: false,
             fixing: false,
+            fix_failed: None,
             screens: Vec::new(),
             pointing: None,
             pair_code: PairCode::new(),
