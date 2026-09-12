@@ -161,10 +161,10 @@ fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit) {
                     onClick = { apply(TextInput.accept(field)) },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = PepoColors.Blue,
-                        contentColor = PepoColors.Card
+                        contentColor = PepoColors.OnAccent
                     )
                 ) {
-                    Text("Aceptar", color = PepoColors.Card)
+                    Text("Aceptar", color = PepoColors.OnAccent)
                 }
             }
         }

@@ -135,7 +135,7 @@ fun PairScreen(
                 ) {
                     Text(
                         if (saved.isEmpty()) "Escanear QR del PC" else "Escanear el QR de otro PC",
-                        style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.Card)
+                        style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.OnAccent)
                     )
                 }
             }

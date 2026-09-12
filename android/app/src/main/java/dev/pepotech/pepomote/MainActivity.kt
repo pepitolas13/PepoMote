@@ -218,6 +218,16 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Cambio de tema del sistema (uiMode) en caliente: la actividad NO se
+     * recrea (que una partida no vuelva al inicio al anochecer); Compose
+     * repinta con la otra paleta y las barras del sistema se adaptan.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        enableEdgeToEdge()
+    }
+
+    /**
      * La doble pantalla del GamePad solo se recibe con la app a la vista:
      * en segundo plano (ON_STOP) se cierra el canal y al volver se reabre.
      */

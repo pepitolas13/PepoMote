@@ -36,7 +36,7 @@ fun TriggerZone(
     height: Dp = 88.dp,
     background: Color = PepoColors.Blue,
     pressedColor: Color = PepoColors.BlueHover,
-    textColor: Color = PepoColors.Card
+    textColor: Color = PepoColors.OnAccent
 ) {
     val view = LocalView.current
     var down by remember { mutableStateOf(false) }

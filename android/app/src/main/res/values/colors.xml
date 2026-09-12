@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Paleta «PepoWhite» (la de Compose, para la ventana antes de que Compose pinte) -->
+    <color name="pepo_background">#F4F6F7</color>
+    <color name="pepo_card">#FFFFFF</color>
+    <color name="pepo_blue">#3FA9F5</color>
+    <color name="pepo_ok">#7BC94C</color>
+</resources>

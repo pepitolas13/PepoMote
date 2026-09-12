@@ -148,14 +148,14 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 "1", 92.dp, ButtonState.ONE,
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.Card,
+                textColor = PepoColors.OnAccent,
                 textSize = 28
             )
             RoundButton(
                 "2", 92.dp, ButtonState.TWO,
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.Card,
+                textColor = PepoColors.OnAccent,
                 textSize = 28,
                 pop = true
             )

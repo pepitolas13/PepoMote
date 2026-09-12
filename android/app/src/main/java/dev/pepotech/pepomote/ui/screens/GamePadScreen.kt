@@ -453,7 +453,7 @@ private fun FaceButtons(size: Dp, btn: Dp) {
                 "A", btn, ButtonState.A,
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.Card,
+                textColor = PepoColors.OnAccent,
                 textSize = 20,
                 pop = true
             )

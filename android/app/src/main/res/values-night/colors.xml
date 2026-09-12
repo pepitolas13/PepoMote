@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Paleta «PepoDark»: grafito con el mismo azul -->
+    <color name="pepo_background">#14181C</color>
+    <color name="pepo_card">#1F252B</color>
+</resources>

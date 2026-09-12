@@ -60,7 +60,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
             shape = MaterialTheme.shapes.medium,
             colors = ButtonDefaults.buttonColors(containerColor = PepoColors.Blue)
         ) {
-            Text("¡Vamos!", style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.Card))
+            Text("¡Vamos!", style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.OnAccent))
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -86,7 +86,7 @@ private fun Step(n: Int, title: String, body: String) {
                     .background(PepoColors.Blue, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text("$n", style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.Card))
+                Text("$n", style = MaterialTheme.typography.titleMedium.copy(color = PepoColors.OnAccent))
             }
             Spacer(Modifier.width(14.dp))
             Column {

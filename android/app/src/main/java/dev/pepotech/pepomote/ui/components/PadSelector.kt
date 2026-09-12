@@ -140,7 +140,7 @@ private fun RowScope.Segment(label: String, selected: Boolean, pending: Boolean,
         else -> PepoColors.Card
     }
     val fg = when {
-        selected -> PepoColors.Card
+        selected -> PepoColors.OnAccent
         pending -> PepoColors.Text
         else -> PepoColors.TextDim
     }

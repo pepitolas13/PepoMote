@@ -185,7 +185,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 "A", 148.dp, ButtonState.A,
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.Card,
+                textColor = PepoColors.OnAccent,
                 textSize = 44,
                 pop = true
             )
