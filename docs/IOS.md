@@ -6,18 +6,21 @@ varios PCs, reconexión automática, español/inglés y tema claro/oscuro.
 Funciona en iOS/iPadOS **15 o superior** (desde iPhone 7 hasta los iPad con
 iPadOS 26).
 
-No está en la App Store: se instala con tu propio Apple ID (el gratuito vale)
-mediante una de estas tiendas alternativas, que además la actualizan solas:
+No está en la App Store: se instala con tu propio Apple ID (el gratuito vale).
+Hay tres formas. **La que recomiendo personalmente es SideStore** (es la que
+uso yo), aunque también se puede con AltStore y con Sideloadly:
 
-- **SideStore** (recomendado): se renueva **en el propio iPhone/iPad**, sin
-  ningún PC encendido. Solo necesita el PC el día que la instalas.
-- **AltStore**: igual de fácil, pero para renovar la firma necesita AltServer
-  abierto en tu PC y en la misma Wi-Fi (sus autores trabajan en quitar ese
-  requisito).
+- **SideStore** (mi recomendación): se renueva **en el propio iPhone/iPad**,
+  sin ningún PC encendido. Solo necesita el PC el día que la instalas.
+- **AltStore**: igual de fácil de usar, pero para renovar la firma necesita
+  AltServer abierto en tu PC y en la misma Wi-Fi (sus autores trabajan en
+  quitar ese requisito).
+- **Sideloadly**: sin tienda; instalas el `PepoMote.ipa` a mano desde el PC
+  y lo repites cada 7 días.
 
-Con un Apple ID gratuito la firma dura 7 días y la tienda la renueva; con una
-cuenta de desarrollador de pago (99 $/año) dura un año. Si prefieres no usar
-tienda, Sideloadly instala el `PepoMote.ipa` a mano desde el PC.
+Con un Apple ID gratuito la firma dura 7 días (las tiendas la renuevan; con
+Sideloadly la renuevas tú); con una cuenta de desarrollador de pago
+(99 $/año) dura un año.
 
 ## La fuente de PepoMote (para SideStore y AltStore)
 
@@ -47,7 +50,7 @@ altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/do
    En iOS 15 no hace falta.
 3. Móvil y PC en la **misma Wi-Fi**.
 
-## Instalar con SideStore (recomendado: sin PC encendido)
+## Instalar con SideStore (mi recomendación: sin PC encendido)
 
 SideStore es un derivado de AltStore que se refirma a sí mismo y a sus apps
 desde el propio iPhone/iPad, con una VPN local (StosVPN) y tu Apple ID. El PC

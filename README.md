@@ -12,7 +12,7 @@
 | Piece | Platform | File |
 |---|---|---|
 | Sender | Android 8.0+ | `PepoMote.apk` |
-| Sender | iPhone / iPad, iOS 15+ (up to iPadOS 26) | `PepoMote.ipa` — installed with SideStore or AltStore (source below) or Sideloadly, see [docs/IOS.md](docs/IOS.md) |
+| Sender | iPhone / iPad, iOS 15+ (up to iPadOS 26) | `PepoMote.ipa` — installed with SideStore (my recommendation), AltStore or Sideloadly, see [docs/IOS.md](docs/IOS.md) |
 | Sender | Linux phones: Mobian, postmarketOS… (aarch64) | `pepomote-mobile_*_arm64.deb` (Mobian: tap to install) · `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receiver | Windows 10/11 | `PepoMote.exe` — single portable file |
 | Receiver | Linux, X11 & Wayland | `PepoMote-x86_64.AppImage` |
@@ -25,7 +25,7 @@
 
 **Phone** — install `PepoMote.apk` (enable "install from unknown sources"). Open it, tap **Conectar**, scan the QR shown on your PC. Paired forever.
 
-**iPhone / iPad** — not on the App Store: install it with [SideStore](https://sidestore.io) (recommended: it re-signs itself on the device every 7 days, no PC running) or [AltStore](https://altstore.io) (needs AltServer on your PC to renew; its authors are working on removing that). In either one: Sources → **+** → add `https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` → Browse → PepoMote → Install; updates show up right there. One-tap links for a web page or a chat: `sidestore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` and `altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json`. Sideloadly with `PepoMote.ipa` works too. Step by step, permissions and what differs from Android in [docs/IOS.md](docs/IOS.md).
+**iPhone / iPad** — not on the App Store. My personal recommendation is [SideStore](https://sidestore.io) (it re-signs itself on the device every 7 days, no PC running; it is what I use), but [AltStore](https://altstore.io) (needs AltServer on your PC to renew; its authors are working on removing that) and Sideloadly (by hand from the PC with `PepoMote.ipa`) work too. In SideStore or AltStore: Sources → **+** → add `https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` → Browse → PepoMote → Install; updates show up right there. One-tap links for a web page or a chat: `sidestore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` and `altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json`. Step by step, permissions and what differs from Android in [docs/IOS.md](docs/IOS.md).
 
 **Linux phone** (Mobian, postmarketOS…) — Mobian: download `pepomote-mobile_*_arm64.deb` on the phone, tap it and press **Install**. Any other distro, one command in the terminal: `wget -qO- https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh | sh`. Then open it like any app: **Conectar** → pick your PC → type the 4-digit code shown under the QR. See [docs/MOBILE-LINUX.md](docs/MOBILE-LINUX.md).
 
