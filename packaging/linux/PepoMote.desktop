@@ -6,4 +6,5 @@ Exec=PepoMote
 Icon=pepomote
 Terminal=false
 Type=Application
+StartupWMClass=PepoMote
 Categories=Utility;RemoteAccess;

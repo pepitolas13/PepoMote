@@ -8,7 +8,7 @@ mod dolphin;
 mod dsu;
 #[cfg(target_os = "linux")]
 mod firewall;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 mod fixes;
 #[cfg(target_os = "linux")]
 mod screens;

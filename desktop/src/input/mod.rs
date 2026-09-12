@@ -152,6 +152,7 @@ pub enum Choice {
 
 #[cfg(any(target_os = "linux", test))]
 impl Choice {
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn describe(self) -> &'static str {
         match self {
             Choice::Uinput => "uinput",

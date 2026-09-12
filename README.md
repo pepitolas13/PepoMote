@@ -20,7 +20,7 @@
 
 **PC (Windows)** — download `PepoMote.exe` and run it. No installer. SmartScreen may warn because the binary is unsigned: *More info → Run anyway* (verify `SHA256SUMS.txt` if in doubt). Allow it on *private networks* when the firewall asks.
 
-**PC (Linux)** — download the AppImage, make it executable and run it. If anything needs system setup (cursor permissions via uinput, or a firewall silently dropping the phone's traffic — many distros ship one enabled), PepoMote detects it and asks for your admin password **once** in the system dialog, then fixes it by itself — no terminal, no log-out. Prefer a scripted install with a launcher entry? `packaging/linux/install.sh PepoMote-x86_64.AppImage` does the same setup non-interactively.
+**PC (Linux)** — download the AppImage, make it executable and run it. On Sway, Hyprland, MangoWC, river, labwc, niri and other wlroots compositors nothing else is needed: the cursor is a Wayland virtual pointer. On GNOME, KDE or X11 the cursor goes through uinput: if that (or a firewall silently dropping the phone's traffic — many distros ship one enabled) needs setup, PepoMote detects it and asks for your admin password **once** in the system dialog, then fixes it by itself; if your session has no password dialog, the window shows the one-line command to paste in a terminal. Prefer a scripted install with a launcher entry? `packaging/linux/install.sh PepoMote-x86_64.AppImage` does the same setup non-interactively. Something odd? `./PepoMote-x86_64.AppImage --diag` prints a report to paste in an issue.
 
 **Phone** — install `PepoMote.apk` (enable "install from unknown sources"). Open it, tap **Conectar**, scan the QR shown on your PC. Paired forever.
 

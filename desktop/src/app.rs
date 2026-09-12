@@ -17,6 +17,9 @@ pub struct PepoMoteApp {
     /// Linux: hay pkexec para el botón "Reparar ahora" (se mira una vez).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pkexec_ok: bool,
+    /// Linux: cuándo se copió el comando manual (para el «Copiado» efímero).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    copied_at: Option<Instant>,
 }
 
 impl PepoMoteApp {
@@ -35,6 +38,7 @@ impl PepoMoteApp {
             pkexec_ok: crate::fixes::pkexec_available(),
             #[cfg(not(target_os = "linux"))]
             pkexec_ok: false,
+            copied_at: None,
         }
     }
 
@@ -73,7 +77,6 @@ struct Snapshot {
     /// Backend de inyección activo (pie de la ventana).
     injector: Option<&'static str>,
     uinput_denied: bool,
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     uinput_missing: bool,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fixing: bool,
@@ -187,17 +190,29 @@ impl eframe::App for PepoMoteApp {
 }
 
 impl PepoMoteApp {
-    /// Linux: aviso de firewall/uinput con reparación de un clic (pkexec).
-    /// En Windows nunca hay nada que pintar (los flags jamás se activan).
-    fn ui_repair(&self, ui: &mut egui::Ui, snap: &Snapshot) {
-        if snap.firewall_hint.is_none() && !snap.uinput_denied {
+    /// Linux: aviso de firewall/uinput con reparación de un clic (pkexec) y,
+    /// si no hay diálogo de contraseña (sin pkexec, o sesión sin agente de
+    /// polkit), el comando manual listo para copiar. Con el backend Wayland
+    /// nunca hay nada que pintar (uinput ni se intenta); en Windows tampoco
+    /// (los flags jamás se activan).
+    fn ui_repair(&mut self, ui: &mut egui::Ui, snap: &Snapshot) {
+        let uinput_problem = snap.uinput_denied || snap.uinput_missing;
+        if snap.firewall_hint.is_none() && !uinput_problem {
             return;
         }
         ui.add_space(10.0);
         if let Some(hint) = &snap.firewall_hint {
             ui.label(RichText::new(hint).size(12.0).color(theme::WARN));
         }
-        if snap.uinput_denied {
+        if snap.uinput_missing {
+            ui.label(
+                RichText::new(
+                    "El módulo uinput no está cargado (no existe /dev/uinput): sin él no puedo mover el cursor.",
+                )
+                .size(12.0)
+                .color(theme::WARN),
+            );
+        } else if snap.uinput_denied {
             ui.label(
                 RichText::new("Sin permiso para mover el cursor (/dev/uinput).")
                     .size(12.0)
@@ -214,16 +229,54 @@ impl PepoMoteApp {
                         .color(theme::TEXT_DIM),
                 );
             } else if self.pkexec_ok {
-                if ui
-                    .button(RichText::new("🔧 Reparar ahora").size(14.0))
-                    .clicked()
-                {
+                let label = if snap.fix_failed.is_some() { "🔧 Reintentar" } else { "🔧 Reparar ahora" };
+                if ui.button(RichText::new(label).size(14.0)).clicked() {
                     crate::fixes::fix_all(self.shared.clone(), self.pairing.port);
                 }
+                match &snap.fix_failed {
+                    Some(why) => {
+                        ui.label(RichText::new(why).size(11.0).color(theme::WARN));
+                    }
+                    None => {
+                        ui.label(
+                            RichText::new("Un diálogo del sistema pedirá tu contraseña una sola vez")
+                                .size(11.0)
+                                .color(theme::TEXT_DIM),
+                        );
+                    }
+                }
+            }
+            // Sin pkexec, o con el diálogo fallando (sesión sin agente de
+            // polkit): el comando manual, listo para copiar
+            if uinput_problem && (!self.pkexec_ok || snap.fix_failed.is_some()) {
+                ui.add_space(6.0);
+                let intro = if self.pkexec_ok {
+                    "Si el diálogo no aparece (sesión sin agente de polkit), pega esto en un terminal:"
+                } else {
+                    "No hay pkexec en este sistema. Pega esto en un terminal (pide tu contraseña una vez):"
+                };
+                ui.label(RichText::new(intro).size(11.0).color(theme::TEXT_DIM));
                 ui.label(
-                    RichText::new("Un diálogo del sistema pedirá tu contraseña una sola vez")
+                    RichText::new(crate::fixes::UINPUT_MANUAL_CMD)
+                        .monospace()
                         .size(11.0)
-                        .color(theme::TEXT_DIM),
+                        .color(theme::TEXT),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button(RichText::new("Copiar comando").size(12.0)).clicked() {
+                        ui.output_mut(|o| o.copied_text = crate::fixes::UINPUT_MANUAL_CMD.to_owned());
+                        self.copied_at = Some(Instant::now());
+                    }
+                    if self.copied_at.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
+                        ui.label(RichText::new("Copiado").size(11.0).color(theme::OK));
+                    }
+                });
+                ui.label(
+                    RichText::new(
+                        "Si después sigue sin permiso, cierra sesión y vuelve a entrar (la regla se aplica al iniciar sesión).",
+                    )
+                    .size(11.0)
+                    .color(theme::TEXT_DIM),
                 );
             }
         }

@@ -19,6 +19,8 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger /dev/uinput 2>/dev/null || true
 sudo modprobe uinput 2>/dev/null || true
 echo 'uinput' | sudo tee /etc/modules-load.d/pepomote.conf >/dev/null
+# ACL directa para no tener que cerrar sesión (la regla uaccess cubre las siguientes)
+sudo setfacl -m "u:${SUDO_UID:-$(id -u)}:rw" /dev/uinput 2>/dev/null || true
 
 PORT="${PEPOMOTE_PORT:-26761}"
 echo "==> Firewall: abriendo el puerto $PORT (TCP+UDP) si hay uno activo"
@@ -48,4 +50,5 @@ sed "s|^Exec=.*|Exec=$HOME/.local/bin/PepoMote|" "$SCRIPT_DIR/PepoMote.desktop" 
 
 echo
 echo "Listo. Abre 'PepoMote' desde tu lanzador de aplicaciones."
-echo "Si /dev/uinput sigue sin permiso, cierra sesión y vuelve a entrar (la regla uaccess se aplica al iniciar sesión)."
+echo "En Sway, Hyprland, MangoWC y demás compositores wlroots el cursor va por Wayland: no necesita nada de uinput."
+echo "Solo si /dev/uinput siguiera sin permiso (GNOME, KDE, X11): cierra sesión y vuelve a entrar (la regla uaccess se aplica al iniciar sesión)."

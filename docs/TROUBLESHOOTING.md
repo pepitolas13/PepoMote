@@ -14,6 +14,8 @@ Se completa con cada hito. Esqueleto:
    ventana. `packaging/linux/install.sh` hace lo mismo por script. A mano:
    - ufw: `sudo ufw allow 26761/tcp && sudo ufw allow 26761/udp`
    - firewalld: `sudo firewall-cmd --permanent --add-port=26761/tcp --add-port=26761/udp && sudo firewall-cmd --reload`
+   Si el diálogo de contraseña no aparece (sesión sin agente de polkit), usa
+   estos comandos: la ventana te lo dirá.
 4. Si el mDNS está roto en tu router, PepoMote prueba solo el broadcast; si tampoco, teclea la IP:puerto que muestra el receptor bajo el QR.
 5. Último recurso: hotspot del móvil + PC conectado a él. Funciona siempre.
 
@@ -34,12 +36,70 @@ que reparar: escanea el QR otra vez.
   código nuevo de 4 dígitos que hay bajo el QR).
 - En el PC, la ventana de PepoMote dice qué móvil ha llegado con un QR antiguo.
 
-## Linux: "sin permiso para /dev/uinput"
+## Linux: «Sin permiso para mover el cursor (/dev/uinput)» o «el módulo uinput no está cargado»
 
-Pulsa **«Reparar ahora»** en la ventana del receptor (o deja que el diálogo
-del primer arranque haga lo suyo): instala la regla udev y da acceso al
-instante, sin cerrar sesión. Manualmente: `packaging/linux/install.sh` (regla
-`uaccess`: acceso para el usuario de la sesión activa, sin grupos ni root).
+Solo pasa donde el cursor va por uinput: GNOME, KDE Plasma y cualquier
+sesión X11. En Sway, Hyprland, MangoWC, river, labwc, niri y demás
+compositores wlroots el cursor va por el puntero virtual de Wayland, no
+necesita ningún permiso y el pie de la ventana dice «Inyección: Wayland
+(puntero virtual)»: si ves ese pie, este apartado no es para ti.
+
+1. Pulsa **«Reparar ahora»** en la ventana del receptor (o deja que el
+   diálogo del primer arranque haga lo suyo): carga el módulo, instala la
+   regla udev y da acceso al instante, sin cerrar sesión (regla `uaccess`:
+   acceso para el usuario de la sesión activa, sin grupos ni root).
+2. Si no hay botón (no hay `pkexec`) o el diálogo de contraseña nunca
+   aparece (sesión sin agente de polkit, típico de un gestor de ventanas «a
+   pelo»), la ventana lo dice y enseña el comando manual con un botón
+   **«Copiar comando»**. Es este, para pegar en un terminal (pide tu
+   contraseña una vez):
+
+   ```
+   sudo sh -c 'modprobe uinput; printf "uinput\n" > /etc/modules-load.d/pepomote.conf; printf "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", TAG+=\"uaccess\", OPTIONS+=\"static_node=uinput\"\n" > /etc/udev/rules.d/99-pepomote.rules; udevadm control --reload-rules; udevadm trigger /dev/uinput; setfacl -m "u:${SUDO_UID:-$(id -u)}:rw" /dev/uinput'
+   ```
+
+3. «El módulo uinput no está cargado»: el kernel no tiene `/dev/uinput`
+   hasta que se carga el módulo; el comando de arriba lo carga ahora y lo
+   deja cargado en cada arranque (`/etc/modules-load.d/pepomote.conf`).
+4. Si después de todo sigue sin permiso, cierra sesión y vuelve a entrar (la
+   regla `uaccess` se aplica al iniciar sesión). `packaging/linux/install.sh`
+   hace lo mismo por script.
+5. Para forzar un backend: `PEPOMOTE_INJECT=uinput` o `PEPOMOTE_INJECT=wayland`
+   al lanzar el receptor.
+
+## El receptor se cierra al conectar el móvil (Linux)
+
+Síntoma (1.3.0 y anteriores): nada más escanear el QR el móvil pierde la
+conexión y la ventana del receptor desaparece. La campanita de conexión
+abre el audio por ALSA; con el plugin ALSA de PipeWire/PulseAudio la
+biblioteca de audio entraba en pánico en su propio hilo y el receptor
+estaba compilado para abortar con cualquier pánico.
+
+Arreglado en 1.3.1: el sonido va aislado (si falla, se desactiva solo y
+todo lo demás sigue) y un pánico en un hilo secundario ya no cierra el
+receptor: queda en el log y en la ventana. Si te pasa algo parecido:
+
+- El log: `~/.config/pepomote/receptor.log` (Windows:
+  `%APPDATA%\pepotech\PepoMote\config\receptor.log`). Arranque, sesión,
+  inyección elegida, móviles que entran y salen, firewall, puertos y pánicos
+  (hilo, mensaje y archivo:línea).
+- `./PepoMote-x86_64.AppImage --diag` (Windows: `PepoMote.exe --diag > diag.txt`)
+  imprime un informe: sistema, sesión (Wayland/X11, compositor), qué ofrece el
+  compositor, si `/dev/uinput` se abre, prueba de audio (con el pánico
+  capturado, si lo hay), firewall, puertos y las últimas líneas del log.
+  Pégalo en el issue.
+
+## Wayland: qué compositores no necesitan permisos
+
+| Escritorio | Cómo se mueve el cursor | Qué hace falta |
+|---|---|---|
+| Sway, Hyprland, MangoWC, river, labwc, niri, Wayfire y cualquier compositor que anuncie `zwlr_virtual_pointer_manager_v1` (+ `zwp_virtual_keyboard_manager_v1` para las teclas) | Puntero y teclado virtuales de Wayland | Nada |
+| GNOME (Mutter), KDE Plasma (KWin) | `/dev/uinput` | «Reparar ahora» o el comando manual (una vez) |
+| Cualquier sesión X11 | `/dev/uinput` | Igual |
+
+El pie de la ventana dice cuál está en uso («Inyección: …») y `--diag` lo
+explica. Con el teclado virtual el receptor usa su propio keymap: el texto
+del móvil (teclado en pantalla de Cemu) sale igual en cualquier idioma.
 
 ## El cursor no va donde apunto / se mueve "acumulando"
 
