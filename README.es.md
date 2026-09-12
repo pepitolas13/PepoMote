@@ -12,7 +12,7 @@
 | Pieza | Plataforma | Archivo |
 |---|---|---|
 | Emisor | Android 8.0+ | `PepoMote.apk` |
-| Emisor | iPhone / iPad, iOS 15+ (hasta iPadOS 26) | `PepoMote.ipa` — se instala con AltStore o Sideloadly, ver [docs/IOS.md](docs/IOS.md) |
+| Emisor | iPhone / iPad, iOS 15+ (hasta iPadOS 26) | `PepoMote.ipa` — se instala con SideStore o AltStore (fuente más abajo) o Sideloadly, ver [docs/IOS.md](docs/IOS.md) |
 | Emisor | Linux móvil: Mobian, postmarketOS… (aarch64) | `pepomote-mobile_*_arm64.deb` (Mobian: tocar e Instalar) · `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receptor | Windows 10/11 | `PepoMote.exe` — un solo archivo portable |
 | Receptor | Linux, X11 y Wayland | `PepoMote-x86_64.AppImage` |
@@ -25,7 +25,7 @@
 
 **Móvil** — instala `PepoMote.apk` (permite "orígenes desconocidos"). Ábrela, toca **Conectar** y escanea el QR del PC. Emparejado para siempre.
 
-**iPhone / iPad** — no está en la App Store: instala `PepoMote.ipa` con [AltStore](https://altstore.io) (añade la fuente `https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` y toca Instalar; se renueva sola cada 7 días) o con Sideloadly. Paso a paso, permisos y diferencias con Android en [docs/IOS.md](docs/IOS.md).
+**iPhone / iPad** — no está en la App Store: instálala con [SideStore](https://sidestore.io) (recomendado: se renueva sola en el propio iPad cada 7 días, sin PC encendido) o con [AltStore](https://altstore.io) (necesita AltServer en tu PC para renovar; sus autores trabajan en quitar ese requisito). En cualquiera de las dos: Sources → **+** → añade `https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` → Browse → PepoMote → Instalar; las actualizaciones te salen ahí mismo. Enlaces de un toque para una web o un chat: `sidestore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` y `altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json`. Sideloadly con `PepoMote.ipa` también vale. Paso a paso, permisos y diferencias con Android en [docs/IOS.md](docs/IOS.md).
 
 **Móvil con Linux** (Mobian, postmarketOS…) — Mobian: descarga `pepomote-mobile_*_arm64.deb` en el móvil, tócalo y pulsa **Instalar**. Cualquier otra distro, un comando en el terminal: `wget -qO- https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh | sh`. Después ábrela como una app más: **Conectar** → tu PC en la lista → el código de 4 dígitos que hay bajo el QR. Ver [docs/MOBILE-LINUX.md](docs/MOBILE-LINUX.md).
 
@@ -49,6 +49,7 @@ Mira [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — toca **Wii U** en la app, sost
 - **Modo automático** (1.4): abre Dolphin o Cemu y el receptor cambia de modo solo; ciérralo y vuelve el puntero
 - **Precisión**: mantén la tira de la mirilla y el cursor va al 40 %, sin salto al soltar; sigue aunque el dedo se salga de la tira
 - **Atrás/adelante y volumen que repite**: en modo puntero la cruceta ← / → va atrás / adelante en el navegador (↑ / ↓ siguen siendo flechas) y mantener − / + o el 🔉 / 🔊 de multimedia sigue bajando o subiendo el volumen
+- **iPhone y iPad** (1.5): el mismo emisor en Swift, con la doble pantalla del GamePad de Wii U y todo lo demás; se instala con SideStore o AltStore desde una fuente de un toque, y lo compila y prueba la CI en macOS
 - **Varios PCs y reconexión automática**: la app guarda todos tus PCs y, si se cae la Wi-Fi o reinicias el receptor, vuelve sola sin perder la pantalla ni el modo
 - **Tema oscuro e inglés**: siguen al sistema; ES/EN arriba a la derecha en las tres apps
 - **Campanita por jugador, bandeja que cuenta el estado, latido con el RTT** en la ventana del receptor; en Android icono temático, accesos directos y tile de Ajustes rápidos
