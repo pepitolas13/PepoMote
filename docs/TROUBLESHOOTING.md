@@ -277,3 +277,47 @@ Más en [MOBILE-LINUX.md](MOBILE-LINUX.md).
 ## Android mata la conexión al apagar la pantalla
 
 PepoMote usa un servicio en primer plano con wakelock; concédele la exención de optimización de batería cuando la pida. En OEMs agresivos (Xiaomi, Huawei…): dontkillmyapp.com/<tu-marca>.
+
+## El modo cambia solo al abrir o cerrar Dolphin o Cemu
+
+Desde 1.4 el receptor vigila los emuladores: abrir Dolphin pone el modo
+Dolphin, abrir Cemu el modo Wii U, y cerrar el que manda vuelve al puntero (o
+al otro emulador si sigue abierto). Los móviles cambian de pantalla solos y
+ven un aviso. Lo que elijas a mano en el móvil se respeta hasta la siguiente
+vez que abras o cierres un emulador. Si prefieres el modo fijo: Ajustes del
+receptor → «Cambiar de modo al abrir o cerrar Dolphin o Cemu» desactivado.
+`--diag` dice si está activo y qué emulador ve abierto.
+
+## Modo precisión (el cursor va al 40 %)
+
+Mantén la tira de la lupa: borde izquierdo del mando vertical (espejo de la
+de scroll) o la píldora «Precisión» del mando apaisado; en el móvil Linux,
+la tira izquierda. Al soltar no hay salto: el apuntado queda corrido hasta
+que recentres con la diana. En Dolphin y Wii U no hace nada.
+
+## Varios PCs
+
+Conectar enseña «Tus PCs»: toca uno para conectar con él; mantén pulsado
+para olvidarlo (en el móvil Linux, botón «Olvidar»). Si el PC actual no
+responde y hay otro guardado, la app abre Conectar en vez de dar error. Un
+token es un PC: si el PC cambia de IP o de nombre, el emparejamiento se
+actualiza solo; una IP nueva de un PC nunca pisa la de otro con el mismo
+nombre.
+
+## Se ha caído la conexión y la app dice «Reconectando…»
+
+Desde 1.4 la app vuelve sola: reintenta con espera creciente (1, 2, 4, 8,
+15 s) durante dos minutos, buscando el PC por si cambió de IP, y al volver
+repone el modo (Dolphin, Wii U) y el Mando de Wii. La pantalla del mando se
+queda. Si a los dos minutos no ha vuelto, aviso y al inicio. Los rechazos del
+PC (QR antiguo, ocupado, versión) no se reintentan.
+
+## Tema oscuro e idioma
+
+Android sigue al tema del sistema (y no vuelve al inicio si cambia en mitad
+de una partida). El receptor lo sigue en Windows; en Linux, elígelo en
+Ajustes («Tema»), porque el escritorio no lo comunica. El móvil Linux lo
+elige en el inicio. Idioma: español o inglés según el sistema (español para
+cualquier otro), y se cambia con ES/EN arriba a la derecha (receptor, Android
+y móvil Linux). Los avisos que el PC manda a los móviles van en el idioma
+del PC; el log y `--diag` siempre en español.
