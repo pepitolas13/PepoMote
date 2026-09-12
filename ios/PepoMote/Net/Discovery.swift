@@ -68,7 +68,7 @@ enum Discovery {
             let c = NWConnection(to: endpoint, using: params)
             let q = DispatchQueue(label: "pepomote.resolve")
             let done = ResultFlag()
-            func finish(_ v: (String, Int)?) {
+            @Sendable func finish(_ v: (String, Int)?) {
                 if done.flag { return }
                 done.flag = true
                 c.cancel()

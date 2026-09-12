@@ -263,9 +263,7 @@ final class LinkService {
         guard let f = found.first(where: { $0.name == pairing.pcName && ($0.host != pairing.host || $0.tcpPort != pairing.port) }) else {
             return pairing
         }
-        var moved = pairing
-        moved.host = f.host
-        moved.port = f.tcpPort
+        let moved = Pairing(host: f.host, port: f.tcpPort, token: pairing.token, pcName: pairing.pcName)
         await MainActor.run { PairStore.save(moved) }
         return moved
     }
