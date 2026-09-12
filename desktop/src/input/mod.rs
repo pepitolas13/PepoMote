@@ -3,6 +3,7 @@
 //! MangoWC, river, labwc, niri…) y, donde el compositor no los ofrece
 //! (GNOME, KDE, X11), uinput.
 
+#[cfg(any(target_os = "linux", test))]
 use crate::tr;
 
 #[cfg(target_os = "linux")]
