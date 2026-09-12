@@ -356,7 +356,8 @@ pub fn run(
                     }
 
                     engine.set_cursor_hint(inj.cursor_pos());
-                    match engine.apply(&p, sens_deg, aspect, abs_mode, screen_w) {
+                    let precision = p.buttons & codec::BTN_PRECISION != 0;
+                    match engine.apply(&p, sens_deg, aspect, abs_mode, screen_w, precision) {
                         PointerOutput::Abs { nx, ny } => inj.move_abs(nx, ny),
                         PointerOutput::Rel { dx, dy } => inj.move_rel(dx, dy),
                         PointerOutput::None => {}
@@ -403,7 +404,7 @@ impl Default for IrPointer {
 
 impl IrPointer {
     fn apply(&mut self, p: &codec::InputPacket, sens_deg: f32, aspect: f32, screen_w: f32) -> Option<(u16, u16)> {
-        match self.engine.apply(p, sens_deg, aspect, true, screen_w) {
+        match self.engine.apply(p, sens_deg, aspect, true, screen_w, false) {
             PointerOutput::Abs { nx, ny } => {
                 let on_screen = (-0.05..=1.05).contains(&nx) && (-0.05..=1.05).contains(&ny);
                 self.last = on_screen.then(|| {

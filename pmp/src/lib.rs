@@ -95,6 +95,9 @@ pub const BTN_STICK_R: u32 = 1 << 26;
 pub const BTN_MIC: u32 = 1 << 27;
 /// Cambiar la vista TV ↔ pantalla del GamePad (función de Cemu)
 pub const BTN_SCREEN: u32 = 1 << 28;
+/// Precisión (modo puntero, desde 1.4): mientras se mantiene, el cursor se
+/// mueve al 40 %. En Dolphin y Cemu se ignora.
+pub const BTN_PRECISION: u32 = 1 << 29;
 
 #[derive(Debug, PartialEq)]
 pub enum Packet {
@@ -401,5 +404,17 @@ mod tests {
         let mut short = build_input(&InputPacket::default()).to_vec();
         short.pop();
         assert_eq!(parse(&short), None);
+    }
+
+    #[test]
+    fn el_bit_de_precision_es_el_29_y_viaja_en_el_input() {
+        assert_eq!(BTN_PRECISION, 0x2000_0000);
+        let wiiu = BTN_A | BTN_X | BTN_Y | BTN_L | BTN_R | BTN_ZL | BTN_ZR | BTN_STICK_L | BTN_STICK_R | BTN_MIC | BTN_SCREEN;
+        assert_eq!(wiiu & BTN_PRECISION, 0, "no pisa ningún botón de Wii U");
+        let buf = vector("input_wiiu");
+        let Packet::Input(mut p) = parse(&buf).unwrap() else { panic!("no es INPUT") };
+        p.buttons |= BTN_PRECISION;
+        let Packet::Input(back) = parse(&build_input(&p)).unwrap() else { panic!("no es INPUT") };
+        assert_eq!(back.buttons, p.buttons, "el bit 29 sobrevive al viaje");
     }
 }

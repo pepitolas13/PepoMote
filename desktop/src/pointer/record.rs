@@ -101,7 +101,7 @@ pub fn replay_from_args() -> bool {
                 let Some(Packet::Input(p)) = codec::parse(&raw) else { continue };
                 let seen = if hint_lag == 0 { last_abs } else { abs_history.front().copied().or(last_abs) };
                 engine.set_cursor_hint(seen.map(|(x, y)| (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0))));
-                let out = engine.apply(&p, sens, 16.0 / 9.0, true, 2560.0);
+                let out = engine.apply(&p, sens, 16.0 / 9.0, true, 2560.0, p.buttons & codec::BTN_PRECISION != 0);
                 if let PointerOutput::Abs { nx, ny } = out {
                     last_abs = Some((nx, ny));
                     abs_history.push_back((nx, ny));

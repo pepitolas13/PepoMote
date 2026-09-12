@@ -42,6 +42,7 @@ import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
+import dev.pepotech.pepomote.ui.components.PrecisionStrip
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.TriggerZone
 import dev.pepotech.pepomote.ui.components.WII_PAD_HELP
@@ -204,6 +205,14 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
         ScrollStrip(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
+                .fillMaxHeight(0.45f)
+                .width(30.dp)
+        )
+
+        // Espejo de la de scroll: mantener = puntero al 40 %
+        PrecisionStrip(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
                 .fillMaxHeight(0.45f)
                 .width(30.dp)
         )

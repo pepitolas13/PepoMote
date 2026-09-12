@@ -34,6 +34,7 @@ import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
+import dev.pepotech.pepomote.ui.components.PrecisionPill
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
@@ -161,6 +162,12 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 8.dp)
+        )
+
+        PrecisionPill(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 6.dp)
         )
 
         NoticeBanner(

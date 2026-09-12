@@ -100,6 +100,9 @@ const SIGN_Y: f32 = -1.0;
 const ANCHOR_LAMBDA: f32 = 8.0;
 /// Fracción del movimiento ordenado que puede ir a disolver el puente.
 const BRIDGE_DISSOLVE_FRACTION: f32 = 0.12;
+/// Precisión (botón mantenido): fracción del movimiento que llega a la
+/// pantalla. El resto se guarda en `shift`, así al soltar no hay salto.
+const PRECISION_GAIN: f32 = 0.4;
 /// Apuntado absoluto: si el cursor real se aleja más que esto (fracción de
 /// pantalla) de donde lo dejamos, es que el SO lo recortó en un borde o el
 /// ratón lo movió: se sigue desde donde está de verdad.
@@ -678,6 +681,7 @@ impl PointerEngine {
     /// `sens_deg`: grados de giro para cruzar el ancho de pantalla.
     /// `aspect_w_over_h`: relación de aspecto de la pantalla destino.
     /// `abs_mode`: false = forzar salida relativa (juegos).
+    /// `precision`: botón de precisión mantenido (el cursor va al 40 %).
     pub fn apply(
         &mut self,
         p: &InputPacket,
@@ -685,6 +689,7 @@ impl PointerEngine {
         aspect_w_over_h: f32,
         abs_mode: bool,
         screen_w_px: f32,
+        precision: bool,
     ) -> PointerOutput {
         let dt = self.compute_dt(p.t_sensor_us);
 
@@ -698,7 +703,8 @@ impl PointerEngine {
             // gyro; una zona muerta suave lo mata en reposo (el móvil quieto
             // no arrastra el cursor) sin comerse el movimiento intencional.
             let Some(dt) = dt else { return PointerOutput::None };
-            let px_per_rad = screen_w_px / sens_deg.to_radians();
+            let gain = if precision { PRECISION_GAIN } else { 1.0 };
+            let px_per_rad = screen_w_px / sens_deg.to_radians() * gain;
             let gz = soft_deadzone(p.gyro[2], GYRO_DEADZONE_RADS);
             let gx = soft_deadzone(p.gyro[0], GYRO_DEADZONE_RADS);
             self.acc_x += SIGN_X * gz * dt * px_per_rad;
@@ -797,8 +803,19 @@ impl PointerEngine {
             }
         }
 
-        // Libre: el puente se disuelve dentro del propio movimiento ordenado
-        self.dissolve_bridge(yaw_f - lf_yaw, pitch_f - lf_pitch);
+        // Libre: el puente se disuelve dentro del propio movimiento ordenado.
+        // Precisión (botón mantenido): a la pantalla solo llega el 40 % del
+        // paso; el resto va al desplazamiento permanente, así al soltar no
+        // hay salto (el apuntado queda corrido hasta recentrar, como tras
+        // mover el ratón real).
+        let (mut step_yaw, mut step_pitch) = (yaw_f - lf_yaw, pitch_f - lf_pitch);
+        if precision {
+            self.shift.0 -= step_yaw * (1.0 - PRECISION_GAIN);
+            self.shift.1 -= step_pitch * (1.0 - PRECISION_GAIN);
+            step_yaw *= PRECISION_GAIN;
+            step_pitch *= PRECISION_GAIN;
+        }
+        self.dissolve_bridge(step_yaw, step_pitch);
         if abs_mode {
             self.follow_real_cursor(sens_deg, aspect_w_over_h);
         }
@@ -977,13 +994,18 @@ mod tests {
         /// Gira suave hasta `target` en `steps` muestras. Devuelve la última
         /// salida Abs vista (o el centro si no hubo ninguna).
         fn turn(&mut self, e: &mut PointerEngine, target: Quat, steps: u32) -> (f32, f32) {
+            self.turn_with(e, target, steps, false)
+        }
+
+        /// Como `turn`, con el botón de precisión mantenido o no.
+        fn turn_with(&mut self, e: &mut PointerEngine, target: Quat, steps: u32, precision: bool) -> (f32, f32) {
             let (axis, ang) = delta_axis_angle(self.q, target);
             let q0 = self.q;
             let mut out = (0.5, 0.5);
             for i in 1..=steps {
                 let qi = q0.mul(qrot_axis(axis, ang * i as f32 / steps as f32));
                 let p = self.make(qi, 0);
-                if let PointerOutput::Abs { nx, ny } = ap(e, &p) {
+                if let PointerOutput::Abs { nx, ny } = ap_p(e, &p, precision) {
                     out = (nx, ny);
                 }
             }
@@ -992,11 +1014,15 @@ mod tests {
 
         /// Mantiene la orientación actual `steps` muestras.
         fn hold(&mut self, e: &mut PointerEngine, steps: u32) -> (f32, f32) {
+            self.hold_with(e, steps, false)
+        }
+
+        fn hold_with(&mut self, e: &mut PointerEngine, steps: u32, precision: bool) -> (f32, f32) {
             let mut out = (0.5, 0.5);
             for _ in 0..steps {
                 let q = self.q;
                 let p = self.make(q, 0);
-                if let PointerOutput::Abs { nx, ny } = ap(e, &p) {
+                if let PointerOutput::Abs { nx, ny } = ap_p(e, &p, precision) {
                     out = (nx, ny);
                 }
             }
@@ -1005,7 +1031,12 @@ mod tests {
     }
 
     fn ap(e: &mut PointerEngine, p: &InputPacket) -> PointerOutput {
-        e.apply(p, 35.0, 16.0 / 9.0, true, 1920.0)
+        e.apply(p, 35.0, 16.0 / 9.0, true, 1920.0, false)
+    }
+
+    /// Como `ap`, con el botón de precisión mantenido o no.
+    fn ap_p(e: &mut PointerEngine, p: &InputPacket, precision: bool) -> PointerOutput {
+        e.apply(p, 35.0, 16.0 / 9.0, true, 1920.0, precision)
     }
 
     /// Como `ap`, simulando además el cursor real del SO: la última posición
@@ -1100,7 +1131,7 @@ mod tests {
         let mut t = 0u64;
         for _ in 0..100 {
             t += 5_000;
-            e.apply(&packet(arr(qrot_z(0.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0);
+            e.apply(&packet(arr(qrot_z(0.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0, false);
         }
         // el sensor se asienta: orientación real pitch -40°. Es una
         // CORRECCIÓN del móvil (sin gyro): el gyro va a cero, como en la vida
@@ -1109,7 +1140,7 @@ mod tests {
         for _ in 0..100 {
             t += 5_000;
             if let PointerOutput::Abs { nx, ny } =
-                e.apply(&packet(arr(qrot_x(-40.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0)
+                e.apply(&packet(arr(qrot_x(-40.0)), 0, t, FLAG_QUAT_VALID), 35.0, 16.0 / 9.0, true, 1920.0, false)
             {
                 out = (nx, ny);
             }
@@ -1409,11 +1440,11 @@ mod tests {
         let mut e = PointerEngine::new();
         let mut p = packet([0.0; 4], 0, 0, 0); // sin FLAG_QUAT_VALID
         p.gyro = [0.015, 0.0, 0.02]; // ~1°/s de sesgo, por debajo de la zona muerta
-        e.apply(&p, 34.0, 16.0 / 9.0, true, 1920.0);
+        e.apply(&p, 34.0, 16.0 / 9.0, true, 1920.0, false);
         let mut moved = false;
         for i in 1..400 {
             p.t_sensor_us = i * 5_000;
-            if !matches!(e.apply(&p, 34.0, 16.0 / 9.0, true, 1920.0), PointerOutput::None) {
+            if !matches!(e.apply(&p, 34.0, 16.0 / 9.0, true, 1920.0, false), PointerOutput::None) {
                 moved = true;
             }
         }
@@ -1425,9 +1456,9 @@ mod tests {
         let mut e = PointerEngine::new();
         let mut p = packet([1.0, 0.0, 0.0, 0.0], 0, 0, 0);
         p.gyro = [0.0, 0.0, 1.0];
-        e.apply(&p, 35.0, 16.0 / 9.0, true, 1920.0);
+        e.apply(&p, 35.0, 16.0 / 9.0, true, 1920.0, false);
         p.t_sensor_us = 10_000;
-        let out = e.apply(&p, 35.0, 16.0 / 9.0, true, 1920.0);
+        let out = e.apply(&p, 35.0, 16.0 / 9.0, true, 1920.0, false);
         match out {
             PointerOutput::Rel { dx, .. } => assert!(dx < 0, "dx={dx}"),
             other => panic!("esperaba Rel, fue {other:?}"),
@@ -1687,14 +1718,14 @@ mod tests {
         let mut e = PointerEngine::new();
         let mut ph = Phone::new();
         let p = ph.make(qrot_z(0.0), 0);
-        assert_eq!(e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+        assert_eq!(e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0, false), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
         for _ in 0..20 {
             let q = ph.q;
             let p = ph.make(q, 0);
-            e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0);
+            e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0, false);
         }
         let p = ph.make(qrot_z(-10.0), 1); // Home: nuevo recentrado
-        assert_eq!(e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+        assert_eq!(e.apply(&p, 35.0, 16.0 / 9.0, false, 1920.0, false), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
     }
 
     #[test]
@@ -1992,7 +2023,7 @@ mod tests {
             let k = ang / dt;
             let mut p = packet(arr(sent_q), 0, self.t, FLAG_QUAT_VALID);
             p.gyro = [axis[0] * k + bias[0], axis[1] * k + bias[1], axis[2] * k + bias[2]];
-            e.apply(&p, sens, 16.0 / 9.0, true, 1920.0)
+            e.apply(&p, sens, 16.0 / 9.0, true, 1920.0, false)
         }
     }
 
@@ -2301,5 +2332,126 @@ mod tests {
         r.sweep(20.0, 0.0, 0.5);
         assert!((r.last.1 - 0.5).abs() < 0.01, "de vuelta al origen el cursor no está en el centro: ny={:.3}", r.last.1);
         assert!(r.max_dy <= bound, "inclinación {:.3} por encima de lo geométrico {bound:.3}", r.max_dy);
+    }
+
+    /// Precisión: mantenido, la mano mueve el cursor al 40 %; al soltar no
+    /// hay salto y vuelve el 1:1.
+    #[test]
+    fn modo_precision_mueve_al_40_y_no_salta_al_soltar() {
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        ap(&mut e, &ph.make(qrot_z(0.0), 1));
+        ph.hold(&mut e, 10);
+        // 1:1: 10° son 10/35 de pantalla
+        ph.turn(&mut e, qrot_z(10.0), 40);
+        let a = ph.hold(&mut e, 10);
+        let full = (a.0 - 0.5).abs();
+        assert!((full - 10.0 / 35.0).abs() < 0.02, "sin precisión: {full}");
+        // con precisión: otros 10° son el 40 %
+        ph.turn_with(&mut e, qrot_z(20.0), 40, true);
+        let b = ph.hold_with(&mut e, 10, true);
+        let fine = (b.0 - a.0).abs();
+        assert!((fine - 0.4 * 10.0 / 35.0).abs() < 0.02, "con precisión: {fine}");
+        assert!((b.1 - 0.5).abs() < 0.01, "sin deriva vertical: {}", b.1);
+        // soltar sin mover: ni un píxel
+        let c = ph.hold(&mut e, 5);
+        assert!((c.0 - b.0).abs() < 0.003, "salto al soltar: {} → {}", b.0, c.0);
+        // y de nuevo 1:1 desde donde está
+        ph.turn(&mut e, qrot_z(30.0), 40);
+        let d = ph.hold(&mut e, 10);
+        let again = (d.0 - c.0).abs();
+        assert!((again - 10.0 / 35.0).abs() < 0.02, "tras soltar: {again}");
+    }
+
+    #[test]
+    fn modo_precision_en_relativo_escala_los_deltas() {
+        let sweep = |precision: bool| -> i32 {
+            let mut e = PointerEngine::new();
+            let mut ph = Phone::new();
+            let rel = |e: &mut PointerEngine, p: &InputPacket| e.apply(p, 35.0, 16.0 / 9.0, false, 1920.0, precision);
+            rel(&mut e, &ph.make(qrot_z(0.0), 1));
+            let (axis, ang) = delta_axis_angle(ph.q, qrot_z(10.0));
+            let q0 = ph.q;
+            let mut dx_total = 0;
+            for i in 1..=40 {
+                let qi = q0.mul(qrot_axis(axis, ang * i as f32 / 40.0));
+                let p = ph.make(qi, 0);
+                if let PointerOutput::Rel { dx, .. } = rel(&mut e, &p) {
+                    dx_total += dx;
+                }
+            }
+            for _ in 0..10 {
+                let q = ph.q;
+                let p = ph.make(q, 0);
+                if let PointerOutput::Rel { dx, .. } = rel(&mut e, &p) {
+                    dx_total += dx;
+                }
+            }
+            dx_total
+        };
+        let full = sweep(false);
+        let fine = sweep(true);
+        let expected = 1920.0 * 10.0 / 35.0;
+        assert!((full.abs() as f32 - expected).abs() < 0.05 * expected, "1:1 = {full} px (esperados {expected})");
+        assert!((fine.abs() as f32 - 0.4 * expected).abs() < 0.05 * expected, "precisión = {fine} px");
+    }
+
+    #[test]
+    fn fallback_sin_quat_con_precision_va_al_40() {
+        let sweep = |precision: bool| -> i32 {
+            let mut e = PointerEngine::new();
+            let mut dx_total = 0;
+            for i in 0..41u64 {
+                let mut p = packet([1.0, 0.0, 0.0, 0.0], 0, i * DT_US, 0);
+                p.gyro = [0.0, 0.0, 1.0]; // 57°/s
+                if let PointerOutput::Rel { dx, .. } = e.apply(&p, 35.0, 16.0 / 9.0, true, 1920.0, precision) {
+                    dx_total += dx;
+                }
+            }
+            dx_total
+        };
+        let full = sweep(false);
+        let fine = sweep(true);
+        assert!(full.abs() > 400, "el fallback mueve: {full}");
+        let ratio = fine as f32 / full as f32;
+        assert!((ratio - 0.4).abs() < 0.03, "precisión = {fine} de {full} px ({ratio:.2})");
+    }
+
+    #[test]
+    fn congelar_y_descongelar_con_precision_no_salta() {
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        ap(&mut e, &ph.make(qrot_z(0.0), 1));
+        ph.turn(&mut e, qrot_z(10.0), 40);
+        let mut before = ph.hold(&mut e, 10);
+        // quieto hasta congelar (silencio)
+        let mut frozen = false;
+        for _ in 0..200 {
+            let q = ph.q;
+            let p = ph.make(q, 0);
+            match ap(&mut e, &p) {
+                PointerOutput::None => frozen = true,
+                PointerOutput::Abs { nx, ny } => before = (nx, ny),
+                PointerOutput::Rel { .. } => {}
+            }
+        }
+        assert!(frozen, "debe congelar en reposo");
+        // se mueve con precisión: el primer paquete sigue desde donde estaba
+        let (axis, ang) = delta_axis_angle(ph.q, qrot_z(20.0));
+        let q0 = ph.q;
+        let mut first = None;
+        let mut last = before;
+        for i in 1..=40 {
+            let qi = q0.mul(qrot_axis(axis, ang * i as f32 / 40.0));
+            let p = ph.make(qi, 0);
+            if let PointerOutput::Abs { nx, ny } = ap_p(&mut e, &p, true) {
+                first.get_or_insert((nx, ny));
+                last = (nx, ny);
+            }
+        }
+        let first = first.expect("se descongela al mover");
+        assert!((first.0 - before.0).abs() < 0.02, "salto al descongelar: {} → {}", before.0, first.0);
+        let moved = (last.0 - before.0).abs();
+        assert!((moved - 0.4 * 10.0 / 35.0).abs() < 0.03, "recorrido con precisión: {moved}");
     }
 }

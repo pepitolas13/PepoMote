@@ -51,6 +51,9 @@ object ButtonState {
     /** Cambiar la vista TV ↔ pantalla del GamePad (función de Cemu). */
     const val SCREEN = 1 shl 28
 
+    /** Precisión (modo puntero): mientras se mantiene, el cursor va al 40 %. */
+    const val PRECISION = 1 shl 29
+
     /**
      * Dedo en la pantalla táctil del GamePad: instantánea inmutable, así el
      * hilo de sensores lee x, y y `down` coherentes entre sí de una sola vez.

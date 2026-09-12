@@ -111,6 +111,7 @@ Cadencia: la del sensor (típico 100-200 Hz), tope 250 Hz, mínimo keepalive 1 H
 | 26 | click stick derecho | — (solo Cemu) |
 | 27 | soplar al micrófono del GamePad | — (solo Cemu) |
 | 28 | pantalla TV↔GamePad (función de Cemu) | — (solo Cemu) |
+| 29 | precisión (mantener) | el cursor se mueve al 40 % mientras se mantiene (desde 1.4; en Dolphin / Cemu se ignora) |
 
 En modo `dolphin` y en modo `cemu` el receptor NO inyecta nada en el SO: todo el estado va al servidor DSU (mapeo en `protocol/DSU.md`).
 
