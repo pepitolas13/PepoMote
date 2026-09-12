@@ -33,13 +33,30 @@ const STUCK_AFTER: Duration = Duration::from_secs(5);
 
 const CONNECT: &[(f32, u64)] = &[(659.0, 90), (784.0, 90), (1046.5, 160)];
 const DISCONNECT: &[(f32, u64)] = &[(1046.5, 90), (784.0, 90), (659.0, 160)];
+/// Cada jugador tiene su campanita: la misma melodía transportada (J1 tal
+/// cual, J2 una tercera mayor, J3 una quinta, J4 una octava), así se sabe de
+/// oído quién ha entrado o salido.
+const SEMITONES_BY_PLAYER: [i32; 4] = [0, 4, 7, 12];
 
-pub fn connect_chime() {
-    play_notes("conexión", CONNECT);
+/// Semitonos del jugador `player` (1..4; fuera de rango, el más cercano).
+fn semitones_for(player: u8) -> i32 {
+    SEMITONES_BY_PLAYER[(player.max(1) as usize - 1).min(SEMITONES_BY_PLAYER.len() - 1)]
 }
 
-pub fn disconnect_chime() {
-    play_notes("desconexión", DISCONNECT);
+/// La melodía `semitones` más aguda (f·2^(n/12)), mismas duraciones.
+fn transpose(notes: &[(f32, u64)], semitones: i32) -> Vec<(f32, u64)> {
+    let k = 2f32.powf(semitones as f32 / 12.0);
+    notes.iter().map(|&(f, ms)| (f * k, ms)).collect()
+}
+
+/// Campanita de entrada del jugador `player` (1..4).
+pub fn connect_chime(player: u8) {
+    play_notes("conexión", transpose(CONNECT, semitones_for(player)));
+}
+
+/// Campanita de salida del jugador `player` (1..4).
+pub fn disconnect_chime(player: u8) {
+    play_notes("desconexión", transpose(DISCONNECT, semitones_for(player)));
 }
 
 /// El sonido se desactivó en esta sesión (para `--diag`).
@@ -61,7 +78,7 @@ fn total_ms(notes: &[(f32, u64)]) -> u64 {
     notes.iter().map(|n| n.1).sum()
 }
 
-fn play_notes(what: &'static str, notes: &'static [(f32, u64)]) {
+fn play_notes(what: &'static str, notes: Vec<(f32, u64)>) {
     if disabled() {
         return;
     }
@@ -77,7 +94,7 @@ fn play_notes(what: &'static str, notes: &'static [(f32, u64)]) {
     let spawned = std::thread::Builder::new()
         .name("pmp-sound".into())
         .spawn(move || {
-            let r = catch_unwind(AssertUnwindSafe(|| play_blocking(notes)));
+            let r = catch_unwind(AssertUnwindSafe(|| play_blocking(&notes)));
             note_outcome(what, r);
             BUSY.store(false, Ordering::Release);
         });
@@ -90,7 +107,7 @@ fn play_notes(what: &'static str, notes: &'static [(f32, u64)]) {
 /// algo revienta en medio no se destruyen durante el desenrollado (un Drop
 /// que entra en pánico mientras se desenrolla aborta el proceso entero); la
 /// destrucción va aparte, en su propio `catch_unwind`.
-fn play_blocking(notes: &'static [(f32, u64)]) -> Result<(), String> {
+fn play_blocking(notes: &[(f32, u64)]) -> Result<(), String> {
     let (stream, handle) = OutputStream::try_default()
         .map_err(|e| format!("no se pudo abrir la salida de audio: {e}"))?;
     let stream = ManuallyDrop::new(stream);
@@ -211,8 +228,31 @@ mod tests {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset();
         DISABLED.store(true, Ordering::Relaxed);
-        play_notes("prueba", CONNECT);
+        play_notes("prueba", CONNECT.to_vec());
         assert!(!BUSY.load(Ordering::Relaxed), "con el sonido desactivado no se ocupa nada");
         reset();
+    }
+
+    #[test]
+    fn transponer_una_octava_dobla_la_frecuencia() {
+        let up = transpose(CONNECT, 12);
+        for (a, b) in CONNECT.iter().zip(&up) {
+            assert!((b.0 - 2.0 * a.0).abs() < 1e-2, "{} → {}", a.0, b.0);
+        }
+        assert_eq!(transpose(CONNECT, 0), CONNECT.to_vec(), "cero semitonos: tal cual");
+    }
+
+    #[test]
+    fn transponer_conserva_las_duraciones() {
+        for n in SEMITONES_BY_PLAYER {
+            assert_eq!(total_ms(&transpose(DISCONNECT, n)), 340);
+        }
+    }
+
+    #[test]
+    fn semitonos_por_jugador() {
+        assert_eq!([1u8, 2, 3, 4].map(semitones_for), [0, 4, 7, 12]);
+        assert_eq!(semitones_for(0), 0, "sin jugador: como el 1");
+        assert_eq!(semitones_for(9), 12, "más de 4: como el 4");
     }
 }

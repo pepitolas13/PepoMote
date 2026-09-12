@@ -244,7 +244,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         ok["token"] = json!(pairing.token);
     }
     let _ = send(&writer, &ok);
-    crate::sound::connect_chime();
+    crate::sound::connect_chime(player);
     auto_configure(shared, sessions);
 
     // Bucle de control hasta que este móvil se vaya
@@ -359,18 +359,21 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     if !still_mine {
         return;
     }
-    let empty = {
+    let (empty, player) = {
         let mut s = shared.lock().unwrap();
+        // el número de jugador se calcula ANTES de vaciar la plaza (su campanita)
+        let player = player_number(&s.players, slot);
         s.players[slot as usize] = None;
         let empty = s.player_count() == 0;
         if empty {
             s.status = LinkStatus::Waiting;
             s.pps = 0.0;
             s.sensor_hz = 0.0;
+            s.rtt_hist.clear();
         }
-        empty
+        (empty, player)
     };
-    crate::sound::disconnect_chime();
+    crate::sound::disconnect_chime(player);
     if !empty {
         auto_configure(shared, sessions);
     }

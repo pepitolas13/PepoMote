@@ -84,7 +84,7 @@ fn main() -> eframe::Result {
 
     #[cfg(windows)]
     if std::env::var_os("PEPOMOTE_NO_TRAY").is_none() {
-        tray::start();
+        tray::start(shared.clone());
     }
 
     // --minimized (autoarranque, Windows): la ventana NI SE CREA — solo red

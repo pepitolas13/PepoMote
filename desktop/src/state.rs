@@ -345,6 +345,9 @@ pub fn player_number(players: &[Option<PlayerInfo>], slot: u8) -> u8 {
     same.iter().position(|s| *s == slot).map(|i| i as u8 + 1).unwrap_or(slot + 1)
 }
 
+/// Latidos del Jugador 1 que guarda la sparkline de la ventana.
+pub const RTT_HIST: usize = 60;
+
 /// Estado compartido entre los hilos de red y la UI.
 pub struct Shared {
     pub status: LinkStatus,
@@ -353,6 +356,8 @@ pub struct Shared {
     pub players: [Option<PlayerInfo>; crate::net::MAX_PLAYERS],
     pub pps: f32,
     pub sensor_hz: f32,
+    /// RTT (ms) de los últimos latidos del Jugador 1 (sparkline).
+    pub rtt_hist: std::collections::VecDeque<f32>,
     pub dsu_clients: usize,
     /// Resultado del último intento de configurar Dolphin (para la UI).
     pub dolphin_cfg_status: Option<String>,
@@ -401,6 +406,7 @@ impl Shared {
             players: [None, None, None, None],
             pps: 0.0,
             sensor_hz: 0.0,
+            rtt_hist: std::collections::VecDeque::with_capacity(RTT_HIST),
             dsu_clients: 0,
             dolphin_cfg_status: None,
             dolphin_pending: false,

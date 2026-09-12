@@ -1,7 +1,7 @@
 use crate::pairing::PairingInfo;
 use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use crate::theme;
-use egui::{Pos2, Rect, RichText, Rounding, Stroke, Vec2};
+use egui::{Color32, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
 use std::time::{Duration, Instant};
 
 pub struct PepoMoteApp {
@@ -69,6 +69,8 @@ struct Snapshot {
     player_count: usize,
     pps: f32,
     sensor_hz: f32,
+    /// RTT de los últimos latidos del Jugador 1 (sparkline).
+    rtt_hist: Vec<f32>,
     dsu_clients: usize,
     dolphin_status: Option<String>,
     cemu_status: Option<String>,
@@ -89,7 +91,6 @@ struct Snapshot {
 impl eframe::App for PepoMoteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         theme::sync(ctx);
-        ctx.request_repaint_after(Duration::from_millis(100));
 
         // En Windows, cerrar = esconder a la bandeja ("Salir" está en el tray)
         #[cfg(windows)]
@@ -109,6 +110,7 @@ impl eframe::App for PepoMoteApp {
                 player_count: s.player_count(),
                 pps: s.pps,
                 sensor_hz: s.sensor_hz,
+                rtt_hist: s.rtt_hist.iter().copied().collect(),
                 dsu_clients: s.dsu_clients,
                 dolphin_status: s.dolphin_cfg_status.clone(),
                 cemu_status: s.cemu_cfg_status.clone(),
@@ -123,6 +125,8 @@ impl eframe::App for PepoMoteApp {
                 fix_failed: s.fix_failed.clone(),
             }
         };
+        // Con móviles, 20 fps (el latido respira); en espera, 10 bastan
+        ctx.request_repaint_after(Duration::from_millis(if snap.player_count > 0 { 50 } else { 100 }));
 
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(theme::background()).inner_margin(24.0))
@@ -560,10 +564,50 @@ fn info_icon(ui: &mut egui::Ui, text: &str) {
     resp.on_hover_text(text);
 }
 
+/// Alfa del punto de latido: respira a 1 Hz entre 89 y 255.
+fn breath_alpha(t: f64) -> u8 {
+    let s = 0.5 - 0.5 * (t * std::f64::consts::TAU).cos();
+    (89.0 + s * 166.0).round() as u8
+}
+
+/// Los últimos `cap` valores normalizados a 0..1 contra el máximo (o contra
+/// `floor_ms` si es mayor: que un RTT de 5 ms no parezca una montaña).
+fn sparkline_norm(values: &[f32], cap: usize, floor_ms: f32) -> Vec<f32> {
+    let tail = &values[values.len().saturating_sub(cap)..];
+    let max = tail.iter().copied().fold(floor_ms, f32::max);
+    tail.iter().map(|v| (v / max).clamp(0.0, 1.0)).collect()
+}
+
+/// Sparkline (80×16) del RTT de los últimos latidos del Jugador 1.
+fn sparkline(ui: &mut egui::Ui, values: &[f32]) {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(80.0, 16.0), egui::Sense::hover());
+    let norm = sparkline_norm(values, crate::state::RTT_HIST, 20.0);
+    if norm.len() < 2 {
+        return;
+    }
+    let n = norm.len() as f32;
+    let pts: Vec<Pos2> = norm
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            Pos2::new(
+                rect.left() + rect.width() * i as f32 / (n - 1.0),
+                rect.bottom() - 1.0 - v * (rect.height() - 2.0),
+            )
+        })
+        .collect();
+    ui.painter().add(egui::Shape::line(pts, Stroke::new(1.2_f32, theme::blue())));
+    let last = values.last().copied().unwrap_or(0.0);
+    resp.on_hover_text(format!(
+        "Latido del Jugador 1: {last:.0} ms ahora (últimos {} latidos)",
+        values.len().min(crate::state::RTT_HIST)
+    ));
+}
+
 fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
     let card_w = 340.0f32.min(ui.available_width());
     let row_h = 34.0;
-    let head_h = 58.0;
+    let head_h = 62.0;
     let card_h = head_h + row_h * snap.player_count as f32 + 14.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(card_w, card_h), egui::Sense::hover());
     ui.painter().rect(
@@ -586,15 +630,26 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
     let cemu = snap.mode == Mode::Cemu;
     let cemu_layout = crate::state::cemu_layout(&snap.players);
     child.label(RichText::new(mode_txt).size(13.0).color(theme::blue()));
-    child.label(
-        RichText::new(format!(
-            "{:.0} paquetes/s · sensor {:.0} Hz",
-            snap.pps, snap.sensor_hz
-        ))
-        .size(11.0)
-        .color(theme::text_dim()),
-    );
-    child.add_space(6.0);
+    child.horizontal(|ui| {
+        // Latido: un punto verde que respira mientras llegan paquetes
+        let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
+        let color = if snap.pps > 0.0 {
+            let c = theme::ok();
+            Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), breath_alpha(ui.input(|i| i.time)))
+        } else {
+            theme::text_dim()
+        };
+        ui.painter().circle_filled(dot.center(), 4.0, color);
+        ui.label(
+            RichText::new(format!("{:.0} paquetes/s · sensor {:.0} Hz", snap.pps, snap.sensor_hz))
+                .size(11.0)
+                .color(theme::text_dim()),
+        );
+        if snap.rtt_hist.len() >= 2 {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| sparkline(ui, &snap.rtt_hist));
+        }
+    });
+    child.add_space(4.0);
 
     for (i, slot) in snap.players.iter().enumerate() {
         let Some(p) = slot else { continue };
@@ -696,5 +751,34 @@ fn draw_qr_card(ui: &mut egui::Ui, modules: &[bool], width: usize, size: f32) {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn el_latido_respira_entre_89_y_255_a_un_hercio() {
+        assert_eq!(breath_alpha(0.0), 89);
+        assert_eq!(breath_alpha(0.5), 255);
+        assert_eq!(breath_alpha(1.0), 89);
+        for i in 0..=100 {
+            let a = breath_alpha(i as f64 / 100.0);
+            assert!((89..=255).contains(&a), "t={i}: {a}");
+        }
+    }
+
+    #[test]
+    fn la_sparkline_normaliza_con_suelo_y_se_queda_con_los_ultimos() {
+        assert!(sparkline_norm(&[], 60, 20.0).is_empty());
+        assert_eq!(sparkline_norm(&[5.0, 10.0], 60, 20.0), vec![0.25, 0.5]);
+        let n = sparkline_norm(&[10.0, 40.0], 60, 20.0);
+        assert!((n[0] - 0.25).abs() < 1e-6 && (n[1] - 1.0).abs() < 1e-6, "por encima del suelo manda el máximo");
+        let many: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        let n = sparkline_norm(&many, 60, 20.0);
+        assert_eq!(n.len(), 60);
+        assert!((n[59] - 1.0).abs() < 1e-6);
+        assert!((n[0] - 40.0 / 99.0).abs() < 1e-6, "empieza en el valor 40");
     }
 }

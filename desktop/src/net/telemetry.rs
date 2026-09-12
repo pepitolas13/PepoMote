@@ -252,8 +252,16 @@ pub fn run(
                     .get(&session_id)
                     .map(|s| s.slot as usize);
                 if let Some(slot) = slot {
-                    if let Some(p) = shared.lock().unwrap().players[slot].as_mut() {
+                    let mut s = shared.lock().unwrap();
+                    if let Some(p) = s.players[slot].as_mut() {
                         p.rtt_ms = Some(rtt_ms);
+                    }
+                    if slot == 0 {
+                        // el latido del Jugador 1 se ve en la ventana (sparkline)
+                        if s.rtt_hist.len() >= crate::state::RTT_HIST {
+                            s.rtt_hist.pop_front();
+                        }
+                        s.rtt_hist.push_back(rtt_ms);
                     }
                 }
             }
