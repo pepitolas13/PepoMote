@@ -57,6 +57,29 @@ Límites del Apple ID gratuito: 3 apps instaladas a la vez por AltStore y
 renovación cada 7 días. Con una cuenta de desarrollador de pago la firma
 dura un año.
 
+## Sin AltServer encendido: SideStore (gratis) o cuenta de pago
+
+Con un Apple ID gratuito la firma caduca a los 7 días sí o sí; lo que cambia
+es quién la renueva:
+
+- **SideStore** ([sidestore.io](https://sidestore.io)): derivado de AltStore
+  que se refirma **en el propio iPhone/iPad** (VPN local + servidor anisette
+  público), sin PC ni AltServer después de instalarlo. Se instala una sola
+  vez desde el PC siguiendo su guía (AltServer o Sideloadly + el archivo de
+  emparejamiento del dispositivo). Acepta las mismas fuentes que AltStore:
+  añade la URL de arriba (`…/releases/latest/download/altstore.json`) y
+  PepoMote se instala y actualiza con un toque. Mismo límite de 3 apps a la
+  vez del Apple ID gratis.
+- **Cuenta de desarrollador de Apple de pago** (99 $/año): la firma dura un
+  año. Con Sideloadly instalas el IPA una vez y te olvidas hasta el año
+  siguiente; además permite repartirlo por TestFlight (90 días por build,
+  sin cable).
+- **Sideloadly a mano**: sin nada encendido, cable e IPA cada 7 días (un
+  minuto), como se explica a continuación.
+
+TrollStore (instalación permanente) solo llega hasta iOS 16.6.1 / 17.0: no
+sirve en dispositivos actuales.
+
 ## Instalar con Sideloadly (alternativa, sin AltServer)
 
 1. Baja **Sideloadly** de [sideloadly.io](https://sideloadly.io) e instálalo en
