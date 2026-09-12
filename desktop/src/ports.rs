@@ -10,6 +10,7 @@
 use crate::state::SharedState;
 use std::net::{TcpListener, UdpSocket};
 use std::time::{Duration, Instant};
+use crate::tr;
 
 /// Proceso que tiene abierto un puerto local: (pid, nombre).
 #[derive(Clone, Debug, PartialEq)]
@@ -49,16 +50,13 @@ fn bind_evicting<T>(
         Err(e) => e,
     };
     if first.kind() != std::io::ErrorKind::AddrInUse {
-        return Err(format!("{what}: no puedo escuchar en {} {port}: {first}", proto_name(proto)));
+        return Err(tr!("port.cannot_listen", what, proto_name(proto), port, first));
     }
     let Some(owner) = owner(port, proto) else {
-        return Err(format!(
-            "{what}: el puerto {} {port} está ocupado por otro programa que no he podido identificar; ciérralo (o reinicia) y vuelve a abrir PepoMote",
-            proto_name(proto)
-        ));
+        return Err(tr!("port.busy_unknown", what, proto_name(proto), port));
     };
     if owner.pid == std::process::id() {
-        return Err(format!("{what}: el puerto {} {port} ya está abierto en este mismo proceso", proto_name(proto)));
+        return Err(tr!("port.same_process", what, proto_name(proto), port));
     }
     let killed = kill(owner.pid);
     if killed {
@@ -66,12 +64,7 @@ fn bind_evicting<T>(
         while start.elapsed() < EVICT_WAIT {
             std::thread::sleep(Duration::from_millis(100));
             if let Ok(s) = bind() {
-                let msg = format!(
-                    "Puerto {} {port} estaba ocupado por {} (PID {}): lo he cerrado para que PepoMote funcione",
-                    proto_name(proto),
-                    owner.name,
-                    owner.pid
-                );
+                let msg = tr!("port.freed", proto_name(proto), port, owner.name, owner.pid);
                 shared.lock().unwrap().port_notice = Some(msg.clone());
                 crate::log_line!("{msg}");
                 crate::net::notify_all(&msg);
@@ -79,12 +72,7 @@ fn bind_evicting<T>(
             }
         }
     }
-    Err(format!(
-        "{what}: el puerto {} {port} lo tiene {} (PID {}) y no he podido cerrarlo (¿va como administrador?): ciérralo tú y vuelve a abrir PepoMote",
-        proto_name(proto),
-        owner.name,
-        owner.pid
-    ))
+    Err(tr!("port.busy_known", what, proto_name(proto), port, owner.name, owner.pid))
 }
 
 fn proto_name(p: Proto) -> &'static str {

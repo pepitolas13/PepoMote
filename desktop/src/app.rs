@@ -3,6 +3,9 @@ use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use crate::theme;
 use egui::{Color32, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
 use std::time::{Duration, Instant};
+use crate::i18n;
+use crate::state::CfgStatus;
+use crate::tr;
 
 pub struct PepoMoteApp {
     shared: SharedState,
@@ -72,9 +75,9 @@ struct Snapshot {
     /// RTT de los últimos latidos del Jugador 1 (sparkline).
     rtt_hist: Vec<f32>,
     dsu_clients: usize,
-    dolphin_status: Option<String>,
-    cemu_status: Option<String>,
-    cemu_screen: Option<String>,
+    dolphin_status: Option<CfgStatus>,
+    cemu_status: Option<CfgStatus>,
+    cemu_screen: Option<CfgStatus>,
     error: Option<String>,
     port_notice: Option<String>,
     firewall_hint: Option<String>,
@@ -128,6 +131,22 @@ impl eframe::App for PepoMoteApp {
         // Con móviles, 20 fps (el latido respira); en espera, 10 bastan
         ctx.request_repaint_after(Duration::from_millis(if snap.player_count > 0 { 50 } else { 100 }));
 
+        // Idioma: ES / EN arriba a la derecha (se guarda en Ajustes)
+        egui::Area::new(egui::Id::new("lang"))
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 12.0))
+            .show(ctx, |ui| {
+                let lang = i18n::current();
+                let button = egui::Button::new(RichText::new(lang.code().to_uppercase()).size(11.0).color(theme::text_dim()))
+                    .fill(theme::card())
+                    .stroke(Stroke::new(1.0_f32, theme::card_border()));
+                if ui.add(button).on_hover_text(tr!("win.lang_switch", lang.other().name())).clicked() {
+                    let next = i18n::toggle();
+                    let mut s = self.shared.lock().unwrap();
+                    s.config.lang = Some(next.code().to_owned());
+                    s.config.save();
+                }
+            });
+
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(theme::background()).inner_margin(24.0))
             .show(ctx, |ui| {
@@ -143,14 +162,14 @@ impl eframe::App for PepoMoteApp {
                                     .color(theme::text()),
                             );
                             ui.label(
-                                RichText::new("Apunta. Haz clic. Juega.")
+                                RichText::new(tr!("win.tagline"))
                                     .size(14.0)
                                     .color(theme::text_dim()),
                             );
                             ui.add_space(18.0);
 
                             if snap.player_count == 0 {
-                                self.ui_qr(ui, 280.0, "Esperando al móvil…");
+                                self.ui_qr(ui, 280.0, tr!("win.waiting"));
                             } else {
                                 ui_players(ui, &snap);
                                 if snap.mode == Mode::Dolphin {
@@ -160,7 +179,7 @@ impl eframe::App for PepoMoteApp {
                                 }
                                 if snap.player_count < crate::net::MAX_PLAYERS {
                                     ui.add_space(12.0);
-                                    self.ui_qr(ui, 170.0, "¿Otro jugador? Escanea");
+                                    self.ui_qr(ui, 170.0, tr!("win.another_player"));
                                 }
                             }
 
@@ -180,10 +199,10 @@ impl eframe::App for PepoMoteApp {
 
                             ui.add_space(12.0);
                             ui.label(
-                                RichText::new(format!(
-                                    "v{} · pv1 · Inyección: {}",
+                                RichText::new(tr!(
+                                    "win.footer",
                                     env!("CARGO_PKG_VERSION"),
-                                    snap.injector.unwrap_or("ninguna")
+                                    snap.injector.unwrap_or(tr!("win.inj_none"))
                                 ))
                                 .size(11.0)
                                 .color(theme::text_dim()),
@@ -213,15 +232,13 @@ impl PepoMoteApp {
         }
         if snap.uinput_missing {
             ui.label(
-                RichText::new(
-                    "El módulo uinput no está cargado (no existe /dev/uinput): sin él no puedo mover el cursor.",
-                )
+                RichText::new(tr!("fix.uinput_missing"))
                 .size(12.0)
                 .color(theme::warn()),
             );
         } else if snap.uinput_denied {
             ui.label(
-                RichText::new("Sin permiso para mover el cursor (/dev/uinput).")
+                RichText::new(tr!("fix.uinput_denied"))
                     .size(12.0)
                     .color(theme::warn()),
             );
@@ -231,12 +248,12 @@ impl PepoMoteApp {
             ui.add_space(4.0);
             if snap.fixing {
                 ui.label(
-                    RichText::new("Aplicando… responde al diálogo de contraseña")
+                    RichText::new(tr!("fix.applying"))
                         .size(12.0)
                         .color(theme::text_dim()),
                 );
             } else if self.pkexec_ok {
-                let label = if snap.fix_failed.is_some() { "🔧 Reintentar" } else { "🔧 Reparar ahora" };
+                let label = if snap.fix_failed.is_some() { tr!("fix.retry") } else { tr!("fix.now") };
                 if ui.button(RichText::new(label).size(14.0)).clicked() {
                     crate::fixes::fix_all(self.shared.clone(), self.pairing.port);
                 }
@@ -246,7 +263,7 @@ impl PepoMoteApp {
                     }
                     None => {
                         ui.label(
-                            RichText::new("Un diálogo del sistema pedirá tu contraseña una sola vez")
+                            RichText::new(tr!("fix.dialog_once"))
                                 .size(11.0)
                                 .color(theme::text_dim()),
                         );
@@ -258,9 +275,9 @@ impl PepoMoteApp {
             if uinput_problem && (!self.pkexec_ok || snap.fix_failed.is_some()) {
                 ui.add_space(6.0);
                 let intro = if self.pkexec_ok {
-                    "Si el diálogo no aparece (sesión sin agente de polkit), pega esto en un terminal:"
+                    tr!("fix.manual_no_dialog")
                 } else {
-                    "No hay pkexec en este sistema. Pega esto en un terminal (pide tu contraseña una vez):"
+                    tr!("fix.manual_no_pkexec")
                 };
                 ui.label(RichText::new(intro).size(11.0).color(theme::text_dim()));
                 ui.label(
@@ -270,18 +287,16 @@ impl PepoMoteApp {
                         .color(theme::text()),
                 );
                 ui.horizontal(|ui| {
-                    if ui.button(RichText::new("Copiar comando").size(12.0)).clicked() {
+                    if ui.button(RichText::new(tr!("fix.copy_cmd")).size(12.0)).clicked() {
                         ui.output_mut(|o| o.copied_text = crate::fixes::UINPUT_MANUAL_CMD.to_owned());
                         self.copied_at = Some(Instant::now());
                     }
                     if self.copied_at.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
-                        ui.label(RichText::new("Copiado").size(11.0).color(theme::ok()));
+                        ui.label(RichText::new(tr!("fix.copied")).size(11.0).color(theme::ok()));
                     }
                 });
                 ui.label(
-                    RichText::new(
-                        "Si después sigue sin permiso, cierra sesión y vuelve a entrar (la regla se aplica al iniciar sesión).",
-                    )
+                    RichText::new(tr!("fix.relogin"))
                     .size(11.0)
                     .color(theme::text_dim()),
                 );
@@ -302,7 +317,7 @@ impl PepoMoteApp {
         let (code, left) = self.shared.lock().unwrap().pair_code.current();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Sin cámara: código").size(12.0).color(theme::text_dim()));
+            ui.label(RichText::new(tr!("win.no_camera_code")).size(12.0).color(theme::text_dim()));
             ui.label(RichText::new(code).size(20.0).strong().color(theme::text()));
             ui.label(
                 RichText::new(format!("({} s)", left.as_secs()))
@@ -315,29 +330,22 @@ impl PepoMoteApp {
     fn ui_dolphin(&self, ui: &mut egui::Ui, snap: &Snapshot) {
         ui.add_space(8.0);
         ui.label(
-            RichText::new(format!("Dolphin: {} cliente(s) DSU", snap.dsu_clients))
+            RichText::new(tr!("win.dolphin_clients", snap.dsu_clients))
                 .size(13.0)
                 .color(theme::blue()),
         );
         if ui
-            .button(RichText::new("Configurar Dolphin").size(13.0))
+            .button(RichText::new(tr!("win.configure_dolphin")).size(13.0))
             .clicked()
         {
             crate::dolphin::configure_now(&self.shared);
         }
-        if let Some(msg) = &snap.dolphin_status {
-            let color = if msg.starts_with("Dolphin configurado") {
-                theme::ok()
-            } else {
-                theme::warn()
-            };
-            ui.label(RichText::new(msg).size(12.0).color(color));
+        if let Some(st) = &snap.dolphin_status {
+            let color = if st.ok { theme::ok() } else { theme::warn() };
+            ui.label(RichText::new(&st.text).size(12.0).color(color));
         }
         ui.label(
-            RichText::new(
-                "¿Dolphin enseña el mando desconectado? Modo Dolphin en el móvil, juego de Wii, y reinicia \
-                 Dolphin; la carpeta configurada tiene que ser la suya (en Dolphin: Archivo, «Abrir carpeta de usuario»).",
-            )
+            RichText::new(tr!("win.dolphin_help"))
             .size(11.0)
             .color(theme::text_dim()),
         );
@@ -346,34 +354,26 @@ impl PepoMoteApp {
     fn ui_cemu(&self, ui: &mut egui::Ui, snap: &Snapshot) {
         ui.add_space(8.0);
         ui.label(
-            RichText::new(format!("Cemu (Wii U): {} cliente(s) DSU", snap.dsu_clients))
+            RichText::new(tr!("win.cemu_clients", snap.dsu_clients))
                 .size(13.0)
                 .color(theme::blue()),
         );
         if ui
-            .button(RichText::new("Configurar Cemu").size(13.0))
+            .button(RichText::new(tr!("win.configure_cemu")).size(13.0))
             .clicked()
         {
             crate::cemu::configure_now(&self.shared);
         }
-        if let Some(msg) = &snap.cemu_status {
-            let color = if msg.starts_with("Cemu configurado") || msg.starts_with("Cemu encontrado") {
-                theme::ok()
-            } else {
-                theme::warn()
-            };
-            ui.label(RichText::new(msg).size(12.0).color(color));
+        if let Some(st) = &snap.cemu_status {
+            let color = if st.ok { theme::ok() } else { theme::warn() };
+            ui.label(RichText::new(&st.text).size(12.0).color(color));
         }
-        if let Some(msg) = &snap.cemu_screen {
-            let color = if msg.starts_with("Pantalla del GamePad:") && !msg.contains("sin móvil") {
-                theme::ok()
-            } else {
-                theme::text_dim()
-            };
-            ui.label(RichText::new(msg).size(12.0).color(color));
+        if let Some(st) = &snap.cemu_screen {
+            let color = if st.ok { theme::ok() } else { theme::text_dim() };
+            ui.label(RichText::new(&st.text).size(12.0).color(color));
         }
         ui.label(
-            RichText::new("Con Cemu cerrado. Jugador 1 = GamePad (y ve la pantalla del GamePad en el móvil), los demás Pro Controller; «Mando de Wii» se elige en el móvil.")
+            RichText::new(tr!("win.cemu_help"))
                 .size(11.0)
                 .color(theme::text_dim()),
         );
@@ -384,11 +384,11 @@ impl PepoMoteApp {
         let before = config.clone();
 
         egui::CollapsingHeader::new(
-            RichText::new("Ajustes").size(14.0).color(theme::text_dim()),
+            RichText::new(tr!("cfg.title")).size(14.0).color(theme::text_dim()),
         )
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Sensibilidad").size(13.0).color(theme::text_dim()));
+                ui.label(RichText::new(tr!("cfg.sensitivity")).size(13.0).color(theme::text_dim()));
                 ui.add(
                     egui::Slider::new(&mut config.sens_deg, 15.0..=60.0)
                         .suffix("°")
@@ -396,76 +396,62 @@ impl PepoMoteApp {
                 );
             });
             ui.label(
-                RichText::new("Grados de giro para cruzar la pantalla (menos = más rápido)")
+                RichText::new(tr!("cfg.sens_help"))
                     .size(11.0)
                     .color(theme::text_dim()),
             );
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.checkbox(&mut config.abs_mode, RichText::new("Apuntado absoluto").size(13.0));
-                info_icon(
-                    ui,
-                    "Activado: el cursor está donde apunta el móvil, y vuelve al mismo sitio si vuelves a apuntar \
-                     igual (la altura la fija la gravedad; el giro, el último recentrado). El recorrido es exacto: \
-                     Windows no le aplica su aceleración de ratón.\n\n\
-                     Desactivado (relativo): como un ratón, solo cuentan los desplazamientos, con la aceleración \
-                     del sistema si la tienes activada. Es el modo para juegos que capturan el ratón.\n\n\
-                     En movimiento los dos son idénticos (1:1 con el giroscopio). Home recentra en los dos.",
-                );
+                ui.checkbox(&mut config.abs_mode, RichText::new(tr!("cfg.abs")).size(13.0));
+                info_icon(ui, tr!("cfg.abs_help"));
             });
             ui.add_space(4.0);
             ui.checkbox(
                 &mut config.auto_dolphin,
-                RichText::new("Configurar Dolphin automáticamente (multijugador)").size(13.0),
+                RichText::new(tr!("cfg.auto_dolphin")).size(13.0),
             );
             ui.add_space(4.0);
             ui.checkbox(
                 &mut config.auto_cemu,
-                RichText::new("Configurar Cemu automáticamente (modo Wii U)").size(13.0),
+                RichText::new(tr!("cfg.auto_cemu")).size(13.0),
             );
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.checkbox(
                     &mut config.auto_mode,
-                    RichText::new("Cambiar de modo al abrir o cerrar Dolphin o Cemu").size(13.0),
+                    RichText::new(tr!("cfg.auto_mode")).size(13.0),
                 );
-                info_icon(
-                    ui,
-                    "Al abrir Dolphin el receptor pasa a modo Dolphin; al abrir Cemu, a Wii U; al cerrarlos, \
-                     vuelve al puntero (o al otro emulador si sigue abierto). Los móviles cambian de pantalla \
-                     solos y ven un aviso.\n\n\
-                     Lo que elijas a mano en el móvil se respeta hasta la siguiente vez que abras o cierres un emulador.",
-                );
+                info_icon(ui, tr!("cfg.auto_mode_help"));
             });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Carpeta de Cemu").size(13.0).color(theme::text_dim()));
+                ui.label(RichText::new(tr!("cfg.cemu_folder")).size(13.0).color(theme::text_dim()));
                 ui.add(
                     egui::TextEdit::singleline(&mut config.cemu_dir)
                         .desired_width(200.0)
-                        .hint_text("automática"),
+                        .hint_text(tr!("cfg.auto_hint")),
                 );
-                if ui.button(RichText::new("Detectar").size(12.0)).clicked() {
+                if ui.button(RichText::new(tr!("cfg.detect")).size(12.0)).clicked() {
                     crate::cemu::detect_now(&self.shared);
                 }
             });
             ui.label(
-                RichText::new("Solo hace falta si Cemu está en un sitio raro; se aprende sola al verlo abierto.")
+                RichText::new(tr!("cfg.cemu_folder_help"))
                     .size(11.0)
                     .color(theme::text_dim()),
             );
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Carpeta de Dolphin").size(13.0).color(theme::text_dim()));
+                ui.label(RichText::new(tr!("cfg.dolphin_folder")).size(13.0).color(theme::text_dim()));
                 ui.add(
                     egui::TextEdit::singleline(&mut config.dolphin_dir)
                         .desired_width(200.0)
-                        .hint_text("automática"),
+                        .hint_text(tr!("cfg.auto_hint")),
                 );
-                if ui.button(RichText::new("Detectar").size(12.0)).clicked() {
+                if ui.button(RichText::new(tr!("cfg.detect")).size(12.0)).clicked() {
                     crate::dolphin::detect_now(&self.shared);
                 }
             });
             ui.label(
-                RichText::new("La del Dolphin.exe. Un Dolphin portable (RetroBat, LaunchBox…) guarda su configuración ahí; se aprende sola al verlo abierto.")
+                RichText::new(tr!("cfg.dolphin_folder_help"))
                     .size(11.0)
                     .color(theme::text_dim()),
             );
@@ -476,23 +462,23 @@ impl PepoMoteApp {
                 if screens.len() > 1 {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Apuntado absoluto en").size(13.0).color(theme::text_dim()));
+                        ui.label(RichText::new(tr!("cfg.pointing_on")).size(13.0).color(theme::text_dim()));
                         let current = if config.screen.is_empty() {
-                            "Todas las pantallas".to_owned()
+                            tr!("cfg.all_screens").to_owned()
                         } else {
                             config.screen.clone()
                         };
                         egui::ComboBox::from_id_salt("pantalla_apuntado")
                             .selected_text(current)
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut config.screen, String::new(), "Todas las pantallas");
+                                ui.selectable_value(&mut config.screen, String::new(), tr!("cfg.all_screens"));
                                 for (name, w, h) in &screens {
-                                    ui.selectable_value(&mut config.screen, name.clone(), format!("Solo {name} ({w}×{h})"));
+                                    ui.selectable_value(&mut config.screen, name.clone(), tr!("cfg.only_screen", name, w, h));
                                 }
                             });
                     });
                     ui.label(
-                        RichText::new("Todas = el cursor llega a los tres monitores. Una sola = apuntado preciso para jugar.")
+                        RichText::new(tr!("cfg.screens_help"))
                             .size(11.0)
                             .color(theme::text_dim()),
                     );
@@ -500,7 +486,7 @@ impl PepoMoteApp {
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Tema").size(13.0).color(theme::text_dim()));
+                ui.label(RichText::new(tr!("cfg.theme")).size(13.0).color(theme::text_dim()));
                 egui::ComboBox::from_id_salt("tema")
                     .selected_text(theme_label(config.theme))
                     .show_ui(ui, |ui| {
@@ -516,11 +502,11 @@ impl PepoMoteApp {
             let before_auto = self.autostart;
             ui.checkbox(
                 &mut self.autostart,
-                RichText::new("Arrancar con el sistema").size(13.0),
+                RichText::new(tr!("cfg.autostart")).size(13.0),
             );
             if self.autostart != before_auto {
                 if let Err(e) = crate::autostart::set_enabled(self.autostart) {
-                    self.shared.lock().unwrap().last_error = Some(format!("Autoarranque: {e}"));
+                    self.shared.lock().unwrap().last_error = Some(tr!("cfg.autostart_err", e));
                     self.autostart = before_auto;
                 }
             }
@@ -541,9 +527,9 @@ impl PepoMoteApp {
 
 fn theme_label(p: theme::ThemePref) -> &'static str {
     match p {
-        theme::ThemePref::System => "Como el sistema",
-        theme::ThemePref::Light => "Claro",
-        theme::ThemePref::Dark => "Oscuro",
+        theme::ThemePref::System => tr!("cfg.theme_system"),
+        theme::ThemePref::Light => tr!("cfg.theme_light"),
+        theme::ThemePref::Dark => tr!("cfg.theme_dark"),
     }
 }
 
@@ -598,10 +584,7 @@ fn sparkline(ui: &mut egui::Ui, values: &[f32]) {
         .collect();
     ui.painter().add(egui::Shape::line(pts, Stroke::new(1.2_f32, theme::blue())));
     let last = values.last().copied().unwrap_or(0.0);
-    resp.on_hover_text(format!(
-        "Latido del Jugador 1: {last:.0} ms ahora (últimos {} latidos)",
-        values.len().min(crate::state::RTT_HIST)
-    ));
+    resp.on_hover_text(tr!("win.heartbeat_tip", last.round() as i64, values.len().min(crate::state::RTT_HIST)));
 }
 
 fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
@@ -623,9 +606,9 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         None,
     );
     let mode_txt = match snap.mode {
-        Mode::Pointer => "Modo puntero (apunta el Jugador 1)",
-        Mode::Dolphin => "Modo Dolphin: todos juegan",
-        Mode::Cemu => "Modo Wii U (Cemu): todos juegan",
+        Mode::Pointer => tr!("win.mode_pointer"),
+        Mode::Dolphin => tr!("win.mode_dolphin"),
+        Mode::Cemu => tr!("win.mode_cemu"),
     };
     let cemu = snap.mode == Mode::Cemu;
     let cemu_layout = crate::state::cemu_layout(&snap.players);
@@ -641,7 +624,7 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         };
         ui.painter().circle_filled(dot.center(), 4.0, color);
         ui.label(
-            RichText::new(format!("{:.0} paquetes/s · sensor {:.0} Hz", snap.pps, snap.sensor_hz))
+            RichText::new(tr!("win.pps", snap.pps.round() as i64, snap.sensor_hz.round() as i64))
                 .size(11.0)
                 .color(theme::text_dim()),
         );
@@ -656,19 +639,19 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         let number = crate::state::player_number(&snap.players, i as u8);
         let badge = if p.role == crate::state::Role::Nunchuk {
             if cemu && !cemu_layout.iter().any(|c| c.nunchuk_slot == Some(i as u8)) {
-                format!("J{number} · Nunchuk (sin uso: J{number} no es Mando Wii)")
+                tr!("win.badge_nunchuk_unused", number)
             } else {
-                format!("J{number} · Nunchuk")
+                tr!("win.badge_nunchuk", number)
             }
         } else if cemu {
             match cemu_layout.iter().find(|c| c.dsu_slot == i as u8).map(|c| c.kind) {
-                Some(crate::state::PadKind::GamePad) => format!("J{number} · GamePad"),
-                Some(crate::state::PadKind::Pro) => format!("J{number} · Pro"),
-                Some(crate::state::PadKind::Wiimote) => format!("J{number} · Mando Wii"),
-                None => format!("J{number}"),
+                Some(crate::state::PadKind::GamePad) => tr!("win.badge_gamepad", number),
+                Some(crate::state::PadKind::Pro) => tr!("win.badge_pro", number),
+                Some(crate::state::PadKind::Wiimote) => tr!("win.badge_wiimote", number),
+                None => tr!("win.badge_player", number),
             }
         } else {
-            format!("J{number}")
+            tr!("win.badge_player", number)
         };
         child.horizontal(|ui| {
             ui.label(

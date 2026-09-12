@@ -14,6 +14,7 @@
 use crate::state::SharedState;
 #[cfg(target_os = "linux")]
 use std::process::Command;
+use crate::tr;
 
 /// Comando de una línea para quien no tiene pkexec ni diálogo de
 /// contraseña: carga el módulo, lo deja cargado en cada arranque, instala
@@ -81,14 +82,11 @@ pub fn classify(status: Option<i32>, stderr: &str) -> FixOutcome {
         Some(126) => FixOutcome::Cancelled,
         Some(127) if low.contains("dismissed") => FixOutcome::Cancelled,
         Some(127) if low.contains("authority") || low.contains("connect") => {
-            FixOutcome::NoAuth(format!("polkit no responde: {first}"))
+            FixOutcome::NoAuth(tr!("fix.polkit_silent", first))
         }
-        Some(127) => FixOutcome::NoAuth(
-            "No se pudo autenticar: en esta sesión no hay agente de polkit (nadie puede pedir la contraseña) o la contraseña no era válida"
-                .to_owned(),
-        ),
-        Some(n) => FixOutcome::Failed(if first.is_empty() { format!("código {n}") } else { first }),
-        None => FixOutcome::Failed("terminado por una señal".to_owned()),
+        Some(127) => FixOutcome::NoAuth(tr!("fix.no_auth").to_owned()),
+        Some(n) => FixOutcome::Failed(if first.is_empty() { tr!("fix.exit_code", n) } else { first }),
+        None => FixOutcome::Failed(tr!("fix.signal").to_owned()),
     }
 }
 
@@ -137,16 +135,17 @@ pub fn fix_all(shared: SharedState, port: u16) {
                             // 2 s) confirmarán; esto limpia la UI al instante.
                             s.firewall_hint = None;
                             s.last_error = None;
+                            s.injection_error = false;
                             s.fix_failed = None;
                         }
                         FixOutcome::Cancelled => {}
                         FixOutcome::NoAuth(why) => s.fix_failed = Some(why),
-                        FixOutcome::Failed(why) => s.fix_failed = Some(format!("Reparación fallida: {why}")),
+                        FixOutcome::Failed(why) => s.fix_failed = Some(tr!("fix.failed", why)),
                     }
                 }
                 Err(e) => {
                     crate::log_line!("Reparación (pkexec): no se pudo lanzar: {e}");
-                    s.fix_failed = Some(format!("No pude lanzar pkexec: {e}"));
+                    s.fix_failed = Some(tr!("fix.no_pkexec_launch", e));
                 }
             }
         });

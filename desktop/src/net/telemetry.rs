@@ -12,6 +12,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use crate::tr;
 
 /// Mapeo bit de botón → acción en modo puntero (PROTOCOL.md §4.2).
 enum Action {
@@ -44,7 +45,7 @@ pub fn run(
     pairing: PairingInfo,
     dsu: Option<Arc<Dsu>>,
 ) {
-    let socket = match crate::ports::bind_udp(&shared, "0.0.0.0", pairing.port, "Móvil") {
+    let socket = match crate::ports::bind_udp(&shared, "0.0.0.0", pairing.port, tr!("port.what_phone")) {
         Ok(s) => s,
         Err(e) => {
             shared.lock().unwrap().last_error = Some(e);
@@ -114,8 +115,9 @@ pub fn run(
                     s.injector = Some(i.name());
                     s.uinput_denied = false;
                     s.uinput_missing = false;
-                    if s.last_error.as_deref().is_some_and(|e| e.starts_with("Inyección")) {
+                    if s.injection_error {
                         s.last_error = None;
+                        s.injection_error = false;
                     }
                     drop(s);
                     injector_err_seen = None;
@@ -132,7 +134,8 @@ pub fn run(
                     s.uinput_denied = e.uinput_denied;
                     s.uinput_missing = e.uinput_missing;
                     s.injector = None;
-                    s.last_error = Some(format!("Inyección de entrada: {}", e.msg));
+                    s.last_error = Some(tr!("inj.error", e.msg));
+                    s.injection_error = true;
                 }
             }
         }
@@ -178,7 +181,8 @@ pub fn run(
                 injector_err_seen = None;
                 let mut s = shared.lock().unwrap();
                 s.injector = None;
-                s.last_error = Some("Inyección de entrada: conexión Wayland perdida, reconectando…".into());
+                s.last_error = Some(tr!("inj.wayland_lost").to_owned());
+                s.injection_error = true;
             }
             let targets: Vec<(u32, std::net::SocketAddr)> = sessions
                 .lock()

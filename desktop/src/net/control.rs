@@ -13,6 +13,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use crate::tr;
 
 /// PEPOMOTE_DEBUG=1: traza del canal de control (hello/slot/modo/bye).
 fn debug() -> bool {
@@ -20,7 +21,7 @@ fn debug() -> bool {
 }
 
 pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo, hub: Arc<ScreenHub>) {
-    let listener = match crate::ports::bind_tcp(&shared, "0.0.0.0", pairing.port, "Móvil") {
+    let listener = match crate::ports::bind_tcp(&shared, "0.0.0.0", pairing.port, tr!("port.what_phone")) {
         Ok(l) => l,
         Err(e) => {
             shared.lock().unwrap().last_error = Some(e);
@@ -140,16 +141,14 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             .is_some_and(|c| shared.lock().unwrap().pair_code.try_accept(c.trim()));
     if !token_ok && !code_ok {
         let (code, msg) = if hello["code"].is_string() {
-            ("bad_code", "Código incorrecto o caducado: mira el nuevo bajo el QR del PC")
+            ("bad_code", tr!("err.bad_code"))
         } else {
             // Que el PC también lo diga: quien mira la ventana entiende por
             // qué el móvil no entra (token.txt regenerado, PC reinstalado…)
-            let who = hello["name"].as_str().filter(|n| !n.trim().is_empty()).unwrap_or("Un móvil");
+            let who = hello["name"].as_str().filter(|n| !n.trim().is_empty()).unwrap_or(tr!("err.a_phone"));
             crate::log_line!("Móvil «{who}» ({peer_ip}) trae un QR antiguo: token rechazado");
-            shared.lock().unwrap().last_error = Some(format!(
-                "{who} ({peer_ip}) trae un QR antiguo: en la app, Conectar y luego «Escanear QR del PC»"
-            ));
-            ("bad_token", "Vuelve a escanear el QR")
+            shared.lock().unwrap().last_error = Some(tr!("err.old_qr", who, peer_ip));
+            ("bad_token", tr!("err.bad_token"))
         };
         let _ = send(&writer, &json!({"m":"err","code":code,"msg":msg}));
         return;
@@ -224,7 +223,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             role,
             pad_wii,
         });
-        if s.last_error.as_deref().is_some_and(|e| !e.starts_with("Inyección")) {
+        if !s.injection_error {
             s.last_error = None;
         }
         (s.mode, player_number(&s.players, slot))

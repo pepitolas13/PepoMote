@@ -41,6 +41,7 @@ use windows_capture::settings::{
     SecondaryWindowSettings, Settings,
 };
 use windows_capture::window::Window as WgcWindow;
+use crate::tr;
 
 /// PW_CLIENTONLY (1) | PW_RENDERFULLCONTENT (2): solo el área cliente, pintada
 /// por DWM (sin esto las ventanas con GPU salen negras).
@@ -275,7 +276,7 @@ impl Capturer {
                 let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 let _ = SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             }
-            return Ok(Capture::NoWindow("La ventana GamePad View de Cemu estaba minimizada: la abro al fondo".into()));
+            return Ok(Capture::NoWindow(tr!("screen.minimized").to_owned()));
         }
         if !self.wgc_broken {
             return self.capture_wgc(hwnd);
@@ -326,18 +327,18 @@ impl Capturer {
         unsafe { GetClientRect(hwnd, &mut rect) }.map_err(|e| format!("GetClientRect: {e}"))?;
         let (w, h) = ((rect.right - rect.left).max(0) as u32, (rect.bottom - rect.top).max(0) as u32);
         if w < 8 || h < 8 {
-            return Ok(Capture::NoWindow("La ventana GamePad View de Cemu no tiene tamaño".into()));
+            return Ok(Capture::NoWindow(tr!("screen.no_size").to_owned()));
         }
         if self.dib.as_ref().is_none_or(|d| d.w != w || d.h != h) {
             self.dib = Dib::new(w, h);
         }
         let Some(dib) = self.dib.as_ref() else {
-            return Err("No puedo crear el bitmap de captura".into());
+            return Err(tr!("screen.no_bitmap").to_owned());
         };
         let ok = unsafe { PrintWindow(hwnd, dib.dc, PW_FLAGS) };
         if !ok.as_bool() {
             self.hwnd = None;
-            return Ok(Capture::NoWindow("Cemu no deja capturar la ventana GamePad View".into()));
+            return Ok(Capture::NoWindow(tr!("screen.cannot_capture").to_owned()));
         }
         unsafe {
             let _ = GdiFlush();
@@ -354,9 +355,9 @@ impl Capturer {
 
 fn no_window_reason() -> String {
     if crate::cemu::running_exe().0 {
-        "Abre la vista del GamePad en Cemu (Options → Separate GamePad view)".to_owned()
+        tr!("screen.open_view").to_owned()
     } else {
-        "Cemu no está abierto".to_owned()
+        tr!("screen.cemu_closed").to_owned()
     }
 }
 

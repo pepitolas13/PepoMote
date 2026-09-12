@@ -26,9 +26,8 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboar
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1;
 use wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_manager_v1::ZwlrVirtualPointerManagerV1;
 use wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
+use crate::tr;
 
-const POINTER_NAME: &str = "Wayland (puntero virtual)";
-const POINTER_ONLY_NAME: &str = "Wayland (puntero virtual; sin teclado virtual)";
 /// Extent de `motion_absolute`: el mismo rango que el ABS de uinput, así
 /// `map_abs` sirve tal cual (wlroots normaliza sobre el layout entero).
 const ABS_EXTENT: u32 = ABS_MAX as u32;
@@ -92,7 +91,7 @@ delegate_noop!(State: ignore ZwpVirtualKeyboardV1);
 /// Conexión propia + globales (un roundtrip). La usan `new()` y `probe()`.
 fn connect() -> Result<(Connection, EventQueue<State>, State), String> {
     let conn = Connection::connect_to_env()
-        .map_err(|e| format!("no se pudo conectar al compositor Wayland ({e})"))?;
+        .map_err(|e| tr!("inj.wayland_connect", e))?;
     let display = conn.display();
     let mut queue = conn.new_event_queue();
     let qh = queue.handle();
@@ -100,7 +99,7 @@ fn connect() -> Result<(Connection, EventQueue<State>, State), String> {
     let mut state = State::default();
     queue
         .roundtrip(&mut state)
-        .map_err(|e| format!("fallo leyendo los globales Wayland ({e})"))?;
+        .map_err(|e| tr!("inj.wayland_globals", e))?;
     Ok((conn, queue, state))
 }
 
@@ -207,14 +206,14 @@ impl WaylandInjector {
         // El roundtrip confirma que el compositor aceptó los objetos: un
         // error de protocolo o de política aflora aquí, no más tarde
         if let Err(e) = queue.roundtrip(&mut state) {
-            let msg = format!("el compositor rechazó la inyección ({e})");
+            let msg = tr!("inj.wayland_rejected", e);
             return Err(if keyboard.is_some() {
                 BuildError::Keyboard(msg)
             } else {
                 BuildError::Other(msg)
             });
         }
-        let name = if keyboard.is_some() { POINTER_NAME } else { POINTER_ONLY_NAME };
+        let name = if keyboard.is_some() { tr!("inj.wayland") } else { tr!("inj.wayland_no_kb") };
         Ok(Self {
             conn,
             queue,

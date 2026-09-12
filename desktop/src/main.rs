@@ -13,6 +13,7 @@ mod firewall;
 mod fixes;
 #[cfg(target_os = "linux")]
 mod screens;
+mod i18n;
 mod icon;
 mod input;
 mod log;
@@ -24,6 +25,7 @@ mod screen;
 mod singleton;
 mod sound;
 mod state;
+mod strings;
 mod theme;
 #[cfg(windows)]
 mod tray;
@@ -69,6 +71,11 @@ fn main() -> eframe::Result {
 
     let shared = state::new_shared();
     log::attach_shared(shared.clone());
+    // Idioma: el guardado en Ajustes; si no, el del sistema (español si no es inglés)
+    {
+        let saved = shared.lock().unwrap().config.lang.as_deref().and_then(i18n::Lang::parse);
+        i18n::set(saved.unwrap_or_else(i18n::detect_system));
+    }
     let pairing = pairing::PairingInfo::generate();
 
     let dsu = dsu::start(shared.clone());

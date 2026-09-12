@@ -156,6 +156,9 @@ pub struct Config {
     /// o claro/oscuro fijo.
     #[serde(default)]
     pub theme: crate::theme::ThemePref,
+    /// Idioma de la interfaz ("es" / "en"); None = el del sistema.
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 impl Default for Config {
@@ -171,6 +174,7 @@ impl Default for Config {
             fix_attempted: false,
             screen: String::new(),
             theme: crate::theme::ThemePref::System,
+            lang: None,
         }
     }
 }
@@ -348,6 +352,24 @@ pub fn player_number(players: &[Option<PlayerInfo>], slot: u8) -> u8 {
 /// Latidos del Jugador 1 que guarda la sparkline de la ventana.
 pub const RTT_HIST: usize = 60;
 
+/// Estado de una configuración (Dolphin, Cemu, pantalla del GamePad) para la
+/// ventana: el texto y si es «todo bien» (verde) o un aviso.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CfgStatus {
+    pub ok: bool,
+    pub text: String,
+}
+
+impl CfgStatus {
+    pub fn ok(text: String) -> Self {
+        Self { ok: true, text }
+    }
+
+    pub fn warn(text: String) -> Self {
+        Self { ok: false, text }
+    }
+}
+
 /// Estado compartido entre los hilos de red y la UI.
 pub struct Shared {
     pub status: LinkStatus,
@@ -360,20 +382,23 @@ pub struct Shared {
     pub rtt_hist: std::collections::VecDeque<f32>,
     pub dsu_clients: usize,
     /// Resultado del último intento de configurar Dolphin (para la UI).
-    pub dolphin_cfg_status: Option<String>,
+    pub dolphin_cfg_status: Option<CfgStatus>,
     /// El emulador estaba abierto: se configurará en cuanto se cierre.
     pub dolphin_pending: bool,
     pub cemu_pending: bool,
     /// Un puerto estaba ocupado y se cerró al proceso que lo tenía (aviso).
     pub port_notice: Option<String>,
     /// Resultado del último intento de configurar Cemu (para la UI).
-    pub cemu_cfg_status: Option<String>,
+    pub cemu_cfg_status: Option<CfgStatus>,
     /// Doble pantalla: estado de la captura de la ventana GamePad View.
-    pub cemu_screen_status: Option<String>,
+    pub cemu_screen_status: Option<CfgStatus>,
     /// Texto que un móvil quiere teclear en el PC (teclado en pantalla de
     /// Cemu) y que el inyector del SO aún no ha escrito.
     pub text_queue: Vec<String>,
     pub last_error: Option<String>,
+    /// `last_error` es un error de inyección (lo limpia el inyector al
+    /// recuperarse, no una conexión nueva).
+    pub injection_error: bool,
     /// Aviso de firewall Linux bloqueando el puerto (None = todo bien).
     pub firewall_hint: Option<String>,
     /// Backend de inyección activo (pie de la ventana y log); None = sin
@@ -416,6 +441,7 @@ impl Shared {
             cemu_screen_status: None,
             text_queue: Vec::new(),
             last_error: None,
+            injection_error: false,
             firewall_hint: None,
             injector: None,
             uinput_denied: false,

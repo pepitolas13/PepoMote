@@ -65,6 +65,8 @@ mod dsu {
     pub const ROT_YN: u32 = 47;
 }
 use dsu::*;
+use crate::state::CfgStatus;
+use crate::tr;
 
 /// Wii U GamePad (`VPADController::ButtonId`): (mapping, botón DSU). El
 /// PadData de PepoMote en modo Wii U pone A→Cross, B→Circle, X→Square,
@@ -289,7 +291,7 @@ pub fn ensure_pad_window(cfg_dir: &Path) -> Result<(), String> {
         let at = i + "<content>".len();
         format!("{}\n    <open_pad>true</open_pad>{}", &original[..at], &original[at..])
     } else {
-        return Err("settings.xml de Cemu sin <content>: no lo toco".into());
+        return Err(tr!("cemu.settings_no_content").to_owned());
     };
     if !original.is_empty() {
         let bak = path.with_extension("xml.pepomote.bak");
@@ -465,7 +467,7 @@ pub fn config_dirs_from(exe_dirs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
         }
     }
     if dirs.is_empty() {
-        return Err("No encuentro Cemu en este equipo: indica su carpeta en Ajustes".into());
+        return Err(tr!("cemu.not_found").to_owned());
     }
     Ok(dirs)
 }
@@ -590,17 +592,17 @@ fn describe(layout: &Layout) -> String {
         .iter()
         .map(|p| {
             let kind = match p.kind {
-                PadKind::GamePad => "GamePad",
-                PadKind::Pro => "Pro",
+                PadKind::GamePad => tr!("cemu.kind_gamepad"),
+                PadKind::Pro => tr!("cemu.kind_pro"),
                 PadKind::Wiimote => {
                     if p.nunchuk_slot.is_some() {
-                        "Mando Wii + Nunchuk"
+                        tr!("cemu.kind_wiimote_nunchuk")
                     } else {
-                        "Mando Wii"
+                        tr!("cemu.kind_wiimote")
                     }
                 }
             };
-            format!("J{} {kind}", p.index + 1)
+            tr!("cemu.player_kind", p.index + 1, kind)
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -618,9 +620,9 @@ pub fn configure(cfg: &Config, layout: &Layout) -> Result<String, String> {
         }
     }
     Ok(format!(
-        "Cemu configurado: {}{}",
+        "{}{}",
         describe(layout),
-        if dirs.len() > 1 { format!(" (en {} instalaciones)", dirs.len()) } else { String::new() }
+        if dirs.len() > 1 { tr!("cemu.installs", dirs.len()) } else { String::new() }
     ))
 }
 
@@ -636,7 +638,9 @@ pub(crate) fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
     }
 }
 
-fn run_configure(shared: &SharedState, layout: &Layout) {
+/// Escribe (o deja pendiente si Cemu está abierto). `after_close`: viene
+/// del vigilante, Cemu se acaba de cerrar.
+fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
     let _serial = CONFIGURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // Solo para los e2e en el propio equipo: escribir aunque el emulador esté abierto
     let (running, dir) = if std::env::var_os("PEPOMOTE_ASSUME_EMULATOR_CLOSED").is_some() {
@@ -645,20 +649,23 @@ fn run_configure(shared: &SharedState, layout: &Layout) {
         running_exe()
     };
     learn_dir(shared, dir);
-    let msg = if running {
+    let (ok, msg) = if running {
         // Cemu sobreescribe sus perfiles al salir: se escribe en cuanto se
         // cierre (vigilante de auto_mode)
         shared.lock().unwrap().cemu_pending = true;
-        "Cemu está abierto: se configurará solo en cuanto lo cierres; luego ábrelo y a jugar".to_owned()
+        (false, tr!("cemu.open").to_owned())
     } else {
         shared.lock().unwrap().cemu_pending = false;
         let cfg = shared.lock().unwrap().config.clone();
         match configure(&cfg, layout) {
-            Ok(m) => m,
-            Err(e) => format!("Cemu: {e}"),
+            Ok(details) => {
+                let prefix = if after_close { tr!("cemu.configured_after_close") } else { tr!("cemu.configured") };
+                (true, format!("{prefix} {details}"))
+            }
+            Err(e) => (false, tr!("cemu.error", e)),
         }
     };
-    shared.lock().unwrap().cemu_cfg_status = Some(msg.clone());
+    shared.lock().unwrap().cemu_cfg_status = Some(CfgStatus { ok, text: msg.clone() });
     crate::net::notify_all(&msg);
 }
 
@@ -671,7 +678,7 @@ pub fn maybe_auto_configure(shared: &SharedState) {
             (s.config.auto_cemu, s.mode, cemu_layout(&s.players))
         };
         if auto && mode == Mode::Cemu && !layout.is_empty() {
-            run_configure(&shared, &layout);
+            run_configure(&shared, &layout, false);
         }
     });
 }
@@ -684,13 +691,7 @@ pub fn apply_pending(shared: &SharedState) {
         (s.config.auto_cemu, s.mode, cemu_layout(&s.players))
     };
     if auto && mode == Mode::Cemu && !layout.is_empty() {
-        run_configure(shared, &layout);
-        let mut s = shared.lock().unwrap();
-        if let Some(m) = s.cemu_cfg_status.as_mut() {
-            if m.starts_with("Cemu configurado:") {
-                *m = m.replacen("Cemu configurado:", "Cemu configurado al cerrarse, ábrelo y a jugar:", 1);
-            }
-        }
+        run_configure(shared, &layout, true);
     } else {
         shared.lock().unwrap().cemu_pending = false;
     }
@@ -704,7 +705,7 @@ pub fn configure_now(shared: &SharedState) {
         if layout.is_empty() {
             layout.push(CemuPlayer { index: 0, kind: PadKind::GamePad, dsu_slot: 0, nunchuk_slot: None });
         }
-        run_configure(&shared, &layout);
+        run_configure(&shared, &layout, false);
     });
 }
 
@@ -719,10 +720,10 @@ pub fn detect_now(shared: &SharedState) {
             Some(d) => {
                 s.config.cemu_dir = d.to_string_lossy().to_string();
                 s.config.save();
-                s.cemu_cfg_status = Some(format!("Cemu encontrado en {}", d.display()));
+                s.cemu_cfg_status = Some(CfgStatus::ok(tr!("cemu.found", d.display())));
             }
             None => {
-                s.cemu_cfg_status = Some("No encuentro Cemu: escribe su carpeta a mano".to_owned());
+                s.cemu_cfg_status = Some(CfgStatus::warn(tr!("cemu.not_found_manual").to_owned()));
             }
         }
     });

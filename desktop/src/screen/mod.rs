@@ -23,6 +23,8 @@ use crate::state::{Mode, SharedState};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+use crate::state::CfgStatus;
+use crate::tr;
 
 /// Resolución nativa de la pantalla del GamePad.
 pub const MAX_W: u32 = 854;
@@ -226,14 +228,14 @@ impl ScreenHub {
             drop(st);
             self.changed.notify_all();
             if !s.is_empty() {
-                self.shared.lock().unwrap().cemu_screen_status = Some(s);
+                self.shared.lock().unwrap().cemu_screen_status = Some(CfgStatus::warn(s));
             }
         }
     }
 
     /// Solo para la ventana del PC (fps, tamaño).
-    fn set_ui_status(&self, s: String) {
-        self.shared.lock().unwrap().cemu_screen_status = Some(s);
+    fn set_ui_status(&self, ok: bool, s: String) {
+        self.shared.lock().unwrap().cemu_screen_status = Some(CfgStatus { ok, text: s });
     }
 }
 
@@ -384,12 +386,7 @@ fn capture_loop(hub: Arc<ScreenHub>) {
         }
         if last_dims != (0, 0) && fps_window.elapsed() >= Duration::from_secs(1) {
             let fps = fps_count as f32 / fps_window.elapsed().as_secs_f32();
-            hub.set_ui_status(format!(
-                "Pantalla del GamePad: {fps:.0} fps · {}×{} → {} móvil(es)",
-                last_dims.0,
-                last_dims.1,
-                hub.clients()
-            ));
+            hub.set_ui_status(true, tr!("screen.status", fps.round() as i64, last_dims.0, last_dims.1, hub.clients()));
             fps_window = Instant::now();
             fps_count = 0;
         }
@@ -400,7 +397,7 @@ fn capture_loop(hub: Arc<ScreenHub>) {
     }
     hub.running.store(false, Ordering::SeqCst);
     hub.set_status(String::new());
-    hub.set_ui_status("Pantalla del GamePad: sin móvil suscrito".to_owned());
+    hub.set_ui_status(false, tr!("screen.no_phone").to_owned());
 }
 
 #[cfg(test)]

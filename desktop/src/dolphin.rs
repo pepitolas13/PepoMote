@@ -13,6 +13,8 @@
 use crate::state::{Mode, SharedState};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use crate::state::CfgStatus;
+use crate::tr;
 
 /// Dos móviles conectando a la vez disparan dos configuraciones: en serie,
 /// o se pisan el leer-modificar-escribir del mismo INI.
@@ -136,13 +138,13 @@ pub fn resolve_user_dirs(env: &Env) -> Vec<UserDir> {
     };
     for exe in &env.exe_dirs {
         if exe.join("portable.txt").is_file() {
-            push(exe.join("User").join("Config"), "portable (portable.txt junto a Dolphin)");
+            push(exe.join("User").join("Config"), tr!("dolphin.why_portable"));
         } else if env.reg_local_user_config {
-            push(exe.join("User").join("Config"), "junto a Dolphin (LocalUserConfig en el registro)");
+            push(exe.join("User").join("Config"), tr!("dolphin.why_local"));
         }
     }
     if let Some(p) = &env.reg_user_config_path {
-        push(p.join("Config"), "UserConfigPath del registro");
+        push(p.join("Config"), tr!("dolphin.why_registry"));
     }
     if let Some(p) = &env.userpath_env {
         push(p.join("Config"), "DOLPHIN_EMU_USERPATH");
@@ -156,7 +158,7 @@ pub fn resolve_user_dirs(env: &Env) -> Vec<UserDir> {
         push(p.clone(), "~/.config/dolphin-emu");
     }
     if let Some(p) = &env.documents_legacy {
-        push(p.join("Config"), "Documentos\\Dolphin Emulator");
+        push(p.join("Config"), tr!("dolphin.why_documents"));
     } else if let Some(p) = &env.appdata {
         push(p.join("Config"), "AppData\\Dolphin Emulator");
     }
@@ -716,9 +718,9 @@ fn write_profiles(cfg_dir: &Path, n_players: usize) {
 /// carpetas: AppData\Dolphin Emulator, portable (…)».
 fn describe_dirs(dirs: &[UserDir]) -> String {
     if dirs.len() == 1 {
-        format!("carpeta: {}", dirs[0].why)
+        tr!("dolphin.dirs_one", dirs[0].why)
     } else {
-        format!("en {} carpetas: {}", dirs.len(), dirs.iter().map(|d| d.why).collect::<Vec<_>>().join(", "))
+        tr!("dolphin.dirs_many", dirs.len(), dirs.iter().map(|d| d.why).collect::<Vec<_>>().join(", "))
     }
 }
 
@@ -728,7 +730,7 @@ fn describe_dirs(dirs: &[UserDir]) -> String {
 pub fn configure(cfg_dolphin_dir: &str, layout: &Layout) -> Result<String, String> {
     let dirs = config_dirs_with(cfg_dolphin_dir);
     if dirs.is_empty() {
-        return Err("No encuentro Dolphin en este equipo: ábrelo una vez, o indica su carpeta en Ajustes".into());
+        return Err(tr!("dolphin.not_found").to_owned());
     }
     let n = layout.len().clamp(1, crate::net::MAX_PLAYERS);
     let nunchuks = layout.iter().filter(|(_, n)| n.is_some()).count();
@@ -738,9 +740,10 @@ pub fn configure(cfg_dolphin_dir: &str, layout: &Layout) -> Result<String, Strin
         write_wiimotes(&dir.config, layout)?;
         write_profiles(&dir.config, crate::net::MAX_PLAYERS);
     }
-    Ok(format!(
-        "Dolphin configurado: adaptador emulado, {n} mando(s){} · {}",
-        if nunchuks > 0 { format!(" y {nunchuks} Nunchuk(s)") } else { String::new() },
+    Ok(tr!(
+        "dolphin.details",
+        n,
+        if nunchuks > 0 { tr!("dolphin.and_nunchuks", nunchuks) } else { String::new() },
         describe_dirs(&dirs)
     ))
 }
@@ -765,25 +768,24 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
     let assume_closed = std::env::var_os("PEPOMOTE_ASSUME_EMULATOR_CLOSED").is_some();
     let (running, exe_dir) = if assume_closed { (false, None) } else { running_exe() };
     learn_dir(shared, exe_dir);
-    let msg = if running {
+    let (ok, msg) = if running {
         // Dolphin sobreescribe su configuración al salir: se escribe en
         // cuanto se cierre (vigilante), sin que nadie tenga que pulsar nada
         shared.lock().unwrap().dolphin_pending = true;
-        if layout.iter().any(|(_, n)| n.is_some()) {
-            "Dolphin está abierto: se configurará solo en cuanto lo cierres (el Nunchuk necesita reabrir Dolphin)".to_owned()
-        } else {
-            "Dolphin está abierto: se configurará solo en cuanto lo cierres; luego ábrelo y a jugar".to_owned()
-        }
+        let text = if layout.iter().any(|(_, n)| n.is_some()) { tr!("dolphin.open_nunchuk") } else { tr!("dolphin.open") };
+        (false, text.to_owned())
     } else {
         shared.lock().unwrap().dolphin_pending = false;
         let cfg_dir = shared.lock().unwrap().config.dolphin_dir.clone();
         match configure(&cfg_dir, layout) {
-            Ok(m) if after_close => m.replacen("Dolphin configurado:", "Dolphin configurado al cerrarse, ábrelo y a jugar:", 1),
-            Ok(m) => m,
-            Err(e) => format!("Dolphin: {e}"),
+            Ok(details) => {
+                let prefix = if after_close { tr!("dolphin.configured_after_close") } else { tr!("dolphin.configured") };
+                (true, format!("{prefix} {details}"))
+            }
+            Err(e) => (false, tr!("dolphin.error", e)),
         }
     };
-    shared.lock().unwrap().dolphin_cfg_status = Some(msg.clone());
+    shared.lock().unwrap().dolphin_cfg_status = Some(CfgStatus { ok, text: msg.clone() });
     // Los móviles lo ven también (banner): hasta ahora un Nunchuk que
     // entraba con Dolphin abierto fallaba en silencio
     crate::net::notify_all(&msg);
@@ -828,10 +830,10 @@ pub fn detect_now(shared: &SharedState) {
                 s.config.dolphin_dir = d.to_string_lossy().to_string();
                 s.config.save();
                 let dirs = config_dirs_with(&s.config.dolphin_dir);
-                s.dolphin_cfg_status = Some(format!("Dolphin encontrado en {} · {}", d.display(), describe_dirs(&dirs)));
+                s.dolphin_cfg_status = Some(CfgStatus::ok(tr!("dolphin.found", d.display(), describe_dirs(&dirs))));
             }
             None => {
-                s.dolphin_cfg_status = Some("No encuentro Dolphin: escribe su carpeta a mano (la del Dolphin.exe)".to_owned());
+                s.dolphin_cfg_status = Some(CfgStatus::warn(tr!("dolphin.not_found_manual").to_owned()));
             }
         }
     });

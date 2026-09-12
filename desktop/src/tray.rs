@@ -8,6 +8,7 @@
 use crate::state::{Mode, SharedState};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use crate::tr;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, SetTimer, TranslateMessage, MSG, WM_TIMER,
 };
@@ -37,15 +38,15 @@ impl TraySnapshot {
 /// Texto del tooltip. Windows lo corta a 128 caracteres: nos quedamos en 120.
 pub fn tooltip(snap: &TraySnapshot) -> String {
     if snap.players == 0 {
-        return "PepoMote · esperando al móvil".to_owned();
+        return tr!("tray.waiting").to_owned();
     }
     let mode = match snap.mode {
-        Mode::Pointer => "Puntero",
-        Mode::Dolphin => "Dolphin",
-        Mode::Cemu => "Wii U",
+        Mode::Pointer => tr!("tray.mode_pointer"),
+        Mode::Dolphin => tr!("tray.mode_dolphin"),
+        Mode::Cemu => tr!("tray.mode_cemu"),
     };
-    let plural = if snap.players == 1 { "móvil" } else { "móviles" };
-    let mut text = format!("PepoMote · {} {plural} · {mode}", snap.players);
+    let plural = if snap.players == 1 { tr!("tray.phone_one") } else { tr!("tray.phone_many") };
+    let mut text = tr!("tray.line", snap.players, plural, mode);
     let names = snap.names.join(", ");
     if !names.is_empty() {
         text.push('\n');
@@ -68,8 +69,8 @@ pub fn start(shared: SharedState) {
                 return;
             };
             let menu = Menu::new();
-            let show = MenuItem::new("Mostrar PepoMote", true, None);
-            let quit = MenuItem::new("Salir", true, None);
+            let show = MenuItem::new(tr!("tray.show"), true, None);
+            let quit = MenuItem::new(tr!("tray.quit"), true, None);
             let _ = menu.append(&show);
             let _ = menu.append(&PredefinedMenuItem::separator());
             let _ = menu.append(&quit);

@@ -12,6 +12,7 @@ use x11rb::protocol::xproto::{
     Window,
 };
 use x11rb::rust_connection::RustConnection;
+use crate::tr;
 
 pub struct Capturer {
     conn: Option<(RustConnection, usize)>,
@@ -30,7 +31,7 @@ impl Capturer {
             return Ok(());
         }
         if std::env::var_os("DISPLAY").is_none() {
-            return Err("Sin sesión X11: en Wayland lanza Cemu con GDK_BACKEND=x11 para la doble pantalla".into());
+            return Err(tr!("screen.no_x11").to_owned());
         }
         match x11rb::connect(None) {
             Ok((c, screen)) => {
@@ -38,7 +39,7 @@ impl Capturer {
                 self.conn_error = None;
                 Ok(())
             }
-            Err(e) => Err(format!("No puedo conectar con X11: {e}")),
+            Err(e) => Err(tr!("screen.x11_connect", e)),
         }
     }
 
@@ -70,7 +71,7 @@ impl Capturer {
             }
         };
         if geo.width < 8 || geo.height < 8 {
-            return Ok(Capture::NoWindow("La ventana GamePad View de Cemu no tiene tamaño".into()));
+            return Ok(Capture::NoWindow(tr!("screen.no_size").to_owned()));
         }
         let img = match conn
             .get_image(ImageFormat::Z_PIXMAP, win, 0, 0, geo.width, geo.height, !0)
@@ -80,13 +81,13 @@ impl Capturer {
             Some(i) => i,
             None => {
                 self.win = None;
-                return Ok(Capture::NoWindow("La ventana GamePad View de Cemu no está visible".into()));
+                return Ok(Capture::NoWindow(tr!("screen.not_visible").to_owned()));
             }
         };
         let (w, h) = (geo.width as u32, geo.height as u32);
         let mut bgra = img.data;
         if img.depth != 24 && img.depth != 32 {
-            return Err(format!("Profundidad X11 no soportada: {}", img.depth));
+            return Err(tr!("screen.x11_depth", img.depth));
         }
         if bgra.len() < (w * h * 4) as usize {
             return Err("Imagen X11 incompleta".into());
@@ -264,8 +265,8 @@ pub fn type_text(_text: &str) -> bool {
 
 fn no_window_reason() -> String {
     if crate::cemu::running_exe().0 {
-        "Abre la vista del GamePad en Cemu (Options → Separate GamePad view)".to_owned()
+        tr!("screen.open_view").to_owned()
     } else {
-        "Cemu no está abierto".to_owned()
+        tr!("screen.cemu_closed").to_owned()
     }
 }

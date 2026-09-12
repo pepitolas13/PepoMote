@@ -1,6 +1,7 @@
 //! Plataformas sin captura de ventana: la doble pantalla avisa y ya.
 
 use super::Capture;
+use crate::tr;
 
 pub struct Capturer;
 
@@ -10,7 +11,7 @@ impl Capturer {
     }
 
     pub fn capture(&mut self) -> Result<Capture, String> {
-        Ok(Capture::NoWindow("La doble pantalla no está disponible en este sistema".into()))
+        Ok(Capture::NoWindow(tr!("screen.unavailable").to_owned()))
     }
 }
 

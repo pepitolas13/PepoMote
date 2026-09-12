@@ -3,6 +3,8 @@
 //! MangoWC, river, labwc, niri…) y, donde el compositor no los ofrece
 //! (GNOME, KDE, X11), uinput.
 
+use crate::tr;
+
 #[cfg(target_os = "linux")]
 mod linux_common;
 #[cfg(target_os = "linux")]
@@ -137,12 +139,8 @@ impl std::fmt::Display for InjectError {
 #[cfg(any(target_os = "linux", test))]
 pub fn uinput_hint(kind: std::io::ErrorKind) -> Option<&'static str> {
     match kind {
-        std::io::ErrorKind::PermissionDenied => Some(
-            "sin permiso para /dev/uinput — pulsa «Reparar ahora» o copia el comando de la ventana",
-        ),
-        std::io::ErrorKind::NotFound => Some(
-            "el módulo uinput no está cargado (no existe /dev/uinput) — «Reparar ahora» lo carga, o: sudo modprobe uinput",
-        ),
+        std::io::ErrorKind::PermissionDenied => Some(tr!("inj.uinput_denied")),
+        std::io::ErrorKind::NotFound => Some(tr!("inj.uinput_missing")),
         _ => None,
     }
 }

@@ -12,6 +12,7 @@
 
 use crate::state::{Mode, SharedState};
 use std::time::Duration;
+use crate::tr;
 
 /// Qué emuladores están abiertos.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -57,12 +58,12 @@ pub fn next(prev: EmuState, now: EmuState, mode: Mode, enabled: bool) -> Option<
 /// Aviso para los móviles (y el log).
 pub fn notice(c: Change) -> &'static str {
     match (c.reason, c.mode) {
-        (Reason::DolphinOpened, _) => "Dolphin abierto: modo Dolphin",
-        (Reason::CemuOpened, _) => "Cemu abierto: modo Wii U",
-        (Reason::DolphinClosed, Mode::Cemu) => "Dolphin cerrado: modo Wii U (Cemu sigue abierto)",
-        (Reason::DolphinClosed, _) => "Dolphin cerrado: modo puntero",
-        (Reason::CemuClosed, Mode::Dolphin) => "Cemu cerrado: modo Dolphin (Dolphin sigue abierto)",
-        (Reason::CemuClosed, _) => "Cemu cerrado: modo puntero",
+        (Reason::DolphinOpened, _) => tr!("auto.dolphin_opened"),
+        (Reason::CemuOpened, _) => tr!("auto.cemu_opened"),
+        (Reason::DolphinClosed, Mode::Cemu) => tr!("auto.dolphin_closed_cemu"),
+        (Reason::DolphinClosed, _) => tr!("auto.dolphin_closed"),
+        (Reason::CemuClosed, Mode::Dolphin) => tr!("auto.cemu_closed_dolphin"),
+        (Reason::CemuClosed, _) => tr!("auto.cemu_closed"),
     }
 }
 
