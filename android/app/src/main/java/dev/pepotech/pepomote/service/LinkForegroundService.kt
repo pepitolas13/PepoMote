@@ -415,7 +415,7 @@ class LinkForegroundService : Service() {
             android.app.PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_pepomote_glyph)
             .setContentTitle("PepoMote")
             .setContentText(text)
             .setOngoing(true)

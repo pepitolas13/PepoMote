@@ -27,7 +27,12 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
+            android:theme="@style/Theme.PepoMote.Starting"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
+            <!-- Accesos directos del icono (mantener pulsado): Puntero, Dolphin, Wii U, Nunchuk -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -53,6 +58,21 @@
             android:name=".service.LinkForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- Tile de Ajustes rápidos: estado del enlace y conectar/desconectar sin abrir la app -->
+        <service
+            android:name=".service.PepoTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_pepomote_glyph"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
 
     </application>
 </manifest>

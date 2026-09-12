@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Accesos directos del icono (mantener pulsado): directos a cada pantalla -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="pointer"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_pointer"
+        android:shortcutShortLabel="@string/shortcut_pointer"
+        android:shortcutLongLabel="@string/shortcut_pointer_long">
+        <intent
+            android:action="dev.pepotech.pepomote.action.POINTER"
+            android:targetPackage="dev.pepotech.pepomote"
+            android:targetClass="dev.pepotech.pepomote.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="dolphin"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_dolphin"
+        android:shortcutShortLabel="@string/shortcut_dolphin"
+        android:shortcutLongLabel="@string/shortcut_dolphin_long">
+        <intent
+            android:action="dev.pepotech.pepomote.action.DOLPHIN"
+            android:targetPackage="dev.pepotech.pepomote"
+            android:targetClass="dev.pepotech.pepomote.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="wiiu"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_wiiu"
+        android:shortcutShortLabel="@string/shortcut_wiiu"
+        android:shortcutLongLabel="@string/shortcut_wiiu_long">
+        <intent
+            android:action="dev.pepotech.pepomote.action.WIIU"
+            android:targetPackage="dev.pepotech.pepomote"
+            android:targetClass="dev.pepotech.pepomote.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="nunchuk"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_nunchuk"
+        android:shortcutShortLabel="@string/shortcut_nunchuk"
+        android:shortcutLongLabel="@string/shortcut_nunchuk_long">
+        <intent
+            android:action="dev.pepotech.pepomote.action.NUNCHUK"
+            android:targetPackage="dev.pepotech.pepomote"
+            android:targetClass="dev.pepotech.pepomote.MainActivity" />
+    </shortcut>
+</shortcuts>

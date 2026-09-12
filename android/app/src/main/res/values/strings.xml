@@ -19,4 +19,12 @@
     <string name="status_connecting">Conectando…</string>
     <string name="status_reconnecting">Reconectando con %1$s…</string>
     <string name="status_connected_to">Conectado a %1$s</string>
+    <string name="shortcut_pointer">Puntero</string>
+    <string name="shortcut_pointer_long">Mando con puntero</string>
+    <string name="shortcut_dolphin">Dolphin</string>
+    <string name="shortcut_dolphin_long">Mando de Wii para Dolphin</string>
+    <string name="shortcut_wiiu">Wii U</string>
+    <string name="shortcut_wiiu_long">GamePad para Cemu</string>
+    <string name="shortcut_nunchuk">Nunchuk</string>
+    <string name="shortcut_nunchuk_long">Nunchuk, la otra mano</string>
 </resources>

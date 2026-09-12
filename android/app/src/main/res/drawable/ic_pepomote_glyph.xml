@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Glifo del logo en blanco (24 dp): notificación y tile de Ajustes rápidos -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,3 a9,9 0 1,0 0.0001,0 Z M12,6.5 a5.5,5.5 0 1,1 -0.0001,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,9.5 a2.5,2.5 0 1,0 0.0001,0 Z" />
+</vector>

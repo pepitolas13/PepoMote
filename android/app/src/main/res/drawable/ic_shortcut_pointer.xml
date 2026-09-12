@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Acceso directo «Puntero»: el logo sobre azul -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="@color/pepo_blue"
+        android:pathData="M24,0 a24,24 0 1,0 0.0001,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,14 a10,10 0 1,0 0.0001,0 Z M24,18 a6,6 0 1,1 -0.0001,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,21 a3,3 0 1,0 0.0001,0 Z" />
+</vector>

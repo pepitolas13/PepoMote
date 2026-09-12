@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Acceso directo «Nunchuk»: el stick sobre verde -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="@color/pepo_ok"
+        android:pathData="M24,0 a24,24 0 1,0 0.0001,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,11 a7,7 0 1,0 0.0001,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M22,24 h4 v11 a2,2 0 0 1 -4,0 Z" />
+</vector>

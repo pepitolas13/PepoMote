@@ -11,8 +11,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,6 +39,7 @@ import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.service.LinkFailure
+import dev.pepotech.pepomote.service.LaunchAction
 import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.PadScreen
@@ -197,6 +206,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         UiSounds.init(this)
@@ -206,15 +216,31 @@ class MainActivity : ComponentActivity() {
                 Root(this)
             }
         }
-        // Enlace profundo pepomote://pair?… al abrir la app (no al recrearla)
-        if (savedInstanceState == null) intent?.data?.let { onPairContent(it.toString()) }
+        // Enlace profundo pepomote://pair?… o acceso directo, al abrir la app (no al recrearla)
+        if (savedInstanceState == null) {
+            intent?.data?.let { onPairContent(it.toString()) }
+            handleLaunchIntent(intent)
+        }
     }
 
-    /** singleTop: con la app ya abierta, el enlace profundo llega aquí. */
+    /** singleTop: con la app ya abierta, el enlace profundo o el acceso directo llegan aquí. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         intent.data?.let { onPairContent(it.toString()) }
+        handleLaunchIntent(intent)
+    }
+
+    /** Acceso directo del icono (xml/shortcuts.xml): directo a esa pantalla (tras el onboarding). */
+    private fun handleLaunchIntent(intent: Intent?) {
+        val action = LaunchAction.parse(intent?.action) ?: return
+        if (!AppPrefs.onboarded(this)) return
+        when (action) {
+            LaunchAction.Pointer -> openController(LinkState.MODE_POINTER, dolphinOnly = false)
+            LaunchAction.Dolphin -> openController(LinkState.MODE_DOLPHIN, dolphinOnly = true)
+            LaunchAction.WiiU -> openController(LinkState.MODE_CEMU, dolphinOnly = false)
+            LaunchAction.Nunchuk -> openNunchuk()
+        }
     }
 
     /**
@@ -343,7 +369,23 @@ private fun Root(activity: MainActivity) {
         )
     }
 
-    when (activity.currentScreen) {
+    // Apaisado fijo mientras el GamePad esté en pantalla; al salir, como estaba
+    val padIntent by LinkState.intent.collectAsState()
+    val wantLandscape = activity.currentScreen == Screen.Controller && Route.route(link, padIntent) == PadScreen.GamePad
+    LaunchedEffect(wantLandscape) {
+        activity.requestedOrientation =
+            if (wantLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+    // Transición suave entre pantallas: fundido y un deslizamiento sutil
+    // (hacia dentro al entrar en una pantalla; hacia fuera al volver al inicio)
+    AnimatedContent(
+        targetState = activity.currentScreen,
+        transitionSpec = { screenTransition(initialState, targetState) },
+        label = "screen"
+    ) { screen ->
+    when (screen) {
         Screen.Onboarding -> OnboardingScreen(onDone = {
             AppPrefs.setOnboarded(context)
             activity.currentScreen = Screen.Home
@@ -411,6 +453,16 @@ private fun Root(activity: MainActivity) {
 
         Screen.Controller -> ControllerRoute(activity, link)
     }
+    }
+}
+
+private fun screenDepth(s: Screen): Int = if (s == Screen.Home || s == Screen.Onboarding) 0 else 1
+
+private fun screenTransition(from: Screen, to: Screen): ContentTransform {
+    val forward = screenDepth(to) >= screenDepth(from)
+    val enter = fadeIn(tween(180)) + slideInHorizontally(tween(180)) { w -> if (forward) w / 12 else -w / 12 }
+    val exit = fadeOut(tween(120)) + slideOutHorizontally(tween(120)) { w -> if (forward) -w / 12 else w / 12 }
+    return enter togetherWith exit
 }
 
 /**
@@ -430,16 +482,7 @@ private fun ControllerRoute(activity: MainActivity, link: UiLink) {
     }
 
     when (Route.route(link, intent)) {
-        PadScreen.GamePad -> {
-            // Apaisado fijo mientras dure el GamePad; al salir, como estaba
-            DisposableEffect(Unit) {
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                onDispose {
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                }
-            }
-            GamePadScreen(link = link, onDisconnect = onDisconnect)
-        }
+        PadScreen.GamePad -> GamePadScreen(link = link, onDisconnect = onDisconnect)
 
         PadScreen.Nunchuk -> NunchukScreen(link = link, onDisconnect = onDisconnect)
 

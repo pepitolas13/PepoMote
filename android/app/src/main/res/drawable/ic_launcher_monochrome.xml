@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icono temático (Android 13+): el aro y el punto en un solo color, que el
+     sistema tiñe con el fondo de pantalla. Dentro de la zona segura (66 dp). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 a24,24 0 1,0 0.0001,0 Z M54,40 a14,14 0 1,1 -0.0001,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,48 a6,6 0 1,0 0.0001,0 Z" />
+</vector>
