@@ -30,12 +30,21 @@ RE_BUTTON = re.compile(r"wl_pointer\]\s+button:.*?button:\s*(\d+)\b.*?state:\s*(
 RE_AXIS = re.compile(r"wl_pointer\]\s+axis:.*?axis:\s*0\b.*?value:\s*([-\d.]+)")
 RE_AXIS_DISCRETE = re.compile(r"wl_pointer\]\s+axis_discrete:.*?axis:\s*0\b.*?discrete:\s*(-?\d+)")
 RE_KEY = re.compile(r"wl_keyboard\]\s+key:.*?key:\s*(\d+);\s*state:\s*(\d)")
-KEY_A, KEY_B, KEY_ENTER, BTN_LEFT = 30, 48, 28, 272
+# La línea siguiente a un key: "sym: a (97), utf8: 'a'" — el keysym es lo que
+# cuenta (wev imprime el código en formato xkb, evdev+8)
+RE_SYM = re.compile(r"^\s+sym:\s+(\S+)")
+BTN_LEFT = 272
+# Teclas esperadas: (keysym, código evdev); wev puede dar evdev o evdev+8
+KEY_A, KEY_B, KEY_ENTER = ("a", 30), ("b", 48), ("Return", 28)
 
 def parse_wev(text):
-    """Eventos de wev en orden: [('motion', x, y)|('enter', x, y)|('button', code, state)|('axis', value)|('key', code, state)]"""
+    """Eventos de wev en orden: [('motion', x, y)|('enter', x, y)|('button', code, state)|('axis', value)|('key', code, state, sym)]"""
     ev = []
     for line in text.splitlines():
+        m = RE_SYM.search(line)
+        if m and ev and ev[-1][0] == "key" and ev[-1][3] is None:
+            ev[-1] = ev[-1][:3] + (m.group(1),)
+            continue
         m = RE_MOTION.search(line)
         if m:
             ev.append(("motion", float(m.group(1)), float(m.group(2)))); continue
@@ -53,8 +62,15 @@ def parse_wev(text):
             ev.append(("axis", float(m.group(1)) * 15.0)); continue
         m = RE_KEY.search(line)
         if m:
-            ev.append(("key", int(m.group(1)), int(m.group(2)))); continue
+            ev.append(("key", int(m.group(1)), int(m.group(2)), None)); continue
     return ev
+
+def key_is(e, want):
+    """¿El evento de tecla `e` es la tecla `want` = (keysym, evdev)? Por keysym si wev lo dio; si no, por código evdev o xkb (evdev+8)."""
+    sym, code = want
+    if e[3] is not None:
+        return e[3] == sym
+    return e[1] in (code, code + 8)
 
 def rules(ev, W, H, sens, yaw_deg):
     """Devuelve la lista de (ok, descripción) de todas las comprobaciones."""
@@ -83,11 +99,12 @@ def rules(ev, W, H, sens, yaw_deg):
     axes = [e[1] for e in ev if e[0] == "axis"]
     out.append((bool(axes) and all(v < 0 for v in axes),
                 f"rueda: {len(axes)} eventos de eje vertical, todos negativos (scroll arriba)"))
-    keys = [(e[1], e[2]) for e in ev if e[0] == "key"]
+    keys = [e for e in ev if e[0] == "key"]
     want = [(KEY_A, 1), (KEY_A, 0), (KEY_B, 1), (KEY_B, 0), (KEY_ENTER, 1), (KEY_ENTER, 0)]
     it = iter(keys)
-    ordered = all(any(k == w for k in it) for w in want)
-    out.append((ordered, f"teclas a(30), b(48), Intro(28) pulsadas y soltadas en orden (llegaron {keys})"))
+    ordered = all(any(key_is(k, w) and k[2] == s for k in it) for w, s in want)
+    seen = [(k[3] or k[1], k[2]) for k in keys]
+    out.append((ordered, f"teclas a, b, Intro pulsadas y soltadas en orden (llegaron {seen})"))
     return out
 
 def outputs_size(path):
