@@ -1,12 +1,58 @@
 import SwiftUI
 import UIKit
 
+/// Medidas del GamePad para un tamaño de pantalla (todo escalado al tamaño
+/// real, como en Android).
+struct PadMetrics {
+    let w: CGFloat
+    let h: CGFloat
+    let gap: CGFloat = 6
+    let headerH: CGFloat = 38
+    let selectorH: CGFloat = 36
+    let bodyH: CGFloat
+    let sideW: CGFloat
+    let shoulderH: CGFloat
+    let shoulderW: CGFloat
+    /// Stick y cruceta (o rombo) se reparten lo que queda bajo los gatillos.
+    let padSize: CGFloat
+    let clickSize: CGFloat
+    let faceBtn: CGFloat
+    let centerW: CGFloat
+    let bottomRowH: CGFloat
+    let touchW: CGFloat
+    let touchH: CGFloat
+
+    init(size: CGSize) {
+        w = size.width
+        h = size.height
+        let gap: CGFloat = 6
+        bodyH = h - 38 - 36 - gap * 3
+        sideW = w * 0.29
+        shoulderH = Swift.min(Swift.max(bodyH * 0.09, 26), 40)
+        shoulderW = Swift.min(Swift.max(sideW * 0.6, 90), 150)
+        let pad = (bodyH - shoulderH * 2 - gap * 3) / 2
+        padSize = Swift.max(Swift.min(pad, sideW * 0.62, 200), 40)
+        clickSize = Swift.min(Swift.max(padSize * 0.30, 30), 44)
+        faceBtn = padSize / 2.6
+        centerW = Swift.max(w - sideW * 2 - gap * 2, 60)
+        bottomRowH = Swift.min(Swift.max(bodyH * 0.16, 44), 60)
+        let tw = Swift.min(centerW, (bodyH - bottomRowH - gap * 2) * (16.0 / 9.0))
+        touchW = Swift.max(tw, 64)
+        touchH = touchW * (9.0 / 16.0)
+    }
+
+    /// Tamaño máximo que se pide al receptor (píxeles, tope nativo 854×480).
+    func screenRequest(scale: CGFloat) -> (Int, Int) {
+        let px = Swift.min(ScreenClient.nativeWidth, Int((touchW * scale).rounded()))
+        return (px, px * 9 / 16)
+    }
+}
+
 /// GamePad de Wii U (modo Cemu), siempre apaisado. Como el mando real: L/ZL
 /// arriba a la izquierda y R/ZR a la derecha; stick izquierdo y cruceta a la
 /// izquierda; stick derecho y rombo A/B/X/Y a la derecha; la pantalla táctil
-/// en el centro con −, Home, +, TV/Pad y Soplar debajo. Todo escalado al
-/// tamaño real de la pantalla. Como Pro Controller (jugadores 2-4) no hay
-/// táctil, ni Soplar, ni TV/Pad.
+/// en el centro con −, Home, +, TV/Pad y Soplar debajo. Como Pro Controller
+/// (jugadores 2-4) no hay táctil, ni Soplar, ni TV/Pad.
 ///
 /// Se enseña de forma optimista: conectando o esperando el eco de `mode cemu`
 /// («Activando Wii U…») los controles van atenuados e inertes. Con el modo
@@ -24,124 +70,12 @@ struct GamePadScreen: View {
     @State private var keyboardOpen = false
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
 
+    private var operative: Bool { Route.isGamePad(link.link) }
+
     var body: some View {
-        let connected = link.link.connected
-        let operative = Route.isGamePad(link.link)
-        let pro = connected?.pad == LinkState.padPro
-        return GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let gap: CGFloat = 6
-            let headerH: CGFloat = 38
-            let selectorH: CGFloat = 36
-            let bodyH = h - headerH - selectorH - gap * 3
-            let sideW = w * 0.29
-            let shoulderH = min(max(bodyH * 0.09, 26), 40)
-            let shoulderW = min(max(sideW * 0.6, 90), 150)
-            // Stick y cruceta (o rombo) se reparten lo que queda bajo los gatillos
-            let padSize = min((bodyH - shoulderH * 2 - gap * 3) / 2, sideW * 0.62, 200)
-            let clickSize = min(max(padSize * 0.30, 30), 44)
-            let faceBtn = padSize / 2.6
-            let centerW = w - sideW * 2 - gap * 2
-            let bottomRowH = min(max(bodyH * 0.16, 44), 60)
-            let touchW = min(centerW, (bodyH - bottomRowH - gap * 2) * (16 / 9))
-            let touchH = touchW * (9 / 16)
-            // Doble pantalla: solo el GamePad (no un Pro Controller) y con el modo confirmado
-            let wantScreen = operative && connected?.pad == LinkState.padGamepad
-            let touchPx = Int((touchW * displayScale).rounded())
-
-            ZStack(alignment: .top) {
-                VStack(spacing: 0) {
-                    GamePadHeader(
-                        link: link.link, operative: operative, height: headerH, width: w,
-                        screen: screenLink.client,
-                        onKeyboard: operative ? { keyboardOpen = true } : nil,
-                        onDisconnect: onDisconnect
-                    )
-                    Spacer().frame(height: gap)
-                    // Qué mando soy en Cemu: debajo de la cabecera, centrado
-                    ZStack {
-                        if let c = connected { PadSelector(link: c, width: w, compact: true) }
-                    }
-                    .frame(height: selectorH)
-                    Spacer().frame(height: gap)
-
-                    HStack(spacing: gap) {
-                        // Izquierda: L y ZL en la esquina, stick (+ L3), cruceta
-                        VStack(alignment: .leading, spacing: 0) {
-                            VStack(alignment: .leading, spacing: gap) {
-                                ShoulderButton(label: "L", bit: Btn.l, width: shoulderW, height: shoulderH)
-                                ShoulderButton(label: "ZL", bit: Btn.zl, width: shoulderW, height: shoulderH)
-                            }
-                            Spacer(minLength: 0)
-                            HStack(alignment: .bottom, spacing: gap) {
-                                AnalogStick(size: padSize) { x, y in ButtonState.shared.setStick(x, y) }
-                                RoundButton(label: "L3", size: clickSize, bit: Btn.stickL, textSize: 12)
-                            }
-                            Spacer(minLength: 0)
-                            PadCross(size: padSize)
-                        }
-                        .frame(width: sideW, height: bodyH)
-
-                        // Centro: pantalla táctil y la fila − · Home · + (con TV/Pad y Soplar)
-                        VStack(spacing: 0) {
-                            Spacer(minLength: 0)
-                            if pro {
-                                Text(tr("pro_controller")).pepoBody().multilineTextAlignment(.center)
-                            } else {
-                                TouchScreenView(width: touchW, height: touchH, client: screenLink.client)
-                            }
-                            Spacer(minLength: 0)
-                            // La fila entera tiene que caber en el centro: pastillas y círculos se encogen juntos
-                            let rowGap: CGFloat = centerW < 300 ? 6 : 10
-                            let pillW: CGFloat = pro ? 0 : min(max(centerW * 0.22, 44), 66)
-                            let pills: CGFloat = pro ? 0 : 2
-                            let roundBtn = min(max((centerW - rowGap * (2 + pills) - pillW * pills) / 3, 28), bottomRowH * 0.85)
-                            HStack(alignment: .center, spacing: rowGap) {
-                                if !pro { ShoulderButton(label: tr("tv_pad"), bit: Btn.screen, width: pillW, height: 30, textSize: 12) }
-                                RoundButton(label: "−", size: roundBtn, bit: Btn.minus, textSize: 19)
-                                RoundButton(label: tr("home_btn"), size: roundBtn, bit: Btn.home, textSize: 12)
-                                RoundButton(label: "+", size: roundBtn, bit: Btn.plus, textSize: 19)
-                                if !pro { ShoulderButton(label: tr("blow"), bit: Btn.mic, width: pillW, height: 30, textSize: 12) }
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .frame(width: centerW, height: bodyH)
-
-                        // Derecha: R y ZR en la esquina, (R3 +) stick, rombo A/B/X/Y
-                        VStack(alignment: .trailing, spacing: 0) {
-                            VStack(alignment: .trailing, spacing: gap) {
-                                ShoulderButton(label: "R", bit: Btn.r, width: shoulderW, height: shoulderH)
-                                ShoulderButton(label: "ZR", bit: Btn.zr, width: shoulderW, height: shoulderH)
-                            }
-                            Spacer(minLength: 0)
-                            HStack(alignment: .bottom, spacing: gap) {
-                                RoundButton(label: "R3", size: clickSize, bit: Btn.stickR, textSize: 12)
-                                AnalogStick(size: padSize) { x, y in ButtonState.shared.setStick2(x, y) }
-                            }
-                            Spacer(minLength: 0)
-                            FaceButtons(size: padSize, btn: faceBtn)
-                        }
-                        .frame(width: sideW, height: bodyH)
-                    }
-                    .frame(height: bodyH)
-                    // Inerte hasta que el receptor confirme el modo: nada llega a los controles
-                    .opacity(operative ? 1 : 0.4)
-                    .allowsHitTesting(operative)
-                }
-
-                NoticeBanner().padding(.top, headerH + selectorH + gap * 2)
-            }
-            .frame(width: w, height: h)
-            .onChange(of: wantScreen) { want in
-                if want { screenLink.request(width: min(ScreenClient.nativeWidth, touchPx), height: min(ScreenClient.nativeWidth, touchPx) * 9 / 16) } else { screenLink.release() }
-            }
-            .onChange(of: touchPx) { px in
-                if wantScreen { screenLink.request(width: min(ScreenClient.nativeWidth, px), height: min(ScreenClient.nativeWidth, px) * 9 / 16) }
-            }
-            .onAppear {
-                if wantScreen { screenLink.request(width: min(ScreenClient.nativeWidth, touchPx), height: min(ScreenClient.nativeWidth, touchPx) * 9 / 16) }
-            }
+        GeometryReader { geo in
+            content(PadMetrics(size: geo.size))
+                .frame(width: geo.size.width, height: geo.size.height)
         }
         .background(Pepo.background.ignoresSafeArea())
         .sheet(isPresented: $keyboardOpen) {
@@ -149,8 +83,8 @@ struct GamePadScreen: View {
         }
         // Solo con el modo confirmado el motor emite como GamePad; si el modo se
         // va (Mando de Wii) o se sale, vuelve lo de antes
-        .onChange(of: operative) { _ in applyEngine(operative) }
-        .onChange(of: rotation) { _ in applyEngine(operative) }
+        .onChange(of: operative) { _ in applyEngine() }
+        .onChange(of: rotation) { _ in applyEngine() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             // El móvil puede girar 180° entre los dos apaisados: el remapeo lo sigue
             rotation = OrientationLock.frameRotation(OrientationLock.current)
@@ -159,7 +93,7 @@ struct GamePadScreen: View {
             UIApplication.shared.isIdleTimerDisabled = true
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             rotation = OrientationLock.frameRotation(OrientationLock.current)
-            applyEngine(operative)
+            applyEngine()
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
@@ -172,7 +106,51 @@ struct GamePadScreen: View {
         }
     }
 
-    private func applyEngine(_ operative: Bool) {
+    private func content(_ m: PadMetrics) -> some View {
+        let connected = link.link.connected
+        let operative = self.operative
+        let pro = connected?.pad == LinkState.padPro
+        // Doble pantalla: solo el GamePad (no un Pro Controller) y con el modo confirmado
+        let wantScreen = operative && connected?.pad == LinkState.padGamepad
+        let request = m.screenRequest(scale: displayScale)
+        let onKeyboard: (() -> Void)? = operative ? { keyboardOpen = true } : nil
+        return ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                GamePadHeader(
+                    link: link.link, operative: operative, height: m.headerH, width: m.w,
+                    screen: screenLink.client, onKeyboard: onKeyboard, onDisconnect: onDisconnect
+                )
+                Spacer().frame(height: m.gap)
+                // Qué mando soy en Cemu: debajo de la cabecera, centrado
+                ZStack {
+                    if let c = connected { PadSelector(link: c, width: m.w, compact: true) }
+                }
+                .frame(height: m.selectorH)
+                Spacer().frame(height: m.gap)
+                HStack(spacing: m.gap) {
+                    LeftColumn(m: m)
+                    CenterColumn(m: m, pro: pro, client: screenLink.client)
+                    RightColumn(m: m)
+                }
+                .frame(height: m.bodyH)
+                // Inerte hasta que el receptor confirme el modo: nada llega a los controles
+                .opacity(operative ? 1 : 0.4)
+                .allowsHitTesting(operative)
+            }
+            NoticeBanner().padding(.top, m.headerH + m.selectorH + m.gap * 2)
+        }
+        .onChange(of: wantScreen) { want in
+            if want { screenLink.request(width: request.0, height: request.1) } else { screenLink.release() }
+        }
+        .onChange(of: request.0) { px in
+            if wantScreen { screenLink.request(width: px, height: px * 9 / 16) }
+        }
+        .onAppear {
+            if wantScreen { screenLink.request(width: request.0, height: request.1) }
+        }
+    }
+
+    private func applyEngine() {
         guard let engine = link.motion else { return }
         if operative {
             engine.rotation = rotation
@@ -182,6 +160,83 @@ struct GamePadScreen: View {
             engine.rotation = Frame.rotation0
             ButtonState.shared.reset()
         }
+    }
+}
+
+/// Izquierda: L y ZL en la esquina, stick (+ L3), cruceta.
+private struct LeftColumn: View {
+    let m: PadMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: m.gap) {
+                ShoulderButton(label: "L", bit: Btn.l, width: m.shoulderW, height: m.shoulderH)
+                ShoulderButton(label: "ZL", bit: Btn.zl, width: m.shoulderW, height: m.shoulderH)
+            }
+            Spacer(minLength: 0)
+            HStack(alignment: .bottom, spacing: m.gap) {
+                AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick(x, y) }
+                RoundButton(label: "L3", size: m.clickSize, bit: Btn.stickL, textSize: 12)
+            }
+            Spacer(minLength: 0)
+            PadCross(size: m.padSize)
+        }
+        .frame(width: m.sideW, height: m.bodyH)
+    }
+}
+
+/// Derecha: R y ZR en la esquina, (R3 +) stick, rombo A/B/X/Y.
+private struct RightColumn: View {
+    let m: PadMetrics
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            VStack(alignment: .trailing, spacing: m.gap) {
+                ShoulderButton(label: "R", bit: Btn.r, width: m.shoulderW, height: m.shoulderH)
+                ShoulderButton(label: "ZR", bit: Btn.zr, width: m.shoulderW, height: m.shoulderH)
+            }
+            Spacer(minLength: 0)
+            HStack(alignment: .bottom, spacing: m.gap) {
+                RoundButton(label: "R3", size: m.clickSize, bit: Btn.stickR, textSize: 12)
+                AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick2(x, y) }
+            }
+            Spacer(minLength: 0)
+            FaceButtons(size: m.padSize, btn: m.faceBtn)
+        }
+        .frame(width: m.sideW, height: m.bodyH)
+    }
+}
+
+/// Centro: pantalla táctil y la fila − · Home · + (con TV/Pad y Soplar).
+private struct CenterColumn: View {
+    let m: PadMetrics
+    let pro: Bool
+    let client: ScreenClient?
+
+    var body: some View {
+        // La fila entera tiene que caber en el centro: pastillas y círculos se encogen juntos
+        let rowGap: CGFloat = m.centerW < 300 ? 6 : 10
+        let pillW: CGFloat = pro ? 0 : Swift.min(Swift.max(m.centerW * 0.22, 44), 66)
+        let pills: CGFloat = pro ? 0 : 2
+        let roundBtn: CGFloat = Swift.min(Swift.max((m.centerW - rowGap * (2 + pills) - pillW * pills) / 3, 28), m.bottomRowH * 0.85)
+        return VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            if pro {
+                Text(tr("pro_controller")).pepoBody().multilineTextAlignment(.center)
+            } else {
+                TouchScreenView(width: m.touchW, height: m.touchH, client: client)
+            }
+            Spacer(minLength: 0)
+            HStack(alignment: .center, spacing: rowGap) {
+                if !pro { ShoulderButton(label: tr("tv_pad"), bit: Btn.screen, width: pillW, height: 30, textSize: 12) }
+                RoundButton(label: "−", size: roundBtn, bit: Btn.minus, textSize: 19)
+                RoundButton(label: tr("home_btn"), size: roundBtn, bit: Btn.home, textSize: 12)
+                RoundButton(label: "+", size: roundBtn, bit: Btn.plus, textSize: 19)
+                if !pro { ShoulderButton(label: tr("blow"), bit: Btn.mic, width: pillW, height: 30, textSize: 12) }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(width: m.centerW, height: m.bodyH)
     }
 }
 
@@ -198,11 +253,17 @@ private struct GamePadHeader: View {
     let onKeyboard: (() -> Void)?
     let onDisconnect: () -> Void
 
+    /// «J1 · GamePad · 23 ms», acortado en móviles estrechos antes de recortarse.
+    private func statusText(_ c: ConnectedLink) -> String {
+        if !operative { return tr("activating_wiiu") }
+        var s = "J\(c.player)"
+        if width >= 560 { s += " · " + (c.pad == LinkState.padPro ? tr("pro_controller") : tr("gamepad")) }
+        if width >= 700, let rtt = c.rttMs { s += " · \(String(format: "%.0f", rtt)) ms" }
+        return s
+    }
+
     var body: some View {
-        // El estado se acorta antes de recortarse: en móviles estrechos fuera el nombre del mando y el RTT
-        let showPad = width >= 560
-        let showRtt = width >= 700
-        return HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             switch link {
             case .connected(let c):
                 Text(c.pcName)
@@ -211,15 +272,7 @@ private struct GamePadHeader: View {
                     .truncationMode(.tail)
                     .frame(maxWidth: 160, alignment: .leading)
                     .layoutPriority(0)
-                let padName = c.pad == LinkState.padPro ? tr("pro_controller") : tr("gamepad")
-                let status: String = {
-                    if !operative { return tr("activating_wiiu") }
-                    var s = "J\(c.player)"
-                    if showPad { s += " · " + padName }
-                    if showRtt, let rtt = c.rttMs { s += " · \(String(format: "%.0f", rtt)) ms" }
-                    return s
-                }()
-                Text(status)
+                Text(statusText(c))
                     .pepoBody()
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -300,8 +353,8 @@ private struct TouchScreenView: View {
     @State private var finger: CGPoint?
 
     private func report(_ p: CGPoint, _ down: Bool) {
-        let fx = min(max(p.x / width, 0), 1)
-        let fy = min(max(p.y / height, 0), 1)
+        let fx = Swift.min(Swift.max(p.x / width, 0), 1)
+        let fy = Swift.min(Swift.max(p.y / height, 0), 1)
         ButtonState.shared.setTouch(Int((fx * 65535).rounded()), Int((fy * 65535).rounded()), down)
     }
 

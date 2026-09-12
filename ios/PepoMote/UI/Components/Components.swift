@@ -274,7 +274,7 @@ struct AnalogStick: View {
             }
             .frame(width: knobSize, height: knobSize)
             .offset(knob)
-            .animation(active ? nil : .spring(response: 0.25, dampingFraction: 0.65), value: knob)
+            .animation(active ? nil : Animation.spring(response: 0.25, dampingFraction: 0.65), value: knob)
         }
         .frame(width: size, height: size)
         .contentShape(Circle())
