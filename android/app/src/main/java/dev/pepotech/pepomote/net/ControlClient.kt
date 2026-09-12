@@ -35,7 +35,9 @@ class ControlClient(
         /** `modes` contiene "cemu": el receptor sabe de Wii U (ausente en receptores antiguos). */
         val supportsCemu: Boolean,
         /** Mando efectivo en modo Wii U: gamepad / pro / wiimote (ausente = gamepad). */
-        val pad: String
+        val pad: String,
+        /** Nombre del PC (`ok.name`); vacío si el receptor no lo manda. */
+        val name: String = ""
     )
 
     interface Callbacks {
@@ -114,7 +116,8 @@ class ControlClient(
                             role = msg.optString("role", role),
                             player = msg.optInt("player", 0),
                             supportsCemu = supportsCemu(msg),
-                            pad = msg.optString("pad", "gamepad")
+                            pad = msg.optString("pad", "gamepad"),
+                            name = msg.optString("name", "")
                         )
                     )
 

@@ -502,6 +502,17 @@ impl MobileApp {
                     self.discovered.clear();
                     self.last_scan = None;
                     self.screen = Screen::Pair;
+                } else if code == "io" && store::load_all().list.len() >= 2 {
+                    // Con varios PCs guardados, uno que no responde no es el
+                    // final: a Conectar a elegir otro
+                    self.error = None;
+                    self.pair_reason = Some(format!(
+                        "{} no responde. Elige otro PC o teclea el código de otro.",
+                        self.pairing.as_ref().map(|p| p.pc_name.as_str()).unwrap_or("Tu PC")
+                    ));
+                    self.discovered.clear();
+                    self.last_scan = None;
+                    self.screen = Screen::Pair;
                 } else {
                     self.error = Some(msg.clone());
                     if matches!(self.screen, Screen::Controller | Screen::Nunchuk | Screen::GamePad) {
@@ -774,6 +785,49 @@ impl MobileApp {
             ui.add_space(8.0);
             ui.label(RichText::new(reason).size(13.0).color(theme::error()));
         }
+        // Tus PCs: tocar uno conecta con él; «Olvidar» lo quita
+        let saved = store::load_all();
+        if !saved.list.is_empty() {
+            ui.add_space(12.0);
+            ui.label(RichText::new("Tus PCs").size(15.0).strong().color(theme::text()));
+            ui.add_space(4.0);
+            let mut choose: Option<Pairing> = None;
+            let mut forget: Option<String> = None;
+            for p in &saved.list {
+                let current = saved.current.as_deref() == Some(p.token.as_str());
+                let online = self.discovered.iter().any(|r| r.name == p.pc_name || r.host == p.host);
+                ui.horizontal(|ui| {
+                    let w = ui.available_width() - 84.0;
+                    let label = format!(
+                        "{}{}\n{}:{}{}",
+                        p.pc_name,
+                        if current { " · actual" } else { "" },
+                        p.host,
+                        p.port,
+                        if online { " · en la red" } else { "" }
+                    );
+                    let mut b = egui::Button::new(RichText::new(label).size(14.0).color(theme::text())).fill(theme::card());
+                    if current {
+                        b = b.stroke(egui::Stroke::new(1.5_f32, theme::blue()));
+                    }
+                    if ui.add_sized(Vec2::new(w, 56.0), b).clicked() {
+                        choose = Some(p.clone());
+                    }
+                    let f = egui::Button::new(RichText::new("Olvidar").size(12.0).color(theme::error())).fill(theme::card());
+                    if ui.add_sized(Vec2::new(74.0, 56.0), f).clicked() {
+                        forget = Some(p.token.clone());
+                    }
+                });
+            }
+            if let Some(p) = choose {
+                self.pairing = store::select(&p.token);
+                self.pair_reason = None;
+                self.open_controller(Some("pointer"), false);
+            }
+            if let Some(t) = forget {
+                self.pairing = store::forget(&t);
+            }
+        }
         ui.add_space(12.0);
         let msg = if self.discovered.is_empty() {
             if self.scan_rx.is_some() {
@@ -787,7 +841,8 @@ impl MobileApp {
         ui.label(RichText::new(msg).size(13.0).color(theme::text_dim()));
         ui.add_space(6.0);
         let mut chosen: Option<Receiver> = None;
-        for r in &self.discovered {
+        let known = |r: &Receiver| saved.list.iter().any(|p| p.pc_name == r.name || p.host == r.host);
+        for r in self.discovered.iter().filter(|r| !known(r)) {
             if ui
                 .add_sized(
                     Vec2::new(ui.available_width(), 64.0),

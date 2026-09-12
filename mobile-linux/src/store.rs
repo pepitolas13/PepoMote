@@ -31,8 +31,53 @@ fn config_file(name: &str) -> Option<PathBuf> {
     directories::ProjectDirs::from("dev", "pepotech", "PepoMote").map(|d| d.config_dir().join(name))
 }
 
-fn path() -> Option<PathBuf> {
-    config_file("pairing.json")
+/// Los PCs emparejados (pairings.json) y cuál es el actual. Un token es un
+/// PC; su nombre y su IP pueden cambiar y se actualizan sin perder el token.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Pairings {
+    pub current: Option<String>,
+    pub list: Vec<Pairing>,
+}
+
+impl Pairings {
+    /// Añade o actualiza (por token) conservando el orden, y lo deja como actual.
+    pub fn upsert(&mut self, p: Pairing) {
+        match self.list.iter_mut().find(|x| x.token == p.token) {
+            Some(x) => *x = p.clone(),
+            None => self.list.push(p.clone()),
+        }
+        self.current = Some(p.token);
+    }
+
+    /// Olvida un PC; si era el actual, el primero que quede pasa a serlo.
+    pub fn forget(&mut self, token: &str) {
+        self.list.retain(|x| x.token != token);
+        if !self.list.iter().any(|x| Some(&x.token) == self.current.as_ref()) {
+            self.current = self.list.first().map(|x| x.token.clone());
+        }
+    }
+
+    /// Otro de los guardados pasa a ser el actual (uno desconocido se ignora).
+    pub fn select(&mut self, token: &str) {
+        if self.list.iter().any(|x| x.token == token) {
+            self.current = Some(token.to_owned());
+        }
+    }
+
+    pub fn current(&self) -> Option<Pairing> {
+        self.list
+            .iter()
+            .find(|x| Some(&x.token) == self.current.as_ref())
+            .or(self.list.first())
+            .cloned()
+    }
+}
+
+fn read_json<T: for<'de> Deserialize<'de>>(name: &str) -> Option<T> {
+    config_file(name)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
 }
 
 fn write_json<T: Serialize>(name: &str, v: &T) {
@@ -72,14 +117,48 @@ pub fn save_settings(s: &Settings) {
     write_json("settings.json", s);
 }
 
-pub fn load() -> Option<Pairing> {
-    path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
+/// Todos los PCs guardados; el pairing.json de versiones anteriores se migra.
+pub fn load_all() -> Pairings {
+    if let Some(all) = read_json::<Pairings>("pairings.json") {
+        return all;
+    }
+    let mut all = Pairings::default();
+    if let Some(p) = read_json::<Pairing>("pairing.json") {
+        all.upsert(p);
+    }
+    all
 }
 
+pub fn save_all(all: &Pairings) {
+    write_json("pairings.json", all);
+}
+
+/// El PC actual.
+pub fn load() -> Option<Pairing> {
+    load_all().current()
+}
+
+/// Guarda (por token) y lo deja como actual.
 pub fn save(p: &Pairing) {
-    write_json("pairing.json", p);
+    let mut all = load_all();
+    all.upsert(p.clone());
+    save_all(&all);
+}
+
+/// Otro de los guardados pasa a ser el actual; devuelve el actual.
+pub fn select(token: &str) -> Option<Pairing> {
+    let mut all = load_all();
+    all.select(token);
+    save_all(&all);
+    all.current()
+}
+
+/// Olvida un PC; devuelve el nuevo actual (si queda alguno).
+pub fn forget(token: &str) -> Option<Pairing> {
+    let mut all = load_all();
+    all.forget(token);
+    save_all(&all);
+    all.current()
 }
 
 /// "192.168.1.5" → (host, puerto por defecto); "192.168.1.5:26800" → (host, 26800).
@@ -120,5 +199,37 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
         assert_eq!(s.theme, crate::theme::ThemePref::Light, "el tema se guarda en minúsculas");
         assert_eq!(s.rotation, Rotation::Left);
+    }
+
+    #[test]
+    fn varios_pcs_por_token() {
+        let salon = Pairing { host: "192.168.1.5".into(), port: 26761, token: "tok-salon".into(), pc_name: "SALÓN".into() };
+        let cuarto = Pairing { host: "192.168.1.9".into(), port: 26800, token: "tok-cuarto".into(), pc_name: "Cuarto".into() };
+        let mut all = Pairings::default();
+        assert_eq!(all.current(), None);
+        all.upsert(salon.clone());
+        all.upsert(cuarto.clone());
+        assert_eq!(all.list, vec![salon.clone(), cuarto.clone()]);
+        assert_eq!(all.current(), Some(cuarto.clone()), "el último emparejado es el actual");
+        // mismo token: se actualiza sin duplicar (y pasa a ser el actual)
+        all.upsert(Pairing { host: "192.168.1.50".into(), ..salon.clone() });
+        assert_eq!(all.list.len(), 2);
+        assert_eq!(all.current().unwrap().host, "192.168.1.50");
+        all.select("tok-cuarto");
+        assert_eq!(all.current(), Some(cuarto.clone()));
+        all.select("no-existe");
+        assert_eq!(all.current(), Some(cuarto.clone()), "uno desconocido se ignora");
+        // olvidar el actual: el primero que quede
+        all.forget("tok-cuarto");
+        assert_eq!(all.current().unwrap().token, "tok-salon");
+        all.forget("tok-salon");
+        assert_eq!(all.current(), None);
+        assert!(all.list.is_empty());
+        // ida y vuelta JSON, y un archivo de una versión anterior (sin current)
+        all.upsert(salon.clone());
+        let back: Pairings = serde_json::from_str(&serde_json::to_string(&all).unwrap()).unwrap();
+        assert_eq!(back, all);
+        let old: Pairings = serde_json::from_str(r#"{"list":[{"host":"h","port":1,"token":"t","pc_name":"n"}]}"#).unwrap();
+        assert_eq!(old.current().unwrap().token, "t", "sin current: el primero");
     }
 }

@@ -1,6 +1,8 @@
 package dev.pepotech.pepomote.service
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,5 +26,13 @@ class LinkFailureTest {
         assertTrue(LinkFailure.rePairReason(null).startsWith("Tu PC ya no reconoce"))
         assertTrue(LinkFailure.rePairReason("   ").startsWith("Tu PC ya no reconoce"))
         assertTrue(LinkFailure.rePairReason("PC").contains("Escanéalo otra vez"))
+    }
+
+    @Test
+    fun conVariosPcsUnFalloDeRedOfreceElegirOtro() {
+        assertEquals("SALON-PC no responde. Elige otro PC o escanea un QR.", LinkFailure.afterIo("io", "SALON-PC", 2))
+        assertEquals("Tu PC no responde. Elige otro PC o escanea un QR.", LinkFailure.afterIo("io", " ", 3))
+        assertNull("con un solo PC no hay nada que elegir", LinkFailure.afterIo("io", "SALON-PC", 1))
+        assertNull("un error del PC no es de red", LinkFailure.afterIo("busy", "SALON-PC", 2))
     }
 }

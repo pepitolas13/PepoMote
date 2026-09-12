@@ -16,7 +16,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -27,6 +29,7 @@ import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.PairStore
+import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.service.LinkFailure
 import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
@@ -75,6 +78,9 @@ class MainActivity : ComponentActivity() {
      */
     internal var pairReason by mutableStateOf<String?>(null)
 
+    /** Sube con cada cambio de la lista de PCs guardados (la pantalla Conectar la relee). */
+    internal var pairVersion by mutableIntStateOf(0)
+
     /** A la pantalla Conectar (escáner QR), con explicación si viene de un rechazo. */
     internal fun openPair(reason: String? = null) {
         pairReason = reason
@@ -90,8 +96,14 @@ class MainActivity : ComponentActivity() {
      */
     internal fun onLinkFailed(failure: UiLink.Failed) {
         LinkState.clearFailure()
+        val pcName = PairStore.load(this)?.pcName
+        val other = LinkFailure.afterIo(failure.code, pcName, PairStore.all(this).size)
         if (LinkFailure.needsNewQr(failure.code)) {
-            openPair(LinkFailure.rePairReason(PairStore.load(this)?.pcName))
+            openPair(LinkFailure.rePairReason(pcName))
+        } else if (other != null) {
+            // Con varios PCs guardados, un PC que no responde no es el final:
+            // a Conectar a elegir otro (lo pedido se conserva)
+            openPair(other)
         } else {
             Toast.makeText(this, "Error: ${failure.msg}", Toast.LENGTH_LONG).show()
             LinkState.pendingMode = null
@@ -148,6 +160,24 @@ class MainActivity : ComponentActivity() {
                 currentScreen = Screen.Controller
             }
         }
+    }
+
+    /**
+     * Un PC de «Tus PCs»: pasa a ser el actual y se conecta con él, con el
+     * mismo papel y modo que se habían pedido.
+     */
+    internal fun onSavedPcChosen(p: Pairing) {
+        PairStore.select(this, p.token)
+        pairVersion++
+        pairReason = null
+        if (linkRole == LinkState.ROLE_WIIMOTE) LinkState.pendingMode?.let { LinkState.requestMode(it) }
+        LinkForegroundService.start(this, linkRole)
+        currentScreen = if (linkRole == LinkState.ROLE_NUNCHUK) Screen.Nunchuk else Screen.Controller
+    }
+
+    internal fun onForgetPc(p: Pairing) {
+        PairStore.forget(this, p.token)
+        pairVersion++
     }
 
     /** Tarjeta «Nunchuk»: el móvil de la otra mano. */
@@ -212,6 +242,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         PairStore.save(this, pairing)
+        pairVersion++
         pairReason = null
         // Lo pedido antes de tener que escanear (Wii U, Dolphin…) se vuelve a
         // pedir: la intención se restaura y el modo va en cuanto llegue el ok
@@ -332,14 +363,22 @@ private fun Root(activity: MainActivity) {
             )
         }
 
-        Screen.Pair -> PairScreen(
-            reason = activity.pairReason,
-            onScanQr = { scanQr() },
-            onBack = {
-                LinkState.pendingMode = null // lo pedido antes del QR ya no va
-                activity.currentScreen = Screen.Home
-            }
-        )
+        Screen.Pair -> {
+            val saved = remember(activity.pairVersion) { PairStore.all(context) }
+            val current = remember(activity.pairVersion) { PairStore.current(context)?.token }
+            PairScreen(
+                reason = activity.pairReason,
+                onScanQr = { scanQr() },
+                onBack = {
+                    LinkState.pendingMode = null // lo pedido antes del QR ya no va
+                    activity.currentScreen = Screen.Home
+                },
+                saved = saved,
+                currentToken = current,
+                onChoose = { activity.onSavedPcChosen(it) },
+                onForget = { activity.onForgetPc(it) }
+            )
+        }
 
         Screen.Settings -> SettingsScreen(
             onNewPairing = {

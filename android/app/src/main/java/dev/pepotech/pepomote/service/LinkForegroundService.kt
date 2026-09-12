@@ -156,6 +156,10 @@ class LinkForegroundService : Service() {
                     phase = Phase.Live
                     reconnectAttempt = 0
                     val nunchuk = ok.role == LinkState.ROLE_NUNCHUK
+                    // El PC se ha renombrado: el emparejamiento se actualiza solo
+                    val pcName = ok.name.takeIf { it.isNotBlank() && it != pairing.pcName }?.also {
+                        PairStore.save(this@LinkForegroundService, pairing.copy(pcName = it))
+                    } ?: pairing.pcName
                     val sender = UdpSender(pairing.host, ok.udpPort, ok.sessionId) { rtt ->
                         LinkState.updateConnected { it.copy(rttMs = rtt) }
                     }
@@ -183,7 +187,7 @@ class LinkForegroundService : Service() {
                     LinkState.sendText = { t -> control?.sendText(t) }
                     LinkState.publish(
                         UiLink.Connected(
-                            pairing.pcName, ok.mode, null, 0f, ok.slot,
+                            pcName, ok.mode, null, 0f, ok.slot,
                             role = ok.role,
                             // Receptor sin "player" en el ok: el jugador es el slot
                             player = if (ok.player > 0) ok.player else ok.slot + 1,
@@ -207,8 +211,8 @@ class LinkForegroundService : Service() {
                     // y centra el cursor con los primeros paquetes ya fluyendo
                     mainHandler.postDelayed({ ButtonState.bumpRecenter() }, 300)
                     updateNotification(
-                        if (nunchuk) "Nunchuk conectado a ${pairing.pcName}"
-                        else "Conectado a ${pairing.pcName}"
+                        if (nunchuk) "Nunchuk conectado a $pcName"
+                        else "Conectado a $pcName"
                     )
                 }
 
