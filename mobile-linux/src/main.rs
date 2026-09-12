@@ -23,6 +23,9 @@ mod ui;
 mod theme;
 #[path = "../../desktop/src/icon.rs"]
 mod icon;
+#[path = "../../desktop/src/i18n.rs"]
+mod i18n;
+mod strings;
 
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();

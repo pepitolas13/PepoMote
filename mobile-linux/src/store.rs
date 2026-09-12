@@ -25,6 +25,36 @@ pub struct Settings {
     pub rotation: Rotation,
     /// Tema: como el sistema (en Linux móvil = claro), claro u oscuro.
     pub theme: crate::theme::ThemePref,
+    /// Idioma de la interfaz: el del sistema, español o inglés.
+    pub lang: LangPref,
+}
+
+/// Idioma elegido (settings.json): el del sistema (español si no es inglés)
+/// o uno fijo.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LangPref {
+    #[default]
+    System,
+    Es,
+    En,
+}
+
+impl LangPref {
+    pub fn resolve(self) -> crate::i18n::Lang {
+        match self {
+            LangPref::System => crate::i18n::detect_system(),
+            LangPref::Es => crate::i18n::Lang::Es,
+            LangPref::En => crate::i18n::Lang::En,
+        }
+    }
+
+    pub fn from_lang(l: crate::i18n::Lang) -> Self {
+        match l {
+            crate::i18n::Lang::Es => LangPref::Es,
+            crate::i18n::Lang::En => LangPref::En,
+        }
+    }
 }
 
 fn config_file(name: &str) -> Option<PathBuf> {
@@ -193,12 +223,14 @@ mod tests {
         assert_eq!(s.rotation, Rotation::Right);
         let s: Settings = serde_json::from_str(r#"{"otro":1,"pad_wii":true}"#).unwrap();
         assert_eq!(s.rotation, Rotation::Left, "campo ausente: por defecto; los desconocidos se ignoran");
-        let mine = Settings { rotation: Rotation::Right, theme: crate::theme::ThemePref::Dark };
+        let mine = Settings { rotation: Rotation::Right, theme: crate::theme::ThemePref::Dark, lang: LangPref::En };
         let back: Settings = serde_json::from_str(&serde_json::to_string(&mine).unwrap()).unwrap();
         assert_eq!(back, mine);
         let s: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
         assert_eq!(s.theme, crate::theme::ThemePref::Light, "el tema se guarda en minúsculas");
         assert_eq!(s.rotation, Rotation::Left);
+        assert_eq!(s.lang, LangPref::System, "sin idioma guardado: el del sistema");
+        assert_eq!(serde_json::to_string(&LangPref::En).unwrap(), "\"en\"");
     }
 
     #[test]

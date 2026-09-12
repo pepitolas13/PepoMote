@@ -14,6 +14,7 @@ use crate::ui::touch::{self, Canvas, Input, Phase, Shape, Transform};
 use egui::{Align2, FontId, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
 use std::collections::HashMap;
 use std::time::Duration;
+use crate::tr;
 
 pub enum Action {
     None,
@@ -103,8 +104,8 @@ impl NunchukUi {
                     // un slot de mando: que se vea, no que se sufra. El modo
                     // lo decide el mando; nos llega por difusión
                     let (mut line, color) = match role {
-                        Role::Nunchuk => (format!("Nunchuk · Jugador {player} · {}", mode_label(mode)), theme::text_dim()),
-                        Role::Wiimote => ("El PC te ve como mando: actualiza el receptor".to_owned(), theme::warn()),
+                        Role::Nunchuk => (tr!("nk.line", player, mode_label(mode)), theme::text_dim()),
+                        Role::Wiimote => (tr!("nk.old_pc").to_owned(), theme::warn()),
                     };
                     if let Some(r) = rtt_ms {
                         line.push_str(&format!(" · {r:.0} ms"));
@@ -116,23 +117,23 @@ impl NunchukUi {
                     // en Wii U, Cemu solo ve el Nunchuk colgado de un Mando de Wii
                     if mode == "cemu" && pad != "wiimote" {
                         ui.label(
-                            RichText::new("En Wii U el Nunchuk solo funciona si el mando elige Mando de Wii")
+                            RichText::new(tr!("nk.help"))
                                 .size(12.0)
                                 .color(theme::warn()),
                         );
                     }
                 }
                 Status::Connecting | Status::Reconnecting { .. } => {
-                    let txt = if matches!(status, Status::Reconnecting { .. }) { "Reconectando…" } else { "Conectando…" };
+                    let txt = if matches!(status, Status::Reconnecting { .. }) { tr!("common.reconnecting") } else { tr!("common.connecting") };
                     ui.label(RichText::new(txt).size(17.0).strong().color(theme::text()));
                 }
                 _ => {
-                    ui.label(RichText::new("Sin conexión").size(17.0).strong().color(theme::text()));
+                    ui.label(RichText::new(tr!("common.no_connection")).size(17.0).strong().color(theme::text()));
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .button(RichText::new("Salir").size(14.0).color(theme::error()))
+                    .button(RichText::new(tr!("common.exit")).size(14.0).color(theme::error()))
                     .clicked()
                 {
                     action = Action::Exit;

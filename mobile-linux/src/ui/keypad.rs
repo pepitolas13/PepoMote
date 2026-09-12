@@ -6,6 +6,7 @@
 
 use crate::theme;
 use egui::{RichText, Stroke, Vec2};
+use crate::tr;
 
 pub enum Key {
     Char(char),
@@ -158,7 +159,7 @@ pub fn qwerty(ui: &mut egui::Ui, shift: bool, key_h: f32) -> Option<Key> {
                     out = Some(Key::Char(c));
                 }
             }
-            if key(ui, "espacio", bw * 4.0 + gap * 3.0, false) {
+            if key(ui, tr!("kb.space"), bw * 4.0 + gap * 3.0, false) {
                 out = Some(Key::Char(' '));
             }
         });

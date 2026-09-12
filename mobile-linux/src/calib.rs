@@ -10,6 +10,7 @@
 
 use crate::sensor::Sample;
 use serde::{Deserialize, Serialize};
+use crate::tr;
 
 pub const AXIS: [&str; 3] = ["x", "y", "z"];
 
@@ -68,44 +69,48 @@ pub struct Step {
 /// plano boca arriba => +z; de pie => +y; sobre el lado izquierdo => +x;
 /// levantar el borde superior => giro +x; levantar el borde izquierdo => +y;
 /// girar antihorario visto desde arriba => +z.
-pub const STEPS: [Step; 6] = [
+pub const STEP_COUNT: usize = 6;
+
+pub fn steps() -> [Step; STEP_COUNT] {
+    [
     Step {
-        title: "1 · Plano boca arriba",
-        text: "Deja el móvil plano sobre la mesa, con la pantalla hacia arriba, y pulsa Listo.",
+        title: tr!("cal.step1_title"),
+        text: tr!("cal.step1_text"),
         kind: Kind::Pose,
         axis: 2,
     },
     Step {
-        title: "2 · De pie",
-        text: "Ponlo de pie, apoyado en el borde de abajo (el del USB), con la pantalla hacia ti, como si lo estuvieras leyendo. Sujétalo quieto y pulsa Listo.",
+        title: tr!("cal.step2_title"),
+        text: tr!("cal.step2_text"),
         kind: Kind::Pose,
         axis: 1,
     },
     Step {
-        title: "3 · Sobre el lado izquierdo",
-        text: "Túmbalo de canto sobre su lado IZQUIERDO, con la pantalla hacia ti: queda apaisado, con la cámara hacia tu izquierda. Quieto, y pulsa Listo.",
+        title: tr!("cal.step3_title"),
+        text: tr!("cal.step3_text"),
         kind: Kind::Pose,
         axis: 0,
     },
     Step {
-        title: "4 · Levanta el borde superior",
-        text: "Déjalo plano. Al pulsar Listo tienes 2 segundos: levanta el borde de ARRIBA (el de la cámara) unos 45° y vuelve a bajarlo, como si el móvil asintiera.",
+        title: tr!("cal.step4_title"),
+        text: tr!("cal.step4_text"),
         kind: Kind::Motion,
         axis: 0,
     },
     Step {
-        title: "5 · Levanta el borde izquierdo",
-        text: "Plano otra vez. Al pulsar Listo tienes 2 segundos: levanta el lado IZQUIERDO unos 45° (se ladea hacia la derecha) y bájalo.",
+        title: tr!("cal.step5_title"),
+        text: tr!("cal.step5_text"),
         kind: Kind::Motion,
         axis: 1,
     },
     Step {
-        title: "6 · Gira como un volante",
-        text: "Plano sobre la mesa. Al pulsar Listo tienes 2 segundos: sin levantarlo, gíralo un cuarto de vuelta hacia la IZQUIERDA, como un volante.",
+        title: tr!("cal.step6_title"),
+        text: tr!("cal.step6_text"),
         kind: Kind::Motion,
         axis: 2,
     },
-];
+    ]
+}
 
 pub fn mean_accel(samples: &[Sample]) -> [f32; 3] {
     if samples.is_empty() {
@@ -144,9 +149,12 @@ pub fn pose_sign(mean: [f32; 3], axis: usize) -> Result<i8, String> {
     let v = mean[axis].abs();
     let others = (0..3).filter(|&i| i != axis).map(|i| mean[i].abs()).fold(0f32, f32::max);
     if v < 6.0 || v < 2.0 * others {
-        return Err(format!(
-            "No veo la gravedad en el eje {} (accel [{:.1} {:.1} {:.1}]). Repite la postura, quieto.",
-            AXIS[axis], mean[0], mean[1], mean[2]
+        return Err(tr!(
+            "cal.no_gravity",
+            AXIS[axis],
+            format!("{:.1}", mean[0]),
+            format!("{:.1}", mean[1]),
+            format!("{:.1}", mean[2])
         ));
     }
     Ok(if mean[axis] > 0.0 { 1 } else { -1 })
@@ -158,9 +166,12 @@ pub fn motion_sign(deg: [f32; 3], axis: usize) -> Result<i8, String> {
     let v = deg[axis].abs();
     let others = (0..3).filter(|&i| i != axis).map(|i| deg[i].abs()).fold(0f32, f32::max);
     if v < 20.0 || v < 1.5 * others {
-        return Err(format!(
-            "No veo un giro claro en el eje {} (giro [{:.0}° {:.0}° {:.0}°]). Repite el gesto, más amplio y solo ese.",
-            AXIS[axis], deg[0], deg[1], deg[2]
+        return Err(tr!(
+            "cal.no_turn",
+            AXIS[axis],
+            format!("{:.0}", deg[0]),
+            format!("{:.0}", deg[1]),
+            format!("{:.0}", deg[2])
         ));
     }
     Ok(if deg[axis] > 0.0 { 1 } else { -1 })

@@ -12,6 +12,7 @@ use crate::ui::touch::{self, Canvas, Input, Phase, Shape, Transform};
 use egui::{Align2, FontId, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use crate::tr;
 
 pub enum Action {
     None,
@@ -56,9 +57,9 @@ impl Default for ControllerUi {
 /// Nombre del modo del receptor para la cabecera.
 pub fn mode_label(mode: &str) -> String {
     match mode {
-        "pointer" => "Puntero".to_owned(),
-        "dolphin" => "Dolphin".to_owned(),
-        "cemu" => "Wii U".to_owned(),
+        "pointer" => tr!("common.mode_pointer").to_owned(),
+        "dolphin" => tr!("common.mode_dolphin").to_owned(),
+        "cemu" => tr!("common.mode_cemu").to_owned(),
         other => other.to_owned(),
     }
 }
@@ -69,7 +70,7 @@ pub fn mode_label(mode: &str) -> String {
 pub fn pad_selector(ui: &mut egui::Ui, player: u8, pad: &str, pending: Option<&str>) -> Option<&'static str> {
     let mut out = None;
     let wii = pad == "wiimote";
-    ui.label(RichText::new("En Cemu soy:").size(13.0).color(theme::text_dim()));
+    ui.label(RichText::new(tr!("common.in_cemu")).size(13.0).color(theme::text_dim()));
     ui.horizontal(|ui| {
         let w = ((ui.available_width() - 8.0) / 2.0).max(90.0);
         let seg = |ui: &mut egui::Ui, label: &str, on: bool, pend: bool| -> bool {
@@ -88,11 +89,11 @@ pub fn pad_selector(ui: &mut egui::Ui, player: u8, pad: &str, pending: Option<&s
             )
             .clicked()
         };
-        let first = if player == 1 { "GamePad" } else { "Pro Controller" };
+        let first = if player == 1 { tr!("common.gamepad") } else { tr!("common.pro") };
         if seg(ui, first, !wii && pending.is_none(), pending == Some("gamepad")) && wii {
             out = Some("gamepad");
         }
-        if seg(ui, "Mando de Wii", wii && pending.is_none(), pending == Some("wiimote")) && !wii {
+        if seg(ui, tr!("common.wiimote"), wii && pending.is_none(), pending == Some("wiimote")) && !wii {
             out = Some("wiimote");
         }
     });
@@ -150,14 +151,14 @@ impl ControllerUi {
             ui.vertical(|ui| match status {
                 Status::Connected { pc_name, mode, slot, player, rtt_ms, .. } => {
                     let title = if *slot > 0 {
-                        format!("{pc_name} · Jugador {player}")
+                        tr!("ctl.title_player", pc_name, player)
                     } else {
                         pc_name.clone()
                     };
                     ui.label(RichText::new(title).size(17.0).strong().color(theme::text()));
                     let mut line = match mode.as_str() {
-                        "cemu" => "Wii U · Mando de Wii".to_owned(),
-                        "pointer" if *slot > 0 => "Puntero: apunta el Jugador 1".to_owned(),
+                        "cemu" => tr!("ctl.wiiu_wiimote").to_owned(),
+                        "pointer" if *slot > 0 => tr!("ctl.pointer_p1").to_owned(),
                         m => mode_label(m),
                     };
                     if let Some(r) = rtt_ms {
@@ -169,16 +170,16 @@ impl ControllerUi {
                     ui.label(RichText::new(line).size(13.0).color(theme::text_dim()));
                 }
                 Status::Connecting | Status::Reconnecting { .. } => {
-                    let txt = if matches!(status, Status::Reconnecting { .. }) { "Reconectando…" } else { "Conectando…" };
+                    let txt = if matches!(status, Status::Reconnecting { .. }) { tr!("common.reconnecting") } else { tr!("common.connecting") };
                     ui.label(RichText::new(txt).size(17.0).strong().color(theme::text()));
                 }
                 _ => {
-                    ui.label(RichText::new("Sin conexión").size(17.0).strong().color(theme::text()));
+                    ui.label(RichText::new(tr!("common.no_connection")).size(17.0).strong().color(theme::text()));
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .button(RichText::new("Salir").size(14.0).color(theme::error()))
+                    .button(RichText::new(tr!("common.exit")).size(14.0).color(theme::error()))
                     .clicked()
                 {
                     action = Action::Exit;
@@ -186,7 +187,7 @@ impl ControllerUi {
                 // Mando de Wii dentro de Wii U: el teclado para el teclado en
                 // pantalla de Cemu, como en el GamePad
                 if matches!(status, Status::Connected { mode, .. } if mode == "cemu")
-                    && ui.button(RichText::new("Teclado").size(14.0).color(theme::text())).clicked()
+                    && ui.button(RichText::new(tr!("common.keyboard")).size(14.0).color(theme::text())).clicked()
                 {
                     action = Action::Keyboard;
                 }
@@ -198,13 +199,13 @@ impl ControllerUi {
             if show_chips {
                 ui.horizontal(|ui| {
                     // selección por igualdad exacta del modo
-                    if ui.selectable_label(mode == "pointer", RichText::new("  Puntero  ").size(14.0)).clicked() {
+                    if ui.selectable_label(mode == "pointer", RichText::new(format!("  {}  ", tr!("common.mode_pointer"))).size(14.0)).clicked() {
                         action = Action::Mode("pointer");
                     }
-                    if ui.selectable_label(mode == "dolphin", RichText::new("  Dolphin  ").size(14.0)).clicked() {
+                    if ui.selectable_label(mode == "dolphin", RichText::new(format!("  {}  ", tr!("common.mode_dolphin"))).size(14.0)).clicked() {
                         action = Action::Mode("dolphin");
                     }
-                    if *supports_cemu && ui.selectable_label(wiiu, RichText::new("  Wii U  ").size(14.0)).clicked() {
+                    if *supports_cemu && ui.selectable_label(wiiu, RichText::new(format!("  {}  ", tr!("common.mode_cemu"))).size(14.0)).clicked() {
                         action = Action::Mode("cemu");
                     }
                 });
@@ -215,7 +216,7 @@ impl ControllerUi {
                     action = Action::Pad(p);
                 }
                 ui.label(
-                    RichText::new("Para juegos de Wii U que se juegan con el mando de Wii (Wii Sports Club, Wii Party U…)")
+                    RichText::new(tr!("ctl.pad_help"))
                         .size(11.0)
                         .color(theme::text_dim()),
                 );
@@ -303,7 +304,7 @@ impl ControllerUi {
         painter.text(
             toggle.center(),
             Align2::CENTER_CENTER,
-            if self.show_media { "Multimedia ▲" } else { "Multimedia ▼" },
+            if self.show_media { tr!("ctl.media_open") } else { tr!("ctl.media_closed") },
             FontId::proportional(13.0 * s),
             theme::text_dim(),
         );

@@ -22,6 +22,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use crate::tr;
 
 const MAX_ATTEMPTS: u32 = 3;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
@@ -348,9 +349,9 @@ fn device_name() -> String {
 pub(crate) fn resolve(host: &str, port: u16) -> Result<SocketAddr, String> {
     (host, port)
         .to_socket_addrs()
-        .map_err(|e| format!("Dirección no válida {host}:{port}: {e}"))?
+        .map_err(|e| tr!("link.bad_addr", host, port, e))?
         .next()
-        .ok_or_else(|| format!("Dirección no válida {host}:{port}"))
+        .ok_or_else(|| tr!("link.bad_addr_short", host, port))
 }
 
 /// Emparejamiento por código (bloqueante, ≤ 5 s): hello con `code`, el `ok`
@@ -358,7 +359,7 @@ pub(crate) fn resolve(host: &str, port: u16) -> Result<SocketAddr, String> {
 pub fn pair(host: &str, port: u16, code: &str, fallback_name: &str) -> Result<Pairing, String> {
     let addr = resolve(host, port)?;
     let mut s = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)
-        .map_err(|e| format!("No llego a {host}:{port}: {e}"))?;
+        .map_err(|e| tr!("link.unreachable", host, port, e))?;
     let _ = s.set_nodelay(true);
     let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
     let hello = json!({"m":"hello","pv":1,"code":code.trim(),"probe":true,"name":device_name(),"model":"Linux móvil"});
@@ -370,15 +371,15 @@ pub fn pair(host: &str, port: u16, code: &str, fallback_name: &str) -> Result<Pa
     let mut resp = String::new();
     reader
         .read_line(&mut resp)
-        .map_err(|e| format!("El PC no responde: {e}"))?;
-    let v: Value = serde_json::from_str(resp.trim()).map_err(|_| "Respuesta ilegible del PC".to_owned())?;
+        .map_err(|e| tr!("link.no_reply", e))?;
+    let v: Value = serde_json::from_str(resp.trim()).map_err(|_| tr!("link.unreadable").to_owned())?;
     let _ = s.write_all(b"{\"m\":\"bye\"}\n");
     let _ = s.shutdown(Shutdown::Both);
     match v["m"].as_str() {
         Some("ok") => {
             let token = v["token"]
                 .as_str()
-                .ok_or("El PC no devolvió el token (¿receptor antiguo? actualízalo)")?
+                .ok_or_else(|| tr!("link.no_token").to_owned())?
                 .to_owned();
             Ok(Pairing {
                 host: host.to_owned(),
@@ -387,8 +388,8 @@ pub fn pair(host: &str, port: u16, code: &str, fallback_name: &str) -> Result<Pa
                 pc_name: v["name"].as_str().unwrap_or(fallback_name).to_owned(),
             })
         }
-        Some("err") => Err(v["msg"].as_str().unwrap_or("Rechazado").to_owned()),
-        _ => Err("Respuesta inesperada del PC".into()),
+        Some("err") => Err(v["msg"].as_str().unwrap_or(tr!("link.rejected")).to_owned()),
+        _ => Err(tr!("link.unexpected").to_owned()),
     }
 }
 
@@ -433,7 +434,7 @@ fn connect_stream(pairing: &mut Pairing, ctx: &Ctx, reconnecting: &mut Option<(I
             if since.elapsed() > RECONNECT_GIVE_UP {
                 *ctx.status.lock().unwrap() = Status::Failed {
                     code: "io".into(),
-                    msg: format!("Se perdió la conexión con {}", pairing.pc_name),
+                    msg: tr!("link.lost", pairing.pc_name),
                 };
                 return None;
             }
@@ -455,7 +456,7 @@ fn connect_stream(pairing: &mut Pairing, ctx: &Ctx, reconnecting: &mut Option<(I
                 if reconnecting.is_none() && (attempt >= MAX_ATTEMPTS || ctx.stop.load(Ordering::Relaxed)) {
                     *ctx.status.lock().unwrap() = Status::Failed {
                         code: "io".into(),
-                        msg: format!("No llego a {} ({}:{}): {e}", pairing.pc_name, pairing.host, pairing.port),
+                        msg: tr!("link.unreachable_pc", pairing.pc_name, pairing.host, pairing.port, e),
                     };
                     return None;
                 }
@@ -589,7 +590,7 @@ fn session(
             Some("err") => {
                 *ctx.status.lock().unwrap() = Status::Failed {
                     code: msg["code"].as_str().unwrap_or("err").to_owned(),
-                    msg: msg["msg"].as_str().unwrap_or("Rechazado por el PC").to_owned(),
+                    msg: msg["msg"].as_str().unwrap_or(tr!("link.rejected_by_pc")).to_owned(),
                 };
                 break;
             }

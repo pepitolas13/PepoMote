@@ -72,8 +72,14 @@ pub fn toggle() -> Lang {
 pub fn detect_system() -> Lang {
     #[cfg(windows)]
     {
-        // Idioma de la interfaz de Windows (LANGID): 0x09 = inglés
-        let id = unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() };
+        // Idioma de la interfaz de Windows (LANGID): 0x09 = inglés. Directo
+        // de kernel32, que este archivo también lo compila el móvil Linux
+        // (sin el crate `windows`) cuando se prueba en Windows.
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetUserDefaultUILanguage() -> u16;
+        }
+        let id = unsafe { GetUserDefaultUILanguage() };
         return if id & 0x3FF == 0x09 { Lang::En } else { Lang::Es };
     }
     #[cfg(not(windows))]
@@ -188,10 +194,16 @@ mod tests {
         // toda clave usada en el código existe en la tabla
         let mut used = HashSet::new();
         for src in crate::strings::SOURCES {
-            for pat in ["tr!(", "i18n::t(", " t("] {
+            for pat in ["tr!(", "i18n::t("] {
                 let mut rest = *src;
                 while let Some(i) = rest.find(pat) {
+                    // `include_str!(` también acaba en `tr!(`: solo cuenta si
+                    // no viene pegado a un identificador
+                    let glued = rest[..i].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_');
                     rest = rest[i + pat.len()..].trim_start();
+                    if glued {
+                        continue;
+                    }
                     if let Some(body) = rest.strip_prefix('"') {
                         if let Some(j) = body.find('"') {
                             used.insert(body[..j].to_owned());

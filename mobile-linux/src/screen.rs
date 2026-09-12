@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
 use zune_jpeg::JpegDecoder;
+use crate::tr;
 
 pub const MAGIC: [u8; 4] = *b"PMPS";
 /// magic (4) + tipo (1) + longitud (4).
@@ -414,8 +415,8 @@ impl Client {
     pub fn placeholder(&self) -> Arc<str> {
         self.status().unwrap_or_else(|| {
             Arc::from(match self.phase() {
-                Phase::NoScreen => "El PC no envía la pantalla",
-                _ => "Conectando la pantalla…",
+                Phase::NoScreen => tr!("scr.no_screen"),
+                _ => tr!("scr.connecting"),
             })
         })
     }
@@ -530,7 +531,7 @@ fn session(
     };
     let mut stream = match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
         Ok(s) => s,
-        Err(e) => return Outcome::Died(format!("no llego a {}:{}: {e}", ep.host, ep.port)),
+        Err(e) => return Outcome::Died(tr!("scr.unreachable", ep.host, ep.port, e)),
     };
     if stop.load(Ordering::Relaxed) {
         return Outcome::Stopped;

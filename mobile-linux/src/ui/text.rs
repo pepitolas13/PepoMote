@@ -10,6 +10,7 @@
 use crate::theme;
 use crate::ui::keypad::{self, Key};
 use egui::{RichText, Rounding, Stroke, Vec2};
+use crate::tr;
 
 /// Botones del diálogo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -100,9 +101,9 @@ impl TextDialog {
         let key_h = ((ui.available_height() - 250.0) / 5.0 - 4.0).clamp(34.0, 48.0);
         egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
             ui.add_space(4.0);
-            ui.label(RichText::new("Teclado para Cemu").size(22.0).strong().color(theme::text()));
+            ui.label(RichText::new(tr!("kb.title")).size(22.0).strong().color(theme::text()));
             ui.label(
-                RichText::new("Lo que escribas va al teclado en pantalla del juego. El mando sigue funcionando.")
+                RichText::new(tr!("kb.subtitle"))
                     .size(12.0)
                     .color(theme::text_dim()),
             );
@@ -120,7 +121,7 @@ impl TextDialog {
                         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                         .show(ui, |ui| {
                             if self.field.is_empty() {
-                                ui.label(RichText::new("Escribe aquí…").size(22.0).color(theme::text_dim()));
+                                ui.label(RichText::new(tr!("kb.placeholder")).size(22.0).color(theme::text_dim()));
                             } else {
                                 ui.label(RichText::new(format!("{}|", self.field)).size(22.0).color(theme::text()));
                             }
@@ -144,18 +145,18 @@ impl TextDialog {
                     )
                     .clicked()
                 };
-                if btn(ui, "Borrar", theme::card(), theme::text()) {
+                if btn(ui, tr!("kb.delete"), theme::card(), theme::text()) {
                     out = Some(Button::Delete);
                 }
-                if btn(ui, "Escribir", theme::card(), theme::text()) {
+                if btn(ui, tr!("kb.write"), theme::card(), theme::text()) {
                     out = Some(Button::Write);
                 }
-                if btn(ui, "Aceptar", theme::blue(), theme::ON_ACCENT) {
+                if btn(ui, tr!("kb.accept"), theme::blue(), theme::ON_ACCENT) {
                     out = Some(Button::Accept);
                 }
             });
             ui.label(
-                RichText::new("Borrar quita una letra en Cemu · Escribir la teclea · Aceptar la teclea y confirma")
+                RichText::new(tr!("kb.help"))
                     .size(11.0)
                     .color(theme::text_dim()),
             );
@@ -163,7 +164,7 @@ impl TextDialog {
             if ui
                 .add_sized(
                     Vec2::new(ui.available_width(), 40.0),
-                    egui::Button::new(RichText::new("Cerrar").size(14.0).color(theme::text_dim())).fill(theme::card()),
+                    egui::Button::new(RichText::new(tr!("kb.close")).size(14.0).color(theme::text_dim())).fill(theme::card()),
                 )
                 .clicked()
             {

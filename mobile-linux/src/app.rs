@@ -23,6 +23,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use crate::i18n;
+use crate::tr;
 
 /// Log de diagnóstico: ~/.config/pepomote/mobile.log (tamaño de
 /// pantalla, escala, toques…). Para saber qué ve la app en un móvil real.
@@ -82,15 +84,17 @@ fn needs_new_pairing(code: &str) -> bool {
 
 /// Explicación para la pantalla Conectar cuando el PC ya no reconoce el móvil.
 fn re_pair_reason(pc_name: Option<&str>) -> String {
-    let pc = pc_name.map(str::trim).filter(|n| !n.is_empty()).unwrap_or("Tu PC");
-    format!(
-        "{pc} ya no reconoce este móvil: su emparejamiento ha cambiado (PepoMote reinstalado o restablecido en el PC). \
-         Elige tu PC y teclea el código nuevo que hay bajo su QR."
-    )
+    let pc = pc_name.map(str::trim).filter(|n| !n.is_empty()).unwrap_or(tr!("pair.your_pc"));
+    tr!("pair.re_pair", pc)
 }
 
-const NOTICE_OLD_PC: &str = "El PC necesita PepoMote 1.3 para Wii U";
-const NOTICE_ONLY_P1: &str = "Solo el Jugador 1 cambia el modo";
+fn notice_old_pc() -> &'static str {
+    tr!("notice.old_pc")
+}
+
+fn notice_only_p1() -> &'static str {
+    tr!("notice.only_p1")
+}
 /// Sin eco de `mode` en este tiempo, la intención Wii U se da por fallida.
 const INTENT_TIMEOUT: Duration = Duration::from_secs(3);
 /// Sin eco de `pad` en este tiempo (PC antiguo), el selector vuelve a lo que hay.
@@ -151,7 +155,7 @@ fn settle(status: &Status, intent: Intent, now: Instant) -> (Intent, Option<&'st
     if !failed {
         return (intent, None);
     }
-    let notice = if *supports_cemu && *slot != 0 { NOTICE_ONLY_P1 } else { NOTICE_OLD_PC };
+    let notice = if *supports_cemu && *slot != 0 { notice_only_p1() } else { notice_old_pc() };
     (Intent::None, Some(notice))
 }
 
@@ -238,7 +242,7 @@ pub struct MobileApp {
 fn describe_sensors(fake: bool) -> String {
     match sensor::open_corrected(fake) {
         Ok(s) => s.describe(),
-        Err(e) => format!("sin sensores: {e}"),
+        Err(e) => tr!("home.no_sensors", e),
     }
 }
 
@@ -247,6 +251,7 @@ impl MobileApp {
         theme::apply(&cc.egui_ctx);
         let mut app = Self::build(fake);
         theme::set_preference(&cc.egui_ctx, app.settings.theme);
+        i18n::set(app.settings.lang.resolve());
         if let Some(m) = autoconnect {
             match m.as_str() {
                 "nunchuk" => app.open_nunchuk(),
@@ -382,7 +387,7 @@ impl MobileApp {
                 // inventario de lo que el sistema expone (para saber qué falta)
                 let inv = sensor::inventory();
                 log_line(&format!("sensores: {e}\n{inv}"));
-                self.sensor_desc = format!("sin sensores: {e}");
+                self.sensor_desc = tr!("home.no_sensors", e);
                 self.error = Some(format!("{e}\n\n{inv}"));
                 self.screen = Screen::Home;
             }
@@ -506,9 +511,9 @@ impl MobileApp {
                     // Con varios PCs guardados, uno que no responde no es el
                     // final: a Conectar a elegir otro
                     self.error = None;
-                    self.pair_reason = Some(format!(
-                        "{} no responde. Elige otro PC o teclea el código de otro.",
-                        self.pairing.as_ref().map(|p| p.pc_name.as_str()).unwrap_or("Tu PC")
+                    self.pair_reason = Some(tr!(
+                        "pair.not_responding",
+                        self.pairing.as_ref().map(|p| p.pc_name.as_str()).unwrap_or(tr!("pair.your_pc"))
                     ));
                     self.discovered.clear();
                     self.last_scan = None;
@@ -658,15 +663,15 @@ impl MobileApp {
     fn ui_home(&mut self, ui: &mut egui::Ui) {
         ui.add_space(14.0);
         ui.label(RichText::new("PepoMote").size(38.0).strong().color(theme::text()));
-        ui.label(RichText::new("Apunta. Haz clic. Juega.").size(14.0).color(theme::text_dim()));
+        ui.label(RichText::new(tr!("home.tagline")).size(14.0).color(theme::text_dim()));
         ui.add_space(6.0);
         let (dot, txt) = match self.link.as_ref().map(|l| l.status()) {
-            Some(Status::Connected { pc_name, .. }) => (theme::ok(), format!("Conectado a {pc_name}")),
-            Some(Status::Connecting) => (theme::warn(), "Conectando…".to_owned()),
-            Some(Status::Reconnecting { pc_name, .. }) => (theme::warn(), format!("Reconectando con {pc_name}…")),
+            Some(Status::Connected { pc_name, .. }) => (theme::ok(), tr!("home.connected", pc_name)),
+            Some(Status::Connecting) => (theme::warn(), tr!("common.connecting").to_owned()),
+            Some(Status::Reconnecting { pc_name, .. }) => (theme::warn(), tr!("home.reconnecting", pc_name)),
             _ => match &self.pairing {
-                Some(p) => (theme::text_dim(), format!("Emparejado con {} · sin conexión", p.pc_name)),
-                None => (theme::text_dim(), "Sin emparejar: toca Conectar".to_owned()),
+                Some(p) => (theme::text_dim(), tr!("home.paired", p.pc_name)),
+                None => (theme::text_dim(), tr!("home.unpaired").to_owned()),
             },
         };
         ui.horizontal(|ui| {
@@ -691,28 +696,28 @@ impl MobileApp {
         };
         let mut go: Option<u8> = None;
         ui.horizontal(|ui| {
-            if card(ui, half, "Conectar", "apunta y haz clic", theme::blue()) {
+            if card(ui, half, tr!("home.card_connect"), tr!("home.card_connect_sub"), theme::blue()) {
                 go = Some(0);
             }
-            if card(ui, half, "Mando", "solo botones", theme::blue()) {
+            if card(ui, half, tr!("home.card_pad"), tr!("home.card_pad_sub"), theme::blue()) {
                 go = Some(1);
             }
         });
         ui.add_space(12.0);
         ui.horizontal(|ui| {
-            if card(ui, half, "Dolphin", "Wiimote virtual", theme::ok()) {
+            if card(ui, half, tr!("home.card_dolphin"), tr!("home.card_dolphin_sub"), theme::ok()) {
                 go = Some(2);
             }
-            if card(ui, half, "Nunchuk", "la otra mano", theme::ok()) {
+            if card(ui, half, tr!("home.card_nunchuk"), tr!("home.card_nunchuk_sub"), theme::ok()) {
                 go = Some(4);
             }
         });
         ui.add_space(12.0);
         ui.horizontal(|ui| {
-            if card(ui, half, "Wii U", "GamePad para Cemu", theme::ok()) {
+            if card(ui, half, tr!("home.card_wiiu"), tr!("home.card_wiiu_sub"), theme::ok()) {
                 go = Some(5);
             }
-            if card(ui, half, "Emparejar", "otro PC / código", theme::text_dim()) {
+            if card(ui, half, tr!("home.card_pair"), tr!("home.card_pair_sub"), theme::text_dim()) {
                 go = Some(3);
             }
         });
@@ -736,22 +741,22 @@ impl MobileApp {
             ui.label(RichText::new(e).size(13.0).color(theme::error()));
             ui.add_space(6.0);
         }
-        ui.label(RichText::new(format!("Sensores: {}", self.sensor_desc)).size(11.0).color(theme::text_dim()));
+        ui.label(RichText::new(tr!("home.sensors", self.sensor_desc)).size(11.0).color(theme::text_dim()));
         if ui
-            .add(egui::Button::new(RichText::new("Calibrar sensores").size(13.0).color(theme::text())).fill(theme::card()))
-            .on_hover_text("Si el puntero va al revés o a tirones: seis posturas guiadas y listo")
+            .add(egui::Button::new(RichText::new(tr!("home.calibrate")).size(13.0).color(theme::text())).fill(theme::card()))
+            .on_hover_text(tr!("home.calibrate_tip"))
             .clicked()
         {
             self.start_calibration();
         }
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Tema").size(12.0).color(theme::text_dim()));
+            ui.label(RichText::new(tr!("home.theme")).size(12.0).color(theme::text_dim()));
             let mut pref = self.settings.theme;
             for p in theme::ThemePref::ALL {
                 let label = match p {
-                    theme::ThemePref::System => "Sistema",
-                    theme::ThemePref::Light => "Claro",
-                    theme::ThemePref::Dark => "Oscuro",
+                    theme::ThemePref::System => tr!("home.theme_system"),
+                    theme::ThemePref::Light => tr!("home.theme_light"),
+                    theme::ThemePref::Dark => tr!("home.theme_dark"),
                 };
                 if ui.selectable_label(pref == p, RichText::new(label).size(12.0)).clicked() {
                     pref = p;
@@ -765,7 +770,7 @@ impl MobileApp {
         });
         ui.label(RichText::new(&self.diag).size(11.0).color(theme::text_dim()));
         ui.label(
-            RichText::new(format!("v{} · pv1 · Linux móvil", env!("CARGO_PKG_VERSION")))
+            RichText::new(tr!("home.version", env!("CARGO_PKG_VERSION")))
                 .size(11.0)
                 .color(theme::text_dim()),
         );
@@ -774,10 +779,10 @@ impl MobileApp {
     fn ui_pair(&mut self, ui: &mut egui::Ui) {
         self.poll_scan();
         ui.add_space(10.0);
-        let title = if self.pair_reason.is_some() { "Vuelve a emparejar" } else { "Conectar" };
+        let title = if self.pair_reason.is_some() { tr!("pair.title_again") } else { tr!("pair.title") };
         ui.label(RichText::new(title).size(28.0).strong().color(theme::text()));
         ui.label(
-            RichText::new("Abre PepoMote en tu PC. Elige tu PC y teclea el código de 4 dígitos que hay bajo su QR.")
+            RichText::new(tr!("pair.subtitle"))
                 .size(13.0)
                 .color(theme::text_dim()),
         );
@@ -789,7 +794,7 @@ impl MobileApp {
         let saved = store::load_all();
         if !saved.list.is_empty() {
             ui.add_space(12.0);
-            ui.label(RichText::new("Tus PCs").size(15.0).strong().color(theme::text()));
+            ui.label(RichText::new(tr!("pair.your_pcs")).size(15.0).strong().color(theme::text()));
             ui.add_space(4.0);
             let mut choose: Option<Pairing> = None;
             let mut forget: Option<String> = None;
@@ -801,10 +806,10 @@ impl MobileApp {
                     let label = format!(
                         "{}{}\n{}:{}{}",
                         p.pc_name,
-                        if current { " · actual" } else { "" },
+                        if current { tr!("pair.current") } else { "" },
                         p.host,
                         p.port,
-                        if online { " · en la red" } else { "" }
+                        if online { tr!("pair.online") } else { "" }
                     );
                     let mut b = egui::Button::new(RichText::new(label).size(14.0).color(theme::text())).fill(theme::card());
                     if current {
@@ -813,7 +818,7 @@ impl MobileApp {
                     if ui.add_sized(Vec2::new(w, 56.0), b).clicked() {
                         choose = Some(p.clone());
                     }
-                    let f = egui::Button::new(RichText::new("Olvidar").size(12.0).color(theme::error())).fill(theme::card());
+                    let f = egui::Button::new(RichText::new(tr!("pair.forget")).size(12.0).color(theme::error())).fill(theme::card());
                     if ui.add_sized(Vec2::new(74.0, 56.0), f).clicked() {
                         forget = Some(p.token.clone());
                     }
@@ -831,12 +836,12 @@ impl MobileApp {
         ui.add_space(12.0);
         let msg = if self.discovered.is_empty() {
             if self.scan_rx.is_some() {
-                "Buscando receptores en tu red…"
+                tr!("pair.scanning")
             } else {
-                "Ningún receptor a la vista (¿misma Wi-Fi?). Puedes escribir la IP a mano."
+                tr!("pair.none")
             }
         } else {
-            "En tu red:"
+            tr!("pair.on_network")
         };
         ui.label(RichText::new(msg).size(13.0).color(theme::text_dim()));
         ui.add_space(6.0);
@@ -864,14 +869,14 @@ impl MobileApp {
         }
         ui.add_space(14.0);
         if ui
-            .add_sized(Vec2::new(ui.available_width(), 48.0), egui::Button::new(RichText::new("Escribir IP a mano").size(15.0)))
+            .add_sized(Vec2::new(ui.available_width(), 48.0), egui::Button::new(RichText::new(tr!("pair.manual_ip")).size(15.0)))
             .clicked()
         {
             self.manual.clear();
             self.screen = Screen::Manual;
         }
         ui.add_space(8.0);
-        if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
+        if ui.button(RichText::new(tr!("common.back")).size(14.0).color(theme::text_dim())).clicked() {
             self.pair_reason = None;
             self.screen = Screen::Home;
         }
@@ -879,8 +884,8 @@ impl MobileApp {
 
     fn ui_manual(&mut self, ui: &mut egui::Ui) {
         ui.add_space(10.0);
-        ui.label(RichText::new("IP del PC").size(26.0).strong().color(theme::text()));
-        ui.label(RichText::new("La que muestra el receptor bajo el QR (IP : puerto)").size(13.0).color(theme::text_dim()));
+        ui.label(RichText::new(tr!("manual.title")).size(26.0).strong().color(theme::text()));
+        ui.label(RichText::new(tr!("manual.subtitle")).size(13.0).color(theme::text_dim()));
         ui.add_space(10.0);
         let shown = if self.manual.is_empty() { "…".to_owned() } else { self.manual.clone() };
         ui.label(RichText::new(shown).size(30.0).strong().color(theme::text()));
@@ -911,7 +916,7 @@ impl MobileApp {
             Some(Key::Shift) | None => {}
         }
         ui.add_space(8.0);
-        if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
+        if ui.button(RichText::new(tr!("common.back")).size(14.0).color(theme::text_dim())).clicked() {
             self.screen = Screen::Pair;
         }
     }
@@ -920,9 +925,9 @@ impl MobileApp {
         self.poll_pairing();
         let name = self.target.as_ref().map(|t| t.name.clone()).unwrap_or_default();
         ui.add_space(10.0);
-        ui.label(RichText::new("Código").size(26.0).strong().color(theme::text()));
+        ui.label(RichText::new(tr!("code.title")).size(26.0).strong().color(theme::text()));
         ui.label(
-            RichText::new(format!("Los 4 dígitos bajo el QR de {name}"))
+            RichText::new(tr!("code.subtitle", name))
                 .size(13.0)
                 .color(theme::text_dim()),
         );
@@ -945,7 +950,7 @@ impl MobileApp {
         });
         ui.add_space(10.0);
         if self.pair_rx.is_some() {
-            ui.label(RichText::new("Emparejando…").size(14.0).color(theme::blue()));
+            ui.label(RichText::new(tr!("code.pairing")).size(14.0).color(theme::blue()));
         } else if let Some(e) = &self.pair_error {
             ui.label(RichText::new(e).size(13.0).color(theme::error()));
         }
@@ -965,7 +970,7 @@ impl MobileApp {
             }
         }
         ui.add_space(8.0);
-        if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
+        if ui.button(RichText::new(tr!("common.back")).size(14.0).color(theme::text_dim())).clicked() {
             self.pair_rx = None;
             self.screen = Screen::Pair;
         }
@@ -974,12 +979,12 @@ impl MobileApp {
     fn ui_controller(&mut self, ui: &mut egui::Ui) {
         let Some(link) = &self.link else {
             ui.add_space(10.0);
-            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::text()));
+            ui.label(RichText::new(tr!("common.no_connection")).size(20.0).strong().color(theme::text()));
             ui.add_space(8.0);
-            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::blue())).clicked() {
+            if self.pairing.is_some() && ui.button(RichText::new(tr!("common.reconnect")).size(15.0).color(theme::blue())).clicked() {
                 self.open_controller(Some("pointer"), self.dolphin_only);
             }
-            if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
+            if ui.button(RichText::new(tr!("common.back")).size(14.0).color(theme::text_dim())).clicked() {
                 self.screen = Screen::Home;
             }
             return;
@@ -1015,12 +1020,12 @@ impl MobileApp {
     fn ui_gamepad(&mut self, ui: &mut egui::Ui) {
         let Some(link) = &self.link else {
             ui.add_space(10.0);
-            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::text()));
+            ui.label(RichText::new(tr!("common.no_connection")).size(20.0).strong().color(theme::text()));
             ui.add_space(8.0);
-            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::blue())).clicked() {
+            if self.pairing.is_some() && ui.button(RichText::new(tr!("common.reconnect")).size(15.0).color(theme::blue())).clicked() {
                 self.open_gamepad();
             }
-            if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
+            if ui.button(RichText::new(tr!("common.back")).size(14.0).color(theme::text_dim())).clicked() {
                 self.screen = Screen::Home;
             }
             return;
@@ -1061,12 +1066,12 @@ impl MobileApp {
     fn ui_nunchuk(&mut self, ui: &mut egui::Ui) {
         let Some(link) = &self.link else {
             ui.add_space(10.0);
-            ui.label(RichText::new("Sin conexión").size(20.0).strong().color(theme::text()));
+            ui.label(RichText::new(tr!("common.no_connection")).size(20.0).strong().color(theme::text()));
             ui.add_space(8.0);
-            if self.pairing.is_some() && ui.button(RichText::new("Reconectar").size(15.0).color(theme::blue())).clicked() {
+            if self.pairing.is_some() && ui.button(RichText::new(tr!("common.reconnect")).size(15.0).color(theme::blue())).clicked() {
                 self.open_nunchuk();
             }
-            if ui.button(RichText::new("Volver").size(14.0).color(theme::text_dim())).clicked() {
+            if ui.button(RichText::new(tr!("common.back")).size(14.0).color(theme::text_dim())).clicked() {
                 self.screen = Screen::Home;
             }
             return;
@@ -1106,7 +1111,7 @@ impl MobileApp {
                 self.screen = Screen::Calibrate;
             }
             Err(e) => {
-                self.error = Some(format!("No puedo abrir los sensores para calibrar: {e}"));
+                self.error = Some(tr!("cal.open_err", e));
                 self.screen = Screen::Home;
             }
         }
@@ -1133,7 +1138,7 @@ impl MobileApp {
         }
         if c.capture.as_ref().is_some_and(|(start, dur, _)| start.elapsed() >= *dur) {
             let (_, _, buf) = c.capture.take().unwrap();
-            let step = &calib::STEPS[c.step];
+            let step = &calib::steps()[c.step];
             let res = match step.kind {
                 calib::Kind::Pose => calib::pose_sign(calib::mean_accel(&buf), step.axis),
                 calib::Kind::Motion => calib::motion_sign(calib::integrate_deg(&buf), step.axis),
@@ -1146,7 +1151,7 @@ impl MobileApp {
                     }
                     c.msg = None;
                     c.step += 1;
-                    if c.step >= calib::STEPS.len() {
+                    if c.step >= calib::STEP_COUNT {
                         let axes = Axes {
                             accel: c.accel.map(|s| s.unwrap_or(1)),
                             gyro: c.gyro.map(|s| s.unwrap_or(1)),
@@ -1162,35 +1167,31 @@ impl MobileApp {
 
         let mut leave = false;
         ui.add_space(8.0);
-        ui.label(RichText::new("Calibrar sensores").size(26.0).strong().color(theme::text()));
+        ui.label(RichText::new(tr!("cal.title")).size(26.0).strong().color(theme::text()));
         ui.label(
-            RichText::new("Tres posturas quietas y tres gestos: así sé hacia dónde mira cada eje de tus sensores.")
+            RichText::new(tr!("cal.subtitle"))
                 .size(12.0)
                 .color(theme::text_dim()),
         );
         if let Some(axes) = c.done {
             ui.add_space(12.0);
-            ui.label(RichText::new("Listo. Calibración guardada:").size(16.0).color(theme::text()));
+            ui.label(RichText::new(tr!("cal.done")).size(16.0).color(theme::text()));
             ui.label(RichText::new(axes.describe()).size(20.0).strong().color(theme::ok()));
             ui.label(
-                RichText::new(if axes.is_identity() {
-                    "Todos los ejes ya venían bien."
-                } else {
-                    "Los ejes marcados con - se invierten a partir de ahora."
-                })
+                RichText::new(if axes.is_identity() { tr!("cal.identity") } else { tr!("cal.inverted") })
                 .size(13.0)
                 .color(theme::text_dim()),
             );
             ui.add_space(16.0);
             if ui
-                .add_sized(Vec2::new(ui.available_width(), 56.0), egui::Button::new(RichText::new("Volver").size(18.0)).fill(theme::blue()))
+                .add_sized(Vec2::new(ui.available_width(), 56.0), egui::Button::new(RichText::new(tr!("common.back")).size(18.0)).fill(theme::blue()))
                 .clicked()
             {
                 leave = true;
             }
         } else {
-            let step = &calib::STEPS[c.step];
-            ui.label(RichText::new(format!("Paso {} de {}", c.step + 1, calib::STEPS.len())).size(13.0).color(theme::text_dim()));
+            let step = &calib::steps()[c.step];
+            ui.label(RichText::new(tr!("cal.step_of", c.step + 1, calib::STEP_COUNT)).size(13.0).color(theme::text_dim()));
             ui.add_space(10.0);
             ui.label(RichText::new(step.title).size(20.0).strong().color(theme::text()));
             ui.add_space(6.0);
@@ -1201,11 +1202,12 @@ impl MobileApp {
                 .as_ref()
                 .map(|(s, d, _)| (d.as_secs_f32() - s.elapsed().as_secs_f32()).max(0.0));
             let label = match left {
-                Some(t) => format!(
-                    "{}… {t:.1} s",
-                    if step.kind == calib::Kind::Motion { "¡Ya! Mueve" } else { "Midiendo" }
+                Some(t) => tr!(
+                    "cal.countdown",
+                    if step.kind == calib::Kind::Motion { tr!("cal.go") } else { tr!("cal.measuring") },
+                    format!("{t:.1}")
                 ),
-                None => "Listo".to_owned(),
+                None => tr!("cal.ready").to_owned(),
             };
             let btn = ui.add_enabled(
                 left.is_none() && c.last.is_some(),
@@ -1235,14 +1237,14 @@ impl MobileApp {
                     .size(11.0)
                     .color(theme::text_dim()),
                 ),
-                None => ui.label(RichText::new("Esperando muestras del sensor…").size(12.0).color(theme::warn())),
+                None => ui.label(RichText::new(tr!("cal.waiting")).size(12.0).color(theme::warn())),
             };
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                if ui.button(RichText::new("Cancelar").size(15.0)).clicked() {
+                if ui.button(RichText::new(tr!("cal.cancel")).size(15.0)).clicked() {
                     leave = true;
                 }
-                if ui.button(RichText::new("Borrar calibración").size(15.0)).clicked() {
+                if ui.button(RichText::new(tr!("cal.clear")).size(15.0)).clicked() {
                     store::clear_axes();
                     leave = true;
                 }
@@ -1286,6 +1288,23 @@ impl eframe::App for MobileApp {
             && self.mode_is_cemu();
         if !text_open {
             self.text_dialog = None;
+        }
+
+        // Idioma: ES / EN arriba a la derecha del inicio (se guarda en settings.json)
+        if self.screen == Screen::Home {
+            egui::Area::new(egui::Id::new("lang"))
+                .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 14.0))
+                .show(ctx, |ui| {
+                    let lang = i18n::current();
+                    let button = egui::Button::new(RichText::new(lang.code().to_uppercase()).size(12.0).color(theme::text_dim()))
+                        .fill(theme::card())
+                        .stroke(egui::Stroke::new(1.0_f32, theme::card_border()));
+                    if ui.add(button).on_hover_text(tr!("home.lang_switch", lang.other().name())).clicked() {
+                        let next = i18n::toggle();
+                        self.settings.lang = store::LangPref::from_lang(next);
+                        store::save_settings(&self.settings);
+                    }
+                });
         }
 
         egui::CentralPanel::default()
@@ -1383,14 +1402,14 @@ mod tests {
         let st = conn("pointer", Role::Wiimote, "gamepad", 0, true, 1);
         let (after, notice) = settle(&st, intent, now);
         assert_eq!(after, Intent::None);
-        assert_eq!(notice, Some(NOTICE_OLD_PC));
+        assert_eq!(notice, Some(notice_old_pc()));
         assert_eq!(route(&st, Role::Wiimote, after), Screen::Controller);
         // jugador 2 con un receptor que sí sabe de Wii U: solo el jugador 1 cambia el modo
         let st = conn("pointer", Role::Wiimote, "pro", 1, true, 1);
-        assert_eq!(settle(&st, intent, now), (Intent::None, Some(NOTICE_ONLY_P1)));
+        assert_eq!(settle(&st, intent, now), (Intent::None, Some(notice_only_p1())));
         // jugador 2 con receptor antiguo: el aviso es el de la versión
         let st = conn("pointer", Role::Wiimote, "pro", 1, false, 1);
-        assert_eq!(settle(&st, intent, now), (Intent::None, Some(NOTICE_OLD_PC)));
+        assert_eq!(settle(&st, intent, now), (Intent::None, Some(notice_old_pc())));
     }
 
     #[test]
@@ -1433,13 +1452,13 @@ mod tests {
         let intent = wiiu(now);
         // el ok no trae cemu en modes: no hace falta esperar al eco
         let st = conn("pointer", Role::Wiimote, "gamepad", 0, false, 0);
-        assert_eq!(settle(&st, intent, now), (Intent::None, Some(NOTICE_OLD_PC)));
+        assert_eq!(settle(&st, intent, now), (Intent::None, Some(notice_old_pc())));
         // sabe de Wii U pero no contesta: a los 3 s se da por perdido
         let st = conn("pointer", Role::Wiimote, "gamepad", 0, true, 0);
         assert_eq!(settle(&st, intent, now + INTENT_TIMEOUT), (intent, None), "justo en el límite aún se espera");
-        assert_eq!(settle(&st, intent, now + INTENT_TIMEOUT + Duration::from_millis(1)), (Intent::None, Some(NOTICE_OLD_PC)));
+        assert_eq!(settle(&st, intent, now + INTENT_TIMEOUT + Duration::from_millis(1)), (Intent::None, Some(notice_old_pc())));
         let st = conn("pointer", Role::Wiimote, "pro", 2, true, 0);
-        assert_eq!(settle(&st, intent, now + Duration::from_secs(4)), (Intent::None, Some(NOTICE_ONLY_P1)));
+        assert_eq!(settle(&st, intent, now + Duration::from_secs(4)), (Intent::None, Some(notice_only_p1())));
     }
 
     #[test]

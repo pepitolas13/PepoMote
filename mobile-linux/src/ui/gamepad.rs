@@ -28,6 +28,7 @@ use crate::ui::touch::{self, fit_rect, Canvas, Input, Phase, Seg, Shape, Transfo
 use egui::{Align2, Color32, FontId, ImageData, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2};
 use std::collections::HashMap;
 use std::time::Duration;
+use crate::tr;
 
 pub enum Action {
     None,
@@ -230,9 +231,9 @@ impl GamePadUi {
             },
             other => View {
                 pc_name: match other {
-                    Status::Connecting => "Conectando…",
-                    Status::Reconnecting { .. } => "Reconectando…",
-                    _ => "Sin conexión",
+                    Status::Connecting => tr!("common.connecting"),
+                    Status::Reconnecting { .. } => tr!("common.reconnecting"),
+                    _ => tr!("common.no_connection"),
                 },
                 player: 1,
                 pro: false,
@@ -302,29 +303,29 @@ impl GamePadUi {
             right -= w + gap;
             rc
         };
-        self.chip(cv, place(52.0 * s), "Salir", chip_font, false, theme::error(), Chip::Exit);
+        self.chip(cv, place(52.0 * s), tr!("common.exit"), chip_font, false, theme::error(), Chip::Exit);
         let giro = match rotation {
-            Rotation::Left => "Giro ◀",
-            Rotation::Right => "Giro ▶",
+            Rotation::Left => tr!("gp.rotate_left"),
+            Rotation::Right => tr!("gp.rotate_right"),
         };
         self.chip(cv, place(66.0 * s), giro, chip_font, false, theme::text(), Chip::Rotate);
         if v.mode == "cemu" {
             // teclado del móvil para el teclado en pantalla de Cemu (GamePad y Pro)
-            self.chip(cv, place(64.0 * s), "Teclado", chip_font, false, theme::text(), Chip::Keyboard);
+            self.chip(cv, place(64.0 * s), tr!("common.keyboard"), chip_font, false, theme::text(), Chip::Keyboard);
         }
         if v.show_chips {
             // esta ES la pantalla Wii U: su chip va marcado (también mientras
             // se espera el eco); los otros dos, por igualdad exacta
             if v.supports_cemu || v.optimistic {
                 let on = v.mode == "cemu" || v.optimistic;
-                self.chip(cv, place(58.0 * s), "Wii U", chip_font, on, theme::text(), Chip::Mode("cemu"));
+                self.chip(cv, place(58.0 * s), tr!("common.mode_cemu"), chip_font, on, theme::text(), Chip::Mode("cemu"));
             }
-            self.chip(cv, place(66.0 * s), "Dolphin", chip_font, v.mode == "dolphin" && !v.optimistic, theme::text(), Chip::Mode("dolphin"));
-            self.chip(cv, place(66.0 * s), "Puntero", chip_font, v.mode == "pointer" && !v.optimistic, theme::text(), Chip::Mode("pointer"));
+            self.chip(cv, place(66.0 * s), tr!("common.mode_dolphin"), chip_font, v.mode == "dolphin" && !v.optimistic, theme::text(), Chip::Mode("dolphin"));
+            self.chip(cv, place(66.0 * s), tr!("common.mode_pointer"), chip_font, v.mode == "pointer" && !v.optimistic, theme::text(), Chip::Mode("pointer"));
         }
         let title_font = FontId::proportional(13.0 * s);
-        let kind = if v.pro { "Pro Controller" } else { "GamePad" };
-        let mut line = format!("{} · J{} · {kind}", v.pc_name, v.player);
+        let kind = if v.pro { tr!("common.pro") } else { tr!("common.gamepad") };
+        let mut line = tr!("gp.title", v.pc_name, v.player, kind);
         if let Some(ms) = v.rtt_ms {
             line.push_str(&format!(" · {ms:.0} ms"));
         }
@@ -334,7 +335,7 @@ impl GamePadUi {
         if let Some(c) = v.screen {
             let fps = c.fps();
             if c.showing() && fps > 0.0 {
-                line.push_str(&format!(" · pantalla · {fps:.0} fps"));
+                line.push_str(&tr!("gp.screen_fps", fps.round() as i64));
             }
         }
         let avail = right - x0 - 4.0 * s;
@@ -344,7 +345,7 @@ impl GamePadUi {
         let sel_h = 26.0 * s;
         let sel_y = y0 + hh + 2.0 * s;
         let label_font = FontId::proportional(12.0 * s);
-        let label = "En Cemu soy:";
+        let label = tr!("common.in_cemu");
         let label_w = cv.text_width(label, label_font.clone());
         let seg_w = 104.0 * s;
         let total = label_w + 8.0 * s + seg_w * 2.0 + 4.0 * s;
@@ -432,7 +433,7 @@ impl GamePadUi {
         let zone_w = (zone_r - zone_l).max(60.0 * s);
         let rows_y = if v.pro {
             let y = by + (r.bottom() - by) / 2.0 - 10.0 * s;
-            cv.text(Pos2::new(cx, y - 44.0 * s), Align2::CENTER_CENTER, "Pro Controller", FontId::proportional(12.0 * s), theme::text_dim());
+            cv.text(Pos2::new(cx, y - 44.0 * s), Align2::CENTER_CENTER, tr!("common.pro"), FontId::proportional(12.0 * s), theme::text_dim());
             y
         } else {
             let tw = (zone_w - 8.0 * s).min(0.42 * vw);
@@ -450,7 +451,7 @@ impl GamePadUi {
             let (bw, bh) = (76.0 * s, 24.0 * s);
             let tv = Rect::from_min_size(Pos2::new(cx - 44.0 * s - bw / 2.0, ry), Vec2::new(bw, bh));
             let mic = Rect::from_min_size(Pos2::new(cx + 44.0 * s - bw / 2.0, ry), Vec2::new(bw, bh));
-            for (rc, label, bit) in [(tv, "TV/Pad", pmp::BTN_SCREEN), (mic, "Soplar", pmp::BTN_MIC)] {
+            for (rc, label, bit) in [(tv, tr!("gp.tv_pad"), pmp::BTN_SCREEN), (mic, tr!("gp.blow"), pmp::BTN_MIC)] {
                 let shape = touch::rect_button(cv, rc, 8.0 * s, label, 11.0 * s, pressed & bit != 0, false);
                 self.hits.push((shape, Target::Button(bit)));
             }
@@ -461,11 +462,11 @@ impl GamePadUi {
             let body = Rect::from_min_max(Pos2::new(x0, by - 2.0 * s), r.max);
             cv.rounded_rect(body, 0.0, veil(), Stroke::NONE);
             let why = if v.mode.is_empty() {
-                "Conectando…"
+                tr!("common.connecting")
             } else if v.pad == "wiimote" {
-                "Ahora eres Mando de Wii"
+                tr!("gp.veil_wiimote")
             } else {
-                "Cambiando el PC a Wii U…"
+                tr!("gp.veil_switching")
             };
             cv.text(Pos2::new(cx, by + (r.bottom() - by) * 0.42), Align2::CENTER_CENTER, why, FontId::proportional(15.0 * s), theme::text_dim());
         }
@@ -533,7 +534,7 @@ impl GamePadUi {
                 cv.text(
                     Pos2::new(tr.center().x, tr.top() + 5.0 * s),
                     Align2::CENTER_TOP,
-                    "Pantalla táctil",
+                    tr!("gp.touch"),
                     FontId::proportional(11.0 * s),
                     theme::text_dim(),
                 );
