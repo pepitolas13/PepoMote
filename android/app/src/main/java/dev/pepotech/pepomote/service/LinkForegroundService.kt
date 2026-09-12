@@ -202,12 +202,13 @@ class LinkForegroundService : Service() {
                 /**
                  * Eco o difusión: el modo del receptor manda (cambia de pantalla
                  * si toca) y consume la intención Wii U pendiente, avisando si
-                 * el PC no pudo.
+                 * el PC no pudo (sin aviso si lo decidió el PC: su notice ya lo
+                 * explica).
                  */
-                override fun onModeChanged(mode: String) {
+                override fun onModeChanged(mode: String, byPc: Boolean) {
                     if (gen != generation) return
                     LinkState.updateConnected { it.copy(mode = mode) }
-                    LinkState.resolveIntent(mode)
+                    LinkState.resolveIntent(mode, byPc)
                 }
 
                 override fun onPadChanged(pad: String) {

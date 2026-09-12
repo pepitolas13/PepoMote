@@ -79,6 +79,16 @@ pub fn report() -> String {
         "Variables PEPOMOTE_*: {}",
         if vars.is_empty() { "(ninguna)".to_owned() } else { vars.join(" ") }
     ));
+    {
+        let cfg = crate::state::Config::load();
+        let si_no = |b: bool| if b { "sí" } else { "no" };
+        out.push(format!(
+            "Emuladores: modo automático: {} · Dolphin abierto: {} · Cemu abierto: {}",
+            si_no(cfg.auto_mode),
+            si_no(crate::dolphin::running_exe().0),
+            si_no(crate::cemu::running_exe().0)
+        ));
+    }
     out.push("Inyección:".to_owned());
     for l in crate::input::diag_lines() {
         out.push(format!("  {l}"));

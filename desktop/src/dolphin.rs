@@ -501,10 +501,6 @@ pub fn running_exe() -> (bool, Option<PathBuf>) {
     (false, None)
 }
 
-pub fn dolphin_running() -> bool {
-    running_exe().0
-}
-
 /// INI partido en (preámbulo, secciones ordenadas). Conserva líneas tal cual.
 struct Ini {
     preamble: Vec<String>,
@@ -751,7 +747,7 @@ pub fn configure(cfg_dolphin_dir: &str, layout: &Layout) -> Result<String, Strin
 
 /// Al ver a Dolphin abierto se aprende su carpeta (para configurarlo cerrado
 /// aunque sea portable o viva en un sitio raro).
-fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
+pub(crate) fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
     let Some(dir) = dir else { return };
     let dir_s = dir.to_string_lossy().to_string();
     let mut s = shared.lock().unwrap();
@@ -841,31 +837,19 @@ pub fn detect_now(shared: &SharedState) {
     });
 }
 
-/// Vigilante: lo que quedó pendiente porque el emulador estaba abierto se
-/// aplica en cuanto se cierra (Dolphin y Cemu sobreescriben su configuración
-/// al salir). Así nadie tiene que acordarse de pulsar «Configurar».
-pub fn start_pending_watcher(shared: SharedState) {
-    let _ = std::thread::Builder::new().name("emu-pending".into()).spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        let (dp, cp) = {
-            let s = shared.lock().unwrap_or_else(|e| e.into_inner());
-            (s.dolphin_pending, s.cemu_pending)
-        };
-        if dp && !dolphin_running() {
-            let (auto, mode, layout) = {
-                let s = shared.lock().unwrap();
-                (s.config.auto_dolphin, s.mode, crate::state::player_layout(&s.players))
-            };
-            if auto && mode == Mode::Dolphin && !layout.is_empty() {
-                run_configure(&shared, &layout, true);
-            } else {
-                shared.lock().unwrap().dolphin_pending = false;
-            }
-        }
-        if cp {
-            crate::cemu::apply_pending(&shared);
-        }
-    });
+/// Lo pendiente (Dolphin estaba abierto) se aplica cuando ya está cerrado:
+/// lo llama el vigilante de `auto_mode` al ver a Dolphin cerrado. Así nadie
+/// tiene que acordarse de pulsar «Configurar».
+pub fn apply_pending(shared: &SharedState) {
+    let (auto, mode, layout) = {
+        let s = shared.lock().unwrap();
+        (s.config.auto_dolphin, s.mode, crate::state::player_layout(&s.players))
+    };
+    if auto && mode == Mode::Dolphin && !layout.is_empty() {
+        run_configure(shared, &layout, true);
+    } else {
+        shared.lock().unwrap().dolphin_pending = false;
+    }
 }
 
 #[cfg(test)]

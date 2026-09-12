@@ -75,6 +75,27 @@ fn auto_configure(shared: &SharedState, sessions: &Sessions) {
     crate::cemu::maybe_auto_configure(shared);
 }
 
+/// El PC cambia el modo por su cuenta (modo automático: se abrió o cerró
+/// Dolphin o Cemu). Se difunde a TODOS los móviles con `by:"pc"` (el que
+/// tuviera una intención Wii U pendiente la descarta sin aviso), se
+/// autoconfigura lo que toque y se avisa con `notice`. Sin móviles, el modo
+/// queda puesto y el siguiente `ok` lo lleva.
+pub fn set_mode_from_pc(shared: &SharedState, mode: Mode, notice: &str) {
+    {
+        let mut s = shared.lock().unwrap();
+        if s.mode == mode {
+            return;
+        }
+        s.mode = mode;
+    }
+    crate::log_line!("Modo automático: {notice}");
+    broadcast(&json!({"m":"mode","mode":mode.as_str(),"by":"pc"}), None);
+    if let Some(sessions) = super::sessions() {
+        auto_configure(shared, &sessions);
+    }
+    super::notify_all(notice);
+}
+
 fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing: &PairingInfo, hub: &Arc<ScreenHub>) {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));

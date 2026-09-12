@@ -626,7 +626,7 @@ pub fn configure(cfg: &Config, layout: &Layout) -> Result<String, String> {
 
 /// Al ver a Cemu abierto se aprende su carpeta (para configurarlo cerrado
 /// aunque viva en un sitio raro).
-fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
+pub(crate) fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
     let Some(dir) = dir else { return };
     let dir_s = dir.to_string_lossy().to_string();
     let mut s = shared.lock().unwrap();
@@ -647,7 +647,7 @@ fn run_configure(shared: &SharedState, layout: &Layout) {
     learn_dir(shared, dir);
     let msg = if running {
         // Cemu sobreescribe sus perfiles al salir: se escribe en cuanto se
-        // cierre (vigilante de dolphin::start_pending_watcher)
+        // cierre (vigilante de auto_mode)
         shared.lock().unwrap().cemu_pending = true;
         "Cemu está abierto: se configurará solo en cuanto lo cierres; luego ábrelo y a jugar".to_owned()
     } else {
@@ -676,11 +676,9 @@ pub fn maybe_auto_configure(shared: &SharedState) {
     });
 }
 
-/// Lo pendiente (Cemu estaba abierto) se aplica cuando ya está cerrado.
+/// Lo pendiente (Cemu estaba abierto) se aplica cuando ya está cerrado:
+/// lo llama el vigilante de `auto_mode` al ver a Cemu cerrado.
 pub fn apply_pending(shared: &SharedState) {
-    if running_exe().0 {
-        return;
-    }
     let (auto, mode, layout) = {
         let s = shared.lock().unwrap();
         (s.config.auto_cemu, s.mode, cemu_layout(&s.players))

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod auto_mode;
 mod autostart;
 mod cemu;
 mod diag;
@@ -74,7 +75,7 @@ fn main() -> eframe::Result {
     let hub = screen::ScreenHub::new(shared.clone());
     net::start(shared.clone(), pairing.clone(), dsu, hub);
     screen::start_minder(shared.clone());
-    dolphin::start_pending_watcher(shared.clone());
+    auto_mode::start_watcher(shared.clone());
 
     #[cfg(target_os = "linux")]
     firewall::watch(shared.clone(), pairing.port);

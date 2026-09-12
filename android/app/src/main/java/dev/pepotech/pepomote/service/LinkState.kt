@@ -110,9 +110,9 @@ object LinkState {
         _intent.value = PadIntent.None
     }
 
-    /** Eco o difusión de `mode`: consume la intención Wii U y avisa si no era cemu. */
-    internal fun resolveIntent(mode: String) {
-        val out = Route.afterModeEcho(_intent.value, mode, _flow.value)
+    /** Eco o difusión de `mode`: consume la intención Wii U y avisa si no era cemu (salvo si lo decidió el PC). */
+    internal fun resolveIntent(mode: String, byPc: Boolean = false) {
+        val out = Route.afterModeEcho(_intent.value, mode, _flow.value, byPc)
         _intent.value = out.intent
         out.warning?.let { publishNotice(it) }
     }

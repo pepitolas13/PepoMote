@@ -55,6 +55,9 @@ pub enum Status {
     Connected {
         pc_name: String,
         mode: String,
+        /// El último `mode` lo decidió el PC por su cuenta (modo automático al
+        /// abrir o cerrar un emulador): no fue respuesta a nadie.
+        mode_by_pc: bool,
         slot: u8,
         /// Jugador 1..4 al que pertenece esta sesión (`ok.player`; si el
         /// receptor no lo manda, slot+1).
@@ -256,12 +259,13 @@ fn pad_of(ok: &Value, slot: u8) -> String {
 /// (eco o difusión: se aplica igual), `pad` (eco del tipo efectivo) y
 /// `notice`. Cualquier otro se ignora (devuelve `false`).
 fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
-    let Status::Connected { mode, pad, notice, mode_seq, pad_seq, .. } = st else {
+    let Status::Connected { mode, mode_by_pc, pad, notice, mode_seq, pad_seq, .. } = st else {
         return false;
     };
     match msg["m"].as_str() {
         Some("mode") => {
             *mode = msg["mode"].as_str().unwrap_or("pointer").to_owned();
+            *mode_by_pc = msg["by"].as_str() == Some("pc");
             *mode_seq = mode_seq.wrapping_add(1);
             true
         }
@@ -440,6 +444,7 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
                 *ctx.status.lock().unwrap() = Status::Connected {
                     pc_name: pairing.pc_name.clone(),
                     mode,
+                    mode_by_pc: false,
                     slot,
                     player,
                     role,
@@ -831,6 +836,7 @@ mod tests {
         Status::Connected {
             pc_name: "PC".into(),
             mode: "pointer".into(),
+            mode_by_pc: false,
             slot: 0,
             player: 1,
             role: Role::Wiimote,
@@ -851,6 +857,13 @@ mod tests {
         assert!(matches!(&st, Status::Connected { mode, mode_seq: 1, pad_seq: 0, .. } if mode == "cemu"));
         assert!(apply_update(&mut st, &json!({"m":"mode","mode":"cemu"}), now));
         assert!(matches!(&st, Status::Connected { mode_seq: 2, .. }), "cada eco cuenta, aunque repita el modo");
+        assert!(apply_update(&mut st, &json!({"m":"mode","mode":"dolphin","by":"pc"}), now));
+        assert!(
+            matches!(&st, Status::Connected { mode, mode_by_pc: true, mode_seq: 3, .. } if mode == "dolphin"),
+            "difusión del PC (modo automático): se aplica y se recuerda quién lo decidió"
+        );
+        assert!(apply_update(&mut st, &json!({"m":"mode","mode":"cemu"}), now));
+        assert!(matches!(&st, Status::Connected { mode_by_pc: false, mode_seq: 4, .. }), "un eco normal lo deja en falso");
         assert!(apply_update(&mut st, &json!({"m":"pad","pad":"wiimote"}), now));
         assert!(matches!(&st, Status::Connected { pad, pad_seq: 1, .. } if pad == "wiimote"));
         assert!(apply_update(&mut st, &json!({"m":"pad","pad":"nada"}), now));

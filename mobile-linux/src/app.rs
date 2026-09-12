@@ -136,10 +136,15 @@ fn settle(status: &Status, intent: Intent, now: Instant) -> (Intent, Option<&'st
     let Intent::WiiU { seq, since } = intent else {
         return (Intent::None, None);
     };
-    let Status::Connected { mode, mode_seq, supports_cemu, slot, .. } = status else {
+    let Status::Connected { mode, mode_by_pc, mode_seq, supports_cemu, slot, .. } = status else {
         return (intent, None); // aún conectando
     };
     if mode == "cemu" {
+        return (Intent::None, None);
+    }
+    if *mode_seq > seq && *mode_by_pc {
+        // el PC cambió de modo por su cuenta (abrió o cerró un emulador): la
+        // intención se descarta sin aviso, el suyo ya lo explica
         return (Intent::None, None);
     }
     let failed = *mode_seq > seq || !supports_cemu || now.saturating_duration_since(since) > INTENT_TIMEOUT;
@@ -1249,6 +1254,7 @@ mod tests {
         Status::Connected {
             pc_name: "PC".into(),
             mode: mode.into(),
+            mode_by_pc: false,
             slot,
             player: slot + 1,
             role,
@@ -1322,6 +1328,26 @@ mod tests {
         // jugador 2 con receptor antiguo: el aviso es el de la versión
         let st = conn("pointer", Role::Wiimote, "pro", 1, false, 1);
         assert_eq!(settle(&st, intent, now), (Intent::None, Some(NOTICE_OLD_PC)));
+    }
+
+    #[test]
+    fn la_difusion_del_pc_resuelve_la_intencion_sin_aviso() {
+        let now = Instant::now();
+        let intent = wiiu(now);
+        let by_pc = |mut st: Status| {
+            if let Status::Connected { mode_by_pc, .. } = &mut st {
+                *mode_by_pc = true;
+            }
+            st
+        };
+        // el PC abrió Dolphin (modo automático) mientras se esperaba Wii U: ni
+        // «PC antiguo» ni «solo el Jugador 1», su aviso ya lo explica
+        let st = by_pc(conn("dolphin", Role::Wiimote, "pro", 1, true, 1));
+        assert_eq!(settle(&st, intent, now), (Intent::None, None));
+        assert_eq!(route(&st, Role::Wiimote, Intent::None), Screen::Controller);
+        // un `mode` del PC anterior a la petición no la resuelve: se sigue esperando
+        let st = by_pc(conn("pointer", Role::Wiimote, "gamepad", 0, true, 0));
+        assert_eq!(settle(&st, intent, now), (intent, None));
     }
 
     #[test]

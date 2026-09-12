@@ -133,6 +133,9 @@ pub struct Config {
     /// Configurar Cemu solo (perfiles de mando) en modo Wii U.
     #[serde(default = "default_true")]
     pub auto_cemu: bool,
+    /// Cambiar de modo solo al abrir o cerrar Dolphin o Cemu.
+    #[serde(default = "default_true")]
+    pub auto_mode: bool,
     /// Carpeta de Cemu (la del Cemu.exe / AppImage). "" = detectar sola. Se
     /// aprende al ver a Cemu abierto y se guarda para configurarlo cerrado.
     #[serde(default)]
@@ -162,6 +165,7 @@ impl Default for Config {
             abs_mode: true,
             auto_dolphin: true,
             auto_cemu: true,
+            auto_mode: true,
             cemu_dir: String::new(),
             dolphin_dir: String::new(),
             fix_attempted: false,

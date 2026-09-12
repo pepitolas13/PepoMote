@@ -42,8 +42,12 @@ class ControlClient(
         fun onOk(ok: Ok)
         fun onError(code: String, msg: String)
 
-        /** Eco del `mode` pedido o difusión del receptor al cambiarlo otro móvil: autoritativo. */
-        fun onModeChanged(mode: String)
+        /**
+         * Eco del `mode` pedido o difusión del receptor al cambiarlo otro móvil:
+         * autoritativo. `byPc`: lo cambió el PC por su cuenta (modo automático
+         * al abrir o cerrar Dolphin o Cemu), no fue respuesta a nadie.
+         */
+        fun onModeChanged(mode: String, byPc: Boolean)
 
         /** Eco del `pad`: mando efectivo (gamepad / pro / wiimote). */
         fun onPadChanged(pad: String)
@@ -121,7 +125,7 @@ class ControlClient(
 
                     "ping" -> sendJson(JSONObject().put("m", "pong").put("t", msg.opt("t")))
                     "pong" -> Unit
-                    "mode" -> callbacks.onModeChanged(msg.optString("mode", "pointer"))
+                    "mode" -> callbacks.onModeChanged(msg.optString("mode", "pointer"), msg.optString("by") == "pc")
                     "pad" -> callbacks.onPadChanged(msg.optString("pad", "gamepad"))
                     "notice" -> msg.optString("text").takeIf { it.isNotBlank() }?.let(callbacks::onNotice)
                     else -> Unit // mensaje desconocido: se ignora

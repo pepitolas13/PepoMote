@@ -68,6 +68,17 @@ class RouteTest {
     }
 
     @Test
+    fun difusionDelPcConsumeLaIntencionSinAviso() {
+        // el PC abrió Dolphin (modo automático) mientras se esperaba Wii U: ni
+        // «PC antiguo» ni «solo el Jugador 1», su aviso ya lo explica
+        val out = Route.afterModeEcho(PadIntent.WiiU, "dolphin", connected(mode = "dolphin", slot = 1), byPc = true)
+        assertEquals(PadIntent.None, out.intent)
+        assertNull(out.warning)
+        // sin intención, tampoco cambia nada
+        assertEquals(PadIntent.None, Route.afterModeEcho(PadIntent.None, "pointer", connected(), byPc = true).intent)
+    }
+
+    @Test
     fun ecoPointerConIntencionPendienteVuelveAWiiConAviso() {
         // PC antiguo: el ok no traía "cemu" en modes y contesta pointer a mode cemu
         val link = connected(mode = "pointer", supportsCemu = false)

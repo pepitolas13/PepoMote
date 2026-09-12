@@ -49,11 +49,13 @@ object Route {
      * Llega un eco/difusión de `mode`: consume la intención Wii U. Si el modo
      * no es `cemu`, el layout Wii vuelve con un aviso: el PC no soporta Wii U
      * (receptor antiguo: `ok` sin "cemu" en `modes`) o, si sí lo soporta pero
-     * este móvil no es el Jugador 1, que solo él cambia el modo.
+     * este móvil no es el Jugador 1, que solo él cambia el modo. Si el modo lo
+     * decidió el PC (`byPc`: modo automático al abrir o cerrar un emulador) la
+     * intención se descarta sin aviso: el notice del PC ya lo explica.
      */
-    fun afterModeEcho(intent: PadIntent, mode: String, link: UiLink): Outcome {
+    fun afterModeEcho(intent: PadIntent, mode: String, link: UiLink, byPc: Boolean = false): Outcome {
         if (intent != PadIntent.WiiU) return Outcome(intent, null)
-        if (mode == LinkState.MODE_CEMU) return Outcome(PadIntent.None, null)
+        if (mode == LinkState.MODE_CEMU || byPc) return Outcome(PadIntent.None, null)
         val c = link as? UiLink.Connected
         val warning = if (c != null && c.supportsCemu && c.slot != 0) WARN_PLAYER_1 else WARN_NEEDS_13
         return Outcome(PadIntent.None, warning)

@@ -53,6 +53,11 @@ pub fn send_line(writer: &Arc<Mutex<TcpStream>>, v: &serde_json::Value) {
 /// (Dolphin/Cemu) para avisar a los móviles.
 static SESSIONS: OnceLock<Sessions> = OnceLock::new();
 
+/// Las sesiones vivas (None antes de `start`).
+pub(crate) fn sessions() -> Option<Sessions> {
+    SESSIONS.get().cloned()
+}
+
 /// Envía `v` (una línea JSON) a todas las sesiones salvo `except`.
 pub fn broadcast(v: &serde_json::Value, except: Option<u32>) {
     let Some(sessions) = SESSIONS.get() else { return };

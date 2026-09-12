@@ -419,6 +419,20 @@ impl PepoMoteApp {
                 &mut config.auto_cemu,
                 RichText::new("Configurar Cemu automáticamente (modo Wii U)").size(13.0),
             );
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.checkbox(
+                    &mut config.auto_mode,
+                    RichText::new("Cambiar de modo al abrir o cerrar Dolphin o Cemu").size(13.0),
+                );
+                info_icon(
+                    ui,
+                    "Al abrir Dolphin el receptor pasa a modo Dolphin; al abrir Cemu, a Wii U; al cerrarlos, \
+                     vuelve al puntero (o al otro emulador si sigue abierto). Los móviles cambian de pantalla \
+                     solos y ven un aviso.\n\n\
+                     Lo que elijas a mano en el móvil se respeta hasta la siguiente vez que abras o cierres un emulador.",
+                );
+            });
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Carpeta de Cemu").size(13.0).color(theme::text_dim()));
                 ui.add(
