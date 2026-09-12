@@ -57,6 +57,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -75,11 +76,13 @@ import dev.pepotech.pepomote.service.Route
 import dev.pepotech.pepomote.service.ScreenLink
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
+import dev.pepotech.pepomote.ui.components.HeaderSlot
 import dev.pepotech.pepomote.ui.components.KeyboardButton
 import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
+import dev.pepotech.pepomote.ui.components.PriorityRow
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.ShoulderButton
@@ -184,8 +187,6 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         // píxeles físicos con el alto 16:9. Al salir (o cambiar) se retira.
         val wantScreen = operative && connected?.pad == LinkState.PAD_GAMEPAD
         val touchPx = with(LocalDensity.current) { touchW.roundToPx() }
-        // En pantallas estrechas el contador de fps de la cabecera no cabe con todo lo demás
-        val showFps = maxWidth >= 760.dp
         DisposableEffect(wantScreen, touchPx) {
             if (wantScreen) {
                 val w = minOf(ScreenClient.NATIVE_WIDTH, touchPx)
@@ -200,7 +201,6 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             Header(
                 link, operative, headerH, screen,
                 width = screenW,
-                showFps = showFps,
                 onKeyboard = if (operative) {
                     { keyboardOpen = true }
                 } else null,
@@ -346,8 +346,12 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
 
 /**
  * Cabecera compacta: PC · «J1 · GamePad» / «J2 · Pro Controller» · ritmo de
- * la doble pantalla («pantalla · 30 fps», media de 1 s, si [showFps]) ·
- * chips de modo (Jugador 1) · «Teclado» (con el modo confirmado) · Salir.
+ * la doble pantalla («pantalla · 30 fps», media de 1 s) · chips de modo
+ * (Jugador 1) · «Teclado» (con el modo confirmado) · Salir.
+ *
+ * Lo que no cabe lo decide [PriorityRow]: primero cae el ritmo de la pantalla,
+ * luego el nombre del PC, luego el estado (que antes se encoge con puntos
+ * suspensivos) y, en último extremo, los chips y «Teclado»; «Salir» nunca.
  */
 @Composable
 private fun Header(
@@ -356,35 +360,31 @@ private fun Header(
     height: Dp,
     screen: ScreenClient<Bitmap>?,
     width: Dp,
-    showFps: Boolean,
     onKeyboard: (() -> Unit)?,
     onDisconnect: () -> Unit
 ) {
-    // En móviles estrechos la cabecera no cabe entera: primero cae el nombre
-    // del PC, luego el nombre del mando y el RTT (los chips, el teclado y
-    // Salir se quedan siempre)
-    val showPc = width >= 640.dp
+    // El estado se acorta antes de recortarse: en móviles estrechos fuera el
+    // nombre del mando y el RTT («J1 · GamePad · 23 ms» → «J1»)
     val showPad = width >= 560.dp
     val showRtt = width >= 700.dp
-    Row(
+    PriorityRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(height)
             .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        spacing = 8.dp
     ) {
         when (link) {
             is UiLink.Connected -> {
-                if (showPc) {
-                    Text(
-                        link.pcName,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 160.dp)
-                    )
-                }
+                Text(
+                    link.pcName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .layoutId(HeaderSlot.Pc)
+                        .widthIn(max = 160.dp)
+                )
                 val padName = if (link.pad == LinkState.PAD_PRO) stringResource(R.string.pro_controller) else stringResource(R.string.gamepad)
                 val activating = stringResource(R.string.activating_wiiu)
                 Text(
@@ -397,46 +397,54 @@ private fun Header(
                         if (showRtt) link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
                     } else activating,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.layoutId(HeaderSlot.Status)
                 )
                 // Barato: el cliente lo publica una vez por segundo
                 val fps = screen?.fps?.collectAsState()?.value ?: 0
-                if (showFps && fps > 0) {
+                if (fps > 0) {
                     Text(
                         stringResource(R.string.screen_fps, fps),
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
-                        maxLines = 1
+                        maxLines = 1,
+                        modifier = Modifier.layoutId(HeaderSlot.Fps)
                     )
                 }
-                Spacer(Modifier.weight(1f))
                 if (link.slot == 0) {
                     // Mientras se espera el eco, Wii U ya va marcado (es lo pedido)
                     ModeChips(
                         current = if (operative) link.mode else LinkState.MODE_CEMU,
                         supportsCemu = link.supportsCemu,
-                        compact = true
+                        compact = true,
+                        modifier = Modifier.layoutId(HeaderSlot.Chips)
                     )
                 }
                 // Texto para el teclado en pantalla de Cemu (GamePad y Pro)
-                if (onKeyboard != null) KeyboardButton(compact = true, onClick = onKeyboard)
+                if (onKeyboard != null) {
+                    KeyboardButton(compact = true, modifier = Modifier.layoutId(HeaderSlot.Keyboard), onClick = onKeyboard)
+                }
             }
 
-            is UiLink.Connecting -> {
-                Text(stringResource(R.string.status_connecting), style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.weight(1f))
-            }
+            is UiLink.Connecting -> Text(
+                stringResource(R.string.status_connecting),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.layoutId(HeaderSlot.Status)
+            )
 
-            is UiLink.Reconnecting -> {
-                ReconnectingLabel(link)
-                Spacer(Modifier.weight(1f))
-            }
+            is UiLink.Reconnecting -> ReconnectingLabel(link, modifier = Modifier.layoutId(HeaderSlot.Status))
 
-            else -> {
-                Text(stringResource(R.string.status_disconnected), style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.weight(1f))
-            }
+            else -> Text(
+                stringResource(R.string.status_disconnected),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.layoutId(HeaderSlot.Status)
+            )
         }
-        TextButton(onClick = onDisconnect) {
+        TextButton(onClick = onDisconnect, modifier = Modifier.layoutId(HeaderSlot.Exit)) {
             Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
         }
     }

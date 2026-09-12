@@ -50,8 +50,12 @@ fun PulsingDot(color: Color, size: Dp = 10.dp) {
 
 /** «Reconectando con X…» con su punto latiendo, para las cabeceras del mando. */
 @Composable
-fun ReconnectingLabel(link: UiLink.Reconnecting, style: TextStyle = MaterialTheme.typography.titleMedium) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+fun ReconnectingLabel(
+    link: UiLink.Reconnecting,
+    style: TextStyle = MaterialTheme.typography.titleMedium,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         PulsingDot(PepoColors.Warn)
         Spacer(Modifier.width(8.dp))
         Text(

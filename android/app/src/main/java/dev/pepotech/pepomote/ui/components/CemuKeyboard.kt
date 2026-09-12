@@ -50,11 +50,11 @@ import dev.pepotech.pepomote.R
  * Mando de Wii): abre [KeyboardDialog]. Mismo aire que los chips de modo.
  */
 @Composable
-fun KeyboardButton(compact: Boolean = false, onClick: () -> Unit) {
+fun KeyboardButton(compact: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val current by rememberUpdatedState(onClick)
     val shape = RoundedCornerShape(18.dp)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .background(PepoColors.Card, shape)
             .border(1.5.dp, PepoColors.CardBorder, shape)
             .pointerInput(Unit) {

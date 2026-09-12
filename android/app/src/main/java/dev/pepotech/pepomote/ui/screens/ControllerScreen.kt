@@ -257,8 +257,8 @@ internal fun modeLabel(mode: String): String = when (mode) {
  * el eco lo confirma. Lo comparten el mando vertical, el apaisado y el GamePad.
  */
 @Composable
-internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean = false) {
-    Row(horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)) {
+internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean = false, modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)) {
         ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact) {
             LinkState.requestMode(LinkState.MODE_POINTER)
         }

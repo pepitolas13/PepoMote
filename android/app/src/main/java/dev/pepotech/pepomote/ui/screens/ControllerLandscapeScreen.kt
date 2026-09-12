@@ -23,18 +23,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.ui.components.HeaderSlot
 import dev.pepotech.pepomote.ui.components.KeyboardButton
 import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
 import dev.pepotech.pepomote.ui.components.PrecisionPill
+import dev.pepotech.pepomote.ui.components.PriorityRow
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
@@ -65,7 +68,9 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        // Cabecera compacta (+ selector de mando dentro de Wii U)
+        // Cabecera compacta (+ selector de mando dentro de Wii U). Si no cabe
+        // todo, PriorityRow deja fuera primero el nombre del PC y luego el
+        // estado; los chips y «Teclado» solo en último extremo; «Salir» nunca
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -73,12 +78,9 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
+            PriorityRow(spacing = 14.dp, fill = false) {
                 if (link is UiLink.Reconnecting) {
-                    ReconnectingLabel(link, MaterialTheme.typography.bodyMedium)
+                    ReconnectingLabel(link, MaterialTheme.typography.bodyMedium, modifier = Modifier.layoutId(HeaderSlot.Status))
                 } else {
                     Text(
                         when (link) {
@@ -87,26 +89,40 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                             else -> stringResource(R.string.status_disconnected)
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        // Un nombre de PC largo no echa a «Salir» fuera de la pantalla
-                        modifier = Modifier.widthIn(max = 160.dp),
+                        // Un nombre de PC largo no echa a «Salir» fuera de la
+                        // pantalla: se recorta a 160 dp y, si aun así no cabe, cae él
+                        modifier = Modifier
+                            .layoutId(if (link is UiLink.Connected) HeaderSlot.Pc else HeaderSlot.Status)
+                            .widthIn(max = 160.dp),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (link is UiLink.Connected) {
                     if (isWiiUAsWiimote(link)) {
-                        Text(stringResource(R.string.wiiu_as_wiimote), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(R.string.wiiu_as_wiimote),
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.layoutId(HeaderSlot.Status)
+                        )
                     }
                     // Selector Puntero/Dolphin/Wii U también de lado (solo el Jugador 1)
                     if (showModeChips(link, showChips)) {
-                        ModeChips(current = link.mode, supportsCemu = link.supportsCemu, compact = true)
+                        ModeChips(
+                            current = link.mode,
+                            supportsCemu = link.supportsCemu,
+                            compact = true,
+                            modifier = Modifier.layoutId(HeaderSlot.Chips)
+                        )
                     }
                     // Modo Wii U: texto para el teclado en pantalla de Cemu
                     if (link.mode == LinkState.MODE_CEMU) {
-                        KeyboardButton(compact = true) { keyboardOpen = true }
+                        KeyboardButton(compact = true, modifier = Modifier.layoutId(HeaderSlot.Keyboard)) { keyboardOpen = true }
                     }
                 }
-                TextButton(onClick = onDisconnect) {
+                TextButton(onClick = onDisconnect, modifier = Modifier.layoutId(HeaderSlot.Exit)) {
                     Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
                 }
             }
