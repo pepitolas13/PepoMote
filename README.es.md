@@ -12,6 +12,7 @@
 | Pieza | Plataforma | Archivo |
 |---|---|---|
 | Emisor | Android 8.0+ | `PepoMote.apk` |
+| Emisor | iPhone / iPad, iOS 15+ (hasta iPadOS 26) | `PepoMote.ipa` — se instala con AltStore o Sideloadly, ver [docs/IOS.md](docs/IOS.md) |
 | Emisor | Linux móvil: Mobian, postmarketOS… (aarch64) | `pepomote-mobile_*_arm64.deb` (Mobian: tocar e Instalar) · `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receptor | Windows 10/11 | `PepoMote.exe` — un solo archivo portable |
 | Receptor | Linux, X11 y Wayland | `PepoMote-x86_64.AppImage` |
@@ -23,6 +24,8 @@
 **PC (Linux)** — descarga el AppImage, dale permiso de ejecución y ábrelo. En Sway, Hyprland, MangoWC, river, labwc, niri y demás compositores wlroots no hace falta nada más: el cursor es un puntero virtual de Wayland. En GNOME, KDE o X11 el cursor va por uinput: si eso (o un firewall descartando en silencio el tráfico del móvil — muchas distros traen uno activado) necesita configuración, PepoMote lo detecta y te pide la contraseña de administrador **una sola vez** en el diálogo del sistema, y lo arregla él solo; si tu sesión no tiene diálogo de contraseña, la ventana enseña el comando de una línea para pegar en un terminal. ¿Prefieres instalación con lanzador? `packaging/linux/install.sh PepoMote-x86_64.AppImage` hace la misma configuración de golpe. ¿Algo raro? `./PepoMote-x86_64.AppImage --diag` imprime un informe para pegar en un issue.
 
 **Móvil** — instala `PepoMote.apk` (permite "orígenes desconocidos"). Ábrela, toca **Conectar** y escanea el QR del PC. Emparejado para siempre.
+
+**iPhone / iPad** — no está en la App Store: instala `PepoMote.ipa` con [AltStore](https://altstore.io) (añade la fuente `https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` y toca Instalar; se renueva sola cada 7 días) o con Sideloadly. Paso a paso, permisos y diferencias con Android en [docs/IOS.md](docs/IOS.md).
 
 **Móvil con Linux** (Mobian, postmarketOS…) — Mobian: descarga `pepomote-mobile_*_arm64.deb` en el móvil, tócalo y pulsa **Instalar**. Cualquier otra distro, un comando en el terminal: `wget -qO- https://raw.githubusercontent.com/pepitolas13/PepoMote/main/packaging/linux-mobile/install.sh | sh`. Después ábrela como una app más: **Conectar** → tu PC en la lista → el código de 4 dígitos que hay bajo el QR. Ver [docs/MOBILE-LINUX.md](docs/MOBILE-LINUX.md).
 

@@ -123,8 +123,37 @@ jobs:
           name: android
           path: PepoMote.apk
 
+  ios:
+    runs-on: macos-15
+    # IPA sin firmar (AltStore / Sideloadly lo firman con el Apple ID de quien lo
+    # instala). Un fallo en macOS no debe bloquear la release del resto.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode + XcodeGen
+        run: |
+          latest="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$latest" ]; then sudo xcode-select -s "$latest"; fi
+          xcodebuild -version
+          brew install xcodegen
+      - name: IPA sin firmar
+        working-directory: ios
+        run: |
+          xcodegen generate
+          xcodebuild build -project PepoMote.xcodeproj -scheme PepoMote -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath ../build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -quiet
+          app="$(find ../build/dd/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)"
+          test -n "$app"
+          rm -rf Payload && mkdir Payload && cp -R "$app" Payload/
+          zip -qr ../PepoMote.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: PepoMote.ipa
+
   publish:
-    needs: [windows, linux, mobile, mobile_musl, android]
+    needs: [windows, linux, mobile, mobile_musl, android, ios]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -133,7 +162,66 @@ jobs:
       - name: SHA256SUMS
         run: |
           sha256sum PepoMote.exe PepoMote-x86_64.AppImage PepoMote.apk \
-            PepoMote-Mobile-aarch64.AppImage $(ls pepomote-mobile*arm64.deb PepoMote-Mobile-aarch64-musl.tar.gz 2>/dev/null) > SHA256SUMS.txt
+            PepoMote-Mobile-aarch64.AppImage $(ls pepomote-mobile*arm64.deb PepoMote-Mobile-aarch64-musl.tar.gz PepoMote.ipa 2>/dev/null) > SHA256SUMS.txt
+      # Fuente de AltStore: apuntando al IPA de esta release (tamaño real). Se
+      # añade en AltStore por su URL estable: .../releases/latest/download/altstore.json
+      - name: altstore.json
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'EOF'
+          import datetime, json, os
+          ipa = "PepoMote.ipa"
+          if not os.path.exists(ipa):
+              print("sin IPA: sin fuente de AltStore"); raise SystemExit(0)
+          tag, repo = os.environ["TAG"], os.environ["REPO"]
+          base = f"https://github.com/{repo}"
+          raw = f"https://raw.githubusercontent.com/{repo}/main"
+          version = tag.lstrip("v")
+          today = datetime.date.today().isoformat()
+          notes = f"PepoMote {version} para iPhone y iPad: puntero, mando de Wii para Dolphin, GamePad de Wii U para Cemu (con doble pantalla) y Nunchuk. Notas completas: {base}/releases/tag/{tag}"
+          src = {
+              "name": "PepoTech",
+              "identifier": "dev.pepotech.altstore",
+              "subtitle": "PepoMote: tu iPhone o iPad, mando de tu PC",
+              "description": "Fuente oficial de PepoMote para AltStore. Codigo abierto (GPL-3.0).",
+              "iconURL": f"{raw}/assets/brand/logo.png",
+              "headerURL": f"{raw}/assets/brand/logo.png",
+              "website": base,
+              "tintColor": "3FA9F5",
+              "featuredApps": ["dev.pepotech.pepomote"],
+              "apps": [{
+                  "name": "PepoMote",
+                  "bundleIdentifier": "dev.pepotech.pepomote",
+                  "developerName": "PepoTech",
+                  "subtitle": "Tu iPhone o iPad, mando de tu PC",
+                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual y a Cemu con un GamePad de Wii U con doble pantalla. Necesita el receptor PepoMote en el PC (Windows o Linux).",
+                  "iconURL": f"{raw}/assets/brand/logo.png",
+                  "tintColor": "3FA9F5",
+                  "category": "utilities",
+                  "screenshotURLs": [],
+                  "versions": [{
+                      "version": version,
+                      "date": today,
+                      "localizedDescription": notes,
+                      "downloadURL": f"{base}/releases/download/{tag}/PepoMote.ipa",
+                      "size": os.path.getsize(ipa),
+                      "minOSVersion": "15.0",
+                  }],
+                  "appPermissions": {
+                      "entitlements": [],
+                      "privacy": {
+                          "NSCameraUsageDescription": "Para escanear el QR de PepoMote en tu PC.",
+                          "NSLocalNetworkUsageDescription": "PepoMote habla con el receptor de tu PC por la red local (Wi-Fi).",
+                      },
+                  },
+              }],
+              "news": [],
+          }
+          json.dump(src, open("altstore.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+          print(open("altstore.json", encoding="utf-8").read())
+          EOF
       - uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -143,5 +231,7 @@ jobs:
             PepoMote-Mobile-aarch64.AppImage
             pepomote-mobile*arm64.deb
             PepoMote-Mobile-aarch64-musl.tar.gz
+            PepoMote.ipa
+            altstore.json
             SHA256SUMS.txt
           generate_release_notes: true
