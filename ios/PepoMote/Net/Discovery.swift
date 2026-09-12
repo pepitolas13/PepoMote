@@ -190,7 +190,7 @@ enum Discovery {
         defer { freeifaddrs(ifap) }
         var p: UnsafeMutablePointer<ifaddrs>? = first
         while let ifa = p {
-            let flags = Int32(ifa.pointee.ifa_flags)
+            let flags = Int32(truncatingIfNeeded: ifa.pointee.ifa_flags)
             if flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0, flags & IFF_BROADCAST != 0,
                let dst = ifa.pointee.ifa_dstaddr, dst.pointee.sa_family == sa_family_t(AF_INET) {
                 let bcast = dst.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }

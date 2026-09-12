@@ -32,7 +32,7 @@ struct ChannelCard: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity)
-            .aspectRatio(1, contentMode: .fill)
+            .aspectRatio(1, contentMode: .fit)
             .pepoCard()
         }
         .buttonStyle(.plain)

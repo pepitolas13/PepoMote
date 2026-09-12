@@ -29,12 +29,12 @@ final class ScreenClient: ObservableObject {
     static let statusDetail = "\u{0}detail:"
 
     /// Imagen decodificada lista para pintar; `seq` la identifica.
-    struct Image {
+    struct ScreenImage {
         let seq: Int
         let image: UIImage
     }
 
-    @Published private(set) var image: Image?
+    @Published private(set) var image: ScreenImage?
     /// Última línea de estado (del receptor, o propia: sin pantalla / reconectando).
     @Published private(set) var status: String?
     /// Imágenes por segundo (media de 1 s); 0 sin imagen.
@@ -269,7 +269,7 @@ final class ScreenClient: ObservableObject {
         let n = seq
         pendingAck = n
         countImage()
-        DispatchQueue.main.async { self.image = Image(seq: n, image: img) }
+        DispatchQueue.main.async { self.image = ScreenImage(seq: n, image: img) }
         // Si la UI no llega a pintarla, que no se atasque el flujo
         q.asyncAfter(deadline: .now() + .milliseconds(shownFallbackMs)) { [weak self] in
             guard let self else { return }

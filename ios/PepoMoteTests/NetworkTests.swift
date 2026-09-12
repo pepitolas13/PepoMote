@@ -1,4 +1,5 @@
 import Network
+import UIKit
 import XCTest
 @testable import PepoMote
 
@@ -6,7 +7,7 @@ import XCTest
 /// control y de pantalla de extremo a extremo, sin PC.
 final class FakeReceiver {
     let listener: NWListener
-    let port: UInt16
+    private(set) var port: UInt16 = 0
     private let queue = DispatchQueue(label: "fake-receiver")
     private var conn: NWConnection?
     private var buffer = Data()
@@ -18,19 +19,24 @@ final class FakeReceiver {
     var rawMode = false
 
     init() throws {
-        listener = try NWListener(using: .tcp, on: .any)
-        listener.newConnectionHandler = { [weak self] c in self?.accept(c) }
-        listener.start(queue: queue)
-        var p: UInt16 = 0
+        let l = try NWListener(using: .tcp, on: .any)
+        listener = l
+        let box = PortBox()
         let e = XCTestExpectation(description: "port")
-        listener.stateUpdateHandler = { st in
-            if case .ready = st, let lp = self.listener.port {
-                p = lp.rawValue
+        l.stateUpdateHandler = { st in
+            if case .ready = st, let lp = l.port {
+                box.port = lp.rawValue
                 e.fulfill()
             }
         }
-        XCTWaiter().wait(for: [e], timeout: 5)
-        port = p
+        l.newConnectionHandler = { [weak self] c in self?.accept(c) }
+        l.start(queue: queue)
+        _ = XCTWaiter().wait(for: [e], timeout: 5)
+        port = box.port
+    }
+
+    private final class PortBox {
+        var port: UInt16 = 0
     }
 
     private func accept(_ c: NWConnection) {
@@ -94,7 +100,7 @@ final class FakeReceiver {
             }
             self.flushLines()
         }
-        XCTWaiter().wait(for: [e], timeout: timeout)
+        _ = XCTWaiter().wait(for: [e], timeout: timeout)
         return out
     }
 
@@ -109,7 +115,7 @@ final class FakeReceiver {
             }
             self.flushRaw()
         }
-        XCTWaiter().wait(for: [e], timeout: timeout)
+        _ = XCTWaiter().wait(for: [e], timeout: timeout)
         return out
     }
 
@@ -253,9 +259,7 @@ final class ScreenClientTests: XCTestCase {
     private func wait(for c: ScreenClient, timeout: TimeInterval = 5, _ pred: @escaping (ScreenClient) -> Bool) -> Bool {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
-            var ok = false
-            DispatchQueue.main.sync { ok = pred(c) }
-            if ok { return true }
+            if pred(c) { return true }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         return false
@@ -388,9 +392,8 @@ final class ScreenClientTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.15)
             rx.send(Data(ScreenFramesTests.frame(ScreenFrames.typeKeepalive, [])))
         }
-        var status: String?
-        DispatchQueue.main.sync { status = c.status }
-        XCTAssertNil(status)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertNil(c.status)
         XCTAssertEqual(rx.pendingBytes(wait: 0.1), 0, "el keepalive no se confirma")
         rx.rawMode = false
         XCTAssertTrue(wait(for: c, timeout: 3) { $0.status == ScreenClient.statusReconnecting })

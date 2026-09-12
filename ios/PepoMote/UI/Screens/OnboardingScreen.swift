@@ -9,11 +9,11 @@ struct OnboardingScreen: View {
             Text("PepoMote").font(PepoFont.display()).foregroundColor(Pepo.text)
             Text(tr("onboarding_sub")).pepoBody()
             Spacer().frame(height: 32)
-            Step(n: 1, title: tr("ob1_title"), body: tr("ob1_body"))
+            Step(n: 1, title: tr("ob1_title"), text: tr("ob1_body"))
             Spacer().frame(height: 14)
-            Step(n: 2, title: tr("ob2_title"), body: tr("ob2_body"))
+            Step(n: 2, title: tr("ob2_title"), text: tr("ob2_body"))
             Spacer().frame(height: 14)
-            Step(n: 3, title: tr("ob3_title"), body: tr("ob3_body"))
+            Step(n: 3, title: tr("ob3_title"), text: tr("ob3_body"))
             Spacer()
             PrimaryButton(title: tr("lets_go"), action: onDone)
             Spacer().frame(height: 24)
@@ -28,7 +28,7 @@ struct OnboardingScreen: View {
 private struct Step: View {
     let n: Int
     let title: String
-    let body: String
+    let text: String
 
     var body: some View {
         HStack(spacing: 14) {
@@ -38,7 +38,7 @@ private struct Step: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).pepoTitle()
-                Text(self.body).pepoBody()
+                Text(text).pepoBody()
             }
             Spacer(minLength: 0)
         }

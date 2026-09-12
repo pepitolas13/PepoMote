@@ -231,7 +231,7 @@ final class ControlClient {
     func sendText(_ text: String) { sendLine(TextInput.encode(text)) }
 
     private func sendJson(_ obj: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj), let s = String(data: data, encoding: .utf8) else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]), let s = String(data: data, encoding: .utf8) else { return }
         sendLine(s)
     }
 

@@ -157,6 +157,7 @@ struct GamePadScreen: View {
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             rotation = OrientationLock.frameRotation(OrientationLock.current)
             applyEngine(operative)
         }
