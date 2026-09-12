@@ -114,7 +114,7 @@ enum PmpCodec {
 extension Data {
     mutating func appendLE<T: FixedWidthInteger>(_ value: T) {
         var v = value.littleEndian
-        withUnsafeBytes(of: &v) { append(contentsOf: $0) }
+        Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
     }
 
     mutating func appendF32(_ value: Float) {
@@ -123,7 +123,7 @@ extension Data {
 
     /// i8 recortado a −127..127 (como los sticks del protocolo).
     mutating func appendI8(_ value: Int) {
-        append(UInt8(bitPattern: Int8(min(max(value, -127), 127))))
+        append(UInt8(bitPattern: Int8(Swift.min(Swift.max(value, -127), 127))))
     }
 
     /// Hex en minúsculas (tests y trazas).
