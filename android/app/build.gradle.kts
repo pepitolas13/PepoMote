@@ -24,8 +24,8 @@ android {
         applicationId = "dev.pepotech.pepomote"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.4.0"
+        versionCode = 10
+        versionName = "1.5.0"
     }
 
     val releaseSigning = signingValue("storeFile", "KEYSTORE_PATH")?.let { store ->
