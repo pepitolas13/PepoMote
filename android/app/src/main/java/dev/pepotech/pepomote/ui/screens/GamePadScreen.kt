@@ -239,12 +239,13 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             .width(sideW)
                             .fillMaxHeight(),
                         horizontalAlignment = Alignment.Start,
-                        verticalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.Top
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
                             ShoulderButton("L", ButtonState.L, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                             ShoulderButton("ZL", ButtonState.ZL, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                         }
+                        Spacer(Modifier.weight(1f))
                         Row(
                             verticalAlignment = Alignment.Bottom,
                             horizontalArrangement = Arrangement.spacedBy(gap)
@@ -252,6 +253,9 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             AnalogStick(padSize) { x, y -> ButtonState.setStick(x, y) }
                             RoundButton("L3", clickSize, ButtonState.STICK_L, textSize = (12 * k).roundToInt())
                         }
+                        // Tablet: stick y cruceta juntos, abajo (donde llega el
+                        // pulgar), en vez de repartidos por toda la altura
+                        if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
                         PadCross(sizeDp = padSize, glyphSp = (14 * k).roundToInt())
                     }
 
@@ -261,8 +265,9 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             .weight(1f)
                             .fillMaxHeight(),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceEvenly
+                        verticalArrangement = Arrangement.Top
                     ) {
+                        Spacer(Modifier.weight(1f))
                         if (pro) {
                             Text(
                                 stringResource(R.string.pro_controller),
@@ -281,6 +286,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         val roundBtn = ((centerW - rowGap * (2 + pills) - pillW * pills) / 3f)
                             .coerceAtMost(bottomRowH * 0.85f)
                             .coerceAtLeast(28.dp)
+                        // Tablet: la fila pegada a la pantalla (un bloque centrado)
+                        if (k > 1f) Spacer(Modifier.height(gap * 3)) else Spacer(Modifier.weight(1f))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(rowGap)
@@ -291,6 +298,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt())
                             if (!pro) ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, pillH, textSize = (12 * k).roundToInt())
                         }
+                        Spacer(Modifier.weight(1f))
                     }
 
                     // Derecha: R y ZR en la esquina, (R3 +) stick, rombo A/B/X/Y
@@ -299,7 +307,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             .width(sideW)
                             .fillMaxHeight(),
                         horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.Top
                     ) {
                         Column(
                             horizontalAlignment = Alignment.End,
@@ -308,6 +316,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             ShoulderButton("R", ButtonState.R, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                             ShoulderButton("ZR", ButtonState.ZR, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                         }
+                        Spacer(Modifier.weight(1f))
                         Row(
                             verticalAlignment = Alignment.Bottom,
                             horizontalArrangement = Arrangement.spacedBy(gap)
@@ -315,6 +324,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             RoundButton("R3", clickSize, ButtonState.STICK_R, textSize = (12 * k).roundToInt())
                             AnalogStick(padSize) { x, y -> ButtonState.setStick2(x, y) }
                         }
+                        if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
                         FaceButtons(padSize, faceBtn, k)
                     }
                 }

@@ -4,8 +4,10 @@ import XCTest
 
 /// Capturas de todas las pantallas a PNG, en varios tamaños de iPhone y de
 /// iPad, para mirarlas sin dispositivo (la CI las sube como artefacto
-/// `ios-shots`). Solo si `PEPOMOTE_SHOTS_DIR` está definido; sin iOS 16
-/// (ImageRenderer) se omite.
+/// `ios-shots`). Solo si `PEPOMOTE_SHOTS_DIR` está definido. Se pinta con
+/// un UIHostingController en una ventana propia: al contrario que
+/// ImageRenderer, así salen también los ScrollView y las rejillas perezosas
+/// (Inicio, Conectar, Ajustes).
 @MainActor
 final class ScreenshotTests: XCTestCase {
     private static let portrait: [(String, CGSize)] = [
@@ -28,7 +30,6 @@ final class ScreenshotTests: XCTestCase {
         guard let d = ProcessInfo.processInfo.environment["PEPOMOTE_SHOTS_DIR"], !d.isEmpty else {
             throw XCTSkip("sin PEPOMOTE_SHOTS_DIR: no se guardan capturas")
         }
-        guard #available(iOS 16.0, *) else { throw XCTSkip("ImageRenderer necesita iOS 16") }
         let url = URL(fileURLWithPath: d, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         dir = url
@@ -43,7 +44,6 @@ final class ScreenshotTests: XCTestCase {
         .connected(ConnectedLink(pcName: "SALON", mode: mode, rttMs: 12, sensorHz: 100, slot: slot, role: role, player: slot + 1, supportsCemu: true, pad: pad))
     }
 
-    @available(iOS 16.0, *)
     private func shoot<V: View>(_ view: V, _ name: String, _ size: CGSize) throws {
         guard let dir else { return }
         let content = view
@@ -51,10 +51,29 @@ final class ScreenshotTests: XCTestCase {
             .environmentObject(L10n.shared)
             .frame(width: size.width, height: size.height)
             .background(Pepo.background)
-        let renderer = ImageRenderer(content: content)
-        renderer.scale = 2
-        renderer.proposedSize = ProposedViewSize(size)
-        guard let png = renderer.uiImage?.pngData() else {
+        let host = UIHostingController(rootView: content)
+        // Sin zonas seguras del dispositivo del simulador (un iPad no lleva la
+        // muesca del iPhone): la pantalla se pinta de borde a borde
+        if #available(iOS 16.4, *) { host.safeAreaRegions = [] }
+        let bounds = CGRect(origin: .zero, size: size)
+        let window = UIWindow(frame: bounds)
+        window.rootViewController = host
+        window.isHidden = false
+        host.view.frame = bounds
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        // una vuelta del run loop: las rejillas perezosas crean sus celdas
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            if !host.view.drawHierarchy(in: bounds, afterScreenUpdates: true) {
+                host.view.layer.render(in: ctx.cgContext)
+            }
+        }
+        window.isHidden = true
+        window.rootViewController = nil
+        guard let png = image.pngData() else {
             XCTFail("\(name): sin imagen")
             return
         }
@@ -63,7 +82,6 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testPantallasVerticales() throws {
-        guard #available(iOS 16.0, *) else { return }
         for (dev, size) in Self.portrait {
             LinkState.shared.publish(.disconnected)
             try shoot(HomeScreen(), "home-\(dev)", size)
@@ -80,7 +98,6 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testPantallasApaisadas() throws {
-        guard #available(iOS 16.0, *) else { return }
         for (dev, size) in Self.landscape {
             LinkState.shared.publish(connected(mode: LinkState.modePointer))
             try shoot(ControllerLandscapeScreen(showChips: true, onDisconnect: {}), "landscape-pointer-\(dev)", size)

@@ -184,7 +184,9 @@ private struct LeftColumn: View {
                 AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick(x, y) }
                 RoundButton(label: "L3", size: m.clickSize, bit: Btn.stickL, textSize: m.text(12))
             }
-            Spacer(minLength: 0)
+            // iPad: stick y cruceta juntos, abajo (donde llega el pulgar), en
+            // vez de repartidos por toda la altura
+            if m.k > 1 { Spacer().frame(height: m.gap * 2) } else { Spacer(minLength: 0) }
             PadCross(size: m.padSize, glyph: m.text(14))
         }
         .frame(width: m.sideW, height: m.bodyH)
@@ -206,7 +208,7 @@ private struct RightColumn: View {
                 RoundButton(label: "R3", size: m.clickSize, bit: Btn.stickR, textSize: m.text(12))
                 AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick2(x, y) }
             }
-            Spacer(minLength: 0)
+            if m.k > 1 { Spacer().frame(height: m.gap * 2) } else { Spacer(minLength: 0) }
             FaceButtons(size: m.padSize, btn: m.faceBtn, k: m.k)
         }
         .frame(width: m.sideW, height: m.bodyH)
@@ -233,7 +235,8 @@ private struct CenterColumn: View {
             } else {
                 TouchScreenView(width: m.touchW, height: m.touchH, client: client)
             }
-            Spacer(minLength: 0)
+            // iPad: la fila pegada a la pantalla (un bloque centrado)
+            if m.k > 1 { Spacer().frame(height: m.gap * 3) } else { Spacer(minLength: 0) }
             HStack(alignment: .center, spacing: rowGap) {
                 if !pro { ShoulderButton(label: tr("tv_pad"), bit: Btn.screen, width: pillW, height: pillH, textSize: m.text(12)) }
                 RoundButton(label: "−", size: roundBtn, bit: Btn.minus, textSize: m.text(19))
