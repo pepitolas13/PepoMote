@@ -449,7 +449,7 @@ private fun Root(activity: MainActivity) {
     // como diga el sistema. Al salir del mando, como estaba.
     val padIntent by LinkState.intent.collectAsState()
     val onController = activity.currentScreen == Screen.Controller
-    val wantLandscape = onController && Route.route(link, padIntent) == PadScreen.GamePad
+    val wantLandscape = onController && Route.forcesLandscape(link, padIntent)
     LaunchedEffect(wantLandscape, onController) {
         activity.requestedOrientation = when {
             wantLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE

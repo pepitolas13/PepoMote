@@ -30,6 +30,17 @@ final class RouteTests: XCTestCase {
         XCTAssertEqual(Route.sidewaysRotation(.connecting, displayRotation: Frame.rotation90), Frame.rotation90)
     }
 
+    func testApaisadoFijoConElGamePadYConElNunchukPropio() {
+        XCTAssertTrue(Route.forcesLandscape(connected(mode: "cemu"), .none))
+        XCTAssertTrue(Route.forcesLandscape(.connecting, .wiiU))
+        XCTAssertTrue(Route.forcesLandscape(connected(mode: "dolphin", ownNunchuk: true), .none))
+        XCTAssertFalse(Route.forcesLandscape(connected(mode: "dolphin"), .none))
+        XCTAssertFalse(Route.forcesLandscape(connected(mode: "pointer", ownNunchuk: true), .none))
+        XCTAssertFalse(Route.forcesLandscape(connected(mode: "dolphin", role: "nunchuk", ownNunchuk: true), .none))
+        XCTAssertFalse(Route.forcesLandscape(connected(mode: "cemu", pad: "wiimote", ownNunchuk: true), .none))
+        XCTAssertFalse(Route.forcesLandscape(.disconnected, .none))
+    }
+
     func testApaisadoConNunchukSoloEnDolphinConfirmado() {
         XCTAssertTrue(Route.wiiLandscapeNunchuk(connected(mode: "dolphin", ownNunchuk: true)))
         // cualquier jugador, no solo el 1

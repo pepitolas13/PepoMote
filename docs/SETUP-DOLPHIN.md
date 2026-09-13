@@ -37,14 +37,15 @@ que tu mando lleve su propio Nunchuk. La ventana del PC lo lista como «J1 · Ma
 el Wiimote emulado de Dolphin sale con `Extension = Nunchuk` leyendo del
 mismo pad.
 
-Para jugar, **gira el móvil**: en apaisado sale el mando a dos manos, con el
+Para jugar, **el mando pasa solo a apaisado** (como el GamePad; no hace falta
+girar nada): sale el mando a dos manos, con el
 Nunchuk a la izquierda (Z y C arriba, bajo el índice, y el stick para el
 pulgar) y el Mando de Wii a la derecha (B arriba, que es el gatillo; la
 cruceta y la A grande abajo; −, la diana de recentrado, +, 1, Home y 2 en el
 centro). El puntero sigue siendo el de siempre: se apunta con el móvil de
 lado, como con un GamePad, y agitar el móvil es agitar el mando (y el
-Nunchuk, que comparte sensores). En vertical vuelve el mando de una mano de
-siempre (el Nunchuk queda quieto).
+Nunchuk, que comparte sensores). Al apagar el Nunchuk (chip o Ajustes) el mando
+vuelve a seguir al móvil: vertical, o NES de lado.
 
 Para los juegos 2D con el mando de lado (New Super Mario Bros. Wii y
 parecidos) **apaga el Nunchuk** con el chip o en Ajustes: esos juegos cambian

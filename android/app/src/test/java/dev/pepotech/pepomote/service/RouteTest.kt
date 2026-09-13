@@ -42,6 +42,21 @@ class RouteTest {
     }
 
     @Test
+    fun apaisadoFijoConElGamePadYConElNunchukPropio() {
+        // GamePad (confirmado o pedido): apaisado fijo, como siempre
+        assertEquals(true, Route.forcesLandscape(connected(mode = "cemu"), PadIntent.None))
+        assertEquals(true, Route.forcesLandscape(UiLink.Connecting, PadIntent.WiiU))
+        // Dolphin con el Nunchuk propio confirmado: el mando se gira solo
+        assertEquals(true, Route.forcesLandscape(connected(mode = "dolphin", ownNunchuk = true), PadIntent.None))
+        // Dolphin sin Nunchuk, puntero, Nunchuk (rol), Wii U como Mando de Wii: sigue al móvil
+        assertEquals(false, Route.forcesLandscape(connected(mode = "dolphin"), PadIntent.None))
+        assertEquals(false, Route.forcesLandscape(connected(mode = "pointer", ownNunchuk = true), PadIntent.None))
+        assertEquals(false, Route.forcesLandscape(connected(mode = "dolphin", role = "nunchuk", ownNunchuk = true), PadIntent.None))
+        assertEquals(false, Route.forcesLandscape(connected(mode = "cemu", pad = "wiimote", ownNunchuk = true), PadIntent.None))
+        assertEquals(false, Route.forcesLandscape(UiLink.Disconnected, PadIntent.None))
+    }
+
+    @Test
     fun apaisadoConNunchukSoloEnDolphinConfirmado() {
         assertEquals(true, Route.wiiLandscapeNunchuk(connected(mode = "dolphin", ownNunchuk = true)))
         // cualquier jugador, no solo el 1

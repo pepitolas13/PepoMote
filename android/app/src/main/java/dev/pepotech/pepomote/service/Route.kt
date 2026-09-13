@@ -57,6 +57,14 @@ object Route {
             link.role == LinkState.ROLE_WIIMOTE && link.ownNunchuk
 
     /**
+     * Pantallas del mando que van fijas en apaisado (el sensor solo decide
+     * entre los dos apaisados): el GamePad de Wii U y el mando + Nunchuk de
+     * Dolphin. El mando se gira solo: no hace falta girar el móvil.
+     */
+    fun forcesLandscape(link: UiLink, intent: PadIntent): Boolean =
+        route(link, intent) == PadScreen.GamePad || wiiLandscapeNunchuk(link)
+
+    /**
      * Con el mando de lado (NES) el móvil ES un Mando de Wii girado: en
      * Dolphin y en Wii U como Mando de Wii el juego espera el mando con el
      * extremo IR a la izquierda y aplica él mismo el giro (cruceta y
