@@ -3126,6 +3126,7 @@ dependencies = [
  "egui",
  "evdev",
  "fast_image_resize",
+ "foreign-types",
  "jpeg-encoder",
  "libc",
  "mdns-sd",

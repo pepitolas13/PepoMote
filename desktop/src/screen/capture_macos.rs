@@ -12,6 +12,7 @@ use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_graphics::geometry::{CGPoint, CGRect, CGSize};
+use core_graphics::image::CGImage;
 use core_graphics::window::{
     self, kCGNullWindowID, kCGWindowImageBoundsIgnoreFraming, kCGWindowImageNominalResolution,
     kCGWindowListExcludeDesktopElements, kCGWindowListOptionAll, kCGWindowListOptionIncludingWindow, CGWindowID,
@@ -21,6 +22,12 @@ use std::time::{Duration, Instant};
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     fn CGImageGetBitmapInfo(image: core_graphics::sys::CGImageRef) -> u32;
+}
+
+/// CGBitmapInfo de la imagen (el crate no lo expone; el puntero sí, por `ForeignType`).
+fn bitmap_info(img: &CGImage) -> u32 {
+    use foreign_types::ForeignType;
+    unsafe { CGImageGetBitmapInfo(img.as_ptr()) }
 }
 
 const ALPHA_INFO_MASK: u32 = 0x1F;
@@ -153,7 +160,7 @@ impl Capturer {
         if img.bits_per_pixel() != 32 {
             return Err(format!("formato de imagen inesperado ({} bpp)", img.bits_per_pixel()));
         }
-        let info = unsafe { CGImageGetBitmapInfo(img.as_ptr()) };
+        let info = bitmap_info(&img);
         let stride = img.bytes_per_row();
         let data = img.data();
         let bytes = data.bytes();

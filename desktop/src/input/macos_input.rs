@@ -17,6 +17,11 @@ use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
 use objc2_foundation::NSPoint;
 use std::time::{Duration, Instant};
 
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGEventPost(tap: CGEventTapLocation, event: core_graphics::sys::CGEventRef);
+}
+
 /// Escritorio entero (todas las pantallas) en puntos, con el origen en la
 /// esquina superior izquierda de la principal: el sistema de coordenadas de
 /// los CGEvent.
@@ -74,6 +79,7 @@ impl Desktop {
 
 pub struct MacInjector {
     source: CGEventSource,
+    /// (ver `unsafe impl Send` abajo)
     wheel: WheelAcc,
     /// Rect 0..1 de la pantalla de apuntado dentro del escritorio (`set_screen`).
     target: [f32; 4],
@@ -84,6 +90,11 @@ pub struct MacInjector {
     desktop: Desktop,
     desktop_at: Instant,
 }
+
+// El inyector vive entero en el hilo de telemetría (el trait exige Send): la
+// fuente de eventos es un objeto CF sin estado compartido, y CGEventPost se
+// puede llamar desde cualquier hilo.
+unsafe impl Send for MacInjector {}
 
 impl MacInjector {
     pub fn new() -> Result<Self, InjectError> {
@@ -174,10 +185,9 @@ impl MacInjector {
             if cg.is_null() {
                 return;
             }
-            // El NSEvent es dueño de su CGEvent: retención propia antes de
-            // envolverlo (el drop la suelta)
-            core_foundation::base::CFRetain(cg as *const _);
-            CGEvent::from_ptr(cg).post(CGEventTapLocation::HID);
+            // El NSEvent es dueño de su CGEvent: se publica tal cual, sin
+            // envolverlo (nada que retener ni soltar)
+            CGEventPost(CGEventTapLocation::HID, cg);
         }
     }
 }

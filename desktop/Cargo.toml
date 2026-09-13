@@ -72,8 +72,11 @@ x11rb = { version = "0.13", features = ["composite"] }
 # (dispatch) para tocar AppKit desde otros hilos. Mismas versiones que winit
 # 0.30 (objc2 0.5 / app-kit 0.2): sin duplicar objc2.
 [target.'cfg(target_os = "macos")'.dependencies]
-core-graphics = "0.23"
+# highsierra: la rueda (CGEventCreateScrollWheelEvent) va tras esa feature
+core-graphics = { version = "0.23", features = ["highsierra"] }
 core-foundation = "0.9"
+# El trait ForeignType de core-graphics (as_ptr de CGImage)
+foreign-types = "0.5"
 objc2-app-kit = { version = "0.2", features = [
     "NSEvent",
     "NSGraphicsContext",
