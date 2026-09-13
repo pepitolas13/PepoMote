@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # PepoMote — instalación limpia en Linux.
 # Hace dos cosas: instala la regla udev de uinput (necesita sudo una vez)
-# y deja el AppImage en ~/.local/bin con su lanzador de escritorio.
+# y deja PepoMote (el AppImage, o el binario del tar.gz) en ~/.local/bin con
+# su lanzador de escritorio. Sin argumento: el binario `PepoMote` que va
+# junto a este script (tar.gz) o, si no, PepoMote-x86_64.AppImage.
 set -euo pipefail
 
-APPIMAGE="${1:-PepoMote-x86_64.AppImage}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APPIMAGE="${1:-}"
+if [[ -z "$APPIMAGE" ]]; then
+    if [[ -f "$SCRIPT_DIR/PepoMote" ]]; then
+        APPIMAGE="$SCRIPT_DIR/PepoMote"
+    else
+        APPIMAGE="PepoMote-x86_64.AppImage"
+    fi
+fi
 
 if [[ ! -f "$APPIMAGE" ]]; then
-    echo "Uso: $0 [ruta a PepoMote-x86_64.AppImage]"
+    echo "Uso: $0 [ruta a PepoMote-x86_64.AppImage o al binario PepoMote del tar.gz]"
     echo "No encuentro '$APPIMAGE'."
     exit 1
 fi
@@ -39,7 +48,7 @@ else
     echo "    sin ufw/firewalld activos — nada que abrir"
 fi
 
-echo "==> Instalando el AppImage en ~/.local/bin"
+echo "==> Instalando PepoMote en ~/.local/bin"
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications" "$HOME/.local/share/icons/hicolor/256x256/apps"
 install -m 0755 "$APPIMAGE" "$HOME/.local/bin/PepoMote"
 if [[ -f "$SCRIPT_DIR/pepomote.png" ]]; then
