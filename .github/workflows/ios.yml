@@ -5,7 +5,7 @@ name: ios
 # Sideloadly (ellos lo firman con el Apple ID de quien lo instala).
 on:
   push:
-    branches: [main, ios, "1.6"]
+    branches: [main, ios, next]
     paths: ["ios/**", "protocol/**", ".github/workflows/ios.yml"]
   pull_request:
     paths: ["ios/**", "protocol/**"]
