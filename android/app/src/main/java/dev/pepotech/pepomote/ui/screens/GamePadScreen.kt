@@ -87,7 +87,8 @@ import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.ShoulderButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
-import dev.pepotech.pepomote.ui.components.UiScale
+import dev.pepotech.pepomote.ui.components.padMetrics
+import dev.pepotech.pepomote.control.AppPrefs
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -98,7 +99,8 @@ import dev.pepotech.pepomote.R
  * izquierda; stick derecho y rombo A/B/X/Y a la derecha; la pantalla táctil
  * en el centro con −, Home, +, TV/Pad y Soplar debajo. Todo escalado al
  * tamaño real de la pantalla. Como Pro Controller (jugadores 2-4) no hay
- * táctil, ni Soplar, ni TV/Pad.
+ * táctil, ni Soplar, ni TV/Pad. Con el ajuste «GamePad sin pantalla» tampoco
+ * hay táctil (ni doble pantalla) y los botones crecen.
  *
  * Se enseña de forma optimista: conectando («Conectando…») o esperando el
  * eco de `mode cemu` («Activando Wii U…») los controles van atenuados e
@@ -163,33 +165,36 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             .navigationBarsPadding()
             .displayCutoutPadding()
     ) {
-        val gap = 6.dp
+        val context = LocalContext.current
+        // Ajuste «GamePad sin pantalla táctil»: se lee al entrar (Ajustes es otra pantalla)
+        val noScreenPref = remember { AppPrefs.gamePadNoScreen(context) }
+        // Medidas (PadMetrics, las mismas que en iOS): en una tablet los topes
+        // crecen con k y los pads llenan la columna; en cualquier móvil con
+        // pantalla, lo de siempre; sin pantalla, en fila o apilado según cuál
+        // dé pads más grandes
+        val m = padMetrics(maxWidth.value, maxHeight.value, noScreenPref, pro)
+        val gap = m.gap.dp
         val screenW = maxWidth
-        // En una tablet los topes (gatillos, pads, botones) crecen con k
-        // (UiScale por ancho); en cualquier móvil k = 1
-        val k = UiScale.factorWidth(maxWidth.value, UiScale.PHONE_LANDSCAPE_W, 1.6f)
-        val headerH = 38.dp
-        val selectorH = 36.dp
-        val bodyH = maxHeight - headerH - selectorH - gap * 3
-        val sideW = maxWidth * 0.29f
-        val shoulderH = (bodyH * 0.09f).coerceIn(26.dp, 40.dp * k)
-        val shoulderW = (sideW * 0.6f).coerceIn(90.dp, 150.dp * k)
-        // Stick y cruceta (o rombo) se reparten lo que queda bajo los gatillos
-        val padSize = ((bodyH - shoulderH * 2 - gap * 3) / 2f)
-            .coerceAtMost(sideW * 0.62f)
-            .coerceAtMost(200.dp * k)
-        val clickSize = (padSize * 0.30f).coerceIn(30.dp, 44.dp * k)
-        val faceBtn = padSize / 2.6f
-        val centerW = maxWidth - sideW * 2 - gap * 2
-        val bottomRowH = (bodyH * 0.16f).coerceIn(44.dp, 60.dp * k)
-        val touchW = minOf(centerW, (bodyH - bottomRowH - gap * 2) * (16f / 9f))
-        val touchH = touchW * (9f / 16f)
+        val k = m.k
+        val headerH = m.headerH.dp
+        val selectorH = m.selectorH.dp
+        val bodyH = m.bodyH.dp
+        val sideW = m.sideW.dp
+        val shoulderH = m.shoulderH.dp
+        val shoulderW = m.shoulderW.dp
+        val padSize = m.padSize.dp
+        val clickSize = m.clickSize.dp
+        val faceBtn = m.faceBtn.dp
+        val touchW = m.touchW.dp
+        val touchH = m.touchH.dp
+        val crossGlyph = m.crossGlyph.roundToInt()
 
-        // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene)
-        // y con el modo confirmado. Se pide como máximo la resolución nativa
-        // (854×480) o, si la zona táctil es más estrecha, su ancho real en
-        // píxeles físicos con el alto 16:9. Al salir (o cambiar) se retira.
-        val wantScreen = operative && connected?.pad == LinkState.PAD_GAMEPAD
+        // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene),
+        // con el modo confirmado y sin el ajuste «GamePad sin pantalla». Se
+        // pide como máximo la resolución nativa (854×480) o, si la zona táctil
+        // es más estrecha, su ancho real en píxeles físicos con el alto 16:9.
+        // Al salir (o cambiar) se retira.
+        val wantScreen = operative && connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
         val touchPx = with(LocalDensity.current) { touchW.roundToPx() }
         DisposableEffect(wantScreen, touchPx) {
             if (wantScreen) {
@@ -233,7 +238,9 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         .alpha(if (operative) 1f else 0.4f),
                     horizontalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    // Izquierda: L y ZL en la esquina, stick (+ L3), cruceta
+                    // Izquierda: L y ZL en la esquina, stick (+ L3), cruceta. En
+                    // fila: L3 junto a los gatillos y stick y cruceta uno al lado
+                    // del otro, abajo
                     Column(
                         modifier = Modifier
                             .width(sideW)
@@ -241,25 +248,53 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         horizontalAlignment = Alignment.Start,
                         verticalArrangement = Arrangement.Top
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-                            ShoulderButton("L", ButtonState.L, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
-                            ShoulderButton("ZL", ButtonState.ZL, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                        val shoulders: @Composable () -> Unit = {
+                            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                                ShoulderButton("L", ButtonState.L, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                                ShoulderButton("ZL", ButtonState.ZL, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                            }
                         }
-                        Spacer(Modifier.weight(1f))
-                        Row(
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.spacedBy(gap)
-                        ) {
-                            AnalogStick(padSize) { x, y -> ButtonState.setStick(x, y) }
+                        val click: @Composable () -> Unit = {
                             RoundButton("L3", clickSize, ButtonState.STICK_L, textSize = (12 * k).roundToInt())
                         }
-                        // Tablet: stick y cruceta juntos, abajo (donde llega el
-                        // pulgar), en vez de repartidos por toda la altura
-                        if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
-                        PadCross(sizeDp = padSize, glyphSp = (14 * k).roundToInt())
+                        val stick: @Composable () -> Unit = {
+                            AnalogStick(padSize) { x, y -> ButtonState.setStick(x, y) }
+                        }
+                        if (m.row) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                shoulders()
+                                click()
+                            }
+                            Spacer(Modifier.weight(1f))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                stick()
+                                PadCross(sizeDp = padSize, glyphSp = crossGlyph)
+                            }
+                        } else {
+                            shoulders()
+                            Spacer(Modifier.weight(1f))
+                            Row(
+                                verticalAlignment = Alignment.Bottom,
+                                horizontalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                stick()
+                                click()
+                            }
+                            // Tablet: stick y cruceta juntos, abajo (donde llega el
+                            // pulgar), en vez de repartidos por toda la altura
+                            if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
+                            PadCross(sizeDp = padSize, glyphSp = crossGlyph)
+                        }
                     }
 
-                    // Centro: pantalla táctil y la fila − · Home · + (con TV/Pad y Soplar)
+                    // Centro: pantalla táctil (si la hay) y la fila − · Home · +
+                    // (con TV/Pad y Soplar); en fila, una columna vertical con lo mismo
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -267,41 +302,60 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Top
                     ) {
+                        val rowGap = m.rowGap.dp
+                        val pillW = m.pillW.dp
+                        val pillH = m.pillH.dp
+                        val roundBtn = m.roundBtn.dp
+                        val minus: @Composable () -> Unit = { RoundButton("−", roundBtn, ButtonState.MINUS, textSize = (19 * k).roundToInt()) }
+                        val home: @Composable () -> Unit = { RoundButton(stringResource(R.string.home_btn), roundBtn, ButtonState.HOME, textSize = (12 * k).roundToInt()) }
+                        val plus: @Composable () -> Unit = { RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt()) }
+                        val tv: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.tv_pad), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt()) }
+                        val blow: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, pillH, textSize = (12 * k).roundToInt()) }
                         Spacer(Modifier.weight(1f))
-                        if (pro) {
-                            Text(
-                                stringResource(R.string.pro_controller),
-                                style = MaterialTheme.typography.bodyMedium,
-                                textAlign = TextAlign.Center
-                            )
+                        if (m.row) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                minus()
+                                home()
+                                plus()
+                                if (!pro) {
+                                    tv()
+                                    blow()
+                                }
+                            }
                         } else {
-                            TouchScreen(touchW, touchH, screen)
-                        }
-                        // La fila entera tiene que caber en el centro (móviles
-                        // estrechos): pastillas y círculos se encogen juntos
-                        val rowGap = if (centerW < 300.dp) 6.dp else 10.dp
-                        val pillW = if (pro) 0.dp else (centerW * 0.22f).coerceIn(44.dp, 66.dp * k)
-                        val pillH = 30.dp * k
-                        val pills = if (pro) 0 else 2
-                        val roundBtn = ((centerW - rowGap * (2 + pills) - pillW * pills) / 3f)
-                            .coerceAtMost(bottomRowH * 0.85f)
-                            .coerceAtLeast(28.dp)
-                        // Tablet: la fila pegada a la pantalla (un bloque centrado)
-                        if (k > 1f) Spacer(Modifier.height(gap * 3)) else Spacer(Modifier.weight(1f))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(rowGap)
-                        ) {
-                            if (!pro) ShoulderButton(stringResource(R.string.tv_pad), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt())
-                            RoundButton("−", roundBtn, ButtonState.MINUS, textSize = (19 * k).roundToInt())
-                            RoundButton(stringResource(R.string.home_btn), roundBtn, ButtonState.HOME, textSize = (12 * k).roundToInt())
-                            RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt())
-                            if (!pro) ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, pillH, textSize = (12 * k).roundToInt())
+                            if (pro) {
+                                Text(
+                                    stringResource(R.string.pro_controller),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    textAlign = TextAlign.Center
+                                )
+                                // Tablet: la fila pegada al texto (un bloque centrado)
+                                if (k > 1f) Spacer(Modifier.height(gap * 3)) else Spacer(Modifier.weight(1f))
+                            } else if (!m.noScreen) {
+                                TouchScreen(touchW, touchH, screen)
+                                // Tablet: la fila pegada a la pantalla (un bloque centrado)
+                                if (k > 1f) Spacer(Modifier.height(gap * 3)) else Spacer(Modifier.weight(1f))
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(rowGap)
+                            ) {
+                                if (!pro) tv()
+                                minus()
+                                home()
+                                plus()
+                                if (!pro) blow()
+                            }
                         }
                         Spacer(Modifier.weight(1f))
                     }
 
-                    // Derecha: R y ZR en la esquina, (R3 +) stick, rombo A/B/X/Y
+                    // Derecha: R y ZR en la esquina, (R3 +) stick, rombo A/B/X/Y.
+                    // En fila: R3 junto a los gatillos y rombo y stick uno al lado
+                    // del otro, abajo
                     Column(
                         modifier = Modifier
                             .width(sideW)
@@ -309,23 +363,50 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.Top
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(gap)
-                        ) {
-                            ShoulderButton("R", ButtonState.R, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
-                            ShoulderButton("ZR", ButtonState.ZR, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                        val shoulders: @Composable () -> Unit = {
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                ShoulderButton("R", ButtonState.R, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                                ShoulderButton("ZR", ButtonState.ZR, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                            }
                         }
-                        Spacer(Modifier.weight(1f))
-                        Row(
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.spacedBy(gap)
-                        ) {
+                        val click: @Composable () -> Unit = {
                             RoundButton("R3", clickSize, ButtonState.STICK_R, textSize = (12 * k).roundToInt())
+                        }
+                        val stick: @Composable () -> Unit = {
                             AnalogStick(padSize) { x, y -> ButtonState.setStick2(x, y) }
                         }
-                        if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
-                        FaceButtons(padSize, faceBtn, k)
+                        if (m.row) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                click()
+                                shoulders()
+                            }
+                            Spacer(Modifier.weight(1f))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                FaceButtons(padSize, faceBtn)
+                                stick()
+                            }
+                        } else {
+                            shoulders()
+                            Spacer(Modifier.weight(1f))
+                            Row(
+                                verticalAlignment = Alignment.Bottom,
+                                horizontalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                click()
+                                stick()
+                            }
+                            if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
+                            FaceButtons(padSize, faceBtn)
+                        }
                     }
                 }
 
@@ -465,15 +546,19 @@ private fun Header(
     }
 }
 
-/** Rombo: X arriba, Y izquierda, A derecha (azul, destacado), B abajo. */
+/**
+ * Rombo: X arriba, Y izquierda, A derecha (azul, destacado), B abajo. El
+ * texto crece con el botón (18 y 20 sp en los 44 dp de un móvil).
+ */
 @Composable
-private fun FaceButtons(size: Dp, btn: Dp, k: Float = 1f) {
+private fun FaceButtons(size: Dp, btn: Dp) {
+    val text = (btn.value * 18f / 44f).roundToInt()
     Box(Modifier.size(size)) {
         Box(Modifier.align(BiasAlignment(0f, -1f))) {
-            RoundButton("X", btn, ButtonState.X, textSize = (18 * k).roundToInt())
+            RoundButton("X", btn, ButtonState.X, textSize = text)
         }
         Box(Modifier.align(BiasAlignment(-1f, 0f))) {
-            RoundButton("Y", btn, ButtonState.Y, textSize = (18 * k).roundToInt())
+            RoundButton("Y", btn, ButtonState.Y, textSize = text)
         }
         Box(Modifier.align(BiasAlignment(1f, 0f))) {
             RoundButton(
@@ -481,12 +566,12 @@ private fun FaceButtons(size: Dp, btn: Dp, k: Float = 1f) {
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
                 textColor = PepoColors.OnAccent,
-                textSize = (20 * k).roundToInt(),
+                textSize = (btn.value * 20f / 44f).roundToInt(),
                 pop = true
             )
         }
         Box(Modifier.align(BiasAlignment(0f, 1f))) {
-            RoundButton("B", btn, ButtonState.B, textSize = (18 * k).roundToInt())
+            RoundButton("B", btn, ButtonState.B, textSize = text)
         }
     }
 }

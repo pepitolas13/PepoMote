@@ -15,6 +15,16 @@ object AppPrefs {
             .edit().putBoolean("volDownB", value).apply()
     }
 
+    /** GamePad de Wii U sin pantalla táctil (ni doble pantalla): los botones crecen (Ajustes). */
+    fun gamePadNoScreen(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("gamePadNoScreen", false)
+
+    fun setGamePadNoScreen(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("gamePadNoScreen", value).apply()
+    }
+
     /** Mostrar el selector Puntero/Dolphin en el mando al entrar por Conectar. */
     fun showDolphinChips(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

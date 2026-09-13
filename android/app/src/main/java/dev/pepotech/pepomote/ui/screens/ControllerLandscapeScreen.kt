@@ -72,7 +72,7 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             .navigationBarsPadding()
     ) {
         // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
-        val s = UiScale.factor(maxWidth.value, maxHeight.value, UiScale.PHONE_LANDSCAPE_W, UiScale.PHONE_LANDSCAPE_H, 1.6f)
+        val s = UiScale.landscape(maxWidth.value, maxHeight.value)
         // Cabecera compacta (+ selector de mando dentro de Wii U). Si no cabe
         // todo, PriorityRow deja fuera primero el nombre del PC y luego el
         // estado; los chips y «Teclado» solo en último extremo; «Salir» nunca

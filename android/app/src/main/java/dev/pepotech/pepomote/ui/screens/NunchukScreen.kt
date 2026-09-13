@@ -69,7 +69,7 @@ fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
         // De lado hay poca altura: todo más pequeño, mismo orden. En una
         // tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
         val compact = maxHeight < 520.dp
-        val grow = if (compact) 1f else UiScale.factor(maxWidth.value, maxHeight.value, UiScale.PHONE_PORTRAIT_W, UiScale.PHONE_PORTRAIT_H, 1.5f)
+        val grow = if (compact) 1f else UiScale.remote(maxWidth.value, maxHeight.value)
         val stickSize = if (compact) maxHeight * 0.40f else minOf(maxWidth * 0.66f, 264.dp * grow)
         val cHeight = if (compact) 48.dp else 64.dp * grow
         val zHeight = if (compact) 64.dp else 96.dp * grow

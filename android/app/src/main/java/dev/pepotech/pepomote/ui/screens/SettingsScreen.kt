@@ -2,6 +2,8 @@ package dev.pepotech.pepomote.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +39,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var volB by remember { mutableStateOf(AppPrefs.volDownIsB(context)) }
     var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
     var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
+    var noScreen by remember { mutableStateOf(AppPrefs.gamePadNoScreen(context)) }
     var updateCheck by remember { mutableStateOf(AppPrefs.updateCheckEnabled(context)) }
     val versionName = remember {
         try {
@@ -52,6 +55,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             .background(PepoColors.Background)
             .statusBarsPadding()
             .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Spacer(Modifier.height(24.dp))
         Text(stringResource(R.string.channel_settings), style = MaterialTheme.typography.headlineMedium)
@@ -149,6 +153,38 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             }
         }
 
+        // GamePad de Wii U sin pantalla táctil: botones más grandes
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.noscreen_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.noscreen_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = noScreen,
+                    onCheckedChange = {
+                        noScreen = it
+                        AppPrefs.setGamePadNoScreen(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
         // Aviso de versión nueva: la única consulta fuera de la red local
         Spacer(Modifier.height(14.dp))
         Card(
@@ -201,7 +237,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium
         )
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(24.dp))
         Text(
             stringResource(R.string.about, versionName),
             style = MaterialTheme.typography.bodyMedium,

@@ -101,7 +101,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
         // la columna del mando se limita a 520·grow y las tiras la abrazan (en
         // vez de irse a los bordes de la pantalla); los huecos entre grupos se
         // vuelven flexibles para repartir la holgura vertical
-        val grow = UiScale.factor(maxWidth.value, maxHeight.value, UiScale.PHONE_PORTRAIT_W, UiScale.PHONE_PORTRAIT_H, 1.5f)
+        val grow = UiScale.remote(maxWidth.value, maxHeight.value)
         val colW = minOf(maxWidth, 520.dp * grow)
         val gutter = (maxWidth - colW) / 2
         val flexible = grow > 1f
