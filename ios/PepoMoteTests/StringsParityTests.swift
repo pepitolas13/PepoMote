@@ -50,7 +50,8 @@ final class StringsParityTests: XCTestCase {
                     "screen_unavailable_detail", "screen_reconnecting", "kb_title", "kb_help", "kb_placeholder", "kb_delete",
                     "kb_write", "kb_close", "kb_accept", "warn_needs_13", "warn_player_1", "lost_connection", "re_pair_reason",
                     "pc_not_responding", "qr_not_pepomote", "error_prefix", "your_pc", "camera_denied", "local_network_hint",
-                    "ios_note", "scan_prompt", "cancel"] {
+                    "ios_note", "scan_prompt", "cancel", "about", "update_title", "update_sub", "update_available",
+                    "update_download", "update_dismiss", "noscreen_title", "noscreen_sub"] {
             XCTAssertNotNil(es[key], "falta \(key)")
         }
     }

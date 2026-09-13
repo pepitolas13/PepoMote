@@ -121,6 +121,12 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("cfg.theme_dark", "Oscuro", "Dark"),
     ("cfg.autostart", "Arrancar con el sistema", "Start with the system"),
     ("cfg.autostart_err", "Autoarranque: {0}", "Autostart: {0}"),
+    ("cfg.update_check", "Avisar de versiones nuevas", "Notify about new versions"),
+    (
+        "cfg.update_check_help",
+        "Consulta GitHub una vez al día (solo la página de la última versión) y no envía nada tuyo.",
+        "Checks GitHub once a day (only the latest-release page) and sends nothing of yours.",
+    ),
     // --- canal de control
     ("err.bad_code", "Código incorrecto o caducado: mira el nuevo bajo el QR del PC", "Wrong or expired code: check the new one under the PC's QR"),
     ("err.bad_token", "Vuelve a escanear el QR", "Scan the QR again"),
@@ -151,6 +157,11 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ),
     // --- inyección
     ("inj.error", "Inyección de entrada: {0}", "Input injection: {0}"),
+    (
+        "inj.mac_ax_denied",
+        "sin permiso de Accesibilidad (mira la tarjeta de permisos de la ventana)",
+        "no Accessibility permission (see the permissions card in the window)",
+    ),
     (
         "inj.wayland_lost",
         "Inyección de entrada: conexión Wayland perdida, reconectando…",
@@ -184,6 +195,11 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("screen.no_x11", "Sin sesión X11: en Wayland lanza Cemu con GDK_BACKEND=x11 para la doble pantalla", "No X11 session: on Wayland launch Cemu with GDK_BACKEND=x11 for the second screen"),
     ("screen.x11_connect", "No puedo conectar con X11: {0}", "Cannot connect to X11: {0}"),
     ("screen.not_visible", "La ventana GamePad View de Cemu no está visible", "Cemu's GamePad View window is not visible"),
+    (
+        "screen.mac_permission",
+        "Para la doble pantalla, PepoMote necesita «Grabación de pantalla» (Ajustes del Sistema → Privacidad y seguridad) y reiniciarse después de concederlo",
+        "For the second screen PepoMote needs “Screen Recording” (System Settings → Privacy & Security) and a restart after granting it",
+    ),
     ("screen.x11_depth", "Profundidad X11 no soportada: {0}", "Unsupported X11 depth: {0}"),
     // --- Dolphin
     ("dolphin.configured", "Dolphin configurado:", "Dolphin set up:"),
@@ -244,7 +260,40 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("auto.dolphin_closed", "Dolphin cerrado: modo puntero", "Dolphin closed: pointer mode"),
     ("auto.cemu_closed_dolphin", "Cemu cerrado: modo Dolphin (Dolphin sigue abierto)", "Cemu closed: Dolphin mode (Dolphin is still open)"),
     ("auto.cemu_closed", "Cemu cerrado: modo puntero", "Cemu closed: pointer mode"),
-    // --- bandeja (Windows)
+    // --- permisos (macOS)
+    (
+        "mac.ax_needed",
+        "PepoMote necesita el permiso de Accesibilidad para mover el cursor y pulsar teclas.",
+        "PepoMote needs the Accessibility permission to move the cursor and press keys.",
+    ),
+    ("mac.ax_open", "Abrir Ajustes → Accesibilidad", "Open Settings → Accessibility"),
+    (
+        "mac.ax_hint",
+        "Marca PepoMote en la lista y vuelve: se activa solo, sin reiniciar.",
+        "Tick PepoMote in the list and come back: it activates by itself, no restart.",
+    ),
+    (
+        "mac.screen_needed",
+        "Para la doble pantalla de Cemu hace falta «Grabación de pantalla».",
+        "Cemu's second screen needs “Screen Recording”.",
+    ),
+    ("mac.screen_open", "Abrir Ajustes → Grabación de pantalla", "Open Settings → Screen Recording"),
+    ("mac.restart", "Reiniciar PepoMote", "Restart PepoMote"),
+    (
+        "mac.screen_hint",
+        "macOS solo aplica este permiso al reiniciar la app; en macOS 15 o más puede recordarte cada mes que PepoMote captura la ventana de Cemu.",
+        "macOS applies this permission only after restarting the app; on macOS 15 or later it may remind you monthly that PepoMote captures Cemu's window.",
+    ),
+    (
+        "mac.local_network",
+        "Si macOS pregunta por «Red local», acepta: es como el móvil encuentra al PC.",
+        "If macOS asks about “Local Network”, allow it: that is how the phone finds the PC.",
+    ),
+    // --- aviso de versión nueva
+    ("upd.available", "PepoMote {0} disponible", "PepoMote {0} available"),
+    ("upd.download", "Descargar en GitHub", "Download on GitHub"),
+    ("upd.dismiss", "Ocultar", "Hide"),
+    // --- bandeja (Windows) / barra de menús (macOS)
     ("tray.waiting", "PepoMote · esperando al móvil", "PepoMote · waiting for the phone"),
     ("tray.line", "PepoMote · {0} {1} · {2}", "PepoMote · {0} {1} · {2}"),
     ("tray.phone_one", "móvil", "phone"),
@@ -254,6 +303,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("tray.mode_cemu", "Wii U", "Wii U"),
     ("tray.show", "Mostrar PepoMote", "Show PepoMote"),
     ("tray.quit", "Salir", "Quit"),
+    ("tray.update", "Nueva versión {0}…", "New version {0}…"),
 ];
 
 /// Fuentes con textos, para el test de completitud de `i18n`.
@@ -270,6 +320,7 @@ pub const SOURCES: &[&str] = &[
     include_str!("screen/capture_none.rs"),
     include_str!("screen/capture_windows.rs"),
     include_str!("screen/capture_x11.rs"),
+    include_str!("screen/capture_macos.rs"),
     include_str!("dolphin.rs"),
     include_str!("cemu.rs"),
     include_str!("auto_mode.rs"),

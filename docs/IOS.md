@@ -42,8 +42,9 @@ altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/do
 
 ## Antes de nada (una sola vez)
 
-1. Instala el **receptor** en el PC como siempre (`PepoMote.exe` en Windows o
-   el AppImage en Linux): en su ventana verás el QR.
+1. Instala el **receptor** en el PC como siempre (`PepoMote.exe` en Windows,
+   el AppImage o el tar.gz en Linux, o el DMG en un Mac con chip Apple —beta,
+   ver [MACOS.md](MACOS.md)—): en su ventana verás el QR.
 2. En el iPhone/iPad, con iOS 16 o superior, activa el **modo Desarrollador**:
    Ajustes → Privacidad y seguridad → Modo Desarrollador → activar (pide
    reiniciar). Sin él, iOS no abre las apps instaladas fuera de la App Store.
@@ -160,6 +161,10 @@ hasta iOS 16.6.1 / 17.0: no sirve en dispositivos actuales.
 - No hay accesos directos del icono ni tile de ajustes rápidos.
 - El GamePad de Wii U se bloquea en apaisado mientras está abierto; el iPad
   usa toda la pantalla (la app no admite Split View).
+- En Ajustes, «**GamePad sin pantalla táctil**» quita la pantalla del GamePad
+  (y la doble pantalla) para que los botones sean más grandes: en el iPhone
+  stick y cruceta pasan a ir uno al lado del otro; en el iPad se quedan
+  apilados pero en columnas más anchas. El Pro Controller ya va así.
 
 ## Si algo no va
 

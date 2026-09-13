@@ -2,7 +2,7 @@ name: mobile-linux
 
 on:
   push:
-    branches: [main]
+    branches: [main, "1.6"]
     paths:
       - "mobile-linux/**"
       - "pmp/**"

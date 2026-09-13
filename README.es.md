@@ -15,13 +15,16 @@
 | Emisor | iPhone / iPad, iOS 15+ (hasta iPadOS 26) | `PepoMote.ipa` — se instala con SideStore (mi recomendación), AltStore o Sideloadly, ver [docs/IOS.md](docs/IOS.md) |
 | Emisor | Linux móvil: Mobian, postmarketOS… (aarch64) | `pepomote-mobile_*_arm64.deb` (Mobian: tocar e Instalar) · `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receptor | Windows 10/11 | `PepoMote.exe` — un solo archivo portable |
-| Receptor | Linux, X11 y Wayland | `PepoMote-x86_64.AppImage` |
+| Receptor | Linux, X11 y Wayland | `PepoMote-x86_64.AppImage` · `PepoMote-linux-x86_64.tar.gz` (binario + lanzador + `install.sh`) |
+| Receptor | macOS 13+ con chip Apple (M1 o posterior) — **beta** | `PepoMote-macOS.dmg`, ver [docs/MACOS.md](docs/MACOS.md) |
 
 ## Instalar
 
 **PC (Windows)** — descarga `PepoMote.exe` y ábrelo. Sin instalador. SmartScreen puede avisar porque el binario no está firmado: *Más información → Ejecutar de todas formas* (verifica `SHA256SUMS.txt` si dudas). Cuando el firewall pregunte, permite en *redes privadas*.
 
-**PC (Linux)** — descarga el AppImage, dale permiso de ejecución y ábrelo. En Sway, Hyprland, MangoWC, river, labwc, niri y demás compositores wlroots no hace falta nada más: el cursor es un puntero virtual de Wayland. En GNOME, KDE o X11 el cursor va por uinput: si eso (o un firewall descartando en silencio el tráfico del móvil — muchas distros traen uno activado) necesita configuración, PepoMote lo detecta y te pide la contraseña de administrador **una sola vez** en el diálogo del sistema, y lo arregla él solo; si tu sesión no tiene diálogo de contraseña, la ventana enseña el comando de una línea para pegar en un terminal. ¿Prefieres instalación con lanzador? `packaging/linux/install.sh PepoMote-x86_64.AppImage` hace la misma configuración de golpe. ¿Algo raro? `./PepoMote-x86_64.AppImage --diag` imprime un informe para pegar en un issue.
+**PC (Linux)** — descarga el AppImage, dale permiso de ejecución y ábrelo (o el `tar.gz`: descomprímelo y ejecuta `./install.sh`, que instala el binario, el lanzador y la regla de uinput). En Sway, Hyprland, MangoWC, river, labwc, niri y demás compositores wlroots no hace falta nada más: el cursor es un puntero virtual de Wayland. En GNOME, KDE o X11 el cursor va por uinput: si eso (o un firewall descartando en silencio el tráfico del móvil — muchas distros traen uno activado) necesita configuración, PepoMote lo detecta y te pide la contraseña de administrador **una sola vez** en el diálogo del sistema, y lo arregla él solo; si tu sesión no tiene diálogo de contraseña, la ventana enseña el comando de una línea para pegar en un terminal. ¿Prefieres instalación con lanzador? `packaging/linux/install.sh PepoMote-x86_64.AppImage` hace la misma configuración de golpe. ¿Algo raro? `./PepoMote-x86_64.AppImage --diag` imprime un informe para pegar en un issue.
+
+**PC (macOS, beta)** — descarga `PepoMote-macOS.dmg`, ábrelo y arrastra PepoMote a Aplicaciones. No está notarizado por Apple (eso exige una cuenta de desarrollador de pago), así que la primera apertura de cada versión lleva un paso más: en macOS 15/26, Ajustes del Sistema → Privacidad y seguridad → **Abrir igualmente** (en 13/14: Control-clic → Abrir). Después permite **Red local** y, desde la tarjeta que enseña la ventana, **Accesibilidad** (mueve el cursor; sin reiniciar) y, solo para la doble pantalla de Cemu, **Grabación de pantalla**. Solo Mac con chip Apple y macOS 13 o superior. Lo compila y prueba la CI en un Mac, pero aún no lo he podido probar en uno de verdad: detalles, permisos y problemas en [docs/MACOS.md](docs/MACOS.md).
 
 **Móvil** — instala `PepoMote.apk` (permite "orígenes desconocidos"). Ábrela, toca **Conectar** y escanea el QR del PC. Emparejado para siempre.
 
@@ -51,13 +54,17 @@ Mira [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — toca **Wii U** en la app, sost
 - **Atrás/adelante y volumen que repite**: en modo puntero la cruceta ← / → va atrás / adelante en el navegador (↑ / ↓ siguen siendo flechas) y mantener − / + o el 🔉 / 🔊 de multimedia sigue bajando o subiendo el volumen
 - **iPhone y iPad** (1.5): el mismo emisor en Swift, con la doble pantalla del GamePad de Wii U y todo lo demás; se instala con SideStore o AltStore desde una fuente de un toque, y lo compila y prueba la CI en macOS
 - **Varios PCs y reconexión automática**: la app guarda todos tus PCs y, si se cae la Wi-Fi o reinicias el receptor, vuelve sola sin perder la pantalla ni el modo
-- **Tema oscuro e inglés**: siguen al sistema; ES/EN arriba a la derecha en las tres apps
+- **macOS** (1.5.4, beta): el mismo receptor en Mac con chip Apple — cursor y teclas por Accesibilidad, doble pantalla de Cemu, icono en la barra de menús, arranque con el sistema, `.app` firmado en un DMG
+- **Aviso de versión nueva** (1.5.4): todas las apps avisan cuando sale una versión, con el enlace a la release. La comprobación es una consulta a GitHub una vez al día (solo la página de la última versión; no se envía nada tuyo) y se apaga en Ajustes. PepoMote no habla con nada más fuera de tu red.
+- **iPad y tablets** (1.5.4): el mando, el pad NES, el Nunchuk y el GamePad de Wii U crecen hasta llenar la pantalla (misma regla en iOS y Android; los móviles quedan exactamente como estaban). Y en Ajustes está **GamePad sin pantalla táctil**: quita la pantalla del GamePad de Wii U (y la doble pantalla) para que sticks, cruceta y A/B/X/Y sean mucho más grandes; en un móvil pasan a ir uno al lado del otro, como en un Pro Controller
+- **Tema oscuro e inglés**: siguen al sistema; ES/EN arriba a la derecha en todas las apps
 - **Campanita por jugador, bandeja que cuenta el estado, latido con el RTT** en la ventana del receptor; en Android icono temático, accesos directos y tile de Ajustes rápidos
 
 ## Compilar desde el código
 
-- Receptor: `cd desktop && cargo build --release`
+- Receptor: `cd desktop && cargo build --release` (macOS: después `bash packaging/macos/bundle.sh` para el `.app` y el DMG)
 - Android: `cd android && ./gradlew assembleDebug`
+- iOS (Mac): `brew install xcodegen && cd ios && xcodegen generate && xcodebuild -scheme PepoMote build` (la CI compila el IPA sin firmar en runners de macOS)
 - Spec del protocolo: [protocol/PROTOCOL.md](protocol/PROTOCOL.md) · notas DSU: [protocol/DSU.md](protocol/DSU.md)
 
 ## Legal

@@ -86,6 +86,10 @@ y tocarla es tocar la pantalla del GamePad. Funciona así:
    propio hueco dice por qué («Cemu no está abierto», «Abre la vista del
    GamePad en Cemu…»).
 
+Si prefieres botones más grandes a la pantalla, en Ajustes de la app está
+«**GamePad sin pantalla táctil**»: quita la pantalla del GamePad (y la doble
+pantalla) y sticks, cruceta y A/B/X/Y crecen para llenar el hueco.
+
 Linux: la captura es de X11, que vale también para XWayland. Con Cemu nativo
 en Wayland no hay ventana X que capturar: lanza Cemu con `GDK_BACKEND=x11`.
 

@@ -50,6 +50,16 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("home.theme_light", "Claro", "Light"),
     ("home.theme_dark", "Oscuro", "Dark"),
     ("home.version", "v{0} · pv1 · Linux móvil", "v{0} · pv1 · Linux phone"),
+    // --- aviso de versión nueva
+    ("upd.available", "PepoMote {0} disponible", "PepoMote {0} available"),
+    ("upd.download", "Descargar en GitHub", "Download on GitHub"),
+    ("upd.dismiss", "Ocultar", "Hide"),
+    ("upd.toggle", "Avisar de versiones nuevas", "Notify about new versions"),
+    (
+        "upd.toggle_help",
+        "Consulta GitHub una vez al día (solo la página de la última versión) y no envía nada tuyo.",
+        "Checks GitHub once a day (only the latest-release page) and sends nothing of yours.",
+    ),
     // --- emparejar
     ("pair.title", "Conectar", "Connect"),
     ("pair.title_again", "Vuelve a emparejar", "Pair again"),
@@ -107,6 +117,12 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("gp.veil_wiimote", "Ahora eres Mando de Wii", "You are now a Wii Remote"),
     ("gp.veil_switching", "Cambiando el PC a Wii U…", "Switching the PC to Wii U…"),
     ("gp.touch", "Pantalla táctil", "Touch screen"),
+    ("gp.no_screen", "GamePad sin pantalla táctil", "GamePad without touch screen"),
+    (
+        "gp.no_screen_help",
+        "Quita la pantalla del GamePad de Wii U (y la doble pantalla) para que los botones sean más grandes",
+        "Removes the Wii U GamePad's screen (and the second screen) so the buttons get bigger",
+    ),
     // --- Nunchuk
     ("nk.line", "Nunchuk · Jugador {0} · {1}", "Nunchuk · Player {0} · {1}"),
     ("nk.old_pc", "El PC te ve como mando: actualiza el receptor", "The PC sees you as a controller: update the receiver"),

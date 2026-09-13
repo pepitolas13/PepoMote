@@ -23,9 +23,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.R
+import dev.pepotech.pepomote.control.UpdateCheck
 import dev.pepotech.pepomote.ui.components.ChannelCard
 import dev.pepotech.pepomote.ui.components.ChannelGlyph
 import dev.pepotech.pepomote.ui.components.PulsingDot
+import dev.pepotech.pepomote.ui.components.UpdateCard
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,7 +51,11 @@ fun HomeScreen(
     onDolphin: () -> Unit,
     onWiiU: () -> Unit,
     onNunchuk: () -> Unit,
-    onNewPairing: () -> Unit
+    onNewPairing: () -> Unit,
+    /** Versión nueva publicada que anunciar (null = ninguna). */
+    update: UpdateCheck.Version? = null,
+    onOpenUpdate: (UpdateCheck.Version) -> Unit = {},
+    onDismissUpdate: (UpdateCheck.Version) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -97,6 +103,11 @@ fun HomeScreen(
             Text(status.text, style = MaterialTheme.typography.bodyMedium)
         }
         Spacer(Modifier.height(24.dp))
+        // Aviso de versión nueva (enlace a la release de GitHub)
+        update?.let { v ->
+            UpdateCard(version = v, onOpen = { onOpenUpdate(v) }, onDismiss = { onDismissUpdate(v) })
+            Spacer(Modifier.height(16.dp))
+        }
         // Tres filas de pares: Conectar | Mando, Dolphin | Wii U, Nunchuk | Ajustes
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),

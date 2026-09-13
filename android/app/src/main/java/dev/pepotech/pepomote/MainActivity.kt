@@ -1,9 +1,11 @@
 package dev.pepotech.pepomote
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.net.Uri
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
@@ -32,12 +34,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.lifecycleScope
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.UiSounds
+import dev.pepotech.pepomote.control.UpdateCheck
+import dev.pepotech.pepomote.service.UpdateNotice
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.service.LinkFailure
@@ -221,6 +228,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         UiSounds.init(this)
+        // Aviso de versión nueva: lo ya guardado se enseña al momento; la
+        // consulta a GitHub (si toca: activada y ≥ 24 h) espera a que el
+        // inicio esté en pantalla
+        UpdateNotice.refresh(this)
+        lifecycleScope.launch {
+            delay(UpdateCheck.FIRST_DELAY_MS)
+            UpdateNotice.checkIfDue(this@MainActivity)
+        }
         if (!AppPrefs.onboarded(this)) currentScreen = Screen.Onboarding
         setContent {
             PepoMoteTheme {
@@ -343,6 +358,7 @@ class MainActivity : ComponentActivity() {
 private fun Root(activity: MainActivity) {
     val context = LocalContext.current
     val link by LinkState.flow.collectAsState()
+    val update by UpdateNotice.pending.collectAsState()
 
     // Error de conexión como EFECTO (no en plena composición, que lo
     // repetía), esté la pantalla que esté: al escáner si el PC ya no
@@ -425,7 +441,17 @@ private fun Root(activity: MainActivity) {
                 onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
                 onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
                 onNunchuk = { activity.openNunchuk() },
-                onNewPairing = { activity.currentScreen = Screen.Settings }
+                onNewPairing = { activity.currentScreen = Screen.Settings },
+                update = update,
+                onOpenUpdate = { v ->
+                    val url = UpdateCheck.releaseUrl(v)
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(context, url, Toast.LENGTH_LONG).show()
+                    }
+                },
+                onDismissUpdate = { v -> UpdateNotice.dismiss(context, v) }
             )
         }
 

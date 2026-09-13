@@ -1,17 +1,26 @@
 //! Inyección de entrada en el SO. Windows: SendInput. Linux: puntero y
 //! teclado virtuales de Wayland (compositores wlroots: Sway, Hyprland,
 //! MangoWC, river, labwc, niri…) y, donde el compositor no los ofrece
-//! (GNOME, KDE, X11), uinput.
+//! (GNOME, KDE, X11), uinput. macOS: CGEvent, con el permiso de
+//! Accesibilidad.
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 use crate::tr;
 
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+mod common;
 #[cfg(target_os = "linux")]
 mod linux_common;
 #[cfg(target_os = "linux")]
 mod linux_uinput;
 #[cfg(target_os = "linux")]
 pub mod linux_wayland;
+// Tablas puras del inyector de macOS: se prueban en cualquier SO
+#[cfg(any(target_os = "macos", test))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod macos_keys;
+#[cfg(target_os = "macos")]
+mod macos_input;
 #[cfg(windows)]
 mod windows_input;
 
@@ -127,7 +136,8 @@ pub trait Injector: Send {
 
 /// Fallo al crear el inyector. Los flags solo se activan cuando se intentó
 /// uinput y /dev/uinput no se pudo abrir: encienden el aviso y la
-/// reparación de la ventana (nunca con el backend Wayland).
+/// reparación de la ventana (nunca con el backend Wayland). En macOS,
+/// `ax_denied` enciende la tarjeta de permisos.
 #[derive(Debug, Clone)]
 pub struct InjectError {
     pub msg: String,
@@ -135,6 +145,8 @@ pub struct InjectError {
     pub uinput_denied: bool,
     /// No existe /dev/uinput (módulo uinput sin cargar).
     pub uinput_missing: bool,
+    /// macOS: falta el permiso de Accesibilidad.
+    pub ax_denied: bool,
 }
 
 impl std::fmt::Display for InjectError {
@@ -211,6 +223,7 @@ pub fn new_injector() -> Result<Box<dyn Injector>, InjectError> {
                 msg,
                 uinput_denied: false,
                 uinput_missing: false,
+                ax_denied: false,
             })
     };
     let uinput = || linux_uinput::UinputInjector::new().map(|i| Box::new(i) as Box<dyn Injector>);
@@ -229,12 +242,28 @@ pub fn new_injector() -> Result<Box<dyn Injector>, InjectError> {
     }
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+/// macOS: sin Accesibilidad no se intenta (y no se pide aquí: `--diag` y los
+/// tests no abren diálogos; lo pide telemetría una vez).
+#[cfg(target_os = "macos")]
+pub fn new_injector() -> Result<Box<dyn Injector>, InjectError> {
+    if !crate::macos::ax_trusted() {
+        return Err(InjectError {
+            msg: tr!("inj.mac_ax_denied").to_owned(),
+            uinput_denied: false,
+            uinput_missing: false,
+            ax_denied: true,
+        });
+    }
+    macos_input::MacInjector::new().map(|i| Box::new(i) as Box<dyn Injector>)
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn new_injector() -> Result<Box<dyn Injector>, InjectError> {
     Err(InjectError {
         msg: "plataforma sin soporte de inyección".into(),
         uinput_denied: false,
         uinput_missing: false,
+        ax_denied: false,
     })
 }
 
@@ -274,7 +303,21 @@ pub fn diag_lines() -> Vec<String> {
     vec!["SendInput (Windows): disponible".to_owned()]
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+pub fn diag_lines() -> Vec<String> {
+    let si_no = |b: bool| if b { "sí" } else { "no" };
+    let mut out = vec![
+        format!("Accesibilidad (mover el cursor y pulsar teclas): {}", si_no(crate::macos::ax_trusted())),
+        format!("Grabación de pantalla (doble pantalla de Cemu): {}", si_no(crate::macos::screen_capture_allowed())),
+    ];
+    match new_injector() {
+        Ok(i) => out.push(format!("Inyector: {} (creado y liberado sin problema)", i.name())),
+        Err(e) => out.push(format!("Inyector: ninguno — {}", e.msg)),
+    }
+    out
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn diag_lines() -> Vec<String> {
     vec!["plataforma sin soporte de inyección".to_owned()]
 }

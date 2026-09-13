@@ -148,8 +148,8 @@ pub struct Config {
     /// Evita re-abrir el diálogo de contraseña en cada arranque si se canceló.
     #[serde(default)]
     pub fix_attempted: bool,
-    /// Linux multi-monitor: nombre de la pantalla de apuntado ("" = automática:
-    /// la primaria, o la mayor).
+    /// Linux y macOS con varios monitores: nombre de la pantalla de apuntado
+    /// ("" = todas: el escritorio entero).
     #[serde(default)]
     pub screen: String,
     /// Tema de la ventana: como el sistema (Windows lo sabe; en Linux, claro),
@@ -159,6 +159,18 @@ pub struct Config {
     /// Idioma de la interfaz ("es" / "en"); None = el del sistema.
     #[serde(default)]
     pub lang: Option<String>,
+    /// Aviso de versión nueva: consultar GitHub una vez al día (Ajustes).
+    #[serde(default = "default_true")]
+    pub update_check: bool,
+    /// Versión anunciada que el usuario ocultó: no se vuelve a enseñar (una
+    /// posterior, sí).
+    #[serde(default)]
+    pub update_dismissed: Option<crate::update::Version>,
+    /// Última consulta (segundos UNIX) y última versión publicada que se vio.
+    #[serde(default)]
+    pub update_last_check: u64,
+    #[serde(default)]
+    pub update_latest: Option<crate::update::Version>,
 }
 
 impl Default for Config {
@@ -175,6 +187,10 @@ impl Default for Config {
             screen: String::new(),
             theme: crate::theme::ThemePref::System,
             lang: None,
+            update_check: true,
+            update_dismissed: None,
+            update_last_check: 0,
+            update_latest: None,
         }
     }
 }
@@ -408,6 +424,9 @@ pub struct Shared {
     pub uinput_denied: bool,
     /// Linux: no existe /dev/uinput (módulo uinput sin cargar).
     pub uinput_missing: bool,
+    /// macOS: falta el permiso de Accesibilidad (la tarjeta de permisos lo
+    /// explica; telemetría reintenta cada pocos segundos).
+    pub ax_denied: bool,
     /// Hay un diálogo de reparación (pkexec) abierto ahora mismo.
     pub fixing: bool,
     /// Linux: por qué falló la última reparación (None = nunca, bien o cancelada).
@@ -446,6 +465,7 @@ impl Shared {
             injector: None,
             uinput_denied: false,
             uinput_missing: false,
+            ax_denied: false,
             fixing: false,
             fix_failed: None,
             screens: Vec::new(),
@@ -468,6 +488,23 @@ pub fn new_shared() -> SharedState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_sin_campos_de_update_carga_con_defaults() {
+        // settings.json de una versión anterior: el aviso queda activado y sin historial
+        let c: Config = serde_json::from_str(r#"{"sens_deg":40.0,"abs_mode":true}"#).unwrap();
+        assert!(c.update_check);
+        assert_eq!(c.update_dismissed, None);
+        assert_eq!(c.update_last_check, 0);
+        assert_eq!(c.update_latest, None);
+        // y lo guardado se recupera tal cual
+        let mut c2 = c.clone();
+        c2.update_latest = Some(crate::update::Version([1, 6, 0]));
+        c2.update_dismissed = Some(crate::update::Version([1, 6, 0]));
+        c2.update_last_check = 1_700_000_000;
+        let back: Config = serde_json::from_str(&serde_json::to_string(&c2).unwrap()).unwrap();
+        assert!(back == c2, "ida y vuelta por JSON");
+    }
 
     fn player(role: Role) -> Option<PlayerInfo> {
         Some(PlayerInfo {

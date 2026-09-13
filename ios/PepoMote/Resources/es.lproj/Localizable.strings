@@ -60,11 +60,18 @@
 "sounds_sub" = "Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)";
 "chips_title" = "Modo Dolphin en el mando";
 "chips_sub" = "Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector";
+"noscreen_title" = "GamePad sin pantalla táctil";
+"noscreen_sub" = "Quita la pantalla del GamePad de Wii U (y la doble pantalla) para que los botones sean más grandes";
 "link_other_pc" = "Vincular con otro PC";
 "link_other_pc_sub" = "Escanear un QR nuevo";
 "sens_note" = "La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.";
 "ios_note" = "En iPhone y iPad el mando funciona con la app en pantalla (en segundo plano iOS corta la conexión) y los botones físicos de volumen no se pueden usar como A/B.";
-"about" = "PepoMote · GPL-3.0 · hecho por PepoTech";
+"about" = "PepoMote %1$@ · GPL-3.0 · hecho por PepoTech";
+"update_title" = "Avisar de versiones nuevas";
+"update_sub" = "Consulta GitHub una vez al día (solo la página de la última versión) y no envía nada tuyo";
+"update_available" = "PepoMote %1$@ disponible";
+"update_download" = "Descargar en GitHub";
+"update_dismiss" = "Ocultar";
 
 /* primer arranque */
 "onboarding_sub" = "Tu móvil, mando de tu PC en 3 pasos";

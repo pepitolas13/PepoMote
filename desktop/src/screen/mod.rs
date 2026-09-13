@@ -15,7 +15,10 @@ mod capture;
 #[cfg(target_os = "linux")]
 #[path = "capture_x11.rs"]
 mod capture;
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+#[path = "capture_macos.rs"]
+mod capture;
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 #[path = "capture_none.rs"]
 mod capture;
 
@@ -98,6 +101,9 @@ fn window_background() -> [u8; 3] {
         let c = unsafe { GetSysColor(COLOR_BTNFACE) }; // 0x00BBGGRR
         return [((c >> 16) & 255) as u8, ((c >> 8) & 255) as u8, (c & 255) as u8];
     }
+    // macOS: windowBackgroundColor del tema claro (#ECECEC)
+    #[cfg(target_os = "macos")]
+    return [236, 236, 236];
     #[allow(unreachable_code)]
     [240, 240, 240]
 }

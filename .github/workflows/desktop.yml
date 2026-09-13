@@ -2,10 +2,10 @@ name: desktop
 
 on:
   push:
-    branches: [main]
-    paths: ["desktop/**", "pmp/**", "protocol/**", ".github/workflows/desktop.yml"]
+    branches: [main, "1.6"]
+    paths: ["desktop/**", "pmp/**", "protocol/**", "packaging/linux/**", "packaging/macos/**", ".github/workflows/desktop.yml"]
   pull_request:
-    paths: ["desktop/**", "pmp/**", "protocol/**"]
+    paths: ["desktop/**", "pmp/**", "protocol/**", "packaging/linux/**", "packaging/macos/**"]
   workflow_call:
 
 jobs:
@@ -28,6 +28,44 @@ jobs:
           name: PepoMote-windows
           path: desktop/target/release/PepoMote.exe
 
+  # Apple Silicon nativo (los runners macos-14/15 son arm64): compila, pasa los
+  # tests, empaqueta el .app firmado y el DMG (packaging/macos/bundle.sh) y
+  # arranca el binario del .app con --diag. Sin dispositivo: la CI es el único Mac.
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test pmp (códec compartido)
+        working-directory: pmp
+        run: cargo test --release
+      - name: Build (release)
+        working-directory: desktop
+        run: cargo build --release
+      - name: Test
+        working-directory: desktop
+        run: cargo test --release
+      - name: Identidad de firma (secret) o ad hoc
+        env:
+          MACOS_SIGN_P12_B64: ${{ secrets.MACOS_SIGN_P12_B64 }}
+          MACOS_SIGN_P12_PASSWORD: ${{ secrets.MACOS_SIGN_P12_PASSWORD }}
+        run: bash packaging/macos/import-identity.sh
+      - name: .app + DMG
+        run: bash packaging/macos/bundle.sh
+      - name: Smoke --diag (desde el .app)
+        run: |
+          out="$(dist/PepoMote.app/Contents/MacOS/PepoMote --diag)"
+          echo "$out" | head -30
+          echo "$out" | grep -q "diagnóstico"
+          echo "$out" | grep -q "^macOS: bundle: .*PepoMote.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PepoMote-macos
+          path: dist/PepoMote-macOS.dmg
+
   linux:
     runs-on: ubuntu-22.04
     steps:
@@ -46,10 +84,14 @@ jobs:
         run: cargo test --release
       - name: AppImage
         run: bash packaging/linux/appimage.sh
+      - name: Tarball (binario + lanzador + install.sh)
+        run: bash packaging/linux/tarball.sh
       - uses: actions/upload-artifact@v4
         with:
           name: PepoMote-linux
-          path: dist/PepoMote-x86_64.AppImage
+          path: |
+            dist/PepoMote-x86_64.AppImage
+            dist/PepoMote-linux-x86_64.tar.gz
       # Compositor wlroots de verdad, sin GPU: el receptor tiene que elegir el
       # puntero virtual de Wayland y mover el cursor, hacer clic, ir atrás y
       # adelante con la cruceta, girar la rueda y teclear en wev

@@ -16,6 +16,10 @@ android/.kotlin/
 *.jks
 *.keystore
 keystore.properties
+*.p12
+*.key
+*.crt
+*.pem
 
 # SO
 Thumbs.db

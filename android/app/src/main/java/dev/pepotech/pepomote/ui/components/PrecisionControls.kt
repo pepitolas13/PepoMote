@@ -45,7 +45,7 @@ import dev.pepotech.pepomote.R
  * salga. Solo tiene efecto en modo puntero.
  */
 @Composable
-fun PrecisionStrip(modifier: Modifier) {
+fun PrecisionStrip(modifier: Modifier, glyph: Dp = 16.dp) {
     val view = LocalView.current
     var active by remember { mutableStateOf(false) }
     Box(
@@ -58,7 +58,7 @@ fun PrecisionStrip(modifier: Modifier) {
             .precisionHold(view) { active = it },
         contentAlignment = Alignment.Center
     ) {
-        CrosshairGlyph(PepoColors.TextDim, 16.dp)
+        CrosshairGlyph(PepoColors.TextDim, glyph)
     }
 }
 

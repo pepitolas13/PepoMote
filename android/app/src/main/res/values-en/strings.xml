@@ -79,10 +79,17 @@
     <string name="sounds_sub">Button beeps and the connect/disconnect melody (vibration stays)</string>
     <string name="chips_title">Dolphin mode on the controller</string>
     <string name="chips_sub">Shows the Pointer/Dolphin selector when entering via Connect. Turn it off for a pointer-only controller, no selector</string>
+    <string name="noscreen_title">GamePad without touch screen</string>
+    <string name="noscreen_sub">Removes the Wii U GamePad\'s screen (and the second screen) so the buttons get bigger</string>
     <string name="link_other_pc">Pair with another PC</string>
     <string name="link_other_pc_sub">Scan a new QR</string>
     <string name="sens_note">The pointer sensitivity is set in PepoMote\'s window on the PC.</string>
-    <string name="about">PepoMote · GPL-3.0 · made by PepoTech</string>
+    <string name="update_title">Notify about new versions</string>
+    <string name="update_sub">Checks GitHub once a day (only the latest-release page) and sends nothing of yours</string>
+    <string name="update_available">PepoMote %1$s available</string>
+    <string name="update_download">Download on GitHub</string>
+    <string name="update_dismiss">Hide</string>
+    <string name="about">PepoMote %1$s · GPL-3.0 · made by PepoTech</string>
 
     <!-- first run -->
     <string name="onboarding_sub">Your phone, your PC\'s controller in 3 steps</string>

@@ -29,7 +29,7 @@ pub fn logo_rgba(size: u32) -> Vec<u8> {
 
 /// El logo con un punto verde abajo a la derecha (bandeja: hay móviles
 /// conectados). Un aro transparente de 1 px lo separa del logo.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 pub fn logo_rgba_badge(size: u32) -> Vec<u8> {
     let mut out = logo_rgba(size);
     let s = size as f32;

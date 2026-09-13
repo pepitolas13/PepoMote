@@ -93,6 +93,17 @@ pub fn report() -> String {
     for l in crate::input::diag_lines() {
         out.push(format!("  {l}"));
     }
+    #[cfg(target_os = "macos")]
+    {
+        let si_no = |b: bool| if b { "sí" } else { "no" };
+        out.push(format!(
+            "macOS: bundle: {} · Accesibilidad: {} · Grabación de pantalla: {} · autoarranque: {}",
+            crate::macos::bundle_path().map(|p| p.display().to_string()).unwrap_or_else(|| "(sin .app)".to_owned()),
+            si_no(crate::macos::ax_trusted()),
+            si_no(crate::macos::screen_capture_allowed()),
+            si_no(crate::autostart::is_enabled())
+        ));
+    }
     out.push(format!("Audio: {}", audio_probe()));
     #[cfg(target_os = "linux")]
     out.push(format!(
@@ -134,7 +145,12 @@ fn os_details() -> String {
     format!(" · {pretty} · kernel {kernel}")
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn os_details() -> String {
+    format!(" · macOS {}", crate::macos::os_version())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn os_details() -> String {
     String::new()
 }

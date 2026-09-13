@@ -383,7 +383,9 @@ final class ScreenClientTests: XCTestCase {
     func testElKeepaliveMantieneVivaLaConexionYElSilencioLaMata() throws {
         let rx = try FakeReceiver()
         defer { rx.stop() }
-        let c = client(rx, data: 300, retryDrop: 100)
+        // Keepalives cada 150 ms con un timeout de datos de 600 ms: margen de
+        // sobra para un runner de CI cargado (con 300 ms saltaba a veces)
+        let c = client(rx, data: 600, retryDrop: 100)
         c.start()
         _ = rx.nextLine()
         rx.rawMode = true

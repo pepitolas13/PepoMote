@@ -29,14 +29,14 @@ import dev.pepotech.pepomote.ui.theme.PepoColors
  * receptor hace ↑/↓ = flechas del PC y ←/→ = atrás/adelante del navegador.
  */
 @Composable
-fun PadCross(sizeDp: Dp) {
+fun PadCross(sizeDp: Dp, glyphSp: Int = 14) {
     val arm = sizeDp / 3
 
     Box(modifier = Modifier.size(sizeDp), contentAlignment = Alignment.Center) {
-        PadArm("▲", arm, ButtonState.DPAD_UP, BiasAlignment(0f, -1f))
-        PadArm("▼", arm, ButtonState.DPAD_DOWN, BiasAlignment(0f, 1f))
-        PadArm("◀", arm, ButtonState.DPAD_LEFT, BiasAlignment(-1f, 0f))
-        PadArm("▶", arm, ButtonState.DPAD_RIGHT, BiasAlignment(1f, 0f))
+        PadArm("▲", arm, glyphSp, ButtonState.DPAD_UP, BiasAlignment(0f, -1f))
+        PadArm("▼", arm, glyphSp, ButtonState.DPAD_DOWN, BiasAlignment(0f, 1f))
+        PadArm("◀", arm, glyphSp, ButtonState.DPAD_LEFT, BiasAlignment(-1f, 0f))
+        PadArm("▶", arm, glyphSp, ButtonState.DPAD_RIGHT, BiasAlignment(1f, 0f))
         // Centro
         Box(
             Modifier
@@ -50,6 +50,7 @@ fun PadCross(sizeDp: Dp) {
 private fun androidx.compose.foundation.layout.BoxScope.PadArm(
     label: String,
     arm: Dp,
+    glyphSp: Int,
     bit: Int,
     alignment: BiasAlignment
 ) {
@@ -76,6 +77,6 @@ private fun androidx.compose.foundation.layout.BoxScope.PadArm(
             },
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = PepoColors.TextDim, fontSize = 14.sp)
+        Text(label, color = PepoColors.TextDim, fontSize = glyphSp.sp)
     }
 }

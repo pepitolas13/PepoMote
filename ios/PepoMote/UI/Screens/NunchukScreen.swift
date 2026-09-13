@@ -11,11 +11,13 @@ struct NunchukScreen: View {
 
     var body: some View {
         GeometryReader { geo in
-            // De lado hay poca altura: todo más pequeño, mismo orden
+            // De lado hay poca altura: todo más pequeño, mismo orden. En un
+            // iPad todo crece a la vez (UiScale; en cualquier iPhone, 1)
             let compact = geo.size.height < 520
-            let stickSize = compact ? geo.size.height * 0.40 : min(geo.size.width * 0.66, 264)
-            let cHeight: CGFloat = compact ? 48 : 64
-            let zHeight: CGFloat = compact ? 64 : 96
+            let grow: CGFloat = compact ? 1 : UiScale.factor(geo.size, base: UiScale.remoteBase, fixed: UiScale.remoteFixed)
+            let stickSize = compact ? geo.size.height * 0.40 : min(geo.size.width * 0.66, 264 * grow)
+            let cHeight: CGFloat = compact ? 48 : 64 * grow
+            let zHeight: CGFloat = compact ? 64 : 96 * grow
             ZStack {
                 VStack(spacing: 0) {
                     Spacer().frame(height: 10)
@@ -31,7 +33,7 @@ struct NunchukScreen: View {
                     Spacer()
                     // C: banda ancha encima del stick, se acierta con el pulgar sin mirar
                     TriggerZone(bit: Btn.c, label: "C", height: cHeight, background: Pepo.cardBorder, pressedColor: Pepo.glow, textColor: Pepo.text)
-                    Spacer().frame(height: compact ? 10 : 18)
+                    Spacer().frame(height: compact ? 10 : 18 * grow)
                     AnalogStick(size: stickSize) { x, y in ButtonState.shared.setStick(x, y) }
                     Spacer()
                     // Z: banda inferior, como el gatillo B del mando
@@ -39,7 +41,7 @@ struct NunchukScreen: View {
                     Spacer().frame(height: 12)
                 }
                 .padding(.horizontal, 24)
-                .frame(maxWidth: 520)
+                .frame(maxWidth: 520 * grow)
 
                 VStack {
                     NoticeBanner().padding(.top, 64).padding(.horizontal, 24)

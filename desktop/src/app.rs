@@ -23,13 +23,33 @@ pub struct PepoMoteApp {
     /// Linux: cuándo se copió el comando manual (para el «Copiado» efímero).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     copied_at: Option<Instant>,
+    /// macOS: permiso de Accesibilidad (sondeado una vez por segundo).
+    #[cfg(target_os = "macos")]
+    ax_ok: bool,
+    #[cfg(target_os = "macos")]
+    ax_checked: Instant,
 }
 
 impl PepoMoteApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, shared: SharedState, pairing: PairingInfo) -> Self {
+    /// `start_hidden` (--minimized): en macOS la ventana existe pero oculta y
+    /// la app queda sin icono en el Dock hasta «Mostrar» (Windows ni siquiera
+    /// llega aquí hasta entonces).
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+    pub fn new(cc: &eframe::CreationContext<'_>, shared: SharedState, pairing: PairingInfo, start_hidden: bool) -> Self {
         theme::apply(&cc.egui_ctx);
         let pref = shared.lock().unwrap().config.theme;
         theme::set_preference(&cc.egui_ctx, pref);
+        // macOS: el icono de la barra de menús solo puede nacer en el hilo
+        // principal con el bucle de eventos ya en marcha: aquí
+        #[cfg(target_os = "macos")]
+        {
+            if std::env::var_os("PEPOMOTE_NO_TRAY").is_none() {
+                crate::tray::start_main_thread(shared.clone());
+            }
+            if start_hidden {
+                crate::macos::set_accessory(true);
+            }
+        }
         let (qr_modules, qr_width) = build_qr(&pairing.pair_url());
         Self {
             shared,
@@ -44,6 +64,10 @@ impl PepoMoteApp {
             #[cfg(not(target_os = "linux"))]
             pkexec_ok: false,
             copied_at: None,
+            #[cfg(target_os = "macos")]
+            ax_ok: crate::macos::ax_trusted(),
+            #[cfg(target_os = "macos")]
+            ax_checked: Instant::now(),
         }
     }
 
@@ -85,6 +109,8 @@ struct Snapshot {
     injector: Option<&'static str>,
     uinput_denied: bool,
     uinput_missing: bool,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    ax_denied: bool,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fixing: bool,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -100,6 +126,14 @@ impl eframe::App for PepoMoteApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+        // En macOS, el botón rojo = minimizar (el Dock la restaura; "Salir"
+        // está en la barra de menús y en ⌘Q). Nunca ocultarla: oculta no se
+        // repinta y no habría forma de volver desde el Dock.
+        #[cfg(target_os = "macos")]
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
 
         self.refresh_ip();
@@ -124,6 +158,7 @@ impl eframe::App for PepoMoteApp {
                 injector: s.injector,
                 uinput_denied: s.uinput_denied,
                 uinput_missing: s.uinput_missing,
+                ax_denied: s.ax_denied,
                 fixing: s.fixing,
                 fix_failed: s.fix_failed.clone(),
             }
@@ -184,9 +219,12 @@ impl eframe::App for PepoMoteApp {
                             }
 
                             ui.add_space(10.0);
+                            self.ui_update(ui);
                             self.ui_settings(ui);
 
                             self.ui_repair(ui, &snap);
+                            #[cfg(target_os = "macos")]
+                            self.ui_mac_permissions(ui, &snap);
 
                             if let Some(err) = &snap.error {
                                 ui.add_space(10.0);
@@ -216,6 +254,90 @@ impl eframe::App for PepoMoteApp {
 }
 
 impl PepoMoteApp {
+    /// Aviso de versión nueva: una tarjeta con el enlace a la release de
+    /// GitHub si la última publicada es mayor que esta y no se ocultó.
+    fn ui_update(&mut self, ui: &mut egui::Ui) {
+        let (latest, dismissed) = {
+            let s = self.shared.lock().unwrap();
+            (s.config.update_latest, s.config.update_dismissed)
+        };
+        let Some(v) = crate::update::pending(&crate::update::Version::current(), latest, dismissed) else {
+            return;
+        };
+        egui::Frame::none()
+            .fill(theme::card())
+            .stroke(Stroke::new(1.5_f32, theme::blue()))
+            .rounding(theme::RADIUS)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(RichText::new(tr!("upd.available", v)).size(14.0).strong().color(theme::text()));
+                    ui.add_space(4.0);
+                    ui.hyperlink_to(
+                        RichText::new(tr!("upd.download")).size(13.0).color(theme::blue()),
+                        crate::update::release_url(&v),
+                    );
+                    ui.add_space(4.0);
+                    if ui.button(RichText::new(tr!("upd.dismiss")).size(12.0)).clicked() {
+                        let mut s = self.shared.lock().unwrap();
+                        s.config.update_dismissed = Some(v);
+                        s.config.save();
+                    }
+                });
+            });
+        ui.add_space(10.0);
+    }
+
+    /// macOS: los permisos que hacen falta (Accesibilidad para mover el
+    /// cursor y pulsar teclas; Grabación de pantalla solo para la doble
+    /// pantalla de Cemu), con el botón que abre el panel de Ajustes. La
+    /// Accesibilidad se activa sola al concederla (telemetría reintenta); la
+    /// Grabación de pantalla exige reiniciar la app.
+    #[cfg(target_os = "macos")]
+    fn ui_mac_permissions(&mut self, ui: &mut egui::Ui, snap: &Snapshot) {
+        if self.ax_checked.elapsed() >= Duration::from_secs(1) {
+            self.ax_checked = Instant::now();
+            self.ax_ok = crate::macos::ax_trusted();
+        }
+        let need_ax = !self.ax_ok || snap.ax_denied;
+        let need_screen = snap.mode == Mode::Cemu && !crate::macos::screen_capture_allowed();
+        if !need_ax && !need_screen {
+            return;
+        }
+        ui.add_space(10.0);
+        egui::Frame::none()
+            .fill(theme::card())
+            .stroke(Stroke::new(1.5_f32, theme::warn()))
+            .rounding(theme::RADIUS)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                if need_ax {
+                    ui.label(RichText::new(tr!("mac.ax_needed")).size(13.0).color(theme::warn()));
+                    if ui.button(RichText::new(tr!("mac.ax_open")).size(13.0)).clicked() {
+                        crate::macos::open_settings_pane("Privacy_Accessibility");
+                    }
+                    ui.label(RichText::new(tr!("mac.ax_hint")).size(11.0).color(theme::text_dim()));
+                }
+                if need_screen {
+                    if need_ax {
+                        ui.add_space(8.0);
+                    }
+                    ui.label(RichText::new(tr!("mac.screen_needed")).size(13.0).color(theme::warn()));
+                    ui.horizontal(|ui| {
+                        if ui.button(RichText::new(tr!("mac.screen_open")).size(13.0)).clicked() {
+                            crate::macos::open_settings_pane("Privacy_ScreenCapture");
+                        }
+                        if ui.button(RichText::new(tr!("mac.restart")).size(13.0)).clicked() {
+                            crate::macos::relaunch();
+                        }
+                    });
+                    ui.label(RichText::new(tr!("mac.screen_hint")).size(11.0).color(theme::text_dim()));
+                }
+                ui.add_space(4.0);
+                ui.label(RichText::new(tr!("mac.local_network")).size(11.0).color(theme::text_dim()));
+            });
+    }
+
     /// Linux: aviso de firewall/uinput con reparación de un clic (pkexec) y,
     /// si no hay diálogo de contraseña (sin pkexec, o sesión sin agente de
     /// polkit), el comando manual listo para copiar. Con el backend Wayland
@@ -455,8 +577,8 @@ impl PepoMoteApp {
                     .size(11.0)
                     .color(theme::text_dim()),
             );
-            // Linux con varios monitores: a cuál apunta el móvil
-            #[cfg(target_os = "linux")]
+            // Linux y macOS con varios monitores: a cuál apunta el móvil
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             {
                 let screens = self.shared.lock().unwrap().screens.clone();
                 if screens.len() > 1 {
@@ -510,6 +632,14 @@ impl PepoMoteApp {
                     self.autostart = before_auto;
                 }
             }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.checkbox(
+                    &mut config.update_check,
+                    RichText::new(tr!("cfg.update_check")).size(13.0),
+                );
+                info_icon(ui, tr!("cfg.update_check_help"));
+            });
         });
 
         if config != before {

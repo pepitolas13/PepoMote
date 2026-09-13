@@ -11,13 +11,17 @@ mod dsu;
 mod firewall;
 #[cfg(any(target_os = "linux", test))]
 mod fixes;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod screens;
 mod i18n;
 mod icon;
 mod input;
 mod log;
+#[cfg(target_os = "macos")]
+mod macos;
 mod net;
+#[cfg(target_os = "macos")]
+mod procs;
 mod pairing;
 mod pointer;
 mod ports;
@@ -27,8 +31,9 @@ mod sound;
 mod state;
 mod strings;
 mod theme;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod tray;
+mod update;
 
 fn main() -> eframe::Result {
     // Lo primero de todo: que ningún pánico se pierda ni cierre el receptor
@@ -84,9 +89,26 @@ fn main() -> eframe::Result {
     screen::start_minder(shared.clone());
     auto_mode::start_watcher(shared.clone());
 
+    // Aviso de versión nueva: un HEAD diario a GitHub (se apaga en Ajustes);
+    // el resultado se guarda en settings.json y la ventana lo enseña
+    {
+        let (s1, s2, s3) = (shared.clone(), shared.clone(), shared.clone());
+        update::spawn(
+            move || s1.lock().unwrap().config.update_check,
+            move || s2.lock().unwrap().config.update_last_check,
+            move |now, latest| {
+                let mut s = s3.lock().unwrap();
+                s.config.update_last_check = now;
+                s.config.update_latest = Some(latest);
+                s.config.save();
+            },
+            |m| log_line!("{m}"),
+        );
+    }
+
     #[cfg(target_os = "linux")]
     firewall::watch(shared.clone(), pairing.port);
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     screens::watch(shared.clone());
 
     #[cfg(windows)]
@@ -98,11 +120,14 @@ fn main() -> eframe::Result {
     // y bandeja. Ni flash, ni botón en la barra: imposible re-mostrar lo que
     // no existe. El primer "Mostrar" (bandeja o relanzar el exe) desbloquea
     // la creación y a partir de ahí es una ventana normal.
-    // En Linux se ignora (no todos los escritorios tienen bandeja).
-    #[cfg(windows)]
+    // macOS: la ventana se crea oculta y la app sin icono en el Dock (el
+    // icono de la barra de menús necesita el bucle de eventos); «Mostrar» la
+    // enseña. En Linux se ignora (no todos los escritorios tienen bandeja).
+    #[cfg(any(windows, target_os = "macos"))]
     let start_hidden = std::env::args().any(|a| a == "--minimized");
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     let start_hidden = false;
+    #[cfg(windows)]
     if start_hidden {
         let (show_tx, show_rx) = std::sync::mpsc::channel::<()>();
         singleton::set_show_signal(show_tx);
@@ -110,6 +135,7 @@ fn main() -> eframe::Result {
         // bandeja ya están vivos: el mando funciona sin UI.
         let _ = show_rx.recv();
     }
+    let hidden_window = cfg!(target_os = "macos") && start_hidden;
 
     // PEPOMOTE_NO_UI (Linux, solo pruebas): red e inyección sin ventana. El
     // e2e de CI corre en un sway sin cabeza donde no hay GPU ni EGL, y la
@@ -130,6 +156,7 @@ fn main() -> eframe::Result {
             // app_id (Wayland) / WM_CLASS (X11): así el compositor casa la
             // ventana con PepoMote.desktop (icono, agrupación, reglas)
             .with_app_id("PepoMote")
+            .with_visible(!hidden_window)
             .with_icon(egui::IconData {
                 rgba: icon::logo_rgba(64),
                 width: 64,
@@ -142,7 +169,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             singleton::set_ctx(cc.egui_ctx.clone());
-            Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing)))
+            Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing, start_hidden)))
         }),
     )
 }
