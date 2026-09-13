@@ -71,10 +71,25 @@ class FrameTest {
     }
 
     @Test
+    fun giroDe180EsDosGirosALaIzquierda() {
+        val v = floatArrayOf(1f, 2f, 3f)
+        assertArrayEquals(floatArrayOf(-1f, -2f, 3f), Frame.remapAccel(v, Frame.ROTATION_180), eps)
+        assertArrayEquals(
+            Frame.remapAccel(Frame.remapAccel(v, Frame.ROTATION_90), Frame.ROTATION_90),
+            Frame.remapGyro(v, Frame.ROTATION_180), eps
+        )
+        val q = floatArrayOf(0.8f, 0.1f, -0.5f, 0.3f)
+        val twice = Frame.remapQuat(Frame.remapQuat(q, Frame.ROTATION_90), Frame.ROTATION_90)
+        assertArrayEquals(twice, Frame.remapQuat(q, Frame.ROTATION_180), 1e-4f)
+        assertArrayEquals(floatArrayOf(0.3f, 0.5f, 0.1f, -0.8f), Frame.remapQuat(q, Frame.ROTATION_180), 1e-4f)
+        assertEquals(sqrt(q.map { it * it }.sum()), sqrt(twice.map { it * it }.sum()), 1e-5f)
+    }
+
+    @Test
     fun otrasRotacionesNoTocanNada() {
         val v = floatArrayOf(1f, 2f, 3f)
         val q = floatArrayOf(0.8f, 0.1f, -0.5f, 0.3f)
-        for (rot in intArrayOf(Frame.ROTATION_0, Frame.ROTATION_180, 7, -1)) {
+        for (rot in intArrayOf(Frame.ROTATION_0, 7, -1)) {
             assertArrayEquals(v, Frame.remapAccel(v, rot), 0f)
             assertArrayEquals(v, Frame.remapGyro(v, rot), 0f)
             assertArrayEquals(q, Frame.remapQuat(q, rot), 0f)

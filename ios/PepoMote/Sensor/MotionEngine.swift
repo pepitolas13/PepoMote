@@ -37,7 +37,9 @@ final class MotionEngine {
         set { lock.lock(); kindV = newValue; lock.unlock() }
     }
 
-    /// Rotación de la pantalla (valores de `Frame`) mientras se es GamePad.
+    /// Rotación de la pantalla (valores de `Frame`): la fija el GamePad, el
+    /// mando + Nunchuk y el mando de lado (NES, con `Route.sidewaysRotation`);
+    /// en vertical vale `Frame.rotation0` y no cambia nada.
     var rotation: Int {
         get { lock.lock(); defer { lock.unlock() }; return rotationV }
         set { lock.lock(); rotationV = newValue; lock.unlock() }
@@ -206,9 +208,12 @@ final class MotionEngine {
                 stickX: bs.stickX(), stickY: bs.stickY()
             )
         case .wiimote:
+            // Móvil de lado (NES): sensores girados según diga la pantalla
+            // (Route.sidewaysRotation); en vertical (rotation0), tal cual
+            let rot = rotation
             packet = PmpCodec.encodeInput(
                 sessionId: sessionId, seq: seq, tSensorUs: tUs,
-                quat: quat, gyro: gyro, accel: accel,
+                quat: Frame.remapQuat(quat, rot), gyro: Frame.remapGyro(gyro, rot), accel: Frame.remapAccel(accel, rot),
                 buttons: bs.current(), recenterCount: bs.recenterCount(), batteryPct: battery(),
                 touchScrollDy: bs.drainScroll(),
                 flags: quatFlag

@@ -53,6 +53,22 @@ el mando NES. Ponerlo o quitarlo cambia la configuración del Wiimote
 emulado, y Dolphin solo la lee al arrancar: **cierra y vuelve a abrir
 Dolphin** al cambiarlo (el receptor lo avisa si Dolphin está abierto).
 
+## Mando de lado (NES)
+
+Con el Nunchuk apagado, gira el móvil y tienes el mando de lado: cruceta a
+la izquierda, 1 y 2 grandes a la derecha, como se sostiene el Mando de Wii
+en los juegos 2D (New Super Mario Bros. Wii, Kirby, Donkey Kong Country
+Returns…) y con el volante de Mario Kart. El móvil es entonces un mando
+girado con el extremo IR a la izquierda, que es lo que esos juegos esperan y
+lo que ellos mismos giran: la cruceta manda los botones del mando girado
+(lo que en pantalla es ▶ es el DOWN del mando), así ▶ mueve a la derecha, y
+el acelerómetro llega como el de un mando de lado: para el volante de Mario
+Kart gira el móvil como un volante (da igual hacia qué lado hayas girado el
+móvil: se normaliza). En modo puntero, de lado, las flechas siguen siendo
+flechas del PC y el cursor sigue el borde largo del móvil, como con el
+GamePad. El mando gira con el móvil aunque el bloqueo de giro del sistema
+esté activo.
+
 ## Nunchuk: dos móviles, uno en cada mano
 
 Abre PepoMote en un segundo móvil y toca **Nunchuk**: entra emparejado con el

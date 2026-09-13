@@ -41,6 +41,29 @@ enum Route {
         return c.mode == LinkState.modeDolphin && c.role == LinkState.roleWiimote && c.ownNunchuk
     }
 
+    /// Con el mando de lado (NES) el móvil ES un Mando de Wii girado: en
+    /// Dolphin y en Wii U como Mando de Wii el juego espera el mando con el
+    /// extremo IR a la izquierda y aplica él mismo el giro (cruceta y
+    /// acelerómetro). Solo entonces: en modo puntero las flechas siguen
+    /// siendo flechas del PC.
+    static func sidewaysDpad(_ link: UiLink) -> Bool {
+        guard let c = link.connected else { return false }
+        return c.mode == LinkState.modeDolphin || (c.mode == LinkState.modeCemu && c.pad == LinkState.padWiimote)
+    }
+
+    /// Giro de los sensores con el mando de lado (NES). Como mando girado
+    /// (Dolphin, Wii U-Mando): el móvil con el borde superior a la izquierda
+    /// (rotation90) ya es el mando con el IR a la izquierda, y con el borde a
+    /// la derecha (rotation270) se gira 180° para que dé igual hacia dónde se
+    /// gire. En modo puntero el móvil de lado apunta con su borde largo, como
+    /// el GamePad: los sensores se remapean con la rotación de la pantalla.
+    static func sidewaysRotation(_ link: UiLink, displayRotation: Int) -> Int {
+        if sidewaysDpad(link) {
+            return displayRotation == Frame.rotation270 ? Frame.rotation180 : Frame.rotation0
+        }
+        return displayRotation
+    }
+
     /// Intención resultante y, si toca, el aviso a enseñar (clave de texto).
     struct Outcome: Equatable {
         let intent: PadIntent

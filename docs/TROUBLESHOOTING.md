@@ -144,6 +144,16 @@ Nunchuk» (con un receptor anterior a 1.5.5 no hay Nunchuk propio). Con un
 segundo móvil como Nunchuk, el propio queda sin efecto para ese jugador si
 lo apagas. Ver `docs/SETUP-DOLPHIN.md`.
 
+## De lado, la cruceta va al revés, o la app no gira con el móvil
+
+Desde 1.5.5 el mando de lado (NES) manda la cruceta de un mando girado con el
+extremo IR a la izquierda, que es lo que esperan los juegos 2D: ▶ mueve a la
+derecha. Si te va al revés, actualiza la app. La app gira con el móvil
+aunque el bloqueo de giro del sistema esté activo (solo mientras el mando
+está en pantalla; el resto de la app respeta el bloqueo). En Dolphin, con el
+Nunchuk encendido, de lado sale el mando + Nunchuk en vez del NES: apaga el
+chip «Nunchuk» para los juegos de lado (y reabre Dolphin).
+
 ## «El puerto 26760/26761 está ocupado»
 
 Otro programa tenía abierto el puerto del servidor DSU (26760: DS4Windows,

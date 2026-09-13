@@ -21,6 +21,27 @@ class RouteTest {
     )
 
     @Test
+    fun mandoDeLadoGiraLaCrucetaYLosSensores() {
+        val r90 = dev.pepotech.pepomote.sensor.Frame.ROTATION_90
+        val r270 = dev.pepotech.pepomote.sensor.Frame.ROTATION_270
+        val r180 = dev.pepotech.pepomote.sensor.Frame.ROTATION_180
+        val r0 = dev.pepotech.pepomote.sensor.Frame.ROTATION_0
+        // Dolphin y Wii U como Mando de Wii: mando girado (cruceta girada, sensores normalizados al IR a la izquierda)
+        for (link in listOf(connected(mode = "dolphin"), connected(mode = "cemu", pad = "wiimote"))) {
+            assertEquals(true, Route.sidewaysDpad(link))
+            assertEquals(r0, Route.sidewaysRotation(link, r90))
+            assertEquals(r180, Route.sidewaysRotation(link, r270))
+        }
+        // Puntero: flechas del PC y el móvil apunta con su borde largo (como el GamePad)
+        assertEquals(false, Route.sidewaysDpad(connected(mode = "pointer")))
+        assertEquals(r90, Route.sidewaysRotation(connected(mode = "pointer"), r90))
+        assertEquals(r270, Route.sidewaysRotation(connected(mode = "pointer"), r270))
+        // Sin enlace confirmado: como puntero
+        assertEquals(false, Route.sidewaysDpad(UiLink.Connecting))
+        assertEquals(r90, Route.sidewaysRotation(UiLink.Connecting, r90))
+    }
+
+    @Test
     fun apaisadoConNunchukSoloEnDolphinConfirmado() {
         assertEquals(true, Route.wiiLandscapeNunchuk(connected(mode = "dolphin", ownNunchuk = true)))
         // cualquier jugador, no solo el 1

@@ -14,6 +14,22 @@ final class RouteTests: XCTestCase {
         .connected(ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad, ownNunchuk: ownNunchuk))
     }
 
+    func testMandoDeLadoGiraLaCrucetaYLosSensores() {
+        // Dolphin y Wii U como Mando de Wii: mando girado (cruceta girada, sensores normalizados al IR a la izquierda)
+        for link in [connected(mode: "dolphin"), connected(mode: "cemu", pad: "wiimote")] {
+            XCTAssertTrue(Route.sidewaysDpad(link))
+            XCTAssertEqual(Route.sidewaysRotation(link, displayRotation: Frame.rotation90), Frame.rotation0)
+            XCTAssertEqual(Route.sidewaysRotation(link, displayRotation: Frame.rotation270), Frame.rotation180)
+        }
+        // Puntero: flechas del PC y el móvil apunta con su borde largo (como el GamePad)
+        XCTAssertFalse(Route.sidewaysDpad(connected(mode: "pointer")))
+        XCTAssertEqual(Route.sidewaysRotation(connected(mode: "pointer"), displayRotation: Frame.rotation90), Frame.rotation90)
+        XCTAssertEqual(Route.sidewaysRotation(connected(mode: "pointer"), displayRotation: Frame.rotation270), Frame.rotation270)
+        // Sin enlace confirmado: como puntero
+        XCTAssertFalse(Route.sidewaysDpad(.connecting))
+        XCTAssertEqual(Route.sidewaysRotation(.connecting, displayRotation: Frame.rotation90), Frame.rotation90)
+    }
+
     func testApaisadoConNunchukSoloEnDolphinConfirmado() {
         XCTAssertTrue(Route.wiiLandscapeNunchuk(connected(mode: "dolphin", ownNunchuk: true)))
         // cualquier jugador, no solo el 1

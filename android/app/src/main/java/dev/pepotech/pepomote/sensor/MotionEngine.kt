@@ -57,9 +57,10 @@ class MotionEngine(
     var kind: SenderKind = kind
 
     /**
-     * Rotación de la pantalla (`Surface.ROTATION_*`) mientras se es GamePad:
-     * decide el remapeo de los sensores (contrato §4). La fija la pantalla
-     * GamePad; en cualquier otra pantalla no se usa.
+     * Rotación de la pantalla (`Surface.ROTATION_*`): decide el remapeo de
+     * los sensores (contrato §4). La fija la pantalla GamePad, el mando +
+     * Nunchuk y el mando de lado (NES, con [dev.pepotech.pepomote.service.Route.sidewaysRotation]);
+     * en vertical vale ROTATION_0 y no cambia nada.
      */
     @Volatile
     var rotation: Int = Surface.ROTATION_0
@@ -240,19 +241,27 @@ class MotionEngine(
                 )
             }
 
-            SenderKind.WIIMOTE -> PmpCodec.encodeInput(
-                sessionId = sessionId,
-                seq = seq,
-                tSensorUs = tSensorNs / 1000,
-                quat = quat,
-                gyro = gyro,
-                accel = accel,
-                buttons = ButtonState.current(),
-                recenterCount = ButtonState.recenterCount(),
-                batteryPct = battery(),
-                touchScrollDy = ButtonState.drainScroll(),
-                flags = quatFlag
-            )
+            SenderKind.WIIMOTE -> {
+                // Móvil de lado (NES): sensores girados según diga la pantalla
+                // (Route.sidewaysRotation); en vertical (ROTATION_0), tal cual
+                val rot = rotation
+                Frame.remapQuat(quat, rot, quatOut)
+                Frame.remapGyro(gyro, rot, gyroOut)
+                Frame.remapAccel(accel, rot, accelOut)
+                PmpCodec.encodeInput(
+                    sessionId = sessionId,
+                    seq = seq,
+                    tSensorUs = tSensorNs / 1000,
+                    quat = quatOut,
+                    gyro = gyroOut,
+                    accel = accelOut,
+                    buttons = ButtonState.current(),
+                    recenterCount = ButtonState.recenterCount(),
+                    batteryPct = battery(),
+                    touchScrollDy = ButtonState.drainScroll(),
+                    flags = quatFlag
+                )
+            }
         }
         onPacket(packet)
     }

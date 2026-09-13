@@ -22,21 +22,24 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.SidewaysDpad
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 /**
  * Cruceta interactiva: cuatro brazos momentáneos. En modo puntero el
  * receptor hace ↑/↓ = flechas del PC y ←/→ = atrás/adelante del navegador.
+ * Con [sideways] (mando de lado en un juego) manda los botones del mando
+ * girado con el IR a la izquierda ([SidewaysDpad]).
  */
 @Composable
-fun PadCross(sizeDp: Dp, glyphSp: Int = 14) {
+fun PadCross(sizeDp: Dp, glyphSp: Int = 14, sideways: Boolean = false) {
     val arm = sizeDp / 3
 
     Box(modifier = Modifier.size(sizeDp), contentAlignment = Alignment.Center) {
-        PadArm("▲", arm, glyphSp, ButtonState.DPAD_UP, BiasAlignment(0f, -1f))
-        PadArm("▼", arm, glyphSp, ButtonState.DPAD_DOWN, BiasAlignment(0f, 1f))
-        PadArm("◀", arm, glyphSp, ButtonState.DPAD_LEFT, BiasAlignment(-1f, 0f))
-        PadArm("▶", arm, glyphSp, ButtonState.DPAD_RIGHT, BiasAlignment(1f, 0f))
+        PadArm("▲", arm, glyphSp, SidewaysDpad.up(sideways), BiasAlignment(0f, -1f))
+        PadArm("▼", arm, glyphSp, SidewaysDpad.down(sideways), BiasAlignment(0f, 1f))
+        PadArm("◀", arm, glyphSp, SidewaysDpad.left(sideways), BiasAlignment(-1f, 0f))
+        PadArm("▶", arm, glyphSp, SidewaysDpad.right(sideways), BiasAlignment(1f, 0f))
         // Centro
         Box(
             Modifier

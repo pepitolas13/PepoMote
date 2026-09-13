@@ -19,6 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import dev.pepotech.pepomote.service.Route
+import dev.pepotech.pepomote.sensor.Frame
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +66,20 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
+    }
+    // Móvil de lado: los sensores giran con el mando (Route.sidewaysRotation:
+    // mando girado con el IR a la izquierda en un juego, o apuntando con el
+    // borde largo en modo puntero); al salir, el mando vertical de siempre
+    val engine = LinkState.motion
+    val rotation = rememberDisplayRotation()
+    LaunchedEffect(engine, link, rotation) {
+        engine?.rotation = Route.sidewaysRotation(link, rotation)
+    }
+    DisposableEffect(engine) {
+        onDispose {
+            engine?.rotation = Frame.ROTATION_0
+            ButtonState.reset()
+        }
     }
 
     BoxWithConstraints(
@@ -150,7 +167,8 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 .align(Alignment.CenterStart)
                 .padding(start = 34.dp * s)
         ) {
-            PadCross(sizeDp = 190.dp * s, glyphSp = (14 * s).roundToInt())
+            // En un juego, la cruceta de un mando girado (IR a la izquierda)
+            PadCross(sizeDp = 190.dp * s, glyphSp = (14 * s).roundToInt(), sideways = Route.sidewaysDpad(link))
         }
 
         // − / + / A centro (un 20 % más grandes que en la primera versión:
