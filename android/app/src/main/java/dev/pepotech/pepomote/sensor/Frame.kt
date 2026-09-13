@@ -20,8 +20,8 @@ object Frame {
 
     /**
      * Vector (accel o gyro): borde superior a la izquierda (ROTATION_90) →
-     * (−y, x, z); a la derecha (ROTATION_270) → (y, −x, z); cualquier otra
-     * rotación, tal cual.
+     * (−y, x, z); a la derecha (ROTATION_270) → (y, −x, z); boca abajo
+     * (ROTATION_180) → (−x, −y, z); cualquier otra rotación, tal cual.
      */
     private fun remapVector(src: FloatArray, rotation: Int, out: FloatArray): FloatArray {
         val x = src[0]
@@ -34,6 +34,10 @@ object Frame {
 
             ROTATION_270 -> {
                 out[0] = y; out[1] = -x; out[2] = z
+            }
+
+            ROTATION_180 -> {
+                out[0] = -x; out[1] = -y; out[2] = z
             }
 
             else -> {
@@ -54,19 +58,20 @@ object Frame {
     /**
      * Quaternion (w, x, y, z) al marco del GamePad: `quat ⊗ r` (producto de
      * Hamilton, r a la derecha) con r = (√½, 0, 0, −√½) si el borde superior
-     * queda a la izquierda y r = (√½, 0, 0, +√½) si queda a la derecha.
+     * queda a la izquierda, r = (√½, 0, 0, +√½) si queda a la derecha y
+     * r = (0, 0, 0, −1) boca abajo (dos giros a la izquierda seguidos).
      * Cualquier otra rotación: tal cual. `out` puede ser `quat` (en sitio).
      */
     fun remapQuat(quat: FloatArray, rotation: Int, out: FloatArray = FloatArray(4)): FloatArray {
-        val rz = when (rotation) {
-            ROTATION_90 -> -HALF_SQRT2
-            ROTATION_270 -> HALF_SQRT2
+        val (rw, rz) = when (rotation) {
+            ROTATION_90 -> HALF_SQRT2 to -HALF_SQRT2
+            ROTATION_270 -> HALF_SQRT2 to HALF_SQRT2
+            ROTATION_180 -> 0f to -1f
             else -> {
                 out[0] = quat[0]; out[1] = quat[1]; out[2] = quat[2]; out[3] = quat[3]
                 return out
             }
         }
-        val rw = HALF_SQRT2
         val qw = quat[0]
         val qx = quat[1]
         val qy = quat[2]

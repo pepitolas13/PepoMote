@@ -1,6 +1,7 @@
 package dev.pepotech.pepomote.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,6 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import dev.pepotech.pepomote.service.Route
+import dev.pepotech.pepomote.sensor.Frame
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,12 +67,27 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
     }
+    // Móvil de lado: los sensores giran con el mando (Route.sidewaysRotation:
+    // mando girado con el IR a la izquierda en un juego, o apuntando con el
+    // borde largo en modo puntero); al salir, el mando vertical de siempre
+    val engine = LinkState.motion
+    val rotation = rememberDisplayRotation()
+    LaunchedEffect(engine, link, rotation) {
+        engine?.rotation = Route.sidewaysRotation(link, rotation)
+    }
+    DisposableEffect(engine) {
+        onDispose {
+            engine?.rotation = Frame.ROTATION_0
+            ButtonState.reset()
+        }
+    }
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(PepoColors.Background)
             .statusBarsPadding()
+            .displayCutoutPadding()
             .navigationBarsPadding()
     ) {
         // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
@@ -113,14 +132,20 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                             modifier = Modifier.layoutId(HeaderSlot.Status)
                         )
                     }
-                    // Selector Puntero/Dolphin/Wii U también de lado (solo el Jugador 1)
-                    if (showModeChips(link, showChips)) {
-                        ModeChips(
-                            current = link.mode,
-                            supportsCemu = link.supportsCemu,
-                            compact = true,
-                            modifier = Modifier.layoutId(HeaderSlot.Chips)
-                        )
+                    // Selector Puntero/Dolphin/Wii U también de lado (solo el
+                    // Jugador 1) y, en Dolphin, el chip «Nunchuk» (aquí apagado:
+                    // encenderlo cambia este NES por el mando + Nunchuk)
+                    if (showModeChips(link, showChips) || showNunchukChip(link)) {
+                        Row(
+                            modifier = Modifier.layoutId(HeaderSlot.Chips),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (showModeChips(link, showChips)) {
+                                ModeChips(current = link.mode, supportsCemu = link.supportsCemu, compact = true)
+                            }
+                            if (showNunchukChip(link)) NunchukChip(link, compact = true)
+                        }
                     }
                     // Modo Wii U: texto para el teclado en pantalla de Cemu
                     if (link.mode == LinkState.MODE_CEMU) {
@@ -142,7 +167,8 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 .align(Alignment.CenterStart)
                 .padding(start = 34.dp * s)
         ) {
-            PadCross(sizeDp = 190.dp * s, glyphSp = (14 * s).roundToInt())
+            // En un juego, la cruceta de un mando girado (IR a la izquierda)
+            PadCross(sizeDp = 190.dp * s, glyphSp = (14 * s).roundToInt(), sideways = Route.sidewaysDpad(link))
         }
 
         // − / + / A centro (un 20 % más grandes que en la primera versión:

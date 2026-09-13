@@ -43,7 +43,8 @@ See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold 
 ## Nice touches
 
 - **Local multiplayer**: up to 4 phones on one PC — scan the same QR and each phone becomes its own Wiimote in Dolphin, with Dolphin's controller config written for you automatically
-- **Nunchuk**: a second phone in your other hand (tap **Nunchuk** in the app): stick, C, Z and its own accelerometer feed the emulated Nunchuk of your Wiimote, configured in Dolphin for you
+- **Nunchuk on the same phone** (1.5.5): games that ask for a Nunchuk (Super Mario Galaxy, Zelda, Metroid Prime…) just work with one phone: turn it sideways and you get the Nunchuk under your left hand (stick, C, Z) and the Wii Remote under your right (A, B, D-pad, −/+/Home, 1/2), still pointing with the phone. On by default; turn it off (chip or Settings) for 2D games played with the remote held sideways. Details in [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md)
+- **Nunchuk on a second phone**: tap **Nunchuk** on the other phone: stick, C, Z and its own accelerometer feed the emulated Nunchuk of your Wiimote, configured in Dolphin for you
 - Physical volume keys = A / B triggers (zero touch latency)
 - Turn the phone sideways for a NES-style pad (2D games) — or a full Wii U GamePad in Wii U mode
 - Optional start-with-the-system (tray only, no window)
@@ -54,9 +55,9 @@ See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold 
 - **Browser back/forward and volume that repeats**: in pointer mode the D-pad ← / → go back / forward in the browser (↑ / ↓ stay arrow keys), and holding − / + or the media 🔉 / 🔊 keeps stepping the volume
 - **iPhone and iPad** (1.5): the same sender in Swift, with the Wii U GamePad's second screen and everything else; installed with SideStore or AltStore from a one-tap source, built and tested by the CI on macOS
 - **Several PCs and automatic reconnection**: the app keeps all your PCs and, if the Wi-Fi drops or the receiver restarts, it comes back by itself without losing the screen or the mode
-- **macOS** (1.5.4, beta): the same receiver on Apple Silicon — cursor and keys through Accessibility, Cemu's second screen, an icon in the menu bar, start with the system, a signed `.app` in a DMG
-- **New-version notice** (1.5.4): every app tells you when a new release is out, with the link to it. The check is one request to GitHub once a day (only the latest-release page; nothing about you is sent) and it can be switched off in Settings. PepoMote never talks to anything else outside your network.
-- **iPad and tablets** (1.5.4): the remote, the NES pad, the Nunchuk and the Wii U GamePad grow to fill the screen (same rule on iOS and Android; phones stay exactly as they were). And Settings gains **GamePad without touch screen**: it removes the Wii U GamePad's screen (and the second screen) so the sticks, the D-pad and A/B/X/Y get much bigger — on a phone they go side by side, like a Pro Controller
+- **macOS** (1.5.5, beta): the same receiver on Apple Silicon — cursor and keys through Accessibility, Cemu's second screen, an icon in the menu bar, start with the system, a signed `.app` in a DMG
+- **New-version notice** (1.5.5): every app tells you when a new release is out, with the link to it. The check is one request to GitHub once a day (only the latest-release page; nothing about you is sent) and it can be switched off in Settings. PepoMote never talks to anything else outside your network.
+- **iPad and tablets** (1.5.5): the remote, the NES pad, the Nunchuk and the Wii U GamePad grow to fill the screen (same rule on iOS and Android; phones stay exactly as they were). And Settings gains **GamePad without touch screen**: it removes the Wii U GamePad's screen (and the second screen) so the sticks, the D-pad and A/B/X/Y get much bigger — on a phone they go side by side, like a Pro Controller
 - **Dark theme and English**: both follow the system; ES/EN at the top right of every app
 - **A chime per player, a tray icon that tells the state, a heartbeat with the RTT** in the receiver window; on Android a themed icon, launcher shortcuts and a Quick Settings tile
 

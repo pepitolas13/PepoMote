@@ -43,7 +43,8 @@ Mira [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — toca **Wii U** en la app, sost
 ## Detalles finos
 
 - **Multijugador local**: hasta 4 móviles en el mismo PC — escanean el mismo QR y cada uno es su propio Wiimote en Dolphin, con la configuración de mandos de Dolphin escrita sola
-- **Nunchuk**: un segundo móvil en la otra mano (toca **Nunchuk** en la app): stick, C, Z y su propio acelerómetro alimentan el Nunchuk emulado de tu Wiimote, configurado solo en Dolphin
+- **Nunchuk en el mismo móvil** (1.5.5): los juegos que piden Nunchuk (Super Mario Galaxy, Zelda, Metroid Prime…) funcionan con un solo móvil: gíralo y tienes el Nunchuk en la mano izquierda (stick, C, Z) y el Mando de Wii en la derecha (A, B, cruceta, −/+/Home, 1/2), apuntando con el móvil como siempre. Viene encendido; apágalo (chip o Ajustes) para los juegos 2D con el mando de lado. Detalles en [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md)
+- **Nunchuk en un segundo móvil**: toca **Nunchuk** en el otro móvil: stick, C, Z y su propio acelerómetro alimentan el Nunchuk emulado de tu Wiimote, configurado solo en Dolphin
 - Botones físicos de volumen = A / B (latencia táctil cero)
 - Gira el móvil y tienes un mando estilo NES (juegos 2D) — o un Wii U GamePad completo en modo Wii U
 - Arranque con el sistema opcional (solo bandeja, sin ventana)
@@ -54,9 +55,9 @@ Mira [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — toca **Wii U** en la app, sost
 - **Atrás/adelante y volumen que repite**: en modo puntero la cruceta ← / → va atrás / adelante en el navegador (↑ / ↓ siguen siendo flechas) y mantener − / + o el 🔉 / 🔊 de multimedia sigue bajando o subiendo el volumen
 - **iPhone y iPad** (1.5): el mismo emisor en Swift, con la doble pantalla del GamePad de Wii U y todo lo demás; se instala con SideStore o AltStore desde una fuente de un toque, y lo compila y prueba la CI en macOS
 - **Varios PCs y reconexión automática**: la app guarda todos tus PCs y, si se cae la Wi-Fi o reinicias el receptor, vuelve sola sin perder la pantalla ni el modo
-- **macOS** (1.5.4, beta): el mismo receptor en Mac con chip Apple — cursor y teclas por Accesibilidad, doble pantalla de Cemu, icono en la barra de menús, arranque con el sistema, `.app` firmado en un DMG
-- **Aviso de versión nueva** (1.5.4): todas las apps avisan cuando sale una versión, con el enlace a la release. La comprobación es una consulta a GitHub una vez al día (solo la página de la última versión; no se envía nada tuyo) y se apaga en Ajustes. PepoMote no habla con nada más fuera de tu red.
-- **iPad y tablets** (1.5.4): el mando, el pad NES, el Nunchuk y el GamePad de Wii U crecen hasta llenar la pantalla (misma regla en iOS y Android; los móviles quedan exactamente como estaban). Y en Ajustes está **GamePad sin pantalla táctil**: quita la pantalla del GamePad de Wii U (y la doble pantalla) para que sticks, cruceta y A/B/X/Y sean mucho más grandes; en un móvil pasan a ir uno al lado del otro, como en un Pro Controller
+- **macOS** (1.5.5, beta): el mismo receptor en Mac con chip Apple — cursor y teclas por Accesibilidad, doble pantalla de Cemu, icono en la barra de menús, arranque con el sistema, `.app` firmado en un DMG
+- **Aviso de versión nueva** (1.5.5): todas las apps avisan cuando sale una versión, con el enlace a la release. La comprobación es una consulta a GitHub una vez al día (solo la página de la última versión; no se envía nada tuyo) y se apaga en Ajustes. PepoMote no habla con nada más fuera de tu red.
+- **iPad y tablets** (1.5.5): el mando, el pad NES, el Nunchuk y el GamePad de Wii U crecen hasta llenar la pantalla (misma regla en iOS y Android; los móviles quedan exactamente como estaban). Y en Ajustes está **GamePad sin pantalla táctil**: quita la pantalla del GamePad de Wii U (y la doble pantalla) para que sticks, cruceta y A/B/X/Y sean mucho más grandes; en un móvil pasan a ir uno al lado del otro, como en un Pro Controller
 - **Tema oscuro e inglés**: siguen al sistema; ES/EN arriba a la derecha en todas las apps
 - **Campanita por jugador, bandeja que cuenta el estado, latido con el RTT** en la ventana del receptor; en Android icono temático, accesos directos y tile de Ajustes rápidos
 

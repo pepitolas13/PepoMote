@@ -115,6 +115,9 @@ final class ScreenshotTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
             LinkState.shared.publish(connected(mode: LinkState.modeDolphin, pad: "nunchuk", role: LinkState.roleNunchuk, slot: 1))
             try shoot(NunchukScreen(onDisconnect: {}), "nunchuk-\(dev)", size)
+            // Dolphin con el Nunchuk en el mismo móvil (confirmado por el receptor)
+            LinkState.shared.publish(.connected(ConnectedLink(pcName: "SALON", mode: LinkState.modeDolphin, rttMs: 12, sensorHz: 100, slot: 0, role: LinkState.roleWiimote, player: 1, supportsCemu: true, pad: LinkState.padGamepad, ownNunchuk: true)))
+            try shoot(WiimoteNunchukScreen(showChips: true, onDisconnect: {}), "wii-nunchuk-\(dev)", size)
         }
     }
 }

@@ -33,6 +33,8 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("win.heartbeat_tip", "Latido del Jugador 1: {0} ms ahora (últimos {1} latidos)", "Player 1 heartbeat: {0} ms now (last {1} beats)"),
     ("win.badge_nunchuk_unused", "J{0} · Nunchuk (sin uso: J{0} no es Mando Wii)", "P{0} · Nunchuk (unused: P{0} is not a Wii Remote)"),
     ("win.badge_nunchuk", "J{0} · Nunchuk", "P{0} · Nunchuk"),
+    ("win.badge_nunchuk_spare", "J{0} · Nunchuk (sin uso: J{0} ya lleva Nunchuk)", "P{0} · Nunchuk (unused: P{0} already has a Nunchuk)"),
+    ("win.badge_player_nunchuk", "J{0} · Mando + Nunchuk", "P{0} · Wii Remote + Nunchuk"),
     ("win.badge_gamepad", "J{0} · GamePad", "P{0} · GamePad"),
     ("win.badge_pro", "J{0} · Pro", "P{0} · Pro"),
     ("win.badge_wiimote", "J{0} · Mando Wii", "P{0} · Wii Remote"),
@@ -210,8 +212,8 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("dolphin.dirs_many", "en {0} carpetas: {1}", "in {0} folders: {1}"),
     (
         "dolphin.open_nunchuk",
-        "Dolphin está abierto: se configurará solo en cuanto lo cierres (el Nunchuk necesita reabrir Dolphin)",
-        "Dolphin is open: it will be set up by itself as soon as you close it (the Nunchuk needs Dolphin reopened)",
+        "Dolphin está abierto: se configurará solo en cuanto lo cierres (poner o quitar el Nunchuk necesita reabrir Dolphin)",
+        "Dolphin is open: it will be set up by itself as soon as you close it (attaching or removing the Nunchuk needs Dolphin reopened)",
     ),
     (
         "dolphin.open",

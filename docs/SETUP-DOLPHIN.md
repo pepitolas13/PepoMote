@@ -26,6 +26,49 @@ carpeta suelta) se reconoce al verlo abierto; si no, pon la carpeta del
 Requisitos: Dolphin 5.0+ reciente (2023 en adelante), PepoMote en el PC y el
 móvil emparejado.
 
+## Nunchuk en el mismo móvil (un solo móvil)
+
+Muchos juegos de Wii piden el Nunchuk (Super Mario Galaxy, Zelda, Metroid
+Prime, Mario Kart con stick…): «Conecta un Nunchuk al Mando de Wii del
+Jugador 1». Con un solo móvil no hace falta nada más: el ajuste **Nunchuk en
+el mismo móvil** (Ajustes de la app, encendido por defecto; también el chip
+**Nunchuk** de la cabecera del mando en modo Dolphin) hace que tu mando lleve
+su propio Nunchuk. La ventana del PC lo lista como «J1 · Mando + Nunchuk» y
+el Wiimote emulado de Dolphin sale con `Extension = Nunchuk` leyendo del
+mismo pad.
+
+Para jugar, **gira el móvil**: en apaisado sale el mando a dos manos, con el
+Nunchuk a la izquierda (Z y C arriba, bajo el índice, y el stick para el
+pulgar) y el Mando de Wii a la derecha (B arriba, que es el gatillo; la
+cruceta y la A grande abajo; −, la diana de recentrado, +, 1, Home y 2 en el
+centro). El puntero sigue siendo el de siempre: se apunta con el móvil de
+lado, como con un GamePad, y agitar el móvil es agitar el mando (y el
+Nunchuk, que comparte sensores). En vertical vuelve el mando de una mano de
+siempre (el Nunchuk queda quieto).
+
+Para los juegos 2D con el mando de lado (New Super Mario Bros. Wii y
+parecidos) **apaga el Nunchuk** con el chip o en Ajustes: esos juegos cambian
+de esquema de control si detectan un Nunchuk, y así el apaisado vuelve a ser
+el mando NES. Ponerlo o quitarlo cambia la configuración del Wiimote
+emulado, y Dolphin solo la lee al arrancar: **cierra y vuelve a abrir
+Dolphin** al cambiarlo (el receptor lo avisa si Dolphin está abierto).
+
+## Mando de lado (NES)
+
+Con el Nunchuk apagado, gira el móvil y tienes el mando de lado: cruceta a
+la izquierda, 1 y 2 grandes a la derecha, como se sostiene el Mando de Wii
+en los juegos 2D (New Super Mario Bros. Wii, Kirby, Donkey Kong Country
+Returns…) y con el volante de Mario Kart. El móvil es entonces un mando
+girado con el extremo IR a la izquierda, que es lo que esos juegos esperan y
+lo que ellos mismos giran: la cruceta manda los botones del mando girado
+(lo que en pantalla es ▶ es el DOWN del mando), así ▶ mueve a la derecha, y
+el acelerómetro llega como el de un mando de lado: para el volante de Mario
+Kart gira el móvil como un volante (da igual hacia qué lado hayas girado el
+móvil: se normaliza). En modo puntero, de lado, las flechas siguen siendo
+flechas del PC y el cursor sigue el borde largo del móvil, como con el
+GamePad. El mando gira con el móvil aunque el bloqueo de giro del sistema
+esté activo.
+
 ## Nunchuk: dos móviles, uno en cada mano
 
 Abre PepoMote en un segundo móvil y toca **Nunchuk**: entra emparejado con el

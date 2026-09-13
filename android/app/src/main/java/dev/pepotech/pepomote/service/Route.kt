@@ -2,6 +2,7 @@ package dev.pepotech.pepomote.service
 
 import androidx.annotation.StringRes
 import dev.pepotech.pepomote.R
+import dev.pepotech.pepomote.sensor.Frame
 
 /** Pantalla del mando que toca enseñar. */
 enum class PadScreen { GamePad, Wii, Nunchuk }
@@ -45,6 +46,44 @@ object Route {
         if (intent == PadIntent.WiiU && link.alive) return PadScreen.GamePad
         return PadScreen.Wii
     }
+
+    /**
+     * Layout Wii apaisado = mando + Nunchuk en un solo móvil: modo Dolphin,
+     * este móvil es mando y el receptor ha confirmado el Nunchuk propio (un
+     * receptor antiguo no lo confirma y se queda el NES de siempre).
+     */
+    fun wiiLandscapeNunchuk(link: UiLink): Boolean =
+        link is UiLink.Connected && link.mode == LinkState.MODE_DOLPHIN &&
+            link.role == LinkState.ROLE_WIIMOTE && link.ownNunchuk
+
+    /**
+     * Con el mando de lado (NES) el móvil ES un Mando de Wii girado: en
+     * Dolphin y en Wii U como Mando de Wii el juego espera el mando con el
+     * extremo IR a la izquierda y aplica él mismo el giro (cruceta y
+     * acelerómetro). Solo entonces: en modo puntero las flechas siguen
+     * siendo flechas del PC.
+     */
+    fun sidewaysDpad(link: UiLink): Boolean {
+        val c = link as? UiLink.Connected ?: return false
+        return c.mode == LinkState.MODE_DOLPHIN || (c.mode == LinkState.MODE_CEMU && c.pad == LinkState.PAD_WIIMOTE)
+    }
+
+    /**
+     * Giro de los sensores con el mando de lado (NES). Como mando girado
+     * (Dolphin, Wii U-Mando): el móvil con el borde superior a la izquierda
+     * (ROTATION_90) ya es el mando con el IR a la izquierda, y con el borde
+     * a la derecha (ROTATION_270) se gira 180° para que dé igual hacia dónde
+     * se gire (el volante de Mario Kart gira bien en las dos). En modo
+     * puntero el móvil de lado apunta con su borde largo, como el GamePad:
+     * los sensores se remapean con la rotación de la pantalla y el cursor
+     * sigue la mano.
+     */
+    fun sidewaysRotation(link: UiLink, displayRotation: Int): Int =
+        if (sidewaysDpad(link)) {
+            if (displayRotation == Frame.ROTATION_270) Frame.ROTATION_180 else Frame.ROTATION_0
+        } else {
+            displayRotation
+        }
 
     /** Intención resultante y, si toca, el aviso a enseñar (recurso de texto). */
     data class Outcome(val intent: PadIntent, @StringRes val warning: Int?)

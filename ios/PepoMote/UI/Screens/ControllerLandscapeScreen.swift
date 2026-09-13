@@ -37,6 +37,7 @@ struct ControllerLandscapeScreen: View {
     let onDisconnect: () -> Void
     @ObservedObject var link = LinkState.shared
     @State private var keyboardOpen = false
+    @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
 
     var body: some View {
         GeometryReader { geo in
@@ -54,8 +55,17 @@ struct ControllerLandscapeScreen: View {
                             if isWiiUAsWiimote(c) {
                                 Text(tr("wiiu_as_wiimote")).pepoBody().lineLimit(1).layoutPriority(1)
                             }
-                            if showModeChips(c, showChips) {
-                                ModeChips(current: c.mode, supportsCemu: c.supportsCemu, compact: true).fixedSize().layoutPriority(2)
+                            // Selector de modo y, en Dolphin, el chip «Nunchuk» (aquí
+                            // apagado: encenderlo cambia este NES por el mando + Nunchuk)
+                            if showModeChips(c, showChips) || showNunchukChip(c) {
+                                HStack(spacing: 6) {
+                                    if showModeChips(c, showChips) {
+                                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, compact: true)
+                                    }
+                                    if showNunchukChip(c) { NunchukChip(link: c, compact: true) }
+                                }
+                                .fixedSize()
+                                .layoutPriority(2)
                             }
                             if c.mode == LinkState.modeCemu {
                                 KeyboardButton(compact: true) { keyboardOpen = true }.fixedSize().layoutPriority(3)
@@ -76,7 +86,8 @@ struct ControllerLandscapeScreen: View {
 
                 // Cruceta izquierda
                 HStack {
-                    PadCross(size: m.cross, glyph: m.text(14)).padding(.leading, m.crossInset)
+                    // En un juego, la cruceta de un mando girado (IR a la izquierda)
+                    PadCross(size: m.cross, glyph: m.text(14), sideways: Route.sidewaysDpad(link.link)).padding(.leading, m.crossInset)
                     Spacer()
                 }
 
@@ -122,7 +133,28 @@ struct ControllerLandscapeScreen: View {
         .sheet(isPresented: $keyboardOpen) {
             KeyboardSheet { keyboardOpen = false }
         }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        // Móvil de lado: los sensores giran con el mando (Route.sidewaysRotation:
+        // mando girado con el IR a la izquierda en un juego, o apuntando con el
+        // borde largo en modo puntero); al salir, el mando vertical de siempre
+        .onChange(of: rotation) { _ in applyEngine() }
+        .onChange(of: link.link) { _ in applyEngine() }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            rotation = OrientationLock.frameRotation(OrientationLock.current)
+        }
+        .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = true
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            rotation = OrientationLock.frameRotation(OrientationLock.current)
+            applyEngine()
+        }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+            link.motion?.rotation = Frame.rotation0
+            ButtonState.shared.reset()
+        }
+    }
+
+    private func applyEngine() {
+        link.motion?.rotation = Route.sidewaysRotation(link.link, displayRotation: rotation)
     }
 }

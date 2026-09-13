@@ -764,15 +764,21 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
     });
     child.add_space(4.0);
 
+    let layout = crate::state::player_layout(&snap.players);
     for (i, slot) in snap.players.iter().enumerate() {
         let Some(p) = slot else { continue };
         let number = crate::state::player_number(&snap.players, i as u8);
         let badge = if p.role == crate::state::Role::Nunchuk {
             if cemu && !cemu_layout.iter().any(|c| c.nunchuk_slot == Some(i as u8)) {
                 tr!("win.badge_nunchuk_unused", number)
+            } else if !cemu && !layout.iter().any(|(_, n)| *n == Some(i as u8)) {
+                // su jugador lleva el Nunchuk en el mismo móvil
+                tr!("win.badge_nunchuk_spare", number)
             } else {
                 tr!("win.badge_nunchuk", number)
             }
+        } else if !cemu && p.own_nunchuk {
+            tr!("win.badge_player_nunchuk", number)
         } else if cemu {
             match cemu_layout.iter().find(|c| c.dsu_slot == i as u8).map(|c| c.kind) {
                 Some(crate::state::PadKind::GamePad) => tr!("win.badge_gamepad", number),

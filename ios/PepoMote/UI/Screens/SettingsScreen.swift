@@ -5,6 +5,7 @@ struct SettingsScreen: View {
     @State private var sounds = AppPrefs.soundsEnabled
     @State private var dolphinChips = AppPrefs.showDolphinChips
     @State private var noScreen = AppPrefs.gamePadNoScreen
+    @State private var ownNunchuk = AppPrefs.ownNunchuk
     @State private var updateCheck = AppPrefs.updateCheckEnabled
 
     var body: some View {
@@ -18,6 +19,13 @@ struct SettingsScreen: View {
                         .onChange(of: sounds) { AppPrefs.soundsEnabled = $0 }
                     SettingRow(title: tr("chips_title"), subtitle: tr("chips_sub"), on: $dolphinChips)
                         .onChange(of: dolphinChips) { AppPrefs.showDolphinChips = $0 }
+                    // Nunchuk en el mismo móvil (Dolphin): stick, C y Z con el móvil de lado
+                    SettingRow(title: tr("nunchuk_own_title"), subtitle: tr("nunchuk_own_sub"), on: $ownNunchuk)
+                        .onChange(of: ownNunchuk) {
+                            AppPrefs.ownNunchuk = $0
+                            // Con el enlace vivo se aplica ya (el receptor lo confirma con el eco)
+                            LinkState.shared.sendNunchuk?($0)
+                        }
                     // GamePad de Wii U sin pantalla táctil: botones más grandes
                     SettingRow(title: tr("noscreen_title"), subtitle: tr("noscreen_sub"), on: $noScreen)
                         .onChange(of: noScreen) { AppPrefs.gamePadNoScreen = $0 }

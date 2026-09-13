@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -40,6 +42,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
     var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
     var noScreen by remember { mutableStateOf(AppPrefs.gamePadNoScreen(context)) }
+    var ownNunchuk by remember { mutableStateOf(AppPrefs.ownNunchuk(context)) }
     var updateCheck by remember { mutableStateOf(AppPrefs.updateCheckEnabled(context)) }
     val versionName = remember {
         try {
@@ -54,6 +57,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             .fillMaxSize()
             .background(PepoColors.Background)
             .statusBarsPadding()
+            .displayCutoutPadding()
             .padding(horizontal = 20.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -147,6 +151,40 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         dolphinChips = it
                         AppPrefs.setShowDolphinChips(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
+        // Nunchuk en el mismo móvil (Dolphin): stick, C y Z con el móvil de lado
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.nunchuk_own_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.nunchuk_own_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = ownNunchuk,
+                    onCheckedChange = {
+                        ownNunchuk = it
+                        AppPrefs.setOwnNunchuk(context, it)
+                        // Con el enlace vivo se aplica ya (el receptor lo confirma con el eco)
+                        LinkState.sendNunchuk?.invoke(it)
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )

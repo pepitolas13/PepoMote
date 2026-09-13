@@ -38,6 +38,20 @@ enum Btn {
     static let screen: UInt32 = 1 << 28
     /// Precisión (modo puntero): mientras se mantiene, el cursor va al 40 %.
     static let precision: UInt32 = 1 << 29
+
+    /// Cruceta con el mando de lado (NES): un juego «de lado» espera un Mando
+    /// de Wii girado con el extremo IR a la izquierda y aplica él mismo el
+    /// giro, así que lo que en pantalla apunta arriba es el RIGHT del mando,
+    /// abajo el LEFT, izquierda el UP y derecha el DOWN. Otros bits, tal cual.
+    static func sideways(_ bit: UInt32) -> UInt32 {
+        switch bit {
+        case dpadUp: return dpadRight
+        case dpadDown: return dpadLeft
+        case dpadLeft: return dpadUp
+        case dpadRight: return dpadDown
+        default: return bit
+        }
+    }
 }
 
 /// Reloj + temporizador del latch (cola principal en la app; virtual en tests).

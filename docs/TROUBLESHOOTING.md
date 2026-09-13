@@ -131,6 +131,29 @@ modo Dolphin solo lo activa el Jugador 1. Ya se arregla solo: al reconectar,
 el receptor desaloja la sesión fantasma del mismo móvil y le devuelve su
 plaza. Si lo ves en una versión vieja, reinicia el receptor del PC.
 
+## El juego pide un Nunchuk («Conecta un Nunchuk al Mando de Wii del Jugador 1»)
+
+Super Mario Galaxy, Zelda, Metroid Prime y otros exigen el Nunchuk. Con un
+solo móvil: ajuste **Nunchuk en el mismo móvil** (viene encendido; también el
+chip **Nunchuk** de la cabecera del mando en Dolphin), y **gira el móvil**
+para tener stick, C y Z con la mano izquierda. Si el aviso sigue: el
+Wiimote emulado se configura con Dolphin cerrado, así que cierra Dolphin,
+espera al aviso «Dolphin configurado» del receptor y vuelve a abrirlo; y
+comprueba en la ventana del PC que el móvil aparece como «J1 · Mando +
+Nunchuk» (con un receptor anterior a 1.5.5 no hay Nunchuk propio). Con un
+segundo móvil como Nunchuk, el propio queda sin efecto para ese jugador si
+lo apagas. Ver `docs/SETUP-DOLPHIN.md`.
+
+## De lado, la cruceta va al revés, o la app no gira con el móvil
+
+Desde 1.5.5 el mando de lado (NES) manda la cruceta de un mando girado con el
+extremo IR a la izquierda, que es lo que esperan los juegos 2D: ▶ mueve a la
+derecha. Si te va al revés, actualiza la app. La app gira con el móvil
+aunque el bloqueo de giro del sistema esté activo (solo mientras el mando
+está en pantalla; el resto de la app respeta el bloqueo). En Dolphin, con el
+Nunchuk encendido, de lado sale el mando + Nunchuk en vez del NES: apaga el
+chip «Nunchuk» para los juegos de lado (y reabre Dolphin).
+
 ## «El puerto 26760/26761 está ocupado»
 
 Otro programa tenía abierto el puerto del servidor DSU (26760: DS4Windows,
@@ -278,6 +301,17 @@ Más en [MOBILE-LINUX.md](MOBILE-LINUX.md).
 
 PepoMote usa un servicio en primer plano con wakelock; concédele la exención de optimización de batería cuando la pida. En OEMs agresivos (Xiaomi, Huawei…): dontkillmyapp.com/<tu-marca>.
 
+## Android: la notificación de PepoMote
+
+Con la app en pantalla no hay notificación: el enlace va en un servicio
+normal. Al irte a otra app o apagar la pantalla, el servicio sube a primer
+plano y aparece la notificación «PepoMote · Conectado a …» (con
+«Desconectar»), que es lo que impide que Android duerma la conexión. Desde
+Android 13 se puede deslizar (el enlace sigue); en Android 12 o anterior el
+sistema no deja quitar la de un servicio en primer plano, y se va sola al
+volver a la app. Cerrar la app (Atrás desde el inicio, o deslizarla de
+recientes) desconecta y la quita.
+
 ## El modo cambia solo al abrir o cerrar Dolphin o Cemu
 
 Desde 1.4 el receptor vigila los emuladores: abrir Dolphin pone el modo
@@ -368,7 +402,7 @@ igual. Informe: `/Applications/PepoMote.app/Contents/MacOS/PepoMote --diag`.
 
 ## Aviso de versión nueva
 
-Desde 1.5.4 el receptor y las apps consultan una vez al día si hay una versión
+Desde 1.5.5 el receptor y las apps consultan una vez al día si hay una versión
 publicada más reciente y, si la hay, enseñan una tarjeta con el enlace a la
 release de GitHub (en el receptor, también en el menú de la bandeja). La
 consulta es una sola petición a la página de la última release de GitHub

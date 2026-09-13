@@ -20,6 +20,8 @@ final class ControlClient {
         let pad: String
         /// Nombre del PC (`ok.name`); vacío si el receptor no lo manda.
         let name: String
+        /// El receptor confirma el Nunchuk propio ("own"); "none" si no, o receptor antiguo.
+        var nunchuk: String = "none"
     }
 
     struct Callbacks {
@@ -29,6 +31,8 @@ final class ControlClient {
         /// Eco o difusión de `mode`; `byPc`: lo cambió el PC por su cuenta.
         var onModeChanged: (String, Bool) -> Void
         var onPadChanged: (String) -> Void
+        /// Eco del `nunchuk`: el receptor aplica (o no) el Nunchuk propio (opcional: los tests no lo usan).
+        var onNunchukChanged: (Bool) -> Void = { _ in }
         var onNotice: (String) -> Void
         var onClosed: () -> Void
     }
@@ -43,6 +47,8 @@ final class ControlClient {
     private let deviceName: String
     private let deviceModel: String
     private let role: String
+    /// Mando con su propio Nunchuk (`"nunchuk":"own"` en el hello; solo rol mando).
+    private let ownNunchuk: Bool
     private let callbacks: Callbacks
     private let defaultPort: Int
     private var buffer = Data()
@@ -59,12 +65,14 @@ final class ControlClient {
         deviceName: String,
         deviceModel: String,
         role: String,
-        callbacks: Callbacks
+        callbacks: Callbacks,
+        ownNunchuk: Bool = false
     ) {
         self.token = token
         self.deviceName = deviceName
         self.deviceModel = deviceModel
         self.role = role
+        self.ownNunchuk = ownNunchuk
         self.callbacks = callbacks
         defaultPort = port
         let tcp = NWProtocolTCP.Options()
@@ -110,6 +118,8 @@ final class ControlClient {
         ]
         // Ausente = wiimote (receptores anteriores no lo conocen)
         if role == "nunchuk" { hello["role"] = role }
+        // Nunchuk en el mismo móvil: un receptor antiguo lo ignora (y no lo confirma)
+        if role != "nunchuk", ownNunchuk { hello["nunchuk"] = "own" }
         // Sin `pad`: en Wii U se empieza siempre como GamePad/Pro (lo dice el ok)
         sendJson(hello)
     }
@@ -160,7 +170,8 @@ final class ControlClient {
                 player: (obj["player"] as? NSNumber)?.intValue ?? 0,
                 supportsCemu: ControlClient.supportsCemu(obj),
                 pad: obj["pad"] as? String ?? "gamepad",
-                name: obj["name"] as? String ?? ""
+                name: obj["name"] as? String ?? "",
+                nunchuk: obj["nunchuk"] as? String ?? "none"
             )
             DispatchQueue.main.async { self.callbacks.onOk(ok) }
         case "err":
@@ -178,6 +189,9 @@ final class ControlClient {
         case "pad":
             let pad = obj["pad"] as? String ?? "gamepad"
             DispatchQueue.main.async { self.callbacks.onPadChanged(pad) }
+        case "nunchuk":
+            let own = obj["own"] as? Bool ?? false
+            DispatchQueue.main.async { self.callbacks.onNunchukChanged(own) }
         case "notice":
             if let text = obj["text"] as? String, !text.trimmingCharacters(in: .whitespaces).isEmpty {
                 DispatchQueue.main.async { self.callbacks.onNotice(text) }
@@ -226,6 +240,9 @@ final class ControlClient {
 
     /// Modo Wii U: "wiimote" (Mando de Wii) o "gamepad" (volver a GamePad/Pro).
     func sendPad(_ pad: String) { sendJson(["m": "pad", "pad": pad]) }
+
+    /// Nunchuk en el mismo móvil, encendido o apagado; el receptor lo confirma con el eco.
+    func sendNunchuk(_ own: Bool) { sendJson(["m": "nunchuk", "own": own]) }
 
     /// Modo Wii U: texto para el teclado en pantalla de Cemu.
     func sendText(_ text: String) { sendLine(TextInput.encode(text)) }

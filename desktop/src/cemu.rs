@@ -146,10 +146,11 @@ const WIIMOTE: &[(u32, u32)] = &[
     (17, TOUCH), // Home
 ];
 
-/// Parte del Nunchuk (el OTRO móvil, su propio pad DSU).
+/// Parte del Nunchuk (el OTRO móvil, su propio pad DSU): C/Z van por L1/R1,
+/// como en el perfil Wii de Dolphin.
 const NUNCHUK: &[(u32, u32)] = &[
-    (5, CIRCLE),   // Z
-    (6, CROSS),    // C
+    (5, R1),       // Z
+    (6, L1),       // C
     (13, AXIS_YP), // stick arriba
     (14, AXIS_YN),
     (15, AXIS_XN),
@@ -859,7 +860,7 @@ mod tests {
         let m = mappings(&xml);
         assert!(m.contains(&(1, 14)) && m.contains(&(2, 13)) && m.contains(&(3, 15)) && m.contains(&(4, 12)));
         assert!(m.contains(&(17, 16)), "Home → Touch");
-        assert!(m.contains(&(5, 13)) && m.contains(&(6, 14)), "Z → Circle, C → Cross del pad 3");
+        assert!(m.contains(&(5, 11)) && m.contains(&(6, 10)), "Z → R1, C → L1 del pad 3");
         assert!(m.contains(&(13, 39)) && m.contains(&(14, 45)) && m.contains(&(15, 44)) && m.contains(&(16, 38)));
         // el movimiento solo en el mando (el Nunchuk de Cemu no lee un segundo IMU)
         assert_eq!(xml.matches("<motion>true</motion>").count(), 1);

@@ -68,18 +68,20 @@ En Dolphin: Controllers → Alternate Input Sources ON (servidor 127.0.0.1:26760
 
 Con las 9 comprobaciones en verde, el puntero IMU ("Point" con Total Yaw/Pitch + Recenter) y Wii Sports funcionan. Perfil listo en `assets/dolphin/PepoMote.ini`.
 
-## Nunchuk (segundo móvil)
+## Nunchuk (segundo móvil, o el mismo)
 
-Un móvil con `role = nunchuk` (PROTOCOL.md §3) ocupa un slot DSU propio, asignado desde el 3 hacia abajo (los Wiimotes van del 0 hacia arriba); el Nunchuk i-ésimo pertenece al Wiimote i-ésimo. Su PadData lleva: `LX = 128 + stick_x`, `LY = 128 + stick_y` (255 = arriba, como exige Dolphin: `Left Y+`), C → Cross y Z → Circle (bytes analógicos, igual que A/B), y su accel/gyro con el mismo mapeo de ejes. En la configuración de Dolphin el Wiimote emulado del jugador lleva `Extension = Nunchuk` y las entradas del Nunchuk apuntan al pad del otro móvil con nombre completo:
+Un móvil con `role = nunchuk` (PROTOCOL.md §3) ocupa un slot DSU propio, asignado desde el 3 hacia abajo (los Wiimotes van del 0 hacia arriba); el Nunchuk i-ésimo pertenece al Wiimote i-ésimo. Su PadData lleva: `LX = 128 + stick_x`, `LY = 128 + stick_y` (255 = arriba, como exige Dolphin: `Left Y+`), C → L1 y Z → R1 (bytes analógicos 53 y 52, que es de donde Dolphin lee L1/R1, y los bits 2/3 del byte 37 para Cemu), y su accel/gyro con el mismo mapeo de ejes. C/Z no van por Cross/Circle a propósito: así un solo pad puede llevar A/B y C/Z a la vez. En la configuración de Dolphin el Wiimote emulado del jugador lleva `Extension = Nunchuk` y las entradas del Nunchuk apuntan al pad del otro móvil con nombre completo:
 
 ```
-Nunchuk/Buttons/C = `DSUClient/3/PepoMote:Cross`
-Nunchuk/Buttons/Z = `DSUClient/3/PepoMote:Circle`
+Nunchuk/Buttons/C = `DSUClient/3/PepoMote:L1`
+Nunchuk/Buttons/Z = `DSUClient/3/PepoMote:R1`
 Nunchuk/Stick/Up = `DSUClient/3/PepoMote:Left Y+`   (Down = Left Y-, Left = Left X-, Right = Left X+)
 Nunchuk/IMUAccelerometer/Up = `DSUClient/3/PepoMote:Accel Up`   (y los otros cinco ejes)
 ```
 
 Con el acelerómetro IMU mapeado, Dolphin usa la aceleración real del móvil para el Nunchuk (agitar, inclinar: boxeo de Wii Sports) en vez de los gestos simulados.
+
+**Nunchuk en el mismo móvil** (`"nunchuk":"own"` en el `hello`): el mando manda en su propia trama el stick y C/Z además de sus botones, y el Wiimote emulado lee el Nunchuk de su **mismo** pad (`DSUClient/0/PepoMote:L1`, `:R1`, `:Left X±`, `:Accel …`); el acelerómetro del Nunchuk es entonces el del propio mando (agitar uno es agitar los dos). Dolphin trata `Extension` como una configuración, no como una entrada: ponerlo o quitarlo exige reabrir Dolphin, y por eso el receptor solo escribe el ini con Dolphin cerrado.
 
 ## Modo Wii U (Cemu)
 

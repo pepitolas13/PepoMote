@@ -8,6 +8,11 @@ enum SenderKind {
     case wiimote
     /// Nunchuk: 72 bytes, stick en los bytes 6-7 (flagStickValid).
     case nunchuk
+    /// Mando de Wii con Nunchuk en el mismo móvil, apaisado: 72 bytes con el
+    /// stick (flagStickValid) y los botones del mando y del Nunchuk (C/Z) a la
+    /// vez, y los sensores remapeados al marco apaisado como el GamePad (el
+    /// puntero de Dolphin sigue apuntando con el móvil de lado).
+    case wiiNunchuk
     /// GamePad / Pro Controller de Wii U (Cemu): 80 bytes con el bloque de
     /// extensión y los sensores remapeados al marco del mando apaisado.
     case gamepad
@@ -32,7 +37,9 @@ final class MotionEngine {
         set { lock.lock(); kindV = newValue; lock.unlock() }
     }
 
-    /// Rotación de la pantalla (valores de `Frame`) mientras se es GamePad.
+    /// Rotación de la pantalla (valores de `Frame`): la fija el GamePad, el
+    /// mando + Nunchuk y el mando de lado (NES, con `Route.sidewaysRotation`);
+    /// en vertical vale `Frame.rotation0` y no cambia nada.
     var rotation: Int {
         get { lock.lock(); defer { lock.unlock() }; return rotationV }
         set { lock.lock(); rotationV = newValue; lock.unlock() }
@@ -188,10 +195,25 @@ final class MotionEngine {
                 flags: quatFlag | PmpCodec.flagStickValid,
                 stickX: bs.stickX(), stickY: bs.stickY()
             )
-        case .wiimote:
+        case .wiiNunchuk:
+            // Como el Nunchuk (stick en la trama) pero con el móvil de lado:
+            // sensores al marco apaisado (contrato §4), igual que el GamePad
+            let rot = rotation
             packet = PmpCodec.encodeInput(
                 sessionId: sessionId, seq: seq, tSensorUs: tUs,
-                quat: quat, gyro: gyro, accel: accel,
+                quat: Frame.remapQuat(quat, rot), gyro: Frame.remapGyro(gyro, rot), accel: Frame.remapAccel(accel, rot),
+                buttons: bs.current(), recenterCount: bs.recenterCount(), batteryPct: battery(),
+                touchScrollDy: bs.drainScroll(),
+                flags: quatFlag | PmpCodec.flagStickValid,
+                stickX: bs.stickX(), stickY: bs.stickY()
+            )
+        case .wiimote:
+            // Móvil de lado (NES): sensores girados según diga la pantalla
+            // (Route.sidewaysRotation); en vertical (rotation0), tal cual
+            let rot = rotation
+            packet = PmpCodec.encodeInput(
+                sessionId: sessionId, seq: seq, tSensorUs: tUs,
+                quat: Frame.remapQuat(quat, rot), gyro: Frame.remapGyro(gyro, rot), accel: Frame.remapAccel(accel, rot),
                 buttons: bs.current(), recenterCount: bs.recenterCount(), batteryPct: battery(),
                 touchScrollDy: bs.drainScroll(),
                 flags: quatFlag

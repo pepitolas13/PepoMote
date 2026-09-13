@@ -8,6 +8,24 @@ struct RootView: View {
         model.screen == .controller && Route.route(link.link, link.intent) == .gamePad
     }
 
+    /// El resto del mando (vertical, NES, mando + Nunchuk, Nunchuk) gira con
+    /// el dispositivo aunque el bloqueo de giro del Centro de control esté
+    /// activo: se fuerza la orientación que dice el sensor.
+    private var followsDevice: Bool { model.screen == .controller && !wantLandscape }
+
+    private func followDevice() {
+        guard followsDevice else { return }
+        // La orientación del DISPOSITIVO es la contraria de la de la INTERFAZ:
+        // con el botón de inicio a la derecha (device landscapeLeft) la
+        // interfaz está en landscapeRight
+        switch UIDevice.current.orientation {
+        case .landscapeLeft: OrientationLock.set(.landscapeRight)
+        case .landscapeRight: OrientationLock.set(.landscapeLeft)
+        case .portrait: OrientationLock.set(.portrait)
+        default: break
+        }
+    }
+
     var body: some View {
         ZStack {
             Pepo.background.ignoresSafeArea()
@@ -21,6 +39,7 @@ struct RootView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: model.screen)
         .animation(.easeInOut(duration: 0.2), value: model.toast)
+        .pepoImmersive()
         // Error de conexión: al escáner si el PC ya no reconoce el
         // emparejamiento, o aviso y vuelta al inicio
         .onReceive(link.$link) { l in
@@ -28,8 +47,12 @@ struct RootView: View {
         }
         // Apaisado fijo mientras el GamePad esté en pantalla; al salir, como estaba
         .onChange(of: wantLandscape) { v in OrientationLock.set(v ? .landscape : .all) }
+        // El mando sigue al dispositivo (también con el bloqueo de giro); al salir del mando, como estaba
+        .onChange(of: followsDevice) { v in if v { followDevice() } else if !wantLandscape { OrientationLock.set(.all) } }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in followDevice() }
         .onAppear {
             OrientationLock.set(wantLandscape ? .landscape : .all)
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             model.startUpdateChecks()
         }
         .fullScreenCover(isPresented: $model.scanning) {
@@ -83,7 +106,13 @@ struct ControllerRoute: View {
                     // pantalla solo-Dolphin.
                     let showChips = !model.controllerDolphinOnly && AppPrefs.showDolphinChips
                     if landscape {
-                        ControllerLandscapeScreen(showChips: showChips, onDisconnect: { model.disconnect() })
+                        // Dolphin con el Nunchuk en el mismo móvil (confirmado por el
+                        // receptor): mando + Nunchuk a dos manos; si no, el NES de siempre
+                        if Route.wiiLandscapeNunchuk(link.link) {
+                            WiimoteNunchukScreen(showChips: showChips, onDisconnect: { model.disconnect() })
+                        } else {
+                            ControllerLandscapeScreen(showChips: showChips, onDisconnect: { model.disconnect() })
+                        }
                     } else {
                         ControllerScreen(showChips: showChips, onDisconnect: { model.disconnect() })
                     }
@@ -114,5 +143,18 @@ struct ToastView: View {
                 .padding(.bottom, 40)
         }
         .allowsHitTesting(false)
+    }
+}
+
+extension View {
+    /// Inmersivo, como en Android: sin barra de estado mientras se usa la app
+    /// y, en iOS 16+, con el indicador de inicio atenuado (vuelve al deslizar).
+    @ViewBuilder
+    func pepoImmersive() -> some View {
+        if #available(iOS 16.0, *) {
+            self.statusBarHidden(true).persistentSystemOverlays(.hidden)
+        } else {
+            self.statusBar(hidden: true)
+        }
     }
 }

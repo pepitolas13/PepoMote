@@ -19,12 +19,13 @@ enum Frame {
     private static let halfSqrt2: Float = 0.70710678
 
     /// Vector (accel o gyro): borde superior a la izquierda (ROTATION_90) →
-    /// (−y, x, z); a la derecha (ROTATION_270) → (y, −x, z); cualquier otra
-    /// rotación, tal cual.
+    /// (−y, x, z); a la derecha (ROTATION_270) → (y, −x, z); boca abajo
+    /// (ROTATION_180) → (−x, −y, z); cualquier otra rotación, tal cual.
     private static func remapVector(_ v: [Float], _ rotation: Int) -> [Float] {
         switch rotation {
         case rotation90: return [-v[1], v[0], v[2]]
         case rotation270: return [v[1], -v[0], v[2]]
+        case rotation180: return [-v[0], -v[1], v[2]]
         default: return [v[0], v[1], v[2]]
         }
     }
@@ -37,15 +38,17 @@ enum Frame {
 
     /// Quaternion (w, x, y, z) al marco del GamePad: `quat ⊗ r` (producto de
     /// Hamilton, r a la derecha) con r = (√½, 0, 0, −√½) si el borde superior
-    /// queda a la izquierda y r = (√½, 0, 0, +√½) si queda a la derecha.
+    /// queda a la izquierda, r = (√½, 0, 0, +√½) si queda a la derecha y
+    /// r = (0, 0, 0, −1) boca abajo (dos giros a la izquierda seguidos).
     static func remapQuat(_ q: [Float], _ rotation: Int) -> [Float] {
+        let rw: Float
         let rz: Float
         switch rotation {
-        case rotation90: rz = -halfSqrt2
-        case rotation270: rz = halfSqrt2
+        case rotation90: (rw, rz) = (halfSqrt2, -halfSqrt2)
+        case rotation270: (rw, rz) = (halfSqrt2, halfSqrt2)
+        case rotation180: (rw, rz) = (0, -1)
         default: return [q[0], q[1], q[2], q[3]]
         }
-        let rw = halfSqrt2
         let (qw, qx, qy, qz) = (q[0], q[1], q[2], q[3])
         return [
             qw * rw - qz * rz,

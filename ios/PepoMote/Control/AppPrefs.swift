@@ -31,6 +31,14 @@ enum AppPrefs {
         set { d.set(newValue, forKey: "onboarded") }
     }
 
+    /// Nunchuk en el mismo móvil (modo Dolphin): el mando lleva su propio
+    /// Nunchuk y en apaisado sale el trazado con stick, C y Z. Encendido por
+    /// defecto, como el Wiimote emulado de Dolphin.
+    static var ownNunchuk: Bool {
+        get { d.object(forKey: "ownNunchuk") as? Bool ?? true }
+        set { d.set(newValue, forKey: "ownNunchuk") }
+    }
+
     /// GamePad de Wii U sin pantalla táctil (ni doble pantalla): los botones
     /// crecen (Ajustes). `GamePadScreen` lo observa con @AppStorage.
     static let gamePadNoScreenKey = "gamePadNoScreen"

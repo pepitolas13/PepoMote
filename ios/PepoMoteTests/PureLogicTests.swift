@@ -166,10 +166,26 @@ final class FrameTests: XCTestCase {
         XCTAssertEqual(n, r.map { $0 * $0 }.reduce(0, +).squareRoot(), accuracy: 1e-5)
     }
 
+    func testGiroDe180EsDosGirosALaIzquierda() {
+        let v: [Float] = [1, 2, 3]
+        XCTAssertEqual(Frame.remapAccel(v, Frame.rotation180), [-1, -2, 3])
+        XCTAssertEqual(Frame.remapAccel(Frame.remapAccel(v, Frame.rotation90), Frame.rotation90), Frame.remapGyro(v, Frame.rotation180))
+        let q: [Float] = [0.8, 0.1, -0.5, 0.3]
+        let twice = Frame.remapQuat(Frame.remapQuat(q, Frame.rotation90), Frame.rotation90)
+        let once = Frame.remapQuat(q, Frame.rotation180)
+        for i in 0..<4 {
+            XCTAssertEqual(twice[i], once[i], accuracy: 1e-4)
+        }
+        XCTAssertEqual(once[0], 0.3, accuracy: 1e-4)
+        XCTAssertEqual(once[1], 0.5, accuracy: 1e-4)
+        XCTAssertEqual(once[2], 0.1, accuracy: 1e-4)
+        XCTAssertEqual(once[3], -0.8, accuracy: 1e-4)
+    }
+
     func testOtrasRotacionesNoTocanNada() {
         let v: [Float] = [1, 2, 3]
         let q: [Float] = [0.8, 0.1, -0.5, 0.3]
-        for rot in [Frame.rotation0, Frame.rotation180, 7, -1] {
+        for rot in [Frame.rotation0, 7, -1] {
             XCTAssertEqual(Frame.remapAccel(v, rot), v)
             XCTAssertEqual(Frame.remapGyro(v, rot), v)
             XCTAssertEqual(Frame.remapQuat(q, rot), q)

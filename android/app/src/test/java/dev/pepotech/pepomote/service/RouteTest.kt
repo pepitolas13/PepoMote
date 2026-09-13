@@ -13,11 +13,50 @@ class RouteTest {
         role: String = LinkState.ROLE_WIIMOTE,
         pad: String = LinkState.PAD_GAMEPAD,
         slot: Int = 0,
-        supportsCemu: Boolean = true
+        supportsCemu: Boolean = true,
+        ownNunchuk: Boolean = false
     ) = UiLink.Connected(
         pcName = "PC", mode = mode, rttMs = null, sensorHz = 0f,
-        slot = slot, role = role, supportsCemu = supportsCemu, pad = pad
+        slot = slot, role = role, supportsCemu = supportsCemu, pad = pad, ownNunchuk = ownNunchuk
     )
+
+    @Test
+    fun mandoDeLadoGiraLaCrucetaYLosSensores() {
+        val r90 = dev.pepotech.pepomote.sensor.Frame.ROTATION_90
+        val r270 = dev.pepotech.pepomote.sensor.Frame.ROTATION_270
+        val r180 = dev.pepotech.pepomote.sensor.Frame.ROTATION_180
+        val r0 = dev.pepotech.pepomote.sensor.Frame.ROTATION_0
+        // Dolphin y Wii U como Mando de Wii: mando girado (cruceta girada, sensores normalizados al IR a la izquierda)
+        for (link in listOf(connected(mode = "dolphin"), connected(mode = "cemu", pad = "wiimote"))) {
+            assertEquals(true, Route.sidewaysDpad(link))
+            assertEquals(r0, Route.sidewaysRotation(link, r90))
+            assertEquals(r180, Route.sidewaysRotation(link, r270))
+        }
+        // Puntero: flechas del PC y el móvil apunta con su borde largo (como el GamePad)
+        assertEquals(false, Route.sidewaysDpad(connected(mode = "pointer")))
+        assertEquals(r90, Route.sidewaysRotation(connected(mode = "pointer"), r90))
+        assertEquals(r270, Route.sidewaysRotation(connected(mode = "pointer"), r270))
+        // Sin enlace confirmado: como puntero
+        assertEquals(false, Route.sidewaysDpad(UiLink.Connecting))
+        assertEquals(r90, Route.sidewaysRotation(UiLink.Connecting, r90))
+    }
+
+    @Test
+    fun apaisadoConNunchukSoloEnDolphinConfirmado() {
+        assertEquals(true, Route.wiiLandscapeNunchuk(connected(mode = "dolphin", ownNunchuk = true)))
+        // cualquier jugador, no solo el 1
+        assertEquals(true, Route.wiiLandscapeNunchuk(connected(mode = "dolphin", ownNunchuk = true, slot = 2)))
+        // sin confirmación del receptor (antiguo, o ajuste apagado): NES de siempre
+        assertEquals(false, Route.wiiLandscapeNunchuk(connected(mode = "dolphin")))
+        // en puntero y en Wii U no hay Nunchuk propio
+        assertEquals(false, Route.wiiLandscapeNunchuk(connected(mode = "pointer", ownNunchuk = true)))
+        assertEquals(false, Route.wiiLandscapeNunchuk(connected(mode = "cemu", pad = "wiimote", ownNunchuk = true)))
+        // un Nunchuk (rol) nunca
+        assertEquals(false, Route.wiiLandscapeNunchuk(connected(mode = "dolphin", role = "nunchuk", ownNunchuk = true)))
+        assertEquals(false, Route.wiiLandscapeNunchuk(UiLink.Connecting))
+        // la ruta principal no cambia: sigue siendo el layout Wii
+        assertEquals(PadScreen.Wii, Route.route(connected(mode = "dolphin", ownNunchuk = true), PadIntent.None))
+    }
 
     @Test
     fun gamePadConCemuConfirmado() {

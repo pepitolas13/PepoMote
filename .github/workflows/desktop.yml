@@ -2,7 +2,7 @@ name: desktop
 
 on:
   push:
-    branches: [main, "1.6"]
+    branches: [main, next]
     paths: ["desktop/**", "pmp/**", "protocol/**", "packaging/linux/**", "packaging/macos/**", ".github/workflows/desktop.yml"]
   pull_request:
     paths: ["desktop/**", "pmp/**", "protocol/**", "packaging/linux/**", "packaging/macos/**"]

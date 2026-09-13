@@ -57,7 +57,7 @@ class PepoTileService : TileService() {
         when (tileAction(LinkState.flow.value, PairStore.load(this) != null)) {
             TileAction.Stop -> LinkForegroundService.stop(this)
             TileAction.Start -> try {
-                LinkForegroundService.start(this)
+                LinkForegroundService.start(this, background = true)
             } catch (_: Exception) {
                 // Android 14+ puede vetar un servicio en primer plano desde aquí:
                 // la app lo arranca al abrirse
