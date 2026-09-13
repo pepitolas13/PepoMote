@@ -56,12 +56,13 @@ IMUPointer/Total Pitch = 20.000000000000000
 Options/Battery = `Battery`
 ";
 
-/// Nunchuk emulado alimentado por el pad DSU del OTRO móvil ({NDEV} = su
-/// slot): stick, C/Z (Cross/Circle de ese pad) y su acelerómetro real
-/// (Dolphin lo usa tal cual para agitar/inclinar). Ver protocol/DSU.md.
+/// Nunchuk emulado alimentado por un pad DSU ({NDEV} = su slot: el del OTRO
+/// móvil, o el mismo pad del mando si el Nunchuk va en el mismo móvil):
+/// stick, C/Z (L1/R1 de ese pad) y su acelerómetro real (Dolphin lo usa tal
+/// cual para agitar/inclinar). Ver protocol/DSU.md.
 const NUNCHUK_MAPPING: &str = "Extension = Nunchuk
-Nunchuk/Buttons/C = `DSUClient/{NDEV}/PepoMote:Cross`
-Nunchuk/Buttons/Z = `DSUClient/{NDEV}/PepoMote:Circle`
+Nunchuk/Buttons/C = `DSUClient/{NDEV}/PepoMote:L1`
+Nunchuk/Buttons/Z = `DSUClient/{NDEV}/PepoMote:R1`
 Nunchuk/Stick/Up = `DSUClient/{NDEV}/PepoMote:Left Y+`
 Nunchuk/Stick/Down = `DSUClient/{NDEV}/PepoMote:Left Y-`
 Nunchuk/Stick/Left = `DSUClient/{NDEV}/PepoMote:Left X-`
@@ -1105,7 +1106,7 @@ Source = 1
 "), "{out}");
         assert!(out.contains("Extension = Nunchuk
 "), "{out}");
-        assert!(out.contains("Nunchuk/Buttons/C = `DSUClient/3/PepoMote:Cross`
+        assert!(out.contains("Nunchuk/Buttons/C = `DSUClient/3/PepoMote:L1`
 "));
         assert!(out.contains("Nunchuk/Stick/Up = `DSUClient/3/PepoMote:Left Y+`
 "));
@@ -1130,9 +1131,33 @@ Source = 0
 Device = DSUClient/1/PepoMote
 Source = 1
 "), "{out}");
-        assert!(out.contains("Nunchuk/Buttons/Z = `DSUClient/2/PepoMote:Circle`
+        assert!(out.contains("Nunchuk/Buttons/Z = `DSUClient/2/PepoMote:R1`
 "));
         assert_eq!(out.matches("Extension = Nunchuk").count(), 2);
+    }
+
+    #[test]
+    fn nunchuk_en_el_mismo_movil_lee_de_su_propio_pad() {
+        let dir = tmp_dir("nunchuk-propio");
+        // J1 = mando en slot 0 con el Nunchuk en su mismo pad
+        write_wiimotes(&dir, &[(0, Some(0))]).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(out.contains("[Wiimote1]
+Device = DSUClient/0/PepoMote
+Source = 1
+"), "{out}");
+        assert!(out.contains("Extension = Nunchuk
+"), "{out}");
+        assert!(out.contains("Nunchuk/Buttons/C = `DSUClient/0/PepoMote:L1`
+"));
+        assert!(out.contains("Nunchuk/Buttons/Z = `DSUClient/0/PepoMote:R1`
+"));
+        assert!(out.contains("Nunchuk/Stick/Left = `DSUClient/0/PepoMote:Left X-`
+"));
+        assert!(out.contains("Nunchuk/IMUAccelerometer/Up = `DSUClient/0/PepoMote:Accel Up`
+"));
+        assert_eq!(out.matches("Extension = Nunchuk").count(), 1);
+        assert!(!out.contains("Extension = None"));
     }
 
     #[test]

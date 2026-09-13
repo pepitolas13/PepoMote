@@ -69,8 +69,9 @@ fn on(c: bool) -> u8 {
 /// Bits PMP (PROTOCOL.md §4.2) → botones DSU, perfil Wii (Dolphin).
 ///
 /// Mapeo: A→Cross, B→Circle, 1→Square, 2→Triangle, +→Options, −→Share, Home→PS.
-/// Nunchuk (bits 17/18): C→Cross, Z→Circle (mismos bytes que A/B: cada
-/// Nunchuk va en su propio pad DSU y Dolphin lee de ahí sus C/Z).
+/// Nunchuk (bits 17/18): C→L1, Z→R1 (bits y analógicos 53/52, que es de donde
+/// los lee Dolphin), distintos de A/B: así un mismo pad puede llevar mando y
+/// Nunchuk a la vez (Nunchuk en el mismo móvil) sin que choquen.
 pub fn buttons_to_dsu(pmp: u32) -> DsuButtons {
     let bit = |b: u32| pmp & (1 << b) != 0;
 
@@ -98,14 +99,20 @@ pub fn buttons_to_dsu(pmp: u32) -> DsuButtons {
     if bit(10) {
         b2 |= 1 << 4; // Dos → Triangle
     }
-    if bit(1) || bit(18) {
-        b2 |= 1 << 5; // B (o Z del Nunchuk) → Circle
+    if bit(1) {
+        b2 |= 1 << 5; // B → Circle
     }
-    if bit(0) || bit(17) {
-        b2 |= 1 << 6; // A (o C del Nunchuk) → Cross
+    if bit(0) {
+        b2 |= 1 << 6; // A → Cross
     }
     if bit(9) {
         b2 |= 1 << 7; // Uno → Square
+    }
+    if bit(17) {
+        b2 |= 1 << 2; // C del Nunchuk → L1
+    }
+    if bit(18) {
+        b2 |= 1 << 3; // Z del Nunchuk → R1
     }
 
     DsuButtons {
@@ -119,8 +126,9 @@ pub fn buttons_to_dsu(pmp: u32) -> DsuButtons {
         // caras analógicas en el orden del struct de Dolphin (PadDataResponse):
         // square, cross, circle, triangle — Dolphin lee los botones de cara de
         // AQUÍ (los bits de button_states2 los ignora)
-        face: [on(bit(9)), on(bit(0) || bit(17)), on(bit(1) || bit(18)), on(bit(10))],
-        shoulders: [0; 4],
+        face: [on(bit(9)), on(bit(0)), on(bit(1)), on(bit(10))],
+        // R1, L1, R2, L2 analógicos: Z y C del Nunchuk (Dolphin lee L1/R1 de aquí)
+        shoulders: [on(bit(18)), on(bit(17)), 0, 0],
     }
 }
 
@@ -132,7 +140,8 @@ pub fn buttons_to_dsu(pmp: u32) -> DsuButtons {
 ///
 /// A→Cross · B→Circle · X/1→Square · Y/2→Triangle · L→L1 · R→R1 ·
 /// ZL/ZR→l2/r2 analógicos · Mic→L2 · Pantalla→R2 · click sticks→L3/R3 ·
-/// +→Options · −→Share · Home→Touch (y PS) · cruceta igual · C→Cross · Z→Circle.
+/// +→Options · −→Share · Home→Touch (y PS) · cruceta igual · C→L1 · Z→R1
+/// (como en Wii; un pad nunca lleva L/R y C/Z a la vez).
 pub fn buttons_to_dsu_wiiu(pmp: u32) -> DsuButtons {
     let bit = |b: u32| pmp & (1 << b) != 0;
     let mut d = buttons_to_dsu(pmp);
@@ -163,8 +172,8 @@ pub fn buttons_to_dsu_wiiu(pmp: u32) -> DsuButtons {
     if bit(26) {
         d.b1 |= 1 << 2; // click stick derecho → R3
     }
-    // R1, L1, R2, L2 analógicos: R2/L2 son los gatillos ZR/ZL
-    d.shoulders = [on(bit(22)), on(bit(21)), on(bit(24)), on(bit(23))];
+    // R1, L1, R2, L2 analógicos: R2/L2 son los gatillos ZR/ZL; R1/L1 también Z/C del Nunchuk
+    d.shoulders = [on(bit(22) || bit(18)), on(bit(21) || bit(17)), on(bit(24)), on(bit(23))];
     // Home → Touch (Cemu no lee el PS)
     d.touch = on(bit(8));
     d
@@ -224,6 +233,15 @@ mod tests {
         assert_eq!(d.dpad, [0, 0, 0, 0xFF]); // L D R U → solo Up
         assert_eq!(d.face, [0, 0xFF, 0, 0]); // square CROSS circle triangle → A
         assert_eq!(d.shoulders, [0; 4]);
+        // C/Z del Nunchuk: L1/R1 (bits y analógicos), nunca A/B
+        let d = buttons_to_dsu((1 << 17) | (1 << 18));
+        assert_eq!(d.b2, (1 << 2) | (1 << 3));
+        assert_eq!(d.face, [0; 4], "A/B intactos");
+        assert_eq!(d.shoulders, [0xFF, 0xFF, 0, 0], "R1 = Z, L1 = C");
+        // A + C a la vez en el mismo pad (Nunchuk en el mismo móvil): distinguibles
+        let d = buttons_to_dsu((1 << 0) | (1 << 17));
+        assert_eq!(d.face, [0, 0xFF, 0, 0]);
+        assert_eq!(d.shoulders, [0, 0xFF, 0, 0]);
     }
 
     #[test]
@@ -264,9 +282,11 @@ mod tests {
         // clicks de stick
         let d = buttons_to_dsu_wiiu(BTN_STICK_L | BTN_STICK_R);
         assert_eq!(d.b1, 0b110);
-        // C/Z del Nunchuk como en Wii
+        // C/Z del Nunchuk como en Wii: L1/R1
         let d = buttons_to_dsu_wiiu(BTN_C | BTN_Z);
-        assert_eq!(d.b2, (1 << 6) | (1 << 5));
+        assert_eq!(d.b2, (1 << 2) | (1 << 3));
+        assert_eq!(d.shoulders, [0xFF, 0xFF, 0, 0]);
+        assert_eq!(d.face, [0; 4]);
         // Mando Wii dentro de Cemu: 1/2 y Home
         let d = buttons_to_dsu_wiiu(BTN_ONE | BTN_TWO | BTN_HOME);
         assert_eq!(d.b2, (1 << 7) | (1 << 4));

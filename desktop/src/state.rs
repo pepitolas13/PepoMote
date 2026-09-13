@@ -249,6 +249,11 @@ pub struct PlayerInfo {
     /// Modo Wii U: el móvil ha pedido ser Mando Wii (Wiimote emulado de
     /// Cemu) en vez de GamePad / Pro Controller.
     pub pad_wii: bool,
+    /// El mando lleva su propio Nunchuk (un solo móvil): stick, C y Z van en
+    /// su misma trama y, en Dolphin, `Extension = Nunchuk` lee de su mismo
+    /// pad DSU. Se anuncia en el `hello` (`"nunchuk":"own"`) o con el
+    /// mensaje `nunchuk`.
+    pub own_nunchuk: bool,
 }
 
 /// Tipo de mando emulado en Cemu (modo Wii U) de un jugador.
@@ -282,9 +287,10 @@ pub struct CemuPlayer {
 }
 
 /// Reparto para Cemu: el Jugador 1 es el GamePad y los demás Pro Controller,
-/// salvo los que pidieron Mando Wii; el Nunchuk solo acompaña a un Mando Wii.
+/// salvo los que pidieron Mando Wii; el Nunchuk (de otro móvil) solo acompaña
+/// a un Mando Wii. El Nunchuk propio no se aplica en Cemu de momento.
 pub fn cemu_layout(players: &[Option<PlayerInfo>]) -> Vec<CemuPlayer> {
-    player_layout(players)
+    external_layout(players)
         .iter()
         .enumerate()
         .map(|(i, (wslot, nslot))| {
@@ -327,8 +333,24 @@ pub fn effective_pad(players: &[Option<PlayerInfo>], slot: u8) -> &'static str {
     }
 }
 
-/// Jugadores en orden: (slot del Wiimote, slot del Nunchuk asociado).
+/// Jugadores en orden: (slot del Wiimote, slot del Nunchuk asociado). El
+/// Nunchuk de otro móvil i-ésimo es del Wiimote i-ésimo (`external_layout`),
+/// salvo que ese mando lleve Nunchuk propio: entonces se empareja consigo
+/// mismo (mismo pad DSU) y el externo queda sin uso.
 pub fn player_layout(players: &[Option<PlayerInfo>]) -> Vec<(u8, Option<u8>)> {
+    external_layout(players)
+        .into_iter()
+        .map(|(w, n)| {
+            let own = players[w as usize].as_ref().is_some_and(|p| p.own_nunchuk);
+            (w, if own { Some(w) } else { n })
+        })
+        .collect()
+}
+
+/// Reparto clásico, solo con Nunchuks de otro móvil: Wiimotes por slot
+/// ascendente y Nunchuks por slot descendente, el i-ésimo con el i-ésimo. Es
+/// el que numera a los jugadores y el que usa Cemu.
+pub fn external_layout(players: &[Option<PlayerInfo>]) -> Vec<(u8, Option<u8>)> {
     let wiimotes: Vec<u8> = (0..players.len())
         .filter(|i| players[*i].as_ref().is_some_and(|p| p.role == Role::Wiimote))
         .map(|i| i as u8)
@@ -514,6 +536,15 @@ mod tests {
             rtt_ms: None,
             role,
             pad_wii: false,
+            own_nunchuk: false,
+        })
+    }
+
+    /// Un mando con Nunchuk en el mismo móvil.
+    fn player_own() -> Option<PlayerInfo> {
+        player(Role::Wiimote).map(|mut p| {
+            p.own_nunchuk = true;
+            p
         })
     }
 
@@ -584,6 +615,29 @@ mod tests {
         assert_eq!(player_number(&p, 3), 1);
         // slot vacío → número por posición
         assert_eq!(player_number(&p, 1), 2);
+    }
+
+    #[test]
+    fn nunchuk_en_el_mismo_movil() {
+        // J1 lleva su Nunchuk: se empareja consigo mismo (mismo pad DSU)
+        let p = [player_own(), None, None, None];
+        assert_eq!(player_layout(&p), vec![(0, Some(0))]);
+        assert_eq!(player_number(&p, 0), 1);
+        // un Nunchuk de otro móvil es del J1 por orden, pero J1 ya lleva el
+        // suyo: queda sin uso; J2 (sin propio) sigue sin Nunchuk
+        let p = [player_own(), player(Role::Wiimote), None, player(Role::Nunchuk)];
+        assert_eq!(player_layout(&p), vec![(0, Some(0)), (1, None)]);
+        assert_eq!(external_layout(&p), vec![(0, Some(3)), (1, None)]);
+        assert_eq!(player_number(&p, 3), 1, "la numeración no cambia");
+        // dos mandos con Nunchuk propio y uno sin él
+        let p = [player_own(), player(Role::Wiimote), player_own(), None];
+        assert_eq!(player_layout(&p), vec![(0, Some(0)), (1, None), (2, Some(2))]);
+        // en Cemu el Nunchuk propio no se aplica (de momento): J1 Mando Wii
+        // se lleva el de otro móvil como siempre
+        let mut p = [player_own(), player(Role::Wiimote), None, player(Role::Nunchuk)];
+        p[0].as_mut().unwrap().pad_wii = true;
+        assert_eq!(cemu_layout(&p)[0].nunchuk_slot, Some(3));
+        assert_eq!(effective_pad(&p, 3), "wiimote");
     }
 
     #[test]

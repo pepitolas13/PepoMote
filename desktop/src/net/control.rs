@@ -171,6 +171,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     let role = if hello["role"].as_str() == Some("nunchuk") { Role::Nunchuk } else { Role::Wiimote };
     // Modo Wii U: quiere ser Mando Wii (ausente = GamePad / Pro según jugador)
     let pad_wii = role == Role::Wiimote && hello["pad"].as_str() == Some("wiimote");
+    // Nunchuk en el mismo móvil (ausente = no: como un móvil anterior a 1.5.5)
+    let own_nunchuk = role == Role::Wiimote && hello["nunchuk"].as_str() == Some("own");
 
     let session_id: u32 = rand::thread_rng().gen();
     let (slot, evicted_slots) = {
@@ -205,7 +207,13 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     };
     crate::log_line!(
         "Móvil «{device_name}» ({peer_ip}) conectado: slot {slot}, {}{}",
-        if role == Role::Nunchuk { "Nunchuk" } else { "mando" },
+        if role == Role::Nunchuk {
+            "Nunchuk"
+        } else if own_nunchuk {
+            "mando + Nunchuk"
+        } else {
+            "mando"
+        },
         if evicted_slots.is_empty() { String::new() } else { format!(" (fantasma desalojada en slot {evicted_slots:?})") }
     );
 
@@ -222,6 +230,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             rtt_ms: None,
             role,
             pad_wii,
+            own_nunchuk,
         });
         if !s.injection_error {
             s.last_error = None;
@@ -238,7 +247,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         "role":if role == Role::Nunchuk { "nunchuk" } else { "wiimote" },
                         "player":player,
                         "modes":modes,
-                        "pad":pad});
+                        "pad":pad,
+                        "nunchuk":if own_nunchuk { "own" } else { "none" }});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }
@@ -319,6 +329,38 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                     }
                 } else {
                     let _ = send(&writer, &json!({"m":"pad","pad":pad_str(shared, slot)}));
+                }
+            }
+            Some("nunchuk") => {
+                // Nunchuk en el mismo móvil (modo Dolphin): el mando manda
+                // también stick, C y Z, y su Wiimote emulado lleva Extension =
+                // Nunchuk leyendo de su mismo pad. Eco siempre; reconfigurar
+                // Dolphin solo si cambia (con Dolphin abierto queda pendiente).
+                if role == Role::Wiimote {
+                    let own = msg["own"].as_bool().unwrap_or(false);
+                    let changed = {
+                        let mut s = shared.lock().unwrap();
+                        match s.players[slot as usize].as_mut() {
+                            Some(p) if p.own_nunchuk != own => {
+                                p.own_nunchuk = own;
+                                true
+                            }
+                            _ => false,
+                        }
+                    };
+                    if debug() {
+                        eprintln!("[control] {device_name} (slot {slot}) Nunchuk propio → {own}");
+                    }
+                    let _ = send(&writer, &json!({"m":"nunchuk","own":own}));
+                    if changed {
+                        crate::log_line!(
+                            "Móvil «{device_name}»: Nunchuk en el mismo móvil {}",
+                            if own { "activado" } else { "desactivado" }
+                        );
+                        auto_configure(shared, sessions);
+                    }
+                } else {
+                    let _ = send(&writer, &json!({"m":"nunchuk","own":false}));
                 }
             }
             Some("text") => {

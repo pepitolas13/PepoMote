@@ -305,9 +305,10 @@ mod tests {
         let out = pad_data_packet(3, &s, false, 1);
         assert_eq!(out[20], 3); // slot del Nunchuk
         assert_eq!(&out[40..44], &[228, 78, 128, 128], "LX/LY = 128 + stick, derecho neutro");
-        assert_eq!(out[49], 0xFF, "C → Cross analógico");
-        assert_eq!(out[50], 0xFF, "Z → Circle analógico");
-        assert_eq!(out[37] & (3 << 5), 3 << 5, "C/Z también en el bitmask");
+        assert_eq!(out[53], 0xFF, "C → L1 analógico");
+        assert_eq!(out[52], 0xFF, "Z → R1 analógico");
+        assert_eq!(&out[48..52], &[0u8; 4], "A/B intactos");
+        assert_eq!(out[37] & (3 << 2), 3 << 2, "C/Z también en el bitmask (L1/R1)");
         // extremos recortados a 0..255
         s.stick_x = -127;
         s.stick_y = 127;
