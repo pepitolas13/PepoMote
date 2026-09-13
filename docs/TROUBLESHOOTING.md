@@ -402,7 +402,7 @@ igual. Informe: `/Applications/PepoMote.app/Contents/MacOS/PepoMote --diag`.
 
 ## Aviso de versión nueva
 
-Desde 1.5.4 el receptor y las apps consultan una vez al día si hay una versión
+Desde 1.5.5 el receptor y las apps consultan una vez al día si hay una versión
 publicada más reciente y, si la hay, enseñan una tarjeta con el enlace a la
 release de GitHub (en el receptor, también en el menú de la bandeja). La
 consulta es una sola petición a la página de la última release de GitHub
