@@ -31,8 +31,8 @@ final class ControlClient {
         /// Eco o difusión de `mode`; `byPc`: lo cambió el PC por su cuenta.
         var onModeChanged: (String, Bool) -> Void
         var onPadChanged: (String) -> Void
-        /// Eco del `nunchuk`: el receptor aplica (o no) el Nunchuk propio.
-        var onNunchukChanged: (Bool) -> Void
+        /// Eco del `nunchuk`: el receptor aplica (o no) el Nunchuk propio (opcional: los tests no lo usan).
+        var onNunchukChanged: (Bool) -> Void = { _ in }
         var onNotice: (String) -> Void
         var onClosed: () -> Void
     }
