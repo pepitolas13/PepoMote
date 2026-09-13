@@ -33,6 +33,14 @@ enum Route {
         return .wii
     }
 
+    /// Layout Wii apaisado = mando + Nunchuk en un solo móvil: modo Dolphin,
+    /// este móvil es mando y el receptor ha confirmado el Nunchuk propio (un
+    /// receptor antiguo no lo confirma y se queda el NES de siempre).
+    static func wiiLandscapeNunchuk(_ link: UiLink) -> Bool {
+        guard let c = link.connected else { return false }
+        return c.mode == LinkState.modeDolphin && c.role == LinkState.roleWiimote && c.ownNunchuk
+    }
+
     /// Intención resultante y, si toca, el aviso a enseñar (clave de texto).
     struct Outcome: Equatable {
         let intent: PadIntent

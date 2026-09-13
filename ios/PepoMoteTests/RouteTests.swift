@@ -8,9 +8,26 @@ final class RouteTests: XCTestCase {
         role: String = LinkState.roleWiimote,
         pad: String = LinkState.padGamepad,
         slot: Int = 0,
-        supportsCemu: Bool = true
+        supportsCemu: Bool = true,
+        ownNunchuk: Bool = false
     ) -> UiLink {
-        .connected(ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad))
+        .connected(ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad, ownNunchuk: ownNunchuk))
+    }
+
+    func testApaisadoConNunchukSoloEnDolphinConfirmado() {
+        XCTAssertTrue(Route.wiiLandscapeNunchuk(connected(mode: "dolphin", ownNunchuk: true)))
+        // cualquier jugador, no solo el 1
+        XCTAssertTrue(Route.wiiLandscapeNunchuk(connected(mode: "dolphin", slot: 2, ownNunchuk: true)))
+        // sin confirmación del receptor (antiguo, o ajuste apagado): NES de siempre
+        XCTAssertFalse(Route.wiiLandscapeNunchuk(connected(mode: "dolphin")))
+        // en puntero y en Wii U no hay Nunchuk propio
+        XCTAssertFalse(Route.wiiLandscapeNunchuk(connected(mode: "pointer", ownNunchuk: true)))
+        XCTAssertFalse(Route.wiiLandscapeNunchuk(connected(mode: "cemu", pad: "wiimote", ownNunchuk: true)))
+        // un Nunchuk (rol) nunca
+        XCTAssertFalse(Route.wiiLandscapeNunchuk(connected(mode: "dolphin", role: "nunchuk", ownNunchuk: true)))
+        XCTAssertFalse(Route.wiiLandscapeNunchuk(.connecting))
+        // la ruta principal no cambia: sigue siendo el layout Wii
+        XCTAssertEqual(Route.route(connected(mode: "dolphin", ownNunchuk: true), .none), .wii)
     }
 
     func testGamePadConCemuConfirmado() {

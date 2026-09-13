@@ -83,7 +83,13 @@ struct ControllerRoute: View {
                     // pantalla solo-Dolphin.
                     let showChips = !model.controllerDolphinOnly && AppPrefs.showDolphinChips
                     if landscape {
-                        ControllerLandscapeScreen(showChips: showChips, onDisconnect: { model.disconnect() })
+                        // Dolphin con el Nunchuk en el mismo móvil (confirmado por el
+                        // receptor): mando + Nunchuk a dos manos; si no, el NES de siempre
+                        if Route.wiiLandscapeNunchuk(link.link) {
+                            WiimoteNunchukScreen(showChips: showChips, onDisconnect: { model.disconnect() })
+                        } else {
+                            ControllerLandscapeScreen(showChips: showChips, onDisconnect: { model.disconnect() })
+                        }
                     } else {
                         ControllerScreen(showChips: showChips, onDisconnect: { model.disconnect() })
                     }

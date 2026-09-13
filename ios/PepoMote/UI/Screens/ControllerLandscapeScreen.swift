@@ -54,8 +54,17 @@ struct ControllerLandscapeScreen: View {
                             if isWiiUAsWiimote(c) {
                                 Text(tr("wiiu_as_wiimote")).pepoBody().lineLimit(1).layoutPriority(1)
                             }
-                            if showModeChips(c, showChips) {
-                                ModeChips(current: c.mode, supportsCemu: c.supportsCemu, compact: true).fixedSize().layoutPriority(2)
+                            // Selector de modo y, en Dolphin, el chip «Nunchuk» (aquí
+                            // apagado: encenderlo cambia este NES por el mando + Nunchuk)
+                            if showModeChips(c, showChips) || showNunchukChip(c) {
+                                HStack(spacing: 6) {
+                                    if showModeChips(c, showChips) {
+                                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, compact: true)
+                                    }
+                                    if showNunchukChip(c) { NunchukChip(link: c, compact: true) }
+                                }
+                                .fixedSize()
+                                .layoutPriority(2)
                             }
                             if c.mode == LinkState.modeCemu {
                                 KeyboardButton(compact: true) { keyboardOpen = true }.fixedSize().layoutPriority(3)

@@ -16,6 +16,9 @@ struct ConnectedLink: Equatable {
     var supportsCemu: Bool = false
     /// Mando efectivo en modo Wii U: gamepad / pro / wiimote.
     var pad: String = LinkState.padGamepad
+    /// El receptor confirmó el Nunchuk en el mismo móvil (`ok.nunchuk` o eco
+    /// de `nunchuk`): en Dolphin, apaisado = mando + Nunchuk.
+    var ownNunchuk: Bool = false
 }
 
 enum UiLink: Equatable {
@@ -81,6 +84,8 @@ final class LinkState: ObservableObject {
     var sendPad: ((String) -> Void)?
     /// Modo Wii U: texto para el teclado en pantalla de Cemu.
     var sendText: ((String) -> Void)?
+    /// Nunchuk en el mismo móvil (modo Dolphin): pedirlo o quitarlo; el eco lo confirma.
+    var sendNunchuk: ((Bool) -> Void)?
     /// Motor de sensores del enlace vivo (la pantalla GamePad le fija kind/rotation).
     weak var motion: MotionEngine?
 

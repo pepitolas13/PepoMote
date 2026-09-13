@@ -93,12 +93,17 @@ final class LinkService {
                     guard let self, gen == self.generation else { return }
                     self.link.updateConnected { $0.pad = pad }
                 },
+                onNunchukChanged: { [weak self] own in
+                    guard let self, gen == self.generation else { return }
+                    self.link.updateConnected { $0.ownNunchuk = own }
+                },
                 onNotice: { [weak self] text in
                     guard let self, gen == self.generation else { return }
                     self.link.publishNotice(text)
                 },
                 onClosed: { [weak self] in self?.onClosed(gen, pairing) }
-            )
+            ),
+            ownNunchuk: AppPrefs.ownNunchuk
         )
     }
 
@@ -140,6 +145,7 @@ final class LinkService {
             self?.control?.sendPad(p)
         }
         link.sendText = { [weak self] t in self?.control?.sendText(t) }
+        link.sendNunchuk = { [weak self] own in self?.control?.sendNunchuk(own) }
         link.publish(.connected(ConnectedLink(
             pcName: pcName,
             mode: ok.mode,
@@ -150,7 +156,8 @@ final class LinkService {
             // Receptor sin "player" en el ok: el jugador es el slot
             player: ok.player > 0 ? ok.player : ok.slot + 1,
             supportsCemu: ok.supportsCemu,
-            pad: ok.pad
+            pad: ok.pad,
+            ownNunchuk: ok.nunchuk == "own"
         )))
         if let m = link.pendingMode {
             link.pendingMode = nil
@@ -274,6 +281,7 @@ final class LinkService {
         link.sendMode = nil
         link.sendPad = nil
         link.sendText = nil
+        link.sendNunchuk = nil
         link.motion = nil
         ScreenLink.shared.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()

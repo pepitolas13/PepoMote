@@ -124,6 +124,11 @@ struct ControllerScreen: View {
                     Spacer().frame(height: 6)
                     ModeChips(current: c.mode, supportsCemu: c.supportsCemu)
                 }
+                // Dolphin: el Nunchuk en el mismo móvil (gira el móvil para usarlo)
+                if showNunchukChip(c) {
+                    Spacer().frame(height: 6)
+                    NunchukChip(link: c)
+                }
                 if isWiiUAsWiimote(c) {
                     Spacer().frame(height: 8)
                     PadSelector(link: c, width: m.colW - 48, help: tr("wii_pad_help"))
@@ -168,7 +173,7 @@ struct ControllerScreen: View {
                     let modeText: String = {
                         if isWiiUAsWiimote(c) { return tr("wiiu_as_wiimote") }
                         if c.mode == LinkState.modeCemu { return tr("mode_wiiu") }
-                        if c.mode == LinkState.modeDolphin { return tr("mode_dolphin") }
+                        if c.mode == LinkState.modeDolphin { return tr(c.ownNunchuk ? "mode_dolphin_nunchuk" : "mode_dolphin") }
                         if c.slot > 0 { return tr("pointer_player1_points") }
                         return tr("mode_pointer")
                     }()
