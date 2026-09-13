@@ -32,6 +32,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -322,6 +323,10 @@ internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean 
 
 @Composable
 internal fun ModeChip(label: String, selected: Boolean, compact: Boolean = false, onClick: () -> Unit) {
+    // pointerInput(label) arranca una vez: sin esto el gesto se quedaba con el
+    // onClick de la primera composición (el chip Nunchuk, que calcula «lo
+    // contrario de ahora», solo funcionaba la primera vez)
+    val current by rememberUpdatedState(onClick)
     Box(
         modifier = Modifier
             .background(
@@ -329,7 +334,7 @@ internal fun ModeChip(label: String, selected: Boolean, compact: Boolean = false
                 RoundedCornerShape(18.dp)
             )
             .pointerInput(label) {
-                detectTapGestures(onTap = { onClick() })
+                detectTapGestures(onTap = { current() })
             }
             .padding(
                 horizontal = if (compact) 12.dp else 18.dp,

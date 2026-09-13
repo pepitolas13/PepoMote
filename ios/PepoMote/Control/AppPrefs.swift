@@ -32,11 +32,19 @@ enum AppPrefs {
     }
 
     /// Nunchuk en el mismo móvil (modo Dolphin): el mando lleva su propio
-    /// Nunchuk y en apaisado sale el trazado con stick, C y Z. Encendido por
-    /// defecto, como el Wiimote emulado de Dolphin.
+    /// Nunchuk y en apaisado sale el trazado con stick, C y Z. Apagado de
+    /// serie (entrar en Dolphin nunca lo enciende solo); se recuerda porque
+    /// cambiarlo obliga a reabrir Dolphin.
     static var ownNunchuk: Bool {
-        get { d.object(forKey: "ownNunchuk") as? Bool ?? true }
+        get { d.object(forKey: "ownNunchuk") as? Bool ?? false }
         set { d.set(newValue, forKey: "ownNunchuk") }
+    }
+
+    /// Avisos del receptor en pantalla («Dolphin configurado…»): unos
+    /// segundos sobre el mando al cambiar de modo. Apagados, no se enseñan.
+    static var receiverNotices: Bool {
+        get { d.object(forKey: "receiverNotices") as? Bool ?? true }
+        set { d.set(newValue, forKey: "receiverNotices") }
     }
 
     /// GamePad de Wii U sin pantalla táctil (ni doble pantalla): los botones

@@ -360,7 +360,8 @@ class LinkForegroundService : Service() {
 
                 override fun onNotice(text: String) {
                     if (gen != generation) return
-                    LinkState.publishNotice(text)
+                    // Ajuste «Avisos del PC en pantalla»: apagado, ni banner
+                    if (AppPrefs.receiverNotices(this@LinkForegroundService)) LinkState.publishNotice(text)
                 }
 
                 override fun onClosed() {

@@ -117,6 +117,12 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("gp.veil_wiimote", "Ahora eres Mando de Wii", "You are now a Wii Remote"),
     ("gp.veil_switching", "Cambiando el PC a Wii U…", "Switching the PC to Wii U…"),
     ("gp.touch", "Pantalla táctil", "Touch screen"),
+    ("home.notices", "Avisos del PC en pantalla", "PC notices on screen"),
+    (
+        "home.notices_help",
+        "«Dolphin configurado…», «Cemu está abierto…»: salen unos segundos sobre el mando al cambiar de modo. Apágalos si te estorban",
+        "\"Dolphin set up…\", \"Cemu is open…\": shown for a few seconds over the controller when the mode changes. Turn them off if they get in the way",
+    ),
     ("gp.no_screen", "GamePad sin pantalla táctil", "GamePad without touch screen"),
     (
         "gp.no_screen_help",

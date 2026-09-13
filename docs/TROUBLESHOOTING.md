@@ -134,8 +134,8 @@ plaza. Si lo ves en una versión vieja, reinicia el receptor del PC.
 ## El juego pide un Nunchuk («Conecta un Nunchuk al Mando de Wii del Jugador 1»)
 
 Super Mario Galaxy, Zelda, Metroid Prime y otros exigen el Nunchuk. Con un
-solo móvil: ajuste **Nunchuk en el mismo móvil** (viene encendido; también el
-chip **Nunchuk** de la cabecera del mando en Dolphin), y **gira el móvil**
+solo móvil: enciende **Nunchuk en el mismo móvil** (Ajustes de la app, o el
+chip **Nunchuk** de la cabecera del mando en Dolphin; se recuerda), y **gira el móvil**
 para tener stick, C y Z con la mano izquierda. Si el aviso sigue: el
 Wiimote emulado se configura con Dolphin cerrado, así que cierra Dolphin,
 espera al aviso «Dolphin configurado» del receptor y vuelve a abrirlo; y

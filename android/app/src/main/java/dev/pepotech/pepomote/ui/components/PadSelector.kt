@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -143,12 +144,14 @@ private fun RowScope.Segment(label: String, selected: Boolean, pending: Boolean,
         pending -> PepoColors.Text
         else -> PepoColors.TextDim
     }
+    // el gesto arranca una vez por label: que vea siempre el onClick actual
+    val current by rememberUpdatedState(onClick)
     Box(
         modifier = Modifier
             .weight(1f)
             .background(bg, RoundedCornerShape(17.dp))
             .pointerInput(label) {
-                detectTapGestures(onTap = { onClick() })
+                detectTapGestures(onTap = { current() })
             }
             .padding(
                 horizontal = if (compact) 8.dp else 12.dp,

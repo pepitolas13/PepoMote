@@ -40,6 +40,9 @@ pub struct Settings {
     /// (`"nunchuk":"own"` en el hello). Sin trazado apaisado propio todavía en
     /// esta app, así que no se enseña en Inicio y va apagado.
     pub own_nunchuk: bool,
+    /// Avisos del receptor en pantalla («Dolphin configurado…»); apagados,
+    /// el banner no sale (los avisos locales sí).
+    pub receiver_notices: bool,
 }
 
 impl Default for Settings {
@@ -54,6 +57,7 @@ impl Default for Settings {
             update_latest: None,
             gamepad_no_screen: false,
             own_nunchuk: false,
+            receiver_notices: true,
         }
     }
 }
@@ -262,12 +266,14 @@ mod tests {
             update_latest: Some(crate::update::Version([1, 7, 0])),
             gamepad_no_screen: true,
             own_nunchuk: true,
+            receiver_notices: false,
         };
         let back: Settings = serde_json::from_str(&serde_json::to_string(&mine).unwrap()).unwrap();
         assert_eq!(back, mine);
         assert!(d.update_check, "el aviso de versión nueva viene activado");
         assert!(!d.gamepad_no_screen, "el GamePad lleva pantalla táctil salvo que se quite");
         assert!(!d.own_nunchuk, "sin trazado propio, el Nunchuk en el mismo móvil va apagado");
+        assert!(d.receiver_notices, "los avisos del receptor vienen encendidos");
         assert_eq!(d.update_latest, None);
         let s: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
         assert_eq!(s.theme, crate::theme::ThemePref::Light, "el tema se guarda en minúsculas");

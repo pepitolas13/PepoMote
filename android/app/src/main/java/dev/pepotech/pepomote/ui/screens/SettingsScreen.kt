@@ -43,6 +43,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
     var noScreen by remember { mutableStateOf(AppPrefs.gamePadNoScreen(context)) }
     var ownNunchuk by remember { mutableStateOf(AppPrefs.ownNunchuk(context)) }
+    var notices by remember { mutableStateOf(AppPrefs.receiverNotices(context)) }
     var updateCheck by remember { mutableStateOf(AppPrefs.updateCheckEnabled(context)) }
     val versionName = remember {
         try {
@@ -217,6 +218,38 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         noScreen = it
                         AppPrefs.setGamePadNoScreen(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
+        // Avisos del receptor sobre el mando al cambiar de modo
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.notices_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.notices_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = notices,
+                    onCheckedChange = {
+                        notices = it
+                        AppPrefs.setReceiverNotices(context, it)
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )

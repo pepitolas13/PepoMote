@@ -206,6 +206,10 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     // --- Dolphin
     ("dolphin.configured", "Dolphin configurado:", "Dolphin set up:"),
     ("dolphin.configured_after_close", "Dolphin configurado al cerrarse, ábrelo y a jugar:", "Dolphin set up on close, open it and play:"),
+    // lo que ven los móviles (banner corto; el detalle queda en la ventana)
+    ("dolphin.phone_configured", "Dolphin configurado", "Dolphin set up"),
+    ("dolphin.phone_open", "Dolphin abierto: se configurará al cerrarlo", "Dolphin is open: it will be set up when closed"),
+    ("dolphin.phone_open_nunchuk", "Dolphin abierto: el Nunchuk se aplica al reabrirlo", "Dolphin is open: the Nunchuk applies when reopened"),
     ("dolphin.details", "adaptador emulado, {0} mando(s){1} · {2}", "emulated adapter, {0} controller(s){1} · {2}"),
     ("dolphin.and_nunchuks", " y {0} Nunchuk(s)", " and {0} Nunchuk(s)"),
     ("dolphin.dirs_one", "carpeta: {0}", "folder: {0}"),
@@ -244,6 +248,8 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("cemu.player_kind", "J{0} {1}", "P{0} {1}"),
     ("cemu.configured", "Cemu configurado:", "Cemu set up:"),
     ("cemu.configured_after_close", "Cemu configurado al cerrarse, ábrelo y a jugar:", "Cemu set up on close, open it and play:"),
+    ("cemu.phone_configured", "Cemu configurado", "Cemu set up"),
+    ("cemu.phone_open", "Cemu abierto: se configurará al cerrarlo", "Cemu is open: it will be set up when closed"),
     ("cemu.installs", " (en {0} instalaciones)", " (in {0} installs)"),
     (
         "cemu.open",

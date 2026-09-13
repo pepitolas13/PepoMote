@@ -6,6 +6,7 @@ struct SettingsScreen: View {
     @State private var dolphinChips = AppPrefs.showDolphinChips
     @State private var noScreen = AppPrefs.gamePadNoScreen
     @State private var ownNunchuk = AppPrefs.ownNunchuk
+    @State private var notices = AppPrefs.receiverNotices
     @State private var updateCheck = AppPrefs.updateCheckEnabled
 
     var body: some View {
@@ -29,6 +30,9 @@ struct SettingsScreen: View {
                     // GamePad de Wii U sin pantalla táctil: botones más grandes
                     SettingRow(title: tr("noscreen_title"), subtitle: tr("noscreen_sub"), on: $noScreen)
                         .onChange(of: noScreen) { AppPrefs.gamePadNoScreen = $0 }
+                    // Avisos del receptor sobre el mando al cambiar de modo
+                    SettingRow(title: tr("notices_title"), subtitle: tr("notices_sub"), on: $notices)
+                        .onChange(of: notices) { AppPrefs.receiverNotices = $0 }
                     // Aviso de versión nueva: la única consulta fuera de la red local
                     SettingRow(title: tr("update_title"), subtitle: tr("update_sub"), on: $updateCheck)
                         .onChange(of: updateCheck) { AppPrefs.updateCheckEnabled = $0 }
