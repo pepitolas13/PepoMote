@@ -55,7 +55,7 @@ final class UiScaleTests: XCTestCase {
         let pad = RemoteMetrics(size: sz(820, 1180))
         XCTAssertEqual(pad.grow, 1.589, accuracy: 0.001)
         XCTAssertEqual(pad.s, pad.grow)
-        XCTAssertEqual(pad.colW, 520 * pad.grow, accuracy: 0.01)
+        XCTAssertEqual(pad.colW, 820, "520·grow (826) ya no cabe: la columna llena la pantalla")
         XCTAssertTrue(pad.flexible)
         XCTAssertEqual(pad.text(44), 44 * pad.grow, accuracy: 0.01)
         // iPad 13": la A pasa de 148 a 281 pt y la columna casi llena la pantalla
