@@ -53,6 +53,8 @@ jobs:
     timeout-minutes: 45
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
+      # Notarización solo con una cuenta Developer ID (secrets APPLE_NOTARY_*)
+      HAS_NOTARY: ${{ secrets.APPLE_NOTARY_KEY_B64 != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -65,14 +67,14 @@ jobs:
           MACOS_SIGN_P12_PASSWORD: ${{ secrets.MACOS_SIGN_P12_PASSWORD }}
         run: bash packaging/macos/import-identity.sh
       - name: .app + DMG
-        env:
-          NOTARIZE: ${{ secrets.APPLE_NOTARY_KEY_B64 != '' && '1' || '0' }}
-        run: bash packaging/macos/bundle.sh
+        run: |
+          if [ "$HAS_NOTARY" = "true" ]; then export NOTARIZE=1; fi
+          bash packaging/macos/bundle.sh
       # OPCIONAL: solo con una cuenta Developer ID (secrets APPLE_NOTARY_*).
       # Con el certificado autofirmado este paso no se ejecuta y la primera
       # apertura pasa por «Abrir igualmente» (docs/MACOS.md).
       - name: Notarización (opcional, Developer ID)
-        if: ${{ secrets.APPLE_NOTARY_KEY_B64 != '' }}
+        if: env.HAS_NOTARY == 'true'
         env:
           APPLE_NOTARY_KEY_B64: ${{ secrets.APPLE_NOTARY_KEY_B64 }}
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
