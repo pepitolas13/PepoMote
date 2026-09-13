@@ -30,12 +30,57 @@ final class AppModel: ObservableObject {
     @Published var toast: String?
     /// Escáner QR abierto.
     @Published var scanning = false
+    /// Versión nueva publicada que anunciar (nil = ninguna).
+    @Published var updateAvailable: AppVersion?
 
     private let link = LinkState.shared
     private let service = LinkService.shared
+    private var updateTask: Task<Void, Never>?
 
     init() {
         screen = AppPrefs.onboarded ? .home : .onboarding
+    }
+
+    // MARK: aviso de versión nueva
+
+    /// Recalcula el aviso a partir de lo guardado (al arrancar y tras cada consulta).
+    func refreshUpdate() {
+        updateAvailable = UpdateCheck.pending(
+            current: UpdateCheck.current,
+            latest: AppVersion.parse(AppPrefs.updateLatest),
+            dismissed: AppVersion.parse(AppPrefs.updateDismissed)
+        )
+    }
+
+    /// Consulta GitHub si toca (activado y ≥ 24 h): a los 3 s de arrancar y
+    /// luego una vez por hora mientras la app viva (la consulta real solo
+    /// sale cuando toca).
+    func startUpdateChecks() {
+        guard updateTask == nil else { return }
+        refreshUpdate()
+        updateTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(UpdateCheck.firstDelay * 1_000_000_000))
+            while !Task.isCancelled {
+                await self?.checkUpdateIfDue()
+                try? await Task.sleep(nanoseconds: UInt64(UpdateCheck.retryAfter * 1_000_000_000))
+            }
+        }
+    }
+
+    @MainActor
+    private func checkUpdateIfDue() async {
+        let now = Date().timeIntervalSince1970
+        guard UpdateCheck.due(enabled: AppPrefs.updateCheckEnabled, last: AppPrefs.updateLast, now: now) else { return }
+        guard let v = await UpdateClient.shared.latest() else { return }
+        AppPrefs.updateLast = now
+        AppPrefs.updateLatest = v.description
+        refreshUpdate()
+    }
+
+    /// «Ocultar»: esa versión no se vuelve a anunciar (una posterior, sí).
+    func dismissUpdate(_ v: AppVersion) {
+        AppPrefs.updateDismissed = v.description
+        refreshUpdate()
     }
 
     func showToast(_ text: String) {

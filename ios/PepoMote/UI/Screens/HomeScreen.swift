@@ -56,6 +56,12 @@ struct HomeScreen: View {
                     Text(text).pepoBody().lineLimit(1)
                 }
                 Spacer().frame(height: 24)
+                // Aviso de versión nueva (enlace a la release de GitHub)
+                if let v = model.updateAvailable {
+                    UpdateCard(version: v) { model.dismissUpdate(v) }
+                        .frame(maxWidth: 620)
+                    Spacer().frame(height: 16)
+                }
                 // Tres filas de pares: Conectar | Mando, Dolphin | Wii U, Nunchuk | Ajustes
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ChannelCard(title: tr("channel_connect"), subtitle: tr("channel_connect_sub"), glyph: .qr, accent: Pepo.blue) {

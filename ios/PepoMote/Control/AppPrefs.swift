@@ -30,4 +30,29 @@ enum AppPrefs {
         get { d.bool(forKey: "onboarded") }
         set { d.set(newValue, forKey: "onboarded") }
     }
+
+    // MARK: aviso de versión nueva (UpdateCheck)
+
+    /// Consultar GitHub una vez al día si hay versión nueva (Ajustes).
+    static var updateCheckEnabled: Bool {
+        get { d.object(forKey: "updateCheck") as? Bool ?? true }
+        set { d.set(newValue, forKey: "updateCheck") }
+    }
+
+    /// Versión anunciada que se ocultó ("" = ninguna).
+    static var updateDismissed: String {
+        get { d.string(forKey: "updateDismissed") ?? "" }
+        set { d.set(newValue, forKey: "updateDismissed") }
+    }
+
+    /// Última consulta (segundos UNIX, 0 = nunca) y última versión publicada vista.
+    static var updateLast: TimeInterval {
+        get { d.double(forKey: "updateLast") }
+        set { d.set(newValue, forKey: "updateLast") }
+    }
+
+    static var updateLatest: String {
+        get { d.string(forKey: "updateLatest") ?? "" }
+        set { d.set(newValue, forKey: "updateLatest") }
+    }
 }

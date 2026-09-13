@@ -28,7 +28,10 @@ struct RootView: View {
         }
         // Apaisado fijo mientras el GamePad esté en pantalla; al salir, como estaba
         .onChange(of: wantLandscape) { v in OrientationLock.set(v ? .landscape : .all) }
-        .onAppear { OrientationLock.set(wantLandscape ? .landscape : .all) }
+        .onAppear {
+            OrientationLock.set(wantLandscape ? .landscape : .all)
+            model.startUpdateChecks()
+        }
         .fullScreenCover(isPresented: $model.scanning) {
             QRScannerScreen { contents in
                 model.scanning = false
