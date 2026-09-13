@@ -43,7 +43,8 @@ Mira [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — toca **Wii U** en la app, sost
 ## Detalles finos
 
 - **Multijugador local**: hasta 4 móviles en el mismo PC — escanean el mismo QR y cada uno es su propio Wiimote en Dolphin, con la configuración de mandos de Dolphin escrita sola
-- **Nunchuk**: un segundo móvil en la otra mano (toca **Nunchuk** en la app): stick, C, Z y su propio acelerómetro alimentan el Nunchuk emulado de tu Wiimote, configurado solo en Dolphin
+- **Nunchuk en el mismo móvil** (1.5.5): los juegos que piden Nunchuk (Super Mario Galaxy, Zelda, Metroid Prime…) funcionan con un solo móvil: gíralo y tienes el Nunchuk en la mano izquierda (stick, C, Z) y el Mando de Wii en la derecha (A, B, cruceta, −/+/Home, 1/2), apuntando con el móvil como siempre. Viene encendido; apágalo (chip o Ajustes) para los juegos 2D con el mando de lado. Detalles en [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md)
+- **Nunchuk en un segundo móvil**: toca **Nunchuk** en el otro móvil: stick, C, Z y su propio acelerómetro alimentan el Nunchuk emulado de tu Wiimote, configurado solo en Dolphin
 - Botones físicos de volumen = A / B (latencia táctil cero)
 - Gira el móvil y tienes un mando estilo NES (juegos 2D) — o un Wii U GamePad completo en modo Wii U
 - Arranque con el sistema opcional (solo bandeja, sin ventana)

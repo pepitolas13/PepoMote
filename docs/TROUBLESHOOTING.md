@@ -131,6 +131,19 @@ modo Dolphin solo lo activa el Jugador 1. Ya se arregla solo: al reconectar,
 el receptor desaloja la sesión fantasma del mismo móvil y le devuelve su
 plaza. Si lo ves en una versión vieja, reinicia el receptor del PC.
 
+## El juego pide un Nunchuk («Conecta un Nunchuk al Mando de Wii del Jugador 1»)
+
+Super Mario Galaxy, Zelda, Metroid Prime y otros exigen el Nunchuk. Con un
+solo móvil: ajuste **Nunchuk en el mismo móvil** (viene encendido; también el
+chip **Nunchuk** de la cabecera del mando en Dolphin), y **gira el móvil**
+para tener stick, C y Z con la mano izquierda. Si el aviso sigue: el
+Wiimote emulado se configura con Dolphin cerrado, así que cierra Dolphin,
+espera al aviso «Dolphin configurado» del receptor y vuelve a abrirlo; y
+comprueba en la ventana del PC que el móvil aparece como «J1 · Mando +
+Nunchuk» (con un receptor anterior a 1.5.5 no hay Nunchuk propio). Con un
+segundo móvil como Nunchuk, el propio queda sin efecto para ese jugador si
+lo apagas. Ver `docs/SETUP-DOLPHIN.md`.
+
 ## «El puerto 26760/26761 está ocupado»
 
 Otro programa tenía abierto el puerto del servidor DSU (26760: DS4Windows,

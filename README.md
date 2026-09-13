@@ -43,7 +43,8 @@ See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold 
 ## Nice touches
 
 - **Local multiplayer**: up to 4 phones on one PC — scan the same QR and each phone becomes its own Wiimote in Dolphin, with Dolphin's controller config written for you automatically
-- **Nunchuk**: a second phone in your other hand (tap **Nunchuk** in the app): stick, C, Z and its own accelerometer feed the emulated Nunchuk of your Wiimote, configured in Dolphin for you
+- **Nunchuk on the same phone** (1.5.5): games that ask for a Nunchuk (Super Mario Galaxy, Zelda, Metroid Prime…) just work with one phone: turn it sideways and you get the Nunchuk under your left hand (stick, C, Z) and the Wii Remote under your right (A, B, D-pad, −/+/Home, 1/2), still pointing with the phone. On by default; turn it off (chip or Settings) for 2D games played with the remote held sideways. Details in [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md)
+- **Nunchuk on a second phone**: tap **Nunchuk** on the other phone: stick, C, Z and its own accelerometer feed the emulated Nunchuk of your Wiimote, configured in Dolphin for you
 - Physical volume keys = A / B triggers (zero touch latency)
 - Turn the phone sideways for a NES-style pad (2D games) — or a full Wii U GamePad in Wii U mode
 - Optional start-with-the-system (tray only, no window)
