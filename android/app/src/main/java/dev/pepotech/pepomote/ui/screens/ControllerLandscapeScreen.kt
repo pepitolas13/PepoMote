@@ -113,14 +113,20 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                             modifier = Modifier.layoutId(HeaderSlot.Status)
                         )
                     }
-                    // Selector Puntero/Dolphin/Wii U también de lado (solo el Jugador 1)
-                    if (showModeChips(link, showChips)) {
-                        ModeChips(
-                            current = link.mode,
-                            supportsCemu = link.supportsCemu,
-                            compact = true,
-                            modifier = Modifier.layoutId(HeaderSlot.Chips)
-                        )
+                    // Selector Puntero/Dolphin/Wii U también de lado (solo el
+                    // Jugador 1) y, en Dolphin, el chip «Nunchuk» (aquí apagado:
+                    // encenderlo cambia este NES por el mando + Nunchuk)
+                    if (showModeChips(link, showChips) || showNunchukChip(link)) {
+                        Row(
+                            modifier = Modifier.layoutId(HeaderSlot.Chips),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (showModeChips(link, showChips)) {
+                                ModeChips(current = link.mode, supportsCemu = link.supportsCemu, compact = true)
+                            }
+                            if (showNunchukChip(link)) NunchukChip(link, compact = true)
+                        }
                     }
                     // Modo Wii U: texto para el teclado en pantalla de Cemu
                     if (link.mode == LinkState.MODE_CEMU) {

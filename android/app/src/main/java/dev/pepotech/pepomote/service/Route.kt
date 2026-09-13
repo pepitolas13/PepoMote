@@ -46,6 +46,15 @@ object Route {
         return PadScreen.Wii
     }
 
+    /**
+     * Layout Wii apaisado = mando + Nunchuk en un solo móvil: modo Dolphin,
+     * este móvil es mando y el receptor ha confirmado el Nunchuk propio (un
+     * receptor antiguo no lo confirma y se queda el NES de siempre).
+     */
+    fun wiiLandscapeNunchuk(link: UiLink): Boolean =
+        link is UiLink.Connected && link.mode == LinkState.MODE_DOLPHIN &&
+            link.role == LinkState.ROLE_WIIMOTE && link.ownNunchuk
+
     /** Intención resultante y, si toca, el aviso a enseñar (recurso de texto). */
     data class Outcome(val intent: PadIntent, @StringRes val warning: Int?)
 

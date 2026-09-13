@@ -13,11 +13,29 @@ class RouteTest {
         role: String = LinkState.ROLE_WIIMOTE,
         pad: String = LinkState.PAD_GAMEPAD,
         slot: Int = 0,
-        supportsCemu: Boolean = true
+        supportsCemu: Boolean = true,
+        ownNunchuk: Boolean = false
     ) = UiLink.Connected(
         pcName = "PC", mode = mode, rttMs = null, sensorHz = 0f,
-        slot = slot, role = role, supportsCemu = supportsCemu, pad = pad
+        slot = slot, role = role, supportsCemu = supportsCemu, pad = pad, ownNunchuk = ownNunchuk
     )
+
+    @Test
+    fun apaisadoConNunchukSoloEnDolphinConfirmado() {
+        assertEquals(true, Route.wiiLandscapeNunchuk(connected(mode = "dolphin", ownNunchuk = true)))
+        // cualquier jugador, no solo el 1
+        assertEquals(true, Route.wiiLandscapeNunchuk(connected(mode = "dolphin", ownNunchuk = true, slot = 2)))
+        // sin confirmación del receptor (antiguo, o ajuste apagado): NES de siempre
+        assertEquals(false, Route.wiiLandscapeNunchuk(connected(mode = "dolphin")))
+        // en puntero y en Wii U no hay Nunchuk propio
+        assertEquals(false, Route.wiiLandscapeNunchuk(connected(mode = "pointer", ownNunchuk = true)))
+        assertEquals(false, Route.wiiLandscapeNunchuk(connected(mode = "cemu", pad = "wiimote", ownNunchuk = true)))
+        // un Nunchuk (rol) nunca
+        assertEquals(false, Route.wiiLandscapeNunchuk(connected(mode = "dolphin", role = "nunchuk", ownNunchuk = true)))
+        assertEquals(false, Route.wiiLandscapeNunchuk(UiLink.Connecting))
+        // la ruta principal no cambia: sigue siendo el layout Wii
+        assertEquals(PadScreen.Wii, Route.route(connected(mode = "dolphin", ownNunchuk = true), PadIntent.None))
+    }
 
     @Test
     fun gamePadConCemuConfirmado() {

@@ -20,7 +20,9 @@ class ControlClient(
     private val deviceModel: String,
     /** "wiimote" (mando, el valor por defecto del receptor) o "nunchuk". */
     private val role: String,
-    private val callbacks: Callbacks
+    private val callbacks: Callbacks,
+    /** Mando con su propio Nunchuk (`"nunchuk":"own"` en el hello; solo rol mando). */
+    private val ownNunchuk: Boolean = false
 ) {
     /** Lo que confirma el receptor en el `ok`. */
     data class Ok(
@@ -37,7 +39,9 @@ class ControlClient(
         /** Mando efectivo en modo Wii U: gamepad / pro / wiimote (ausente = gamepad). */
         val pad: String,
         /** Nombre del PC (`ok.name`); vacío si el receptor no lo manda. */
-        val name: String = ""
+        val name: String = "",
+        /** El receptor confirma el Nunchuk propio (`"own"`); "none" si no, o receptor antiguo. */
+        val nunchuk: String = "none"
     )
 
     interface Callbacks {
@@ -53,6 +57,9 @@ class ControlClient(
 
         /** Eco del `pad`: mando efectivo (gamepad / pro / wiimote). */
         fun onPadChanged(pad: String)
+
+        /** Eco del `nunchuk`: el receptor aplica (o no) el Nunchuk propio. */
+        fun onNunchukChanged(own: Boolean)
 
         /** Aviso transitorio del receptor (banner ~6 s). */
         fun onNotice(text: String)
@@ -94,6 +101,8 @@ class ControlClient(
                     .put("model", deviceModel)
                     // Ausente = wiimote (receptores anteriores no lo conocen)
                     .apply { if (role == "nunchuk") put("role", role) }
+                    // Nunchuk en el mismo móvil: un receptor antiguo lo ignora (y no lo confirma)
+                    .apply { if (role != "nunchuk" && ownNunchuk) put("nunchuk", "own") }
                 // Sin `pad`: en Wii U se empieza siempre como GamePad/Pro (lo dice el ok)
             )
 
@@ -117,7 +126,8 @@ class ControlClient(
                             player = msg.optInt("player", 0),
                             supportsCemu = supportsCemu(msg),
                             pad = msg.optString("pad", "gamepad"),
-                            name = msg.optString("name", "")
+                            name = msg.optString("name", ""),
+                            nunchuk = msg.optString("nunchuk", "none")
                         )
                     )
 
@@ -130,6 +140,7 @@ class ControlClient(
                     "pong" -> Unit
                     "mode" -> callbacks.onModeChanged(msg.optString("mode", "pointer"), msg.optString("by") == "pc")
                     "pad" -> callbacks.onPadChanged(msg.optString("pad", "gamepad"))
+                    "nunchuk" -> callbacks.onNunchukChanged(msg.optBoolean("own", false))
                     "notice" -> msg.optString("text").takeIf { it.isNotBlank() }?.let(callbacks::onNotice)
                     else -> Unit // mensaje desconocido: se ignora
                 }
@@ -161,6 +172,11 @@ class ControlClient(
     /** Modo Wii U: "wiimote" (Mando Wii) o "gamepad" (volver a GamePad/Pro). */
     fun sendPad(pad: String) {
         sendJson(JSONObject().put("m", "pad").put("pad", pad))
+    }
+
+    /** Nunchuk en el mismo móvil, encendido o apagado; el receptor lo confirma con el eco. */
+    fun sendNunchuk(own: Boolean) {
+        sendJson(JSONObject().put("m", "nunchuk").put("own", own))
     }
 
     /**

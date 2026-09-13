@@ -79,6 +79,10 @@
     <string name="sounds_sub">Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)</string>
     <string name="chips_title">Modo Dolphin en el mando</string>
     <string name="chips_sub">Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector</string>
+    <string name="nunchuk_own_title">Nunchuk en el mismo móvil</string>
+    <string name="nunchuk_own_sub">En Dolphin tu mando lleva Nunchuk: gira el móvil y tienes stick, C y Z con la mano izquierda. Apágalo para jugar con el mando de lado (NES). Dolphin tiene que reabrirse al cambiarlo</string>
+    <string name="nunchuk_chip">Nunchuk</string>
+    <string name="mode_dolphin_nunchuk">Dolphin · Nunchuk</string>
     <string name="noscreen_title">GamePad sin pantalla táctil</string>
     <string name="noscreen_sub">Quita la pantalla del GamePad de Wii U (y la doble pantalla) para que los botones sean más grandes</string>
     <string name="link_other_pc">Vincular con otro PC</string>

@@ -27,7 +27,12 @@ sealed class UiLink {
          * "wiimote" (a petición, solo durante esta sesión). Lo fija el ok y lo
          * cambia el eco de `pad`.
          */
-        val pad: String = LinkState.PAD_GAMEPAD
+        val pad: String = LinkState.PAD_GAMEPAD,
+        /**
+         * El receptor confirmó el Nunchuk en el mismo móvil (`ok.nunchuk` o
+         * eco de `nunchuk`): en Dolphin, apaisado = mando + Nunchuk.
+         */
+        val ownNunchuk: Boolean = false
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
@@ -96,6 +101,10 @@ object LinkState {
      */
     @Volatile
     var sendText: ((String) -> Unit)? = null
+
+    /** Nunchuk en el mismo móvil (modo Dolphin): pedirlo o quitarlo; el eco lo confirma. */
+    @Volatile
+    var sendNunchuk: ((Boolean) -> Unit)? = null
 
     /**
      * Motor de sensores del enlace vivo: la pantalla GamePad le fija

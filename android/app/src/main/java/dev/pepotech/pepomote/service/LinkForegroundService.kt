@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import dev.pepotech.pepomote.MainActivity
 import dev.pepotech.pepomote.R
+import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.UiSounds
@@ -154,6 +155,7 @@ class LinkForegroundService : Service() {
             deviceName = Build.MODEL ?: "Android",
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
             role = role,
+            ownNunchuk = AppPrefs.ownNunchuk(this),
             callbacks = object : ControlClient.Callbacks {
                 override fun onOk(ok: ControlClient.Ok) {
                     if (gen != generation) return
@@ -190,6 +192,7 @@ class LinkForegroundService : Service() {
                         control?.sendPad(p)
                     }
                     LinkState.sendText = { t -> control?.sendText(t) }
+                    LinkState.sendNunchuk = { own -> control?.sendNunchuk(own) }
                     LinkState.publish(
                         UiLink.Connected(
                             pcName, ok.mode, null, 0f, ok.slot,
@@ -197,7 +200,8 @@ class LinkForegroundService : Service() {
                             // Receptor sin "player" en el ok: el jugador es el slot
                             player = if (ok.player > 0) ok.player else ok.slot + 1,
                             supportsCemu = ok.supportsCemu,
-                            pad = ok.pad
+                            pad = ok.pad,
+                            ownNunchuk = ok.nunchuk == "own"
                         )
                     )
                     LinkState.pendingMode?.let { m ->
@@ -269,6 +273,11 @@ class LinkForegroundService : Service() {
                 override fun onPadChanged(pad: String) {
                     if (gen != generation) return
                     LinkState.updateConnected { it.copy(pad = pad) }
+                }
+
+                override fun onNunchukChanged(own: Boolean) {
+                    if (gen != generation) return
+                    LinkState.updateConnected { it.copy(ownNunchuk = own) }
                 }
 
                 override fun onNotice(text: String) {
@@ -363,6 +372,7 @@ class LinkForegroundService : Service() {
         LinkState.sendMode = null
         LinkState.sendPad = null
         LinkState.sendText = null
+        LinkState.sendNunchuk = null
         LinkState.motion = null
         ScreenLink.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()

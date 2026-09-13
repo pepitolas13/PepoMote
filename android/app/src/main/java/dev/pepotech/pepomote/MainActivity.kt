@@ -59,6 +59,7 @@ import dev.pepotech.pepomote.service.alive
 import dev.pepotech.pepomote.ui.screens.HomeStatus
 import dev.pepotech.pepomote.ui.screens.HomeTone
 import dev.pepotech.pepomote.ui.screens.ControllerLandscapeScreen
+import dev.pepotech.pepomote.ui.screens.WiimoteNunchukScreen
 import dev.pepotech.pepomote.ui.screens.ControllerScreen
 import dev.pepotech.pepomote.ui.screens.GamePadScreen
 import dev.pepotech.pepomote.ui.screens.HomeScreen
@@ -534,7 +535,13 @@ private fun ControllerRoute(activity: MainActivity, link: UiLink) {
             // pantalla solo-Dolphin. Igual en vertical y de lado.
             val showChips = !activity.controllerDolphinOnly && AppPrefs.showDolphinChips(context)
             if (landscape) {
-                ControllerLandscapeScreen(link = link, showChips = showChips, onDisconnect = onDisconnect)
+                // Dolphin con el Nunchuk en el mismo móvil (confirmado por el
+                // receptor): mando + Nunchuk a dos manos; si no, el NES de siempre
+                if (Route.wiiLandscapeNunchuk(link)) {
+                    WiimoteNunchukScreen(link = link, showChips = showChips, onDisconnect = onDisconnect)
+                } else {
+                    ControllerLandscapeScreen(link = link, showChips = showChips, onDisconnect = onDisconnect)
+                }
             } else {
                 ControllerScreen(link = link, showChips = showChips, onDisconnect = onDisconnect)
             }

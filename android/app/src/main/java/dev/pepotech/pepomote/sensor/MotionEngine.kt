@@ -22,6 +22,14 @@ enum class SenderKind {
     NUNCHUK,
 
     /**
+     * Mando de Wii con Nunchuk en el mismo móvil, apaisado: 72 bytes con el
+     * stick (FLAG_STICK_VALID) y los botones del mando y del Nunchuk (C/Z)
+     * a la vez, y los sensores remapeados al marco apaisado como el GamePad
+     * (el puntero de Dolphin sigue apuntando con el móvil de lado).
+     */
+    WII_NUNCHUK,
+
+    /**
      * GamePad / Pro Controller de Wii U (Cemu): 80 bytes con el bloque de
      * extensión (stick derecho + táctil) y los sensores remapeados al marco
      * del mando apaisado ([Frame]).
@@ -207,6 +215,30 @@ class MotionEngine(
                 stickX = ButtonState.stickX(),
                 stickY = ButtonState.stickY()
             )
+
+            SenderKind.WII_NUNCHUK -> {
+                // Como el Nunchuk (stick en la trama) pero con el móvil de lado:
+                // sensores al marco apaisado (contrato §4), igual que el GamePad
+                val rot = rotation
+                Frame.remapQuat(quat, rot, quatOut)
+                Frame.remapGyro(gyro, rot, gyroOut)
+                Frame.remapAccel(accel, rot, accelOut)
+                PmpCodec.encodeInput(
+                    sessionId = sessionId,
+                    seq = seq,
+                    tSensorUs = tSensorNs / 1000,
+                    quat = quatOut,
+                    gyro = gyroOut,
+                    accel = accelOut,
+                    buttons = ButtonState.current(),
+                    recenterCount = ButtonState.recenterCount(),
+                    batteryPct = battery(),
+                    touchScrollDy = ButtonState.drainScroll(),
+                    flags = quatFlag or PmpCodec.FLAG_STICK_VALID,
+                    stickX = ButtonState.stickX(),
+                    stickY = ButtonState.stickY()
+                )
+            }
 
             SenderKind.WIIMOTE -> PmpCodec.encodeInput(
                 sessionId = sessionId,

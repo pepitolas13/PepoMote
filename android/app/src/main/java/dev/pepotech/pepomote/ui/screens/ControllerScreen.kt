@@ -131,6 +131,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                             val modeText = when {
                                 isWiiUAsWiimote(link) -> stringResource(R.string.wiiu_as_wiimote)
                                 link.mode == LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
+                                link.mode == LinkState.MODE_DOLPHIN && link.ownNunchuk -> stringResource(R.string.mode_dolphin_nunchuk)
                                 link.mode == LinkState.MODE_DOLPHIN -> stringResource(R.string.mode_dolphin)
                                 link.slot > 0 -> stringResource(R.string.pointer_player1_points)
                                 else -> stringResource(R.string.mode_pointer)
@@ -174,6 +175,11 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 if (showModeChips(link, showChips)) {
                     Spacer(Modifier.height(6.dp))
                     ModeChips(current = link.mode, supportsCemu = link.supportsCemu)
+                }
+                // Dolphin: el Nunchuk en el mismo móvil (gira el móvil para usarlo)
+                if (showNunchukChip(link)) {
+                    Spacer(Modifier.height(6.dp))
+                    NunchukChip(link)
                 }
                 // Wii U como Mando de Wii: qué mando soy en Cemu, con su ayuda
                 if (isWiiUAsWiimote(link)) {
@@ -261,6 +267,26 @@ internal fun isWiiUAsWiimote(link: UiLink.Connected): Boolean =
 internal fun showModeChips(link: UiLink.Connected, showChips: Boolean): Boolean =
     link.slot == 0 && (showChips || link.mode == LinkState.MODE_CEMU)
 
+/** Chip «Nunchuk»: en Dolphin, cualquier jugador que sea mando (no un Nunchuk). */
+internal fun showNunchukChip(link: UiLink.Connected): Boolean =
+    link.mode == LinkState.MODE_DOLPHIN && link.role == LinkState.ROLE_WIIMOTE
+
+/**
+ * Chip «Nunchuk» (modo Dolphin): el mando lleva su propio Nunchuk (con el
+ * móvil de lado: stick, C y Z). Cambia el ajuste y se lo pide al receptor;
+ * marcado solo cuando el receptor lo ha confirmado. Cambiarlo exige reabrir
+ * Dolphin (el receptor lo avisa).
+ */
+@Composable
+internal fun NunchukChip(link: UiLink.Connected, compact: Boolean = false) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    ModeChip(stringResource(R.string.nunchuk_chip), selected = link.ownNunchuk, compact = compact) {
+        val want = !link.ownNunchuk
+        dev.pepotech.pepomote.control.AppPrefs.setOwnNunchuk(context, want)
+        LinkState.sendNunchuk?.invoke(want)
+    }
+}
+
 /** Nombre del modo del receptor para las cabeceras. */
 @Composable
 internal fun modeLabel(mode: String): String = when (mode) {
@@ -333,7 +359,7 @@ private fun ColumnScope.Gap(h: Dp, flexible: Boolean) {
 
 /** Diana de recentrado: mantener 150 ms → vibra y recentra. */
 @Composable
-private fun RecenterButton(size: Dp = 64.dp) {
+internal fun RecenterButton(size: Dp = 64.dp) {
     val view = LocalView.current
     var down by remember { mutableStateOf(false) }
 

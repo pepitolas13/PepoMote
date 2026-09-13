@@ -15,6 +15,20 @@ object AppPrefs {
             .edit().putBoolean("volDownB", value).apply()
     }
 
+    /**
+     * Nunchuk en el mismo móvil (modo Dolphin): el mando lleva su propio
+     * Nunchuk y en apaisado sale el trazado con stick, C y Z. Encendido por
+     * defecto, como el Wiimote emulado de Dolphin.
+     */
+    fun ownNunchuk(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("ownNunchuk", true)
+
+    fun setOwnNunchuk(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("ownNunchuk", value).apply()
+    }
+
     /** GamePad de Wii U sin pantalla táctil (ni doble pantalla): los botones crecen (Ajustes). */
     fun gamePadNoScreen(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

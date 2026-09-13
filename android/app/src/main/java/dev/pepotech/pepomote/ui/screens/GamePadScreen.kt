@@ -682,7 +682,7 @@ private fun TouchScreen(width: Dp, height: Dp, screen: ScreenClient<Bitmap>?) {
  * pantalla (DisplayManager lo avisa).
  */
 @Composable
-private fun rememberDisplayRotation(): Int {
+internal fun rememberDisplayRotation(): Int {
     val view = LocalView.current
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
