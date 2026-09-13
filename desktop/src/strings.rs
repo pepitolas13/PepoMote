@@ -121,6 +121,12 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("cfg.theme_dark", "Oscuro", "Dark"),
     ("cfg.autostart", "Arrancar con el sistema", "Start with the system"),
     ("cfg.autostart_err", "Autoarranque: {0}", "Autostart: {0}"),
+    ("cfg.update_check", "Avisar de versiones nuevas", "Notify about new versions"),
+    (
+        "cfg.update_check_help",
+        "Consulta GitHub una vez al día (solo la página de la última versión) y no envía nada tuyo.",
+        "Checks GitHub once a day (only the latest-release page) and sends nothing of yours.",
+    ),
     // --- canal de control
     ("err.bad_code", "Código incorrecto o caducado: mira el nuevo bajo el QR del PC", "Wrong or expired code: check the new one under the PC's QR"),
     ("err.bad_token", "Vuelve a escanear el QR", "Scan the QR again"),
@@ -244,6 +250,10 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("auto.dolphin_closed", "Dolphin cerrado: modo puntero", "Dolphin closed: pointer mode"),
     ("auto.cemu_closed_dolphin", "Cemu cerrado: modo Dolphin (Dolphin sigue abierto)", "Cemu closed: Dolphin mode (Dolphin is still open)"),
     ("auto.cemu_closed", "Cemu cerrado: modo puntero", "Cemu closed: pointer mode"),
+    // --- aviso de versión nueva
+    ("upd.available", "PepoMote {0} disponible", "PepoMote {0} available"),
+    ("upd.download", "Descargar en GitHub", "Download on GitHub"),
+    ("upd.dismiss", "Ocultar", "Hide"),
     // --- bandeja (Windows)
     ("tray.waiting", "PepoMote · esperando al móvil", "PepoMote · waiting for the phone"),
     ("tray.line", "PepoMote · {0} {1} · {2}", "PepoMote · {0} {1} · {2}"),
@@ -254,6 +264,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("tray.mode_cemu", "Wii U", "Wii U"),
     ("tray.show", "Mostrar PepoMote", "Show PepoMote"),
     ("tray.quit", "Salir", "Quit"),
+    ("tray.update", "Nueva versión {0}…", "New version {0}…"),
 ];
 
 /// Fuentes con textos, para el test de completitud de `i18n`.

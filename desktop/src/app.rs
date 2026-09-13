@@ -184,6 +184,7 @@ impl eframe::App for PepoMoteApp {
                             }
 
                             ui.add_space(10.0);
+                            self.ui_update(ui);
                             self.ui_settings(ui);
 
                             self.ui_repair(ui, &snap);
@@ -216,6 +217,40 @@ impl eframe::App for PepoMoteApp {
 }
 
 impl PepoMoteApp {
+    /// Aviso de versión nueva: una tarjeta con el enlace a la release de
+    /// GitHub si la última publicada es mayor que esta y no se ocultó.
+    fn ui_update(&mut self, ui: &mut egui::Ui) {
+        let (latest, dismissed) = {
+            let s = self.shared.lock().unwrap();
+            (s.config.update_latest, s.config.update_dismissed)
+        };
+        let Some(v) = crate::update::pending(&crate::update::Version::current(), latest, dismissed) else {
+            return;
+        };
+        egui::Frame::none()
+            .fill(theme::card())
+            .stroke(Stroke::new(1.5_f32, theme::blue()))
+            .rounding(theme::RADIUS)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(RichText::new(tr!("upd.available", v)).size(14.0).strong().color(theme::text()));
+                    ui.add_space(4.0);
+                    ui.hyperlink_to(
+                        RichText::new(tr!("upd.download")).size(13.0).color(theme::blue()),
+                        crate::update::release_url(&v),
+                    );
+                    ui.add_space(4.0);
+                    if ui.button(RichText::new(tr!("upd.dismiss")).size(12.0)).clicked() {
+                        let mut s = self.shared.lock().unwrap();
+                        s.config.update_dismissed = Some(v);
+                        s.config.save();
+                    }
+                });
+            });
+        ui.add_space(10.0);
+    }
+
     /// Linux: aviso de firewall/uinput con reparación de un clic (pkexec) y,
     /// si no hay diálogo de contraseña (sin pkexec, o sesión sin agente de
     /// polkit), el comando manual listo para copiar. Con el backend Wayland
@@ -510,6 +545,14 @@ impl PepoMoteApp {
                     self.autostart = before_auto;
                 }
             }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.checkbox(
+                    &mut config.update_check,
+                    RichText::new(tr!("cfg.update_check")).size(13.0),
+                );
+                info_icon(ui, tr!("cfg.update_check_help"));
+            });
         });
 
         if config != before {

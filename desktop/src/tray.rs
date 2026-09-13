@@ -2,10 +2,13 @@
 //! desde el arranque aunque la ventana ni se haya creado, y "Mostrar" pide
 //! crearla/restaurarla vía singleton::request_show. El icono y su tooltip
 //! cuentan el estado sin abrir nada: punto verde con móviles conectados,
-//! cuántos son, en qué modo y quiénes.
+//! cuántos son, en qué modo y quiénes; y si hay versión nueva, el menú lo
+//! dice y la abre en el navegador.
 #![cfg(windows)]
 
 use crate::state::{Mode, SharedState};
+use crate::update::Version;
+use std::sync::{Arc, Mutex};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use crate::tr;
@@ -20,6 +23,8 @@ pub struct TraySnapshot {
     pub mode: Mode,
     /// Nombres (modelo, o nombre si no hay) de los móviles conectados, por slot.
     pub names: Vec<String>,
+    /// Versión nueva publicada (mayor que esta y no ocultada), si la hay.
+    pub update: Option<Version>,
 }
 
 impl TraySnapshot {
@@ -31,26 +36,33 @@ impl TraySnapshot {
             .flatten()
             .map(|p| if p.model.is_empty() { p.name.clone() } else { p.model.clone() })
             .collect();
-        Self { players: s.player_count(), mode: s.mode, names }
+        let update = crate::update::pending(&Version::current(), s.config.update_latest, s.config.update_dismissed);
+        Self { players: s.player_count(), mode: s.mode, names, update }
     }
 }
 
 /// Texto del tooltip. Windows lo corta a 128 caracteres: nos quedamos en 120.
 pub fn tooltip(snap: &TraySnapshot) -> String {
-    if snap.players == 0 {
-        return tr!("tray.waiting").to_owned();
-    }
-    let mode = match snap.mode {
-        Mode::Pointer => tr!("tray.mode_pointer"),
-        Mode::Dolphin => tr!("tray.mode_dolphin"),
-        Mode::Cemu => tr!("tray.mode_cemu"),
+    let mut text = if snap.players == 0 {
+        tr!("tray.waiting").to_owned()
+    } else {
+        let mode = match snap.mode {
+            Mode::Pointer => tr!("tray.mode_pointer"),
+            Mode::Dolphin => tr!("tray.mode_dolphin"),
+            Mode::Cemu => tr!("tray.mode_cemu"),
+        };
+        let plural = if snap.players == 1 { tr!("tray.phone_one") } else { tr!("tray.phone_many") };
+        let mut text = tr!("tray.line", snap.players, plural, mode);
+        let names = snap.names.join(", ");
+        if !names.is_empty() {
+            text.push('\n');
+            text.push_str(&names);
+        }
+        text
     };
-    let plural = if snap.players == 1 { tr!("tray.phone_one") } else { tr!("tray.phone_many") };
-    let mut text = tr!("tray.line", snap.players, plural, mode);
-    let names = snap.names.join(", ");
-    if !names.is_empty() {
+    if let Some(v) = &snap.update {
         text.push('\n');
-        text.push_str(&names);
+        text.push_str(&tr!("tray.update", v));
     }
     if text.chars().count() > 120 {
         text = text.chars().take(119).collect::<String>() + "…";
@@ -71,6 +83,10 @@ pub fn start(shared: SharedState) {
             let menu = Menu::new();
             let show = MenuItem::new(tr!("tray.show"), true, None);
             let quit = MenuItem::new(tr!("tray.quit"), true, None);
+            // «Nueva versión X…»: existe desde el principio pero solo entra en
+            // el menú (arriba del todo) cuando hay una que anunciar
+            let update_item = MenuItem::new("", true, None);
+            let update_url: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
             let _ = menu.append(&show);
             let _ = menu.append(&PredefinedMenuItem::separator());
             let _ = menu.append(&quit);
@@ -78,11 +94,17 @@ pub fn start(shared: SharedState) {
             // Handlers directos (los canales drenados a mano perdían clicks)
             let show_id = show.id().clone();
             let quit_id = quit.id().clone();
+            let update_id = update_item.id().clone();
+            let url_for_click = update_url.clone();
             MenuEvent::set_event_handler(Some(move |ev: MenuEvent| {
                 if *ev.id() == show_id {
                     crate::singleton::request_show();
                 } else if *ev.id() == quit_id {
                     std::process::exit(0);
+                } else if *ev.id() == update_id {
+                    if let Some(url) = url_for_click.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                        let _ = webbrowser::open(&url);
+                    }
                 }
             }));
 
@@ -100,6 +122,8 @@ pub fn start(shared: SharedState) {
             }));
 
             let mut snap = TraySnapshot::of(&shared);
+            let mut update_inserted = false;
+            let menu_handle = menu.clone();
             let tray = match TrayIconBuilder::new()
                 .with_icon(if snap.players > 0 { live.clone() } else { idle.clone() })
                 .with_menu(Box::new(menu))
@@ -113,6 +137,16 @@ pub fn start(shared: SharedState) {
                 Ok(t) => t,
                 Err(_) => return,
             };
+            let mut announce = |snap: &TraySnapshot| {
+                if let (Some(v), false) = (&snap.update, update_inserted) {
+                    update_item.set_text(tr!("tray.update", v));
+                    *update_url.lock().unwrap_or_else(|e| e.into_inner()) = Some(crate::update::release_url(v));
+                    let _ = menu_handle.insert(&update_item, 0);
+                    let _ = menu_handle.insert(&PredefinedMenuItem::separator(), 1);
+                    update_inserted = true;
+                }
+            };
+            announce(&snap);
 
             // Bomba de mensajes win32: los handlers corren en DispatchMessage.
             // Un WM_TIMER por segundo (sin ventana llega a la cola del hilo)
@@ -126,6 +160,7 @@ pub fn start(shared: SharedState) {
                         if now != snap {
                             let _ = tray.set_icon(Some(if now.players > 0 { live.clone() } else { idle.clone() }));
                             let _ = tray.set_tooltip(Some(tooltip(&now)));
+                            announce(&now);
                             snap = now;
                         }
                         continue;
@@ -143,7 +178,7 @@ mod tests {
     use super::*;
 
     fn snap(players: usize, mode: Mode, names: &[&str]) -> TraySnapshot {
-        TraySnapshot { players, mode, names: names.iter().map(|s| s.to_string()).collect() }
+        TraySnapshot { players, mode, names: names.iter().map(|s| s.to_string()).collect(), update: None }
     }
 
     #[test]
@@ -158,9 +193,21 @@ mod tests {
     }
 
     #[test]
+    fn el_tooltip_anuncia_la_version_nueva() {
+        let mut s = snap(0, Mode::Pointer, &[]);
+        s.update = Some(Version([1, 6, 0]));
+        assert_eq!(tooltip(&s), "PepoMote · esperando al móvil\nNueva versión 1.6.0…");
+        let mut s = snap(1, Mode::Cemu, &["Pixel 8"]);
+        s.update = Some(Version([2, 0, 0]));
+        assert_eq!(tooltip(&s), "PepoMote · 1 móvil · Wii U\nPixel 8\nNueva versión 2.0.0…");
+    }
+
+    #[test]
     fn el_tooltip_no_pasa_de_120_caracteres() {
         let long = "x".repeat(200);
-        let t = tooltip(&snap(4, Mode::Pointer, &[&long, &long, &long, &long]));
+        let mut t = snap(4, Mode::Pointer, &[&long, &long, &long, &long]);
+        t.update = Some(Version([1, 6, 0]));
+        let t = tooltip(&t);
         assert_eq!(t.chars().count(), 120);
         assert!(t.ends_with('…'));
     }

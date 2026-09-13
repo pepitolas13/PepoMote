@@ -29,6 +29,7 @@ mod strings;
 mod theme;
 #[cfg(windows)]
 mod tray;
+mod update;
 
 fn main() -> eframe::Result {
     // Lo primero de todo: que ningún pánico se pierda ni cierre el receptor
@@ -83,6 +84,23 @@ fn main() -> eframe::Result {
     net::start(shared.clone(), pairing.clone(), dsu, hub);
     screen::start_minder(shared.clone());
     auto_mode::start_watcher(shared.clone());
+
+    // Aviso de versión nueva: un HEAD diario a GitHub (se apaga en Ajustes);
+    // el resultado se guarda en settings.json y la ventana lo enseña
+    {
+        let (s1, s2, s3) = (shared.clone(), shared.clone(), shared.clone());
+        update::spawn(
+            move || s1.lock().unwrap().config.update_check,
+            move || s2.lock().unwrap().config.update_last_check,
+            move |now, latest| {
+                let mut s = s3.lock().unwrap();
+                s.config.update_last_check = now;
+                s.config.update_latest = Some(latest);
+                s.config.save();
+            },
+            |m| log_line!("{m}"),
+        );
+    }
 
     #[cfg(target_os = "linux")]
     firewall::watch(shared.clone(), pairing.port);
