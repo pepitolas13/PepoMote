@@ -3,6 +3,7 @@ package dev.pepotech.pepomote.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,9 +41,11 @@ import dev.pepotech.pepomote.ui.components.PrecisionPill
 import dev.pepotech.pepomote.ui.components.PriorityRow
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
+import dev.pepotech.pepomote.ui.components.UiScale
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
+import kotlin.math.roundToInt
 
 /**
  * Mando apaisado estilo "de lado" (NES): cruceta a la izquierda, 1 y 2
@@ -61,13 +64,15 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
         onDispose { view.keepScreenOn = false }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(PepoColors.Background)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
+        // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
+        val s = UiScale.factor(maxWidth.value, maxHeight.value, UiScale.PHONE_LANDSCAPE_W, UiScale.PHONE_LANDSCAPE_H, 1.6f)
         // Cabecera compacta (+ selector de mando dentro de Wii U). Si no cabe
         // todo, PriorityRow deja fuera primero el nombre del PC y luego el
         // estado; los chips y «Teclado» solo en último extremo; «Salir» nunca
@@ -135,9 +140,9 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(start = 34.dp)
+                .padding(start = 34.dp * s)
         ) {
-            PadCross(sizeDp = 190.dp)
+            PadCross(sizeDp = 190.dp * s, glyphSp = (14 * s).roundToInt())
         }
 
         // − / + / A centro (un 20 % más grandes que en la primera versión:
@@ -145,36 +150,36 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
         Column(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp * s)
         ) {
-            Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                RoundButton("−", 53.dp, ButtonState.MINUS, textSize = 19)
-                RoundButton("+", 53.dp, ButtonState.PLUS, textSize = 19)
+            Spacer(Modifier.height(20.dp * s))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp * s)) {
+                RoundButton("−", 53.dp * s, ButtonState.MINUS, textSize = (19 * s).roundToInt())
+                RoundButton("+", 53.dp * s, ButtonState.PLUS, textSize = (19 * s).roundToInt())
             }
-            RoundButton("A", 62.dp, ButtonState.A, textSize = 22)
+            RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
         }
 
         // 1 y 2 grandes a la derecha (los botones de acción del modo NES)
         Row(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 30.dp),
-            horizontalArrangement = Arrangement.spacedBy(18.dp)
+                .padding(end = 30.dp * s),
+            horizontalArrangement = Arrangement.spacedBy(18.dp * s)
         ) {
             RoundButton(
-                "1", 92.dp, ButtonState.ONE,
+                "1", 92.dp * s, ButtonState.ONE,
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
                 textColor = PepoColors.OnAccent,
-                textSize = 28
+                textSize = (28 * s).roundToInt()
             )
             RoundButton(
-                "2", 92.dp, ButtonState.TWO,
+                "2", 92.dp * s, ButtonState.TWO,
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
                 textColor = PepoColors.OnAccent,
-                textSize = 28,
+                textSize = (28 * s).roundToInt(),
                 pop = true
             )
         }

@@ -6,13 +6,16 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.service.LinkState
@@ -46,6 +50,7 @@ import dev.pepotech.pepomote.ui.components.PrecisionStrip
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.TriggerZone
+import dev.pepotech.pepomote.ui.components.UiScale
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -85,16 +90,26 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(PepoColors.Background)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
+        // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1),
+        // la columna del mando se limita a 520·grow y las tiras la abrazan (en
+        // vez de irse a los bordes de la pantalla); los huecos entre grupos se
+        // vuelven flexibles para repartir la holgura vertical
+        val grow = UiScale.factor(maxWidth.value, maxHeight.value, UiScale.PHONE_PORTRAIT_W, UiScale.PHONE_PORTRAIT_H, 1.5f)
+        val colW = minOf(maxWidth, 520.dp * grow)
+        val gutter = (maxWidth - colW) / 2
+        val flexible = grow > 1f
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .align(Alignment.Center)
+                .fillMaxHeight()
+                .width(colW)
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -167,48 +182,49 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
-            PadCross(sizeDp = 168.dp)
+            Gap(10.dp * grow, flexible)
+            PadCross(sizeDp = 168.dp * grow, glyphSp = (14 * grow).roundToInt())
 
-            Spacer(Modifier.height(16.dp))
+            Gap(16.dp * grow, flexible)
             Row(
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                RoundButton("−", 54.dp, ButtonState.MINUS)
-                RecenterButton()
-                RoundButton("+", 54.dp, ButtonState.PLUS)
+                RoundButton("−", 54.dp * grow, ButtonState.MINUS, textSize = (20 * grow).roundToInt())
+                RecenterButton(size = 64.dp * grow)
+                RoundButton("+", 54.dp * grow, ButtonState.PLUS, textSize = (20 * grow).roundToInt())
             }
 
-            Spacer(Modifier.height(16.dp))
+            Gap(16.dp * grow, flexible)
             RoundButton(
-                "A", 148.dp, ButtonState.A,
+                "A", 148.dp * grow, ButtonState.A,
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
                 textColor = PepoColors.OnAccent,
-                textSize = 44,
+                textSize = (44 * grow).roundToInt(),
                 pop = true
             )
 
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                RoundButton("1", 52.dp, ButtonState.ONE, textSize = 18)
-                RoundButton("2", 52.dp, ButtonState.TWO, textSize = 18)
+            Gap(14.dp * grow, flexible)
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp * grow)) {
+                RoundButton("1", 52.dp * grow, ButtonState.ONE, textSize = (18 * grow).roundToInt())
+                RoundButton("2", 52.dp * grow, ButtonState.TWO, textSize = (18 * grow).roundToInt())
             }
 
-            Spacer(Modifier.height(10.dp))
-            MediaRow()
+            Gap(10.dp * grow, flexible)
+            MediaRow(buttonSize = 46.dp * grow, textSize = (16 * grow).roundToInt())
 
             Spacer(Modifier.weight(1f))
-            TriggerZone()
+            TriggerZone(height = 88.dp * grow)
             Spacer(Modifier.height(12.dp))
         }
 
         ScrollStrip(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
+                .padding(end = gutter)
                 .fillMaxHeight(0.45f)
-                .width(30.dp)
+                .width(30.dp * grow)
         )
 
         // Espejo de la de scroll, algo más ancha: mantener = puntero al 40 %
@@ -216,8 +232,10 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
         PrecisionStrip(
             modifier = Modifier
                 .align(Alignment.CenterStart)
+                .padding(start = gutter)
                 .fillMaxHeight(0.45f)
-                .width(40.dp)
+                .width(40.dp * grow),
+            glyph = 16.dp * grow
         )
 
         NoticeBanner(
@@ -300,15 +318,28 @@ internal fun ModeChip(label: String, selected: Boolean, compact: Boolean = false
     }
 }
 
+/**
+ * Hueco entre grupos del mando: fijo en el móvil; flexible en una tablet
+ * (reparte la holgura vertical con los demás huecos flexibles).
+ */
+@Composable
+private fun ColumnScope.Gap(h: Dp, flexible: Boolean) {
+    if (flexible) {
+        Spacer(Modifier.weight(1f).heightIn(min = h))
+    } else {
+        Spacer(Modifier.height(h))
+    }
+}
+
 /** Diana de recentrado: mantener 150 ms → vibra y recentra. */
 @Composable
-private fun RecenterButton() {
+private fun RecenterButton(size: Dp = 64.dp) {
     val view = LocalView.current
     var down by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
-            .size(64.dp)
+            .size(size)
             .background(if (down) PepoColors.Glow else PepoColors.Card, CircleShape)
             .pointerInput(Unit) {
                 detectTapGestures(onPress = {
@@ -328,15 +359,16 @@ private fun RecenterButton() {
             },
         contentAlignment = Alignment.Center
     ) {
+        // 26/64 y 10/64 del tamaño (exactos en un móvil)
         Box(
             Modifier
-                .size(26.dp)
+                .size(size * 0.40625f)
                 .background(PepoColors.Background, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 Modifier
-                    .size(10.dp)
+                    .size(size * 0.15625f)
                     .background(PepoColors.Blue, CircleShape)
             )
         }
@@ -345,7 +377,7 @@ private fun RecenterButton() {
 
 /** Fila multimedia plegable. */
 @Composable
-private fun MediaRow() {
+private fun MediaRow(buttonSize: Dp = 46.dp, textSize: Int = 16) {
     var expanded by remember { mutableStateOf(false) }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -358,12 +390,12 @@ private fun MediaRow() {
         }
         if (expanded) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                RoundButton("⏮", 46.dp, ButtonState.MEDIA_PREV, textSize = 16)
-                RoundButton("🔉", 46.dp, ButtonState.MEDIA_VOL_DOWN, textSize = 16)
-                RoundButton("⏯", 46.dp, ButtonState.MEDIA_PLAY_PAUSE, textSize = 16)
-                RoundButton("🔇", 46.dp, ButtonState.MEDIA_MUTE, textSize = 16)
-                RoundButton("🔊", 46.dp, ButtonState.MEDIA_VOL_UP, textSize = 16)
-                RoundButton("⏭", 46.dp, ButtonState.MEDIA_NEXT, textSize = 16)
+                RoundButton("⏮", buttonSize, ButtonState.MEDIA_PREV, textSize = textSize)
+                RoundButton("🔉", buttonSize, ButtonState.MEDIA_VOL_DOWN, textSize = textSize)
+                RoundButton("⏯", buttonSize, ButtonState.MEDIA_PLAY_PAUSE, textSize = textSize)
+                RoundButton("🔇", buttonSize, ButtonState.MEDIA_MUTE, textSize = textSize)
+                RoundButton("🔊", buttonSize, ButtonState.MEDIA_VOL_UP, textSize = textSize)
+                RoundButton("⏭", buttonSize, ButtonState.MEDIA_NEXT, textSize = textSize)
             }
         }
     }

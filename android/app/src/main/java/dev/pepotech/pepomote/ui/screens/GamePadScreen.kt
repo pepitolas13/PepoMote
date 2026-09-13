@@ -87,6 +87,7 @@ import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.ShoulderButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import dev.pepotech.pepomote.ui.components.UiScale
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -164,20 +165,23 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     ) {
         val gap = 6.dp
         val screenW = maxWidth
+        // En una tablet los topes (gatillos, pads, botones) crecen con k
+        // (UiScale por ancho); en cualquier móvil k = 1
+        val k = UiScale.factorWidth(maxWidth.value, UiScale.PHONE_LANDSCAPE_W, 1.6f)
         val headerH = 38.dp
         val selectorH = 36.dp
         val bodyH = maxHeight - headerH - selectorH - gap * 3
         val sideW = maxWidth * 0.29f
-        val shoulderH = (bodyH * 0.09f).coerceIn(26.dp, 40.dp)
-        val shoulderW = (sideW * 0.6f).coerceIn(90.dp, 150.dp)
+        val shoulderH = (bodyH * 0.09f).coerceIn(26.dp, 40.dp * k)
+        val shoulderW = (sideW * 0.6f).coerceIn(90.dp, 150.dp * k)
         // Stick y cruceta (o rombo) se reparten lo que queda bajo los gatillos
         val padSize = ((bodyH - shoulderH * 2 - gap * 3) / 2f)
             .coerceAtMost(sideW * 0.62f)
-            .coerceAtMost(200.dp)
-        val clickSize = (padSize * 0.30f).coerceIn(30.dp, 44.dp)
+            .coerceAtMost(200.dp * k)
+        val clickSize = (padSize * 0.30f).coerceIn(30.dp, 44.dp * k)
         val faceBtn = padSize / 2.6f
         val centerW = maxWidth - sideW * 2 - gap * 2
-        val bottomRowH = (bodyH * 0.16f).coerceIn(44.dp, 60.dp)
+        val bottomRowH = (bodyH * 0.16f).coerceIn(44.dp, 60.dp * k)
         val touchW = minOf(centerW, (bodyH - bottomRowH - gap * 2) * (16f / 9f))
         val touchH = touchW * (9f / 16f)
 
@@ -238,17 +242,17 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-                            ShoulderButton("L", ButtonState.L, shoulderW, shoulderH)
-                            ShoulderButton("ZL", ButtonState.ZL, shoulderW, shoulderH)
+                            ShoulderButton("L", ButtonState.L, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                            ShoulderButton("ZL", ButtonState.ZL, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                         }
                         Row(
                             verticalAlignment = Alignment.Bottom,
                             horizontalArrangement = Arrangement.spacedBy(gap)
                         ) {
                             AnalogStick(padSize) { x, y -> ButtonState.setStick(x, y) }
-                            RoundButton("L3", clickSize, ButtonState.STICK_L, textSize = 12)
+                            RoundButton("L3", clickSize, ButtonState.STICK_L, textSize = (12 * k).roundToInt())
                         }
-                        PadCross(sizeDp = padSize)
+                        PadCross(sizeDp = padSize, glyphSp = (14 * k).roundToInt())
                     }
 
                     // Centro: pantalla táctil y la fila − · Home · + (con TV/Pad y Soplar)
@@ -271,7 +275,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         // La fila entera tiene que caber en el centro (móviles
                         // estrechos): pastillas y círculos se encogen juntos
                         val rowGap = if (centerW < 300.dp) 6.dp else 10.dp
-                        val pillW = if (pro) 0.dp else (centerW * 0.22f).coerceIn(44.dp, 66.dp)
+                        val pillW = if (pro) 0.dp else (centerW * 0.22f).coerceIn(44.dp, 66.dp * k)
+                        val pillH = 30.dp * k
                         val pills = if (pro) 0 else 2
                         val roundBtn = ((centerW - rowGap * (2 + pills) - pillW * pills) / 3f)
                             .coerceAtMost(bottomRowH * 0.85f)
@@ -280,11 +285,11 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(rowGap)
                         ) {
-                            if (!pro) ShoulderButton(stringResource(R.string.tv_pad), ButtonState.SCREEN, pillW, 30.dp, textSize = 12)
-                            RoundButton("−", roundBtn, ButtonState.MINUS, textSize = 19)
-                            RoundButton(stringResource(R.string.home_btn), roundBtn, ButtonState.HOME, textSize = 12)
-                            RoundButton("+", roundBtn, ButtonState.PLUS, textSize = 19)
-                            if (!pro) ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, 30.dp, textSize = 12)
+                            if (!pro) ShoulderButton(stringResource(R.string.tv_pad), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt())
+                            RoundButton("−", roundBtn, ButtonState.MINUS, textSize = (19 * k).roundToInt())
+                            RoundButton(stringResource(R.string.home_btn), roundBtn, ButtonState.HOME, textSize = (12 * k).roundToInt())
+                            RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt())
+                            if (!pro) ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, pillH, textSize = (12 * k).roundToInt())
                         }
                     }
 
@@ -300,17 +305,17 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(gap)
                         ) {
-                            ShoulderButton("R", ButtonState.R, shoulderW, shoulderH)
-                            ShoulderButton("ZR", ButtonState.ZR, shoulderW, shoulderH)
+                            ShoulderButton("R", ButtonState.R, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                            ShoulderButton("ZR", ButtonState.ZR, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                         }
                         Row(
                             verticalAlignment = Alignment.Bottom,
                             horizontalArrangement = Arrangement.spacedBy(gap)
                         ) {
-                            RoundButton("R3", clickSize, ButtonState.STICK_R, textSize = 12)
+                            RoundButton("R3", clickSize, ButtonState.STICK_R, textSize = (12 * k).roundToInt())
                             AnalogStick(padSize) { x, y -> ButtonState.setStick2(x, y) }
                         }
-                        FaceButtons(padSize, faceBtn)
+                        FaceButtons(padSize, faceBtn, k)
                     }
                 }
 
@@ -452,13 +457,13 @@ private fun Header(
 
 /** Rombo: X arriba, Y izquierda, A derecha (azul, destacado), B abajo. */
 @Composable
-private fun FaceButtons(size: Dp, btn: Dp) {
+private fun FaceButtons(size: Dp, btn: Dp, k: Float = 1f) {
     Box(Modifier.size(size)) {
         Box(Modifier.align(BiasAlignment(0f, -1f))) {
-            RoundButton("X", btn, ButtonState.X, textSize = 18)
+            RoundButton("X", btn, ButtonState.X, textSize = (18 * k).roundToInt())
         }
         Box(Modifier.align(BiasAlignment(-1f, 0f))) {
-            RoundButton("Y", btn, ButtonState.Y, textSize = 18)
+            RoundButton("Y", btn, ButtonState.Y, textSize = (18 * k).roundToInt())
         }
         Box(Modifier.align(BiasAlignment(1f, 0f))) {
             RoundButton(
@@ -466,12 +471,12 @@ private fun FaceButtons(size: Dp, btn: Dp) {
                 background = PepoColors.Blue,
                 pressedColor = PepoColors.BlueHover,
                 textColor = PepoColors.OnAccent,
-                textSize = 20,
+                textSize = (20 * k).roundToInt(),
                 pop = true
             )
         }
         Box(Modifier.align(BiasAlignment(0f, 1f))) {
-            RoundButton("B", btn, ButtonState.B, textSize = 18)
+            RoundButton("B", btn, ButtonState.B, textSize = (18 * k).roundToInt())
         }
     }
 }

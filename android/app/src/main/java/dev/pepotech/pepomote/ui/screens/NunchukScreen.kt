@@ -5,12 +5,14 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +33,7 @@ import dev.pepotech.pepomote.ui.components.AnalogStick
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.TriggerZone
+import dev.pepotech.pepomote.ui.components.UiScale
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -63,15 +66,20 @@ fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        // De lado hay poca altura: todo más pequeño, mismo orden
+        // De lado hay poca altura: todo más pequeño, mismo orden. En una
+        // tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
         val compact = maxHeight < 520.dp
-        val stickSize = if (compact) maxHeight * 0.40f else minOf(maxWidth * 0.66f, 264.dp)
-        val cHeight = if (compact) 48.dp else 64.dp
-        val zHeight = if (compact) 64.dp else 96.dp
+        val grow = if (compact) 1f else UiScale.factor(maxWidth.value, maxHeight.value, UiScale.PHONE_PORTRAIT_W, UiScale.PHONE_PORTRAIT_H, 1.5f)
+        val stickSize = if (compact) maxHeight * 0.40f else minOf(maxWidth * 0.66f, 264.dp * grow)
+        val cHeight = if (compact) 48.dp else 64.dp * grow
+        val zHeight = if (compact) 64.dp else 96.dp * grow
 
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .align(Alignment.Center)
+                .fillMaxHeight()
+                .widthIn(max = 520.dp * grow)
+                .fillMaxWidth()
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -98,7 +106,7 @@ fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
                 pressedColor = PepoColors.Glow,
                 textColor = PepoColors.Text
             )
-            Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
+            Spacer(Modifier.height(if (compact) 10.dp else 18.dp * grow))
             AnalogStick(stickSize) { x, y -> ButtonState.setStick(x, y) }
             Spacer(Modifier.weight(1f))
 
