@@ -14,7 +14,7 @@ struct NunchukScreen: View {
             // De lado hay poca altura: todo más pequeño, mismo orden. En un
             // iPad todo crece a la vez (UiScale; en cualquier iPhone, 1)
             let compact = geo.size.height < 520
-            let grow: CGFloat = compact ? 1 : UiScale.factor(geo.size, base: UiScale.phonePortrait, max: 1.5)
+            let grow: CGFloat = compact ? 1 : UiScale.factor(geo.size, base: UiScale.remoteBase, fixed: UiScale.remoteFixed)
             let stickSize = compact ? geo.size.height * 0.40 : min(geo.size.width * 0.66, 264 * grow)
             let cHeight: CGFloat = compact ? 48 : 64 * grow
             let zHeight: CGFloat = compact ? 64 : 96 * grow

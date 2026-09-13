@@ -4,6 +4,7 @@ struct SettingsScreen: View {
     @EnvironmentObject var model: AppModel
     @State private var sounds = AppPrefs.soundsEnabled
     @State private var dolphinChips = AppPrefs.showDolphinChips
+    @State private var noScreen = AppPrefs.gamePadNoScreen
     @State private var updateCheck = AppPrefs.updateCheckEnabled
 
     var body: some View {
@@ -17,6 +18,9 @@ struct SettingsScreen: View {
                         .onChange(of: sounds) { AppPrefs.soundsEnabled = $0 }
                     SettingRow(title: tr("chips_title"), subtitle: tr("chips_sub"), on: $dolphinChips)
                         .onChange(of: dolphinChips) { AppPrefs.showDolphinChips = $0 }
+                    // GamePad de Wii U sin pantalla táctil: botones más grandes
+                    SettingRow(title: tr("noscreen_title"), subtitle: tr("noscreen_sub"), on: $noScreen)
+                        .onChange(of: noScreen) { AppPrefs.gamePadNoScreen = $0 }
                     // Aviso de versión nueva: la única consulta fuera de la red local
                     SettingRow(title: tr("update_title"), subtitle: tr("update_sub"), on: $updateCheck)
                         .onChange(of: updateCheck) { AppPrefs.updateCheckEnabled = $0 }

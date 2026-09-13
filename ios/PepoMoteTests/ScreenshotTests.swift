@@ -19,6 +19,8 @@ final class ScreenshotTests: XCTestCase {
     ]
     private static let landscape: [(String, CGSize)] = [
         ("iphone-16-land", CGSize(width: 852, height: 393)),
+        // lo que queda al iPhone 16 de lado descontando las zonas seguras (59 pt por lado)
+        ("iphone-16-land-safe", CGSize(width: 734, height: 393)),
         ("ipad-mini-land", CGSize(width: 1133, height: 744)),
         ("ipad-11-land", CGSize(width: 1180, height: 820)),
         ("ipad-13-land", CGSize(width: 1376, height: 1032)),
@@ -38,6 +40,7 @@ final class ScreenshotTests: XCTestCase {
     override func tearDown() {
         LinkState.shared.publish(.disconnected)
         ScreenLink.shared.release()
+        UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
     }
 
     private func connected(mode: String, pad: String = LinkState.padGamepad, role: String = LinkState.roleWiimote, slot: Int = 0) -> UiLink {
@@ -105,6 +108,11 @@ final class ScreenshotTests: XCTestCase {
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modeCemu, pad: LinkState.padPro, slot: 1))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-pro-\(dev)", size)
+            // Ajuste «GamePad sin pantalla táctil»: botones más grandes
+            UserDefaults.standard.set(true, forKey: AppPrefs.gamePadNoScreenKey)
+            LinkState.shared.publish(connected(mode: LinkState.modeCemu))
+            try shoot(GamePadScreen(onDisconnect: {}), "gamepad-noscreen-\(dev)", size)
+            UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
             LinkState.shared.publish(connected(mode: LinkState.modeDolphin, pad: "nunchuk", role: LinkState.roleNunchuk, slot: 1))
             try shoot(NunchukScreen(onDisconnect: {}), "nunchuk-\(dev)", size)
         }

@@ -60,6 +60,8 @@
 "sounds_sub" = "Button beeps and the connect/disconnect melody (vibration stays)";
 "chips_title" = "Dolphin mode on the controller";
 "chips_sub" = "Shows the Pointer/Dolphin selector when entering via Connect. Turn it off for a pointer-only controller, no selector";
+"noscreen_title" = "GamePad without touch screen";
+"noscreen_sub" = "Removes the Wii U GamePad's screen (and the second screen) so the buttons get bigger";
 "link_other_pc" = "Pair with another PC";
 "link_other_pc_sub" = "Scan a new QR";
 "sens_note" = "The pointer sensitivity is set in PepoMote's window on the PC.";

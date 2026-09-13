@@ -31,6 +31,14 @@ enum AppPrefs {
         set { d.set(newValue, forKey: "onboarded") }
     }
 
+    /// GamePad de Wii U sin pantalla táctil (ni doble pantalla): los botones
+    /// crecen (Ajustes). `GamePadScreen` lo observa con @AppStorage.
+    static let gamePadNoScreenKey = "gamePadNoScreen"
+    static var gamePadNoScreen: Bool {
+        get { d.bool(forKey: gamePadNoScreenKey) }
+        set { d.set(newValue, forKey: gamePadNoScreenKey) }
+    }
+
     // MARK: aviso de versión nueva (UpdateCheck)
 
     /// Consultar GitHub una vez al día si hay versión nueva (Ajustes).

@@ -60,6 +60,8 @@
 "sounds_sub" = "Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)";
 "chips_title" = "Modo Dolphin en el mando";
 "chips_sub" = "Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector";
+"noscreen_title" = "GamePad sin pantalla táctil";
+"noscreen_sub" = "Quita la pantalla del GamePad de Wii U (y la doble pantalla) para que los botones sean más grandes";
 "link_other_pc" = "Vincular con otro PC";
 "link_other_pc_sub" = "Escanear un QR nuevo";
 "sens_note" = "La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.";

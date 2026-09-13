@@ -2,9 +2,10 @@ import SwiftUI
 
 /// Medidas del mando vertical para un tamaño de pantalla. En un iPhone bajo
 /// (SE) todo se encoge a la vez (`s` < 1); en un iPad todo crece a la vez
-/// (`grow` > 1, UiScale) y los huecos se vuelven flexibles para repartir la
-/// holgura vertical entre todos en vez de dejarla en uno solo. En cualquier
-/// otro iPhone, las medidas de siempre.
+/// (`grow` > 1, UiScale: lo que limita es la anchura o la altura que queda
+/// para lo que escala, no la altura de un iPhone) y los huecos se vuelven
+/// flexibles para repartir la holgura vertical entre todos en vez de dejarla
+/// en uno solo. En cualquier otro iPhone, las medidas de siempre.
 struct RemoteMetrics {
     let grow: CGFloat
     let s: CGFloat
@@ -25,7 +26,7 @@ struct RemoteMetrics {
     let scrollW: CGFloat
 
     init(size: CGSize) {
-        grow = UiScale.factor(size, base: UiScale.phonePortrait, max: 1.5)
+        grow = UiScale.factor(size, base: UiScale.remoteBase, fixed: UiScale.remoteFixed)
         s = Swift.min(1, size.height / 780) * grow
         colW = Swift.min(size.width, 520 * grow)
         flexible = grow > 1

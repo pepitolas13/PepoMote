@@ -5,32 +5,36 @@ import XCTest
 final class UiScaleTests: XCTestCase {
     private func sz(_ w: CGFloat, _ h: CGFloat) -> CGSize { CGSize(width: w, height: h) }
 
-    func testVerticalNoEncogeYCreceEnIpad() {
-        let base = UiScale.phonePortrait
-        XCTAssertEqual(UiScale.factor(sz(375, 667), base: base, max: 1.5), 1)
-        XCTAssertEqual(UiScale.factor(sz(393, 852), base: base, max: 1.5), 1)
-        XCTAssertEqual(UiScale.factor(sz(440, 956), base: base, max: 1.5), 1)
-        XCTAssertEqual(UiScale.factor(sz(744, 1133), base: base, max: 1.5), 1.185, accuracy: 0.001)
-        XCTAssertEqual(UiScale.factor(sz(820, 1180), base: base, max: 1.5), 1.234, accuracy: 0.001)
-        XCTAssertEqual(UiScale.factor(sz(1032, 1376), base: base, max: 1.5), 1.439, accuracy: 0.001)
-        XCTAssertEqual(UiScale.factor(sz(2000, 3000), base: base, max: 1.5), 1.5)
-        XCTAssertEqual(UiScale.factor(sz(0, 0), base: base, max: 1.5), 1)
+    func testMandoVerticalNoEncogeYCreceConLaPantalla() {
+        let b = UiScale.remoteBase
+        let f = UiScale.remoteFixed
+        XCTAssertEqual(UiScale.factor(sz(375, 667), base: b, fixed: f), 1)
+        XCTAssertEqual(UiScale.factor(sz(393, 852), base: b, fixed: f), 1)
+        XCTAssertEqual(UiScale.factor(sz(440, 956), base: b, fixed: f), 1, "el iPhone más grande sigue en 1")
+        XCTAssertEqual(UiScale.factor(sz(744, 1133), base: b, fixed: f), 1.514, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(820, 1180), base: b, fixed: f), 1.589, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(1032, 1376), base: b, fixed: f), 1.899, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(2000, 3000), base: b, fixed: f), 2)
+        XCTAssertEqual(UiScale.factor(sz(0, 0), base: b, fixed: f), 1)
     }
 
-    func testApaisado() {
-        let base = UiScale.phoneLandscape
-        XCTAssertEqual(UiScale.factor(sz(852, 393), base: base, max: 1.6), 1)
-        XCTAssertEqual(UiScale.factor(sz(1180, 820), base: base, max: 1.6), 1.234, accuracy: 0.001)
-        XCTAssertEqual(UiScale.factor(sz(1376, 1032), base: base, max: 1.6), 1.439, accuracy: 0.001)
-        XCTAssertEqual(UiScale.factor(sz(5000, 3000), base: base, max: 1.6), 1.6)
+    func testMandoApaisado() {
+        let b = UiScale.landscapeBase
+        XCTAssertEqual(UiScale.factor(sz(852, 393), base: b), 1)
+        XCTAssertEqual(UiScale.factor(sz(956, 440), base: b), 1)
+        XCTAssertEqual(UiScale.factor(sz(1133, 744), base: b), 1.619, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(1180, 820), base: b), 1.686, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(1376, 1032), base: b), 1.966, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(5000, 3000), base: b), 2)
     }
 
-    func testSoloAncho() {
-        XCTAssertEqual(UiScale.factor(width: 844, base: 956, max: 1.6), 1)
-        XCTAssertEqual(UiScale.factor(width: 956, base: 956, max: 1.6), 1)
-        XCTAssertEqual(UiScale.factor(width: 1180, base: 956, max: 1.6), 1.234, accuracy: 0.001)
-        XCTAssertEqual(UiScale.factor(width: 1376, base: 956, max: 1.6), 1.439, accuracy: 0.001)
-        XCTAssertEqual(UiScale.factor(width: 3000, base: 956, max: 1.6), 1.6)
+    func testGamePad() {
+        let b = UiScale.phoneLandscape
+        XCTAssertEqual(UiScale.factor(sz(852, 393), base: b), 1)
+        XCTAssertEqual(UiScale.factor(sz(1133, 744), base: b), 1.185, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(1180, 820), base: b), 1.234, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(1376, 1032), base: b), 1.439, accuracy: 0.001)
+        XCTAssertEqual(UiScale.factor(sz(3000, 1500), base: b), 2)
     }
 
     func testMedidasDelMandoEnIphoneSonLasDeSiempre() {
@@ -49,18 +53,19 @@ final class UiScaleTests: XCTestCase {
         XCTAssertEqual(se.text(44), 44, "el texto no se encoge en el SE")
         // iPad 11": crece, columna de 520·grow y huecos flexibles
         let pad = RemoteMetrics(size: sz(820, 1180))
-        XCTAssertEqual(pad.grow, 1.234, accuracy: 0.001)
+        XCTAssertEqual(pad.grow, 1.589, accuracy: 0.001)
         XCTAssertEqual(pad.s, pad.grow)
         XCTAssertEqual(pad.colW, 520 * pad.grow, accuracy: 0.01)
         XCTAssertTrue(pad.flexible)
         XCTAssertEqual(pad.text(44), 44 * pad.grow, accuracy: 0.01)
-        // GamePad en iPad 13" apaisado: los topes crecen con k
-        let g = PadMetrics(size: sz(1376, 1032))
-        XCTAssertEqual(g.k, 1.439, accuracy: 0.001)
-        XCTAssertGreaterThan(g.padSize, 200)
-        XCTAssertGreaterThan(g.shoulderW, 150)
-        let phone = PadMetrics(size: sz(852, 393))
-        XCTAssertEqual(phone.k, 1)
-        XCTAssertLessThanOrEqual(phone.padSize, 200)
+        // iPad 13": la A pasa de 148 a 281 pt y la columna casi llena la pantalla
+        let big = RemoteMetrics(size: sz(1032, 1376))
+        XCTAssertEqual(big.big, 281, accuracy: 1)
+        XCTAssertEqual(big.colW, 987, accuracy: 1)
+        // NES apaisado en iPad 13"
+        let nes = LandscapeMetrics(size: sz(1376, 1032))
+        XCTAssertEqual(nes.s, 1.966, accuracy: 0.001)
+        XCTAssertEqual(nes.cross, 190 * nes.s, accuracy: 0.01)
+        XCTAssertEqual(LandscapeMetrics(size: sz(852, 393)).big, 92)
     }
 }

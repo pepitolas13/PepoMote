@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Medidas del mando apaisado (NES): en un iPad todo crece a la vez
-/// (UiScale); en cualquier iPhone, las de siempre.
+/// (UiScale, por la anchura natural del trazado); en cualquier iPhone, las
+/// de siempre.
 struct LandscapeMetrics {
     let s: CGFloat
     let cross: CGFloat
@@ -13,7 +14,7 @@ struct LandscapeMetrics {
     let selectorW: CGFloat
 
     init(size: CGSize) {
-        s = UiScale.factor(size, base: UiScale.phoneLandscape, max: 1.6)
+        s = UiScale.factor(size, base: UiScale.landscapeBase)
         cross = 190 * s
         small = 53 * s
         a = 62 * s
