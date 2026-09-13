@@ -21,6 +21,7 @@ struct RootView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: model.screen)
         .animation(.easeInOut(duration: 0.2), value: model.toast)
+        .pepoImmersive()
         // Error de conexión: al escáner si el PC ya no reconoce el
         // emparejamiento, o aviso y vuelta al inicio
         .onReceive(link.$link) { l in
@@ -120,5 +121,18 @@ struct ToastView: View {
                 .padding(.bottom, 40)
         }
         .allowsHitTesting(false)
+    }
+}
+
+extension View {
+    /// Inmersivo, como en Android: sin barra de estado mientras se usa la app
+    /// y, en iOS 16+, con el indicador de inicio atenuado (vuelve al deslizar).
+    @ViewBuilder
+    func pepoImmersive() -> some View {
+        if #available(iOS 16.0, *) {
+            self.statusBarHidden(true).persistentSystemOverlays(.hidden)
+        } else {
+            self.statusBar(hidden: true)
+        }
     }
 }
