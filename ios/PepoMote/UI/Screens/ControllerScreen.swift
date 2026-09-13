@@ -1,5 +1,73 @@
 import SwiftUI
 
+/// Medidas del mando vertical para un tamaño de pantalla. En un iPhone bajo
+/// (SE) todo se encoge a la vez (`s` < 1); en un iPad todo crece a la vez
+/// (`grow` > 1, UiScale) y los huecos se vuelven flexibles para repartir la
+/// holgura vertical entre todos en vez de dejarla en uno solo. En cualquier
+/// otro iPhone, las medidas de siempre.
+struct RemoteMetrics {
+    let grow: CGFloat
+    let s: CGFloat
+    /// Anchura de la columna del mando; las tiras la abrazan (en un iPad no
+    /// se van a los bordes de la pantalla).
+    let colW: CGFloat
+    let flexible: Bool
+    let cross: CGFloat
+    let small: CGFloat
+    let recenter: CGFloat
+    let big: CGFloat
+    let one: CGFloat
+    let media: CGFloat
+    let trigger: CGFloat
+    let spacing: CGFloat
+    let stripH: CGFloat
+    let precisionW: CGFloat
+    let scrollW: CGFloat
+
+    init(size: CGSize) {
+        grow = UiScale.factor(size, base: UiScale.phonePortrait, max: 1.5)
+        s = Swift.min(1, size.height / 780) * grow
+        colW = Swift.min(size.width, 520 * grow)
+        flexible = grow > 1
+        cross = 168 * s
+        small = 54 * s
+        recenter = 64 * s
+        big = 148 * s
+        one = 52 * s
+        media = 46 * s
+        trigger = 88 * s
+        spacing = 20 * s
+        stripH = size.height * 0.45
+        precisionW = 34 * grow
+        scrollW = 24 * grow
+    }
+
+    /// Texto: crece con el iPad; en el SE no se encoge (como hasta ahora).
+    func text(_ base: CGFloat) -> CGFloat { base * grow }
+    /// Hueco entre grupos, escalado como los botones.
+    func gap(_ base: CGFloat) -> CGFloat { base * s }
+}
+
+/// Hueco entre grupos: fijo en el móvil; flexible en el iPad (reparte la
+/// holgura vertical con los demás huecos flexibles).
+struct Gap: View {
+    let h: CGFloat
+    let flexible: Bool
+
+    init(_ h: CGFloat, flexible: Bool) {
+        self.h = h
+        self.flexible = flexible
+    }
+
+    var body: some View {
+        if flexible {
+            Spacer(minLength: h)
+        } else {
+            Spacer().frame(height: h)
+        }
+    }
+}
+
 /// Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/2, multimedia, B.
 /// `showChips`: mostrar el selector Puntero/Dolphin/Wii U. Dentro de Wii U
 /// como Mando de Wii, la cabecera lo dice, los chips se ven siempre (Jugador
@@ -15,58 +83,21 @@ struct ControllerScreen: View {
 
     var body: some View {
         GeometryReader { geo in
-            // En pantallas bajas (iPhone SE) todo se encoge a la vez
-            let s = min(1, geo.size.height / 780)
+            let m = RemoteMetrics(size: geo.size)
             ZStack {
-                VStack(spacing: 0) {
-                    Spacer().frame(height: 10)
-                    header
-                    if let c = link.link.connected {
-                        if showModeChips(c, showChips) {
-                            Spacer().frame(height: 6)
-                            ModeChips(current: c.mode, supportsCemu: c.supportsCemu)
-                        }
-                        if isWiiUAsWiimote(c) {
-                            Spacer().frame(height: 8)
-                            PadSelector(link: c, width: geo.size.width - 48, help: tr("wii_pad_help"))
-                        }
+                // La columna del mando y las tiras comparten anchura
+                ZStack {
+                    column(m)
+                        .padding(.horizontal, 24)
+                    HStack {
+                        PrecisionStrip(width: m.precisionW, height: m.stripH, glyph: m.text(16))
+                            .padding(.leading, 6)
+                        Spacer()
+                        ScrollStrip(width: m.scrollW, height: m.stripH)
+                            .padding(.trailing, 6)
                     }
-                    Spacer().frame(height: 10 * s)
-                    PadCross(size: 168 * s)
-                    Spacer().frame(height: 16 * s)
-                    HStack(spacing: 20 * s) {
-                        RoundButton(label: "−", size: 54 * s, bit: Btn.minus)
-                        RecenterButton(size: 64 * s)
-                        RoundButton(label: "+", size: 54 * s, bit: Btn.plus)
-                    }
-                    Spacer().frame(height: 16 * s)
-                    RoundButton(
-                        label: "A", size: 148 * s, bit: Btn.a,
-                        background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent,
-                        textSize: 44, pop: true
-                    )
-                    Spacer().frame(height: 14 * s)
-                    HStack(spacing: 20 * s) {
-                        RoundButton(label: "1", size: 52 * s, bit: Btn.one, textSize: 18)
-                        RoundButton(label: "2", size: 52 * s, bit: Btn.two, textSize: 18)
-                    }
-                    Spacer().frame(height: 10 * s)
-                    MediaRow(buttonSize: 46 * s)
-                    Spacer(minLength: 4)
-                    TriggerZone(height: 88 * s)
-                    Spacer().frame(height: 12)
                 }
-                .padding(.horizontal, 24)
-                .frame(maxWidth: 520)
-
-                // Tira de scroll (derecha) y de precisión (izquierda, espejo, algo más ancha)
-                HStack {
-                    PrecisionStrip(width: 34, height: geo.size.height * 0.45)
-                        .padding(.leading, 6)
-                    Spacer()
-                    ScrollStrip(width: 24, height: geo.size.height * 0.45)
-                        .padding(.trailing, 6)
-                }
+                .frame(width: m.colW)
 
                 VStack {
                     NoticeBanner().padding(.top, 64).padding(.horizontal, 24)
@@ -81,6 +112,47 @@ struct ControllerScreen: View {
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+    }
+
+    private func column(_ m: RemoteMetrics) -> some View {
+        VStack(spacing: 0) {
+            Spacer().frame(height: 10)
+            header
+            if let c = link.link.connected {
+                if showModeChips(c, showChips) {
+                    Spacer().frame(height: 6)
+                    ModeChips(current: c.mode, supportsCemu: c.supportsCemu)
+                }
+                if isWiiUAsWiimote(c) {
+                    Spacer().frame(height: 8)
+                    PadSelector(link: c, width: m.colW - 48, help: tr("wii_pad_help"))
+                }
+            }
+            Gap(m.gap(10), flexible: m.flexible)
+            PadCross(size: m.cross, glyph: m.text(14))
+            Gap(m.gap(16), flexible: m.flexible)
+            HStack(spacing: m.spacing) {
+                RoundButton(label: "−", size: m.small, bit: Btn.minus, textSize: m.text(20))
+                RecenterButton(size: m.recenter)
+                RoundButton(label: "+", size: m.small, bit: Btn.plus, textSize: m.text(20))
+            }
+            Gap(m.gap(16), flexible: m.flexible)
+            RoundButton(
+                label: "A", size: m.big, bit: Btn.a,
+                background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent,
+                textSize: m.text(44), pop: true
+            )
+            Gap(m.gap(14), flexible: m.flexible)
+            HStack(spacing: m.spacing) {
+                RoundButton(label: "1", size: m.one, bit: Btn.one, textSize: m.text(18))
+                RoundButton(label: "2", size: m.one, bit: Btn.two, textSize: m.text(18))
+            }
+            Gap(m.gap(10), flexible: m.flexible)
+            MediaRow(buttonSize: m.media, textSize: m.text(16))
+            Spacer(minLength: 4)
+            TriggerZone(height: m.trigger)
+            Spacer().frame(height: 12)
+        }
     }
 
     /// Cabecera: estado + Teclado (Wii U) + Salir.

@@ -41,10 +41,15 @@ jobs:
           echo "Simulador: $name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
+      # Las capturas de todas las pantallas (ScreenshotTests, ImageRenderer)
+      # se escriben en /tmp/pepomote-shots y salen como artefacto ios-shots:
+      # así se ven los layouts de iPhone y de iPad sin tener el dispositivo
       - name: Tests en el simulador
         working-directory: ios
+        env:
+          TEST_RUNNER_PEPOMOTE_SHOTS_DIR: /tmp/pepomote-shots
         run: |
-          mkdir -p ../build
+          mkdir -p ../build /tmp/pepomote-shots
           set +e
           xcodebuild test -project PepoMote.xcodeproj -scheme PepoMote \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
@@ -78,6 +83,13 @@ jobs:
         with:
           name: PepoMote-ios
           path: dist/PepoMote.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-shots
+          path: /tmp/pepomote-shots/*.png
+          if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
         if: always()

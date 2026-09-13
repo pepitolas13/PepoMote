@@ -2,10 +2,12 @@ import SwiftUI
 import UIKit
 
 /// Medidas del GamePad para un tamaño de pantalla (todo escalado al tamaño
-/// real, como en Android).
+/// real, como en Android). En un iPad los topes (gatillos, pads, botones)
+/// crecen con `k` (UiScale por ancho); en cualquier iPhone `k` = 1.
 struct PadMetrics {
     let w: CGFloat
     let h: CGFloat
+    let k: CGFloat
     let gap: CGFloat = 6
     let headerH: CGFloat = 38
     let selectorH: CGFloat = 36
@@ -25,21 +27,25 @@ struct PadMetrics {
     init(size: CGSize) {
         w = size.width
         h = size.height
+        k = UiScale.factor(width: size.width, base: UiScale.phoneLandscape.width, max: 1.6)
         let gap: CGFloat = 6
         bodyH = h - 38 - 36 - gap * 3
         sideW = w * 0.29
-        shoulderH = Swift.min(Swift.max(bodyH * 0.09, 26), 40)
-        shoulderW = Swift.min(Swift.max(sideW * 0.6, 90), 150)
+        shoulderH = Swift.min(Swift.max(bodyH * 0.09, 26), 40 * k)
+        shoulderW = Swift.min(Swift.max(sideW * 0.6, 90), 150 * k)
         let pad = (bodyH - shoulderH * 2 - gap * 3) / 2
-        padSize = Swift.max(Swift.min(pad, sideW * 0.62, 200), 40)
-        clickSize = Swift.min(Swift.max(padSize * 0.30, 30), 44)
+        padSize = Swift.max(Swift.min(pad, sideW * 0.62, 200 * k), 40)
+        clickSize = Swift.min(Swift.max(padSize * 0.30, 30), 44 * k)
         faceBtn = padSize / 2.6
         centerW = Swift.max(w - sideW * 2 - gap * 2, 60)
-        bottomRowH = Swift.min(Swift.max(bodyH * 0.16, 44), 60)
+        bottomRowH = Swift.min(Swift.max(bodyH * 0.16, 44), 60 * k)
         let tw = Swift.min(centerW, (bodyH - bottomRowH - gap * 2) * (16.0 / 9.0))
         touchW = Swift.max(tw, 64)
         touchH = touchW * (9.0 / 16.0)
     }
+
+    /// Tamaño de texto de los botones: crece con el iPad.
+    func text(_ base: CGFloat) -> CGFloat { base * k }
 
     /// Tamaño máximo que se pide al receptor (píxeles, tope nativo 854×480).
     func screenRequest(scale: CGFloat) -> (Int, Int) {
@@ -170,16 +176,16 @@ private struct LeftColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: m.gap) {
-                ShoulderButton(label: "L", bit: Btn.l, width: m.shoulderW, height: m.shoulderH)
-                ShoulderButton(label: "ZL", bit: Btn.zl, width: m.shoulderW, height: m.shoulderH)
+                ShoulderButton(label: "L", bit: Btn.l, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
+                ShoulderButton(label: "ZL", bit: Btn.zl, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
             }
             Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: m.gap) {
                 AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick(x, y) }
-                RoundButton(label: "L3", size: m.clickSize, bit: Btn.stickL, textSize: 12)
+                RoundButton(label: "L3", size: m.clickSize, bit: Btn.stickL, textSize: m.text(12))
             }
             Spacer(minLength: 0)
-            PadCross(size: m.padSize)
+            PadCross(size: m.padSize, glyph: m.text(14))
         }
         .frame(width: m.sideW, height: m.bodyH)
     }
@@ -192,16 +198,16 @@ private struct RightColumn: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
             VStack(alignment: .trailing, spacing: m.gap) {
-                ShoulderButton(label: "R", bit: Btn.r, width: m.shoulderW, height: m.shoulderH)
-                ShoulderButton(label: "ZR", bit: Btn.zr, width: m.shoulderW, height: m.shoulderH)
+                ShoulderButton(label: "R", bit: Btn.r, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
+                ShoulderButton(label: "ZR", bit: Btn.zr, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
             }
             Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: m.gap) {
-                RoundButton(label: "R3", size: m.clickSize, bit: Btn.stickR, textSize: 12)
+                RoundButton(label: "R3", size: m.clickSize, bit: Btn.stickR, textSize: m.text(12))
                 AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick2(x, y) }
             }
             Spacer(minLength: 0)
-            FaceButtons(size: m.padSize, btn: m.faceBtn)
+            FaceButtons(size: m.padSize, btn: m.faceBtn, k: m.k)
         }
         .frame(width: m.sideW, height: m.bodyH)
     }
@@ -216,7 +222,8 @@ private struct CenterColumn: View {
     var body: some View {
         // La fila entera tiene que caber en el centro: pastillas y círculos se encogen juntos
         let rowGap: CGFloat = m.centerW < 300 ? 6 : 10
-        let pillW: CGFloat = pro ? 0 : Swift.min(Swift.max(m.centerW * 0.22, 44), 66)
+        let pillW: CGFloat = pro ? 0 : Swift.min(Swift.max(m.centerW * 0.22, 44), 66 * m.k)
+        let pillH: CGFloat = 30 * m.k
         let pills: CGFloat = pro ? 0 : 2
         let roundBtn: CGFloat = Swift.min(Swift.max((m.centerW - rowGap * (2 + pills) - pillW * pills) / 3, 28), m.bottomRowH * 0.85)
         return VStack(spacing: 0) {
@@ -228,11 +235,11 @@ private struct CenterColumn: View {
             }
             Spacer(minLength: 0)
             HStack(alignment: .center, spacing: rowGap) {
-                if !pro { ShoulderButton(label: tr("tv_pad"), bit: Btn.screen, width: pillW, height: 30, textSize: 12) }
-                RoundButton(label: "−", size: roundBtn, bit: Btn.minus, textSize: 19)
-                RoundButton(label: tr("home_btn"), size: roundBtn, bit: Btn.home, textSize: 12)
-                RoundButton(label: "+", size: roundBtn, bit: Btn.plus, textSize: 19)
-                if !pro { ShoulderButton(label: tr("blow"), bit: Btn.mic, width: pillW, height: 30, textSize: 12) }
+                if !pro { ShoulderButton(label: tr("tv_pad"), bit: Btn.screen, width: pillW, height: pillH, textSize: m.text(12)) }
+                RoundButton(label: "−", size: roundBtn, bit: Btn.minus, textSize: m.text(19))
+                RoundButton(label: tr("home_btn"), size: roundBtn, bit: Btn.home, textSize: m.text(12))
+                RoundButton(label: "+", size: roundBtn, bit: Btn.plus, textSize: m.text(19))
+                if !pro { ShoulderButton(label: tr("blow"), bit: Btn.mic, width: pillW, height: pillH, textSize: m.text(12)) }
             }
             Spacer(minLength: 0)
         }
@@ -329,14 +336,16 @@ private struct FpsLabel: View {
 private struct FaceButtons: View {
     let size: CGFloat
     let btn: CGFloat
+    /// Escala del iPad (texto de los botones).
+    var k: CGFloat = 1
 
     var body: some View {
         let off = (size - btn) / 2
         return ZStack {
-            RoundButton(label: "X", size: btn, bit: Btn.x, textSize: 18).offset(y: -off)
-            RoundButton(label: "Y", size: btn, bit: Btn.y, textSize: 18).offset(x: -off)
-            RoundButton(label: "A", size: btn, bit: Btn.a, background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent, textSize: 20, pop: true).offset(x: off)
-            RoundButton(label: "B", size: btn, bit: Btn.b, textSize: 18).offset(y: off)
+            RoundButton(label: "X", size: btn, bit: Btn.x, textSize: 18 * k).offset(y: -off)
+            RoundButton(label: "Y", size: btn, bit: Btn.y, textSize: 18 * k).offset(x: -off)
+            RoundButton(label: "A", size: btn, bit: Btn.a, background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent, textSize: 20 * k, pop: true).offset(x: off)
+            RoundButton(label: "B", size: btn, bit: Btn.b, textSize: 18 * k).offset(y: off)
         }
         .frame(width: size, height: size)
     }

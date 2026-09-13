@@ -80,6 +80,8 @@ struct PairScreen: View {
             Spacer().frame(height: 16)
         }
         .padding(.horizontal, 20)
+        .frame(maxWidth: 620) // en un iPad, como Ajustes: columna centrada
+        .frame(maxWidth: .infinity)
         .background(Pepo.background.ignoresSafeArea())
         .task {
             while !Task.isCancelled {

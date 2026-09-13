@@ -86,6 +86,7 @@ struct HomeScreen: View {
                     }
                 }
                 .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity) // en un iPad, la rejilla centrada
                 Spacer().frame(height: 24)
             }
             .padding(.horizontal, 20)

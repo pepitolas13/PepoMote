@@ -190,14 +190,16 @@ struct TriggerZone: View {
 /// ↑/↓ = flechas del PC y ←/→ = atrás/adelante del navegador.
 struct PadCross: View {
     let size: CGFloat
+    /// Tamaño de las flechas (crece con el iPad).
+    var glyph: CGFloat = 14
 
     var body: some View {
         let arm = size / 3
         return ZStack {
-            PadArm(label: "▲", arm: arm, bit: Btn.dpadUp).offset(y: -arm)
-            PadArm(label: "▼", arm: arm, bit: Btn.dpadDown).offset(y: arm)
-            PadArm(label: "◀", arm: arm, bit: Btn.dpadLeft).offset(x: -arm)
-            PadArm(label: "▶", arm: arm, bit: Btn.dpadRight).offset(x: arm)
+            PadArm(label: "▲", arm: arm, glyph: glyph, bit: Btn.dpadUp).offset(y: -arm)
+            PadArm(label: "▼", arm: arm, glyph: glyph, bit: Btn.dpadDown).offset(y: arm)
+            PadArm(label: "◀", arm: arm, glyph: glyph, bit: Btn.dpadLeft).offset(x: -arm)
+            PadArm(label: "▶", arm: arm, glyph: glyph, bit: Btn.dpadRight).offset(x: arm)
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Pepo.card)
                 .frame(width: arm, height: arm)
@@ -209,6 +211,7 @@ struct PadCross: View {
 private struct PadArm: View {
     let label: String
     let arm: CGFloat
+    let glyph: CGFloat
     let bit: UInt32
     @State private var down = false
 
@@ -217,7 +220,7 @@ private struct PadArm: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(down ? Pepo.glow : Pepo.card)
             Text(label)
-                .font(.system(size: 14))
+                .font(.system(size: glyph))
                 .foregroundColor(Pepo.textDim)
         }
         .frame(width: arm, height: arm)
@@ -690,13 +693,15 @@ struct PrecisionHold: ViewModifier {
 struct PrecisionStrip: View {
     let width: CGFloat
     let height: CGFloat
+    /// Tamaño de la mirilla (crece con el iPad).
+    var glyph: CGFloat = 16
     @State private var active = false
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .fill(active ? Pepo.glow : Pepo.cardBorder)
-            CrosshairGlyph(color: Pepo.textDim, size: 16)
+            CrosshairGlyph(color: Pepo.textDim, size: glyph)
         }
         .frame(width: width, height: height)
         .contentShape(Rectangle())
@@ -799,6 +804,8 @@ struct RecenterButton: View {
 /// Fila multimedia plegable.
 struct MediaRow: View {
     var buttonSize: CGFloat = 46
+    /// Tamaño de los símbolos (crece con el iPad).
+    var textSize: CGFloat = 16
     @State private var expanded = false
 
     var body: some View {
@@ -808,12 +815,12 @@ struct MediaRow: View {
             }
             if expanded {
                 HStack(spacing: 12) {
-                    RoundButton(label: "⏮", size: buttonSize, bit: Btn.mediaPrev, textSize: 16)
-                    RoundButton(label: "🔉", size: buttonSize, bit: Btn.mediaVolDown, textSize: 16)
-                    RoundButton(label: "⏯", size: buttonSize, bit: Btn.mediaPlayPause, textSize: 16)
-                    RoundButton(label: "🔇", size: buttonSize, bit: Btn.mediaMute, textSize: 16)
-                    RoundButton(label: "🔊", size: buttonSize, bit: Btn.mediaVolUp, textSize: 16)
-                    RoundButton(label: "⏭", size: buttonSize, bit: Btn.mediaNext, textSize: 16)
+                    RoundButton(label: "⏮", size: buttonSize, bit: Btn.mediaPrev, textSize: textSize)
+                    RoundButton(label: "🔉", size: buttonSize, bit: Btn.mediaVolDown, textSize: textSize)
+                    RoundButton(label: "⏯", size: buttonSize, bit: Btn.mediaPlayPause, textSize: textSize)
+                    RoundButton(label: "🔇", size: buttonSize, bit: Btn.mediaMute, textSize: textSize)
+                    RoundButton(label: "🔊", size: buttonSize, bit: Btn.mediaVolUp, textSize: textSize)
+                    RoundButton(label: "⏭", size: buttonSize, bit: Btn.mediaNext, textSize: textSize)
                 }
             }
         }
