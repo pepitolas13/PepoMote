@@ -812,6 +812,14 @@ impl MobileApp {
         {
             store::save_settings(&self.settings);
         }
+        // GamePad de Wii U sin pantalla táctil: botones más grandes
+        if ui
+            .checkbox(&mut self.settings.gamepad_no_screen, RichText::new(tr!("gp.no_screen")).size(12.0))
+            .on_hover_text(tr!("gp.no_screen_help"))
+            .changed()
+        {
+            store::save_settings(&self.settings);
+        }
         ui.label(RichText::new(&self.diag).size(11.0).color(theme::text_dim()));
         ui.label(
             RichText::new(tr!("home.version", env!("CARGO_PKG_VERSION")))
@@ -1084,6 +1092,7 @@ impl MobileApp {
             pad_pending: self.pad_pending.map(|p| p.pad),
             sensor_hz: link.sensor_hz(),
             screen: self.pad_screen.as_ref(),
+            no_screen: self.settings.gamepad_no_screen,
         };
         match self.gamepad.show(ui, &self.buttons, &inputs) {
             GamePadAction::Exit => {
@@ -1325,8 +1334,9 @@ impl eframe::App for MobileApp {
             }
         }
         // Doble pantalla: el canal de la pantalla del GamePad solo mientras se
-        // juega aquí como GamePad (un Pro Controller no tiene pantalla)
-        let want_screen = gamepad && self.pad_is_gamepad();
+        // juega aquí como GamePad (un Pro Controller no tiene pantalla) y sin
+        // el ajuste «GamePad sin pantalla táctil»
+        let want_screen = gamepad && self.pad_is_gamepad() && !self.settings.gamepad_no_screen;
         self.sync_screen(ctx, want_screen);
 
         // El teclado para Cemu tapa la pantalla de juego sin cambiarla (los

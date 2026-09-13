@@ -34,6 +34,8 @@ pub struct Settings {
     /// Última consulta (segundos UNIX) y última versión publicada vista.
     pub update_last_check: u64,
     pub update_latest: Option<crate::update::Version>,
+    /// GamePad de Wii U sin pantalla táctil (ni doble pantalla): botones más grandes.
+    pub gamepad_no_screen: bool,
 }
 
 impl Default for Settings {
@@ -46,6 +48,7 @@ impl Default for Settings {
             update_dismissed: None,
             update_last_check: 0,
             update_latest: None,
+            gamepad_no_screen: false,
         }
     }
 }
@@ -252,10 +255,12 @@ mod tests {
             update_dismissed: Some(crate::update::Version([1, 6, 0])),
             update_last_check: 1_700_000_000,
             update_latest: Some(crate::update::Version([1, 7, 0])),
+            gamepad_no_screen: true,
         };
         let back: Settings = serde_json::from_str(&serde_json::to_string(&mine).unwrap()).unwrap();
         assert_eq!(back, mine);
         assert!(d.update_check, "el aviso de versión nueva viene activado");
+        assert!(!d.gamepad_no_screen, "el GamePad lleva pantalla táctil salvo que se quite");
         assert_eq!(d.update_latest, None);
         let s: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
         assert_eq!(s.theme, crate::theme::ThemePref::Light, "el tema se guarda en minúsculas");

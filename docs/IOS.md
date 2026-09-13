@@ -161,6 +161,10 @@ hasta iOS 16.6.1 / 17.0: no sirve en dispositivos actuales.
 - No hay accesos directos del icono ni tile de ajustes rápidos.
 - El GamePad de Wii U se bloquea en apaisado mientras está abierto; el iPad
   usa toda la pantalla (la app no admite Split View).
+- En Ajustes, «**GamePad sin pantalla táctil**» quita la pantalla del GamePad
+  (y la doble pantalla) para que los botones sean más grandes: en el iPhone
+  stick y cruceta pasan a ir uno al lado del otro; en el iPad se quedan
+  apilados pero en columnas más anchas. El Pro Controller ya va así.
 
 ## Si algo no va
 

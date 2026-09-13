@@ -4,8 +4,10 @@
 //! espacio virtual apaisado: si la ventana ya es apaisada, recto; si es
 //! vertical (Phosh sin rotación) se gira 90° según el ajuste «Giro» para
 //! sostener el móvil tumbado, y los toques se destransforman. Un Pro
-//! Controller (jugadores 2-4) es lo mismo sin táctil, Mic ni TV/Pad. Mismo
-//! multitouch real que el mando; un dedo por stick y uno en la táctil.
+//! Controller (jugadores 2-4) es lo mismo sin táctil, Mic ni TV/Pad; sin
+//! táctil (Pro, o el ajuste «GamePad sin pantalla táctil») stick y cruceta
+//! van en fila, tan grandes como quepan, y − Home + en columna en el centro.
+//! Mismo multitouch real que el mando; un dedo por stick y uno en la táctil.
 //!
 //! La pantalla aparece AL INSTANTE al pedir Wii U (optimista, incluso
 //! conectando): hasta que el receptor confirma `cemu`, los controles se ven
@@ -56,6 +58,8 @@ pub struct Inputs<'a> {
     pub sensor_hz: f32,
     /// Canal de la pantalla del GamePad (doble pantalla), si está abierto.
     pub screen: Option<&'a screen::Client>,
+    /// Ajuste «GamePad sin pantalla táctil»: sin zona táctil, botones más grandes.
+    pub no_screen: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -96,6 +100,8 @@ struct View<'a> {
     player: u8,
     /// `pad == "pro"`: sin táctil, Mic ni TV/Pad.
     pro: bool,
+    /// Sin zona táctil: Pro Controller o el ajuste «GamePad sin pantalla».
+    no_screen: bool,
     /// Tipo de mando que dice el receptor ("gamepad", "pro" o "wiimote").
     pad: &'a str,
     mode: &'a str,
@@ -149,6 +155,29 @@ pub fn touch_fraction(r: Rect, p: Pos2) -> (u16, u16) {
 fn veil() -> Color32 {
     let b = theme::background();
     Color32::from_rgba_unmultiplied(b.r(), b.g(), b.b(), 0xA0)
+}
+
+/// Medidas del trazado en fila (sin pantalla táctil), en unidades virtuales.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RowMetrics {
+    /// Diámetro del stick = lado de la cruceta = lado del rombo.
+    pub pad: f32,
+    /// Radio de A/B/X/Y (el rombo cabe en `pad`).
+    pub face_r: f32,
+    /// Anchura de la columna central (−, Home, +; TV/Pad y Soplar si es GamePad).
+    pub center_w: f32,
+}
+
+/// Cuatro pads en fila bajo los gatillos: tan grandes como dejen la altura
+/// que queda (huecos de 6·s arriba y abajo) y la anchura (10·s entre stick y
+/// cruceta/rombo, 6·s al centro y a los bordes). Misma idea que `PadMetrics`
+/// en iOS/Android.
+pub fn row_metrics(vw: f32, body_h: f32, s: f32, pro: bool) -> RowMetrics {
+    let center_w = if pro { 40.0 * s } else { 76.0 * s };
+    let ph = body_h - (2.0 * 24.0 * s + 4.0 * s) - 12.0 * s;
+    let pw = (vw - center_w - 44.0 * s) / 4.0;
+    let pad = ph.min(pw).max(40.0 * s);
+    RowMetrics { pad, face_r: pad / 5.2, center_w }
 }
 
 impl GamePadUi {
@@ -218,6 +247,7 @@ impl GamePadUi {
                 pc_name,
                 player: *player,
                 pro: pad == "pro",
+                no_screen: pad == "pro" || inp.no_screen,
                 pad,
                 mode,
                 show_chips: inp.show_chips,
@@ -237,6 +267,7 @@ impl GamePadUi {
                 },
                 player: 1,
                 pro: false,
+                no_screen: inp.no_screen,
                 pad: "gamepad",
                 mode: "",
                 show_chips: false,
@@ -371,8 +402,8 @@ impl GamePadUi {
 
         // ---- Cuerpo ----
         let by = sel_y + sel_h + 6.0 * s;
-        let lx = x0 + (0.15 * vw).max(60.0 * s);
-        let rx = r.right() - (lx - x0);
+        // sin zona táctil pintada no hay tamaño que pedir al receptor
+        self.touch_rect = Rect::NOTHING;
 
         // Hombros: L sobre ZL en la esquina izquierda, R sobre ZR en la derecha
         let (sw, sh_) = (96.0 * s, 24.0 * s);
@@ -385,77 +416,15 @@ impl GamePadUi {
             self.hits.push((shape, Target::Button(bit)));
         }
 
-        // Sticks (con su click L3/R3 pegado; van antes en los hits porque el
-        // anillo tiene margen)
-        let ring_r = 46.0 * s;
-        let sy = by + 2.0 * sh_ + 14.0 * s + ring_r;
-        let l3 = Pos2::new(lx + ring_r + 18.0 * s, sy + 20.0 * s);
-        let r3 = Pos2::new(rx - ring_r - 18.0 * s, sy + 20.0 * s);
-        self.button(cv, l3, 14.0 * s, "L3", 10.0 * s, pmp::BTN_STICK_L, pressed, false);
-        self.button(cv, r3, 14.0 * s, "R3", 10.0 * s, pmp::BTN_STICK_R, pressed, false);
-        self.stick(cv, Side::Left, Pos2::new(lx, sy), ring_r, s);
-        self.stick(cv, Side::Right, Pos2::new(rx, sy), ring_r, s);
-
-        // Cruceta bajo el stick izquierdo
-        let arm = 30.0 * s;
-        let dc = Pos2::new(lx, sy + ring_r + 10.0 * s + arm * 1.5);
-        let arms = [
-            (Vec2::new(0.0, -arm), "▲", pmp::BTN_DPAD_UP),
-            (Vec2::new(0.0, arm), "▼", pmp::BTN_DPAD_DOWN),
-            (Vec2::new(-arm, 0.0), "◀", pmp::BTN_DPAD_LEFT),
-            (Vec2::new(arm, 0.0), "▶", pmp::BTN_DPAD_RIGHT),
-        ];
-        for (off, label, bit) in arms {
-            let rc = Rect::from_center_size(dc + off, Vec2::splat(arm));
-            let down = pressed & bit != 0;
-            cv.rounded_rect(
-                rc.shrink(2.0),
-                8.0 * s,
-                if down { theme::glow() } else { theme::card() },
-                Stroke::new(1.0_f32, theme::card_border()),
-            );
-            cv.text(rc.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0 * s), theme::text_dim());
-            self.hits.push((Shape::Rect(rc), Target::Button(bit)));
-        }
-        cv.rounded_rect(Rect::from_center_size(dc, Vec2::splat(arm)).shrink(2.0), 5.0 * s, theme::card(), Stroke::NONE);
-
-        // A/B/X/Y en rombo bajo el stick derecho (A a la derecha, azul)
-        let ac = Pos2::new(rx, dc.y);
-        let (br, off) = (21.0 * s, 31.0 * s);
-        self.button(cv, ac + Vec2::new(0.0, -off), br, "X", 16.0 * s, pmp::BTN_X, pressed, false);
-        self.button(cv, ac + Vec2::new(-off, 0.0), br, "Y", 16.0 * s, pmp::BTN_Y, pressed, false);
-        self.button(cv, ac + Vec2::new(0.0, off), br, "B", 16.0 * s, pmp::BTN_B, pressed, false);
-        self.button(cv, ac + Vec2::new(off, 0.0), br, "A", 16.0 * s, pmp::BTN_A, pressed, true);
-
-        // Centro: pantalla táctil 16:9 (solo GamePad) y las filas de sistema
-        let zone_l = lx + ring_r + 36.0 * s;
-        let zone_r = rx - ring_r - 36.0 * s;
-        let zone_w = (zone_r - zone_l).max(60.0 * s);
-        let rows_y = if v.pro {
-            let y = by + (r.bottom() - by) / 2.0 - 10.0 * s;
-            cv.text(Pos2::new(cx, y - 44.0 * s), Align2::CENTER_CENTER, tr!("common.pro"), FontId::proportional(12.0 * s), theme::text_dim());
-            y
+        // Sin pantalla táctil (Pro Controller o el ajuste): stick y cruceta en
+        // fila si así salen más grandes que apilados (en un móvil, siempre)
+        let row = v.no_screen.then(|| row_metrics(vw, r.bottom() - by, s, v.pro)).filter(|m| m.pad > 92.0 * s);
+        let zone_w = if let Some(m) = row {
+            self.layout_row(cv, v, &m, s, pressed, r, by);
+            m.center_w
         } else {
-            let tw = (zone_w - 8.0 * s).min(0.42 * vw);
-            let th = tw * 9.0 / 16.0;
-            let tr = Rect::from_min_size(Pos2::new(cx - tw / 2.0, by), Vec2::new(tw, th));
-            self.touch_area(cv, tr, buttons, s, v.screen);
-            tr.bottom() + 6.0 * s + 20.0 * s
+            self.layout_stacked(cv, buttons, v, s, pressed, r, by)
         };
-        let br2 = 20.0 * s;
-        self.button(cv, Pos2::new(cx - 62.0 * s, rows_y), br2, "−", 18.0 * s, pmp::BTN_MINUS, pressed, false);
-        self.button(cv, Pos2::new(cx, rows_y), br2, "Home", 10.0 * s, pmp::BTN_HOME, pressed, false);
-        self.button(cv, Pos2::new(cx + 62.0 * s, rows_y), br2, "+", 18.0 * s, pmp::BTN_PLUS, pressed, false);
-        if !v.pro {
-            let ry = rows_y + br2 + 6.0 * s;
-            let (bw, bh) = (76.0 * s, 24.0 * s);
-            let tv = Rect::from_min_size(Pos2::new(cx - 44.0 * s - bw / 2.0, ry), Vec2::new(bw, bh));
-            let mic = Rect::from_min_size(Pos2::new(cx + 44.0 * s - bw / 2.0, ry), Vec2::new(bw, bh));
-            for (rc, label, bit) in [(tv, tr!("gp.tv_pad"), pmp::BTN_SCREEN), (mic, tr!("gp.blow"), pmp::BTN_MIC)] {
-                let shape = touch::rect_button(cv, rc, 8.0 * s, label, 11.0 * s, pressed & bit != 0, false);
-                self.hits.push((shape, Target::Button(bit)));
-            }
-        }
 
         // Aún no se juega: velo sobre los controles y el porqué
         if !v.active {
@@ -479,6 +448,146 @@ impl GamePadUi {
             let font = FontId::proportional(12.0 * s);
             cv.text(nr.center(), Align2::CENTER_CENTER, &cv.fit_text(n, font.clone(), w - 16.0 * s), font, theme::text());
         }
+    }
+
+    /// Trazado apilado (el de siempre): stick sobre cruceta a la izquierda,
+    /// stick sobre rombo a la derecha, y en el centro la pantalla táctil 16:9
+    /// (solo GamePad con pantalla) con las filas de sistema debajo. Devuelve
+    /// la anchura de la zona central.
+    #[allow(clippy::too_many_arguments)]
+    fn layout_stacked(&mut self, cv: &Canvas, buttons: &Buttons, v: &View, s: f32, pressed: u32, r: Rect, by: f32) -> f32 {
+        let (x0, cx, vw) = (r.left(), r.center().x, r.width());
+        let sh_ = 24.0 * s;
+        let lx = x0 + (0.15 * vw).max(60.0 * s);
+        let rx = r.right() - (lx - x0);
+
+        // Sticks (con su click L3/R3 pegado; van antes en los hits porque el
+        // anillo tiene margen)
+        let ring_r = 46.0 * s;
+        let sy = by + 2.0 * sh_ + 14.0 * s + ring_r;
+        let l3 = Pos2::new(lx + ring_r + 18.0 * s, sy + 20.0 * s);
+        let r3 = Pos2::new(rx - ring_r - 18.0 * s, sy + 20.0 * s);
+        self.button(cv, l3, 14.0 * s, "L3", 10.0 * s, pmp::BTN_STICK_L, pressed, false);
+        self.button(cv, r3, 14.0 * s, "R3", 10.0 * s, pmp::BTN_STICK_R, pressed, false);
+        self.stick(cv, Side::Left, Pos2::new(lx, sy), ring_r, s);
+        self.stick(cv, Side::Right, Pos2::new(rx, sy), ring_r, s);
+
+        // Cruceta bajo el stick izquierdo; A/B/X/Y en rombo bajo el derecho
+        let arm = 30.0 * s;
+        let dc = Pos2::new(lx, sy + ring_r + 10.0 * s + arm * 1.5);
+        self.dpad(cv, dc, arm, s, pressed);
+        self.face(cv, Pos2::new(rx, dc.y), 21.0 * s, 31.0 * s, s, pressed);
+
+        // Centro: pantalla táctil 16:9 (solo GamePad con pantalla) y las filas de sistema
+        let zone_l = lx + ring_r + 36.0 * s;
+        let zone_r = rx - ring_r - 36.0 * s;
+        let zone_w = (zone_r - zone_l).max(60.0 * s);
+        let rows_y = if v.no_screen {
+            let y = by + (r.bottom() - by) / 2.0 - 10.0 * s;
+            if v.pro {
+                cv.text(Pos2::new(cx, y - 44.0 * s), Align2::CENTER_CENTER, tr!("common.pro"), FontId::proportional(12.0 * s), theme::text_dim());
+            }
+            y
+        } else {
+            let tw = (zone_w - 8.0 * s).min(0.42 * vw);
+            let th = tw * 9.0 / 16.0;
+            let tr = Rect::from_min_size(Pos2::new(cx - tw / 2.0, by), Vec2::new(tw, th));
+            self.touch_area(cv, tr, buttons, s, v.screen);
+            tr.bottom() + 6.0 * s + 20.0 * s
+        };
+        let br2 = 20.0 * s;
+        self.button(cv, Pos2::new(cx - 62.0 * s, rows_y), br2, "−", 18.0 * s, pmp::BTN_MINUS, pressed, false);
+        self.button(cv, Pos2::new(cx, rows_y), br2, "Home", 10.0 * s, pmp::BTN_HOME, pressed, false);
+        self.button(cv, Pos2::new(cx + 62.0 * s, rows_y), br2, "+", 18.0 * s, pmp::BTN_PLUS, pressed, false);
+        if !v.pro {
+            let ry = rows_y + br2 + 6.0 * s;
+            let (bw, bh) = (76.0 * s, 24.0 * s);
+            let tv = Rect::from_min_size(Pos2::new(cx - 44.0 * s - bw / 2.0, ry), Vec2::new(bw, bh));
+            let mic = Rect::from_min_size(Pos2::new(cx + 44.0 * s - bw / 2.0, ry), Vec2::new(bw, bh));
+            for (rc, label, bit) in [(tv, tr!("gp.tv_pad"), pmp::BTN_SCREEN), (mic, tr!("gp.blow"), pmp::BTN_MIC)] {
+                let shape = touch::rect_button(cv, rc, 8.0 * s, label, 11.0 * s, pressed & bit != 0, false);
+                self.hits.push((shape, Target::Button(bit)));
+            }
+        }
+        zone_w
+    }
+
+    /// Trazado en fila (sin pantalla táctil): L3/R3 junto a los gatillos;
+    /// [stick][cruceta] a la izquierda y [rombo][stick] a la derecha, pegados
+    /// abajo y tan grandes como dejen la anchura y la altura; −, Home, + (y
+    /// TV/Pad, Soplar) en columna en el centro.
+    #[allow(clippy::too_many_arguments)]
+    fn layout_row(&mut self, cv: &Canvas, v: &View, m: &RowMetrics, s: f32, pressed: u32, r: Rect, by: f32) {
+        let (x0, cx) = (r.left(), r.center().x);
+        let (sw, sh_) = (96.0 * s, 24.0 * s);
+        // L3 a la derecha de L/ZL y R3 a la izquierda de R/ZR, a la altura de las dos filas
+        let cy = by + sh_ + 2.0 * s;
+        let l3 = Pos2::new(x0 + 6.0 * s + sw + 6.0 * s + 14.0 * s, cy);
+        let r3 = Pos2::new(r.right() - 6.0 * s - sw - 6.0 * s - 14.0 * s, cy);
+        self.button(cv, l3, 14.0 * s, "L3", 10.0 * s, pmp::BTN_STICK_L, pressed, false);
+        self.button(cv, r3, 14.0 * s, "R3", 10.0 * s, pmp::BTN_STICK_R, pressed, false);
+        // Pads, pegados abajo (los sticks antes en los hits: el anillo tiene margen)
+        let half = m.pad / 2.0;
+        let py = r.bottom() - 6.0 * s - half;
+        let ls = Pos2::new(x0 + 6.0 * s + half, py);
+        let dc = Pos2::new(ls.x + m.pad + 10.0 * s, py);
+        let rs = Pos2::new(r.right() - 6.0 * s - half, py);
+        let ac = Pos2::new(rs.x - m.pad - 10.0 * s, py);
+        self.stick(cv, Side::Left, ls, half, s);
+        self.stick(cv, Side::Right, rs, half, s);
+        self.dpad(cv, dc, m.pad / 3.0, s, pressed);
+        self.face(cv, ac, m.face_r, half - m.face_r, s, pressed);
+        // Centro: columna −, Home, + (y TV/Pad, Soplar), centrada en el cuerpo
+        let br2 = 20.0 * s;
+        let (bw, bh) = (76.0 * s, 24.0 * s);
+        let gap = 6.0 * s;
+        let total = 6.0 * br2 + 2.0 * gap + if v.pro { 0.0 } else { 2.0 * (bh + gap) };
+        let mut y = by + (r.bottom() - by - total) / 2.0;
+        for (label, font, bit) in [("−", 18.0, pmp::BTN_MINUS), ("Home", 10.0, pmp::BTN_HOME), ("+", 18.0, pmp::BTN_PLUS)] {
+            self.button(cv, Pos2::new(cx, y + br2), br2, label, font * s, bit, pressed, false);
+            y += 2.0 * br2 + gap;
+        }
+        if !v.pro {
+            for (label, bit) in [(tr!("gp.tv_pad"), pmp::BTN_SCREEN), (tr!("gp.blow"), pmp::BTN_MIC)] {
+                let rc = Rect::from_min_size(Pos2::new(cx - bw / 2.0, y), Vec2::new(bw, bh));
+                let shape = touch::rect_button(cv, rc, 8.0 * s, label, 11.0 * s, pressed & bit != 0, false);
+                self.hits.push((shape, Target::Button(bit)));
+                y += bh + gap;
+            }
+        }
+    }
+
+    /// Cruceta centrada en `dc` con brazos de lado `arm` (las flechas crecen con el brazo).
+    fn dpad(&mut self, cv: &Canvas, dc: Pos2, arm: f32, s: f32, pressed: u32) {
+        let arms = [
+            (Vec2::new(0.0, -arm), "▲", pmp::BTN_DPAD_UP),
+            (Vec2::new(0.0, arm), "▼", pmp::BTN_DPAD_DOWN),
+            (Vec2::new(-arm, 0.0), "◀", pmp::BTN_DPAD_LEFT),
+            (Vec2::new(arm, 0.0), "▶", pmp::BTN_DPAD_RIGHT),
+        ];
+        for (off, label, bit) in arms {
+            let rc = Rect::from_center_size(dc + off, Vec2::splat(arm));
+            let down = pressed & bit != 0;
+            cv.rounded_rect(
+                rc.shrink(2.0),
+                8.0 * s,
+                if down { theme::glow() } else { theme::card() },
+                Stroke::new(1.0_f32, theme::card_border()),
+            );
+            cv.text(rc.center(), Align2::CENTER_CENTER, label, FontId::proportional(arm * 0.4), theme::text_dim());
+            self.hits.push((Shape::Rect(rc), Target::Button(bit)));
+        }
+        cv.rounded_rect(Rect::from_center_size(dc, Vec2::splat(arm)).shrink(2.0), 5.0 * s, theme::card(), Stroke::NONE);
+    }
+
+    /// A/B/X/Y en rombo alrededor de `ac`: radio `br`, a `off` del centro (A a
+    /// la derecha, azul; el texto crece con el botón).
+    fn face(&mut self, cv: &Canvas, ac: Pos2, br: f32, off: f32, _s: f32, pressed: u32) {
+        let font = br * (16.0 / 21.0);
+        self.button(cv, ac + Vec2::new(0.0, -off), br, "X", font, pmp::BTN_X, pressed, false);
+        self.button(cv, ac + Vec2::new(-off, 0.0), br, "Y", font, pmp::BTN_Y, pressed, false);
+        self.button(cv, ac + Vec2::new(0.0, off), br, "B", font, pmp::BTN_B, pressed, false);
+        self.button(cv, ac + Vec2::new(off, 0.0), br, "A", font, pmp::BTN_A, pressed, true);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -649,6 +758,26 @@ impl GamePadUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn medidas_del_trazado_en_fila() {
+        // Móvil apaisado de referencia (700×370, s = 1): cuerpo de 306 bajo cabecera y selector
+        let m = row_metrics(700.0, 306.0, 1.0, false);
+        assert!((m.pad - 145.0).abs() < 0.01, "lo limita la anchura: (700 − 76 − 44) / 4 = {}", m.pad);
+        assert!(m.pad > 92.0, "más grande que el stick apilado (92)");
+        assert!((m.face_r - 145.0 / 5.2).abs() < 0.01);
+        assert_eq!(m.center_w, 76.0);
+        let pro = row_metrics(700.0, 306.0, 1.0, true);
+        assert!((pro.pad - 154.0).abs() < 0.01, "sin pastillas el centro es más estrecho: {}", pro.pad);
+        assert_eq!(pro.center_w, 40.0);
+        // Muy bajo: lo limita la altura (306 → 242 de sitio)
+        let bajo = row_metrics(1400.0, 306.0, 1.0, false);
+        assert!((bajo.pad - 242.0).abs() < 0.01, "{}", bajo.pad);
+        // Escala 1,5: todo ×1,5
+        let big = row_metrics(1050.0, 459.0, 1.5, false);
+        assert!((big.pad - 145.0 * 1.5).abs() < 0.01, "{}", big.pad);
+        assert!(row_metrics(100.0, 100.0, 1.0, false).pad >= 40.0, "nunca por debajo del mínimo");
+    }
 
     #[test]
     fn fraccion_de_la_pantalla_tactil() {
