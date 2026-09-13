@@ -353,6 +353,8 @@ fn search_roots() -> Vec<(PathBuf, u8)> {
             roots.push((PathBuf::from(d), 1));
         }
     }
+    #[cfg(target_os = "macos")]
+    roots.push((PathBuf::from("/Applications"), 1));
     #[cfg(not(windows))]
     {
         roots.push((PathBuf::from("/opt"), 1));
@@ -363,6 +365,18 @@ fn search_roots() -> Vec<(PathBuf, u8)> {
         }
     }
     roots
+}
+
+/// macOS: `Cemu.app` → `Cemu.app/Contents/MacOS` si ahí está el ejecutable.
+fn app_bundle_exe_dir(p: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        if p.extension().is_some_and(|e| e == "app") {
+            return crate::procs::bundle_exe_dir(p, has_exe);
+        }
+    }
+    let _ = p;
+    None
 }
 
 /// Directorios que contienen a Cemu, encontrados por búsqueda.
@@ -388,6 +402,8 @@ pub fn find_exe_dirs() -> Vec<PathBuf> {
             }
             if has_exe(&p) {
                 push(p.clone());
+            } else if let Some(inner) = app_bundle_exe_dir(&p) {
+                push(inner);
             } else if depth >= 2 && name_has_cemu(&p) {
                 if let Ok(rd2) = std::fs::read_dir(&p) {
                     for e2 in rd2.flatten().take(100) {
@@ -409,7 +425,11 @@ fn roaming_dir() -> Option<PathBuf> {
     {
         std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("Cemu"))
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        directories::BaseDirs::new().map(|b| b.home_dir().join("Library/Application Support/Cemu"))
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         match std::env::var_os("XDG_CONFIG_HOME") {
             Some(x) if !x.is_empty() => Some(PathBuf::from(x).join("Cemu")),
@@ -418,7 +438,7 @@ fn roaming_dir() -> Option<PathBuf> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn flatpak_dir() -> Option<PathBuf> {
     let app = directories::BaseDirs::new()?.home_dir().join(".var/app/info.cemu.Cemu");
     app.is_dir().then(|| app.join("config").join("Cemu"))
@@ -443,7 +463,7 @@ pub fn config_dirs_from(exe_dirs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
     }
     let roaming = roaming_dir();
     let mut evidence = !exe_dirs.is_empty() || roaming.as_ref().is_some_and(|r| r.exists());
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
         if let Some(f) = flatpak_dir() {
             push(&mut dirs, f);
@@ -455,7 +475,7 @@ pub fn config_dirs_from(exe_dirs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
             }
         }
     }
-    #[cfg(windows)]
+    #[cfg(not(target_os = "linux"))]
     {
         evidence |= false;
     }
@@ -578,7 +598,13 @@ pub fn running_exe() -> (bool, Option<PathBuf>) {
     (running, dir)
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+/// macOS: `Cemu.app/Contents/MacOS/Cemu` (por libproc, sin bifurcar `ps`).
+#[cfg(target_os = "macos")]
+pub fn running_exe() -> (bool, Option<PathBuf>) {
+    crate::procs::running_with_prefix("cemu")
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn running_exe() -> (bool, Option<PathBuf>) {
     (false, None)
 }

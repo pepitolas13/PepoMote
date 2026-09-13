@@ -34,6 +34,10 @@ pub fn set_show_signal(tx: Sender<()>) {
 /// genera mensajes reales que lo despiertan, y entonces los comandos entran.
 pub fn request_show() {
     if let Some(ctx) = UI_CTX.get() {
+        // macOS: por AppKit en la cola principal (vale con la ventana oculta
+        // o minimizada, donde egui no repinta y sus comandos no llegarían)
+        #[cfg(target_os = "macos")]
+        crate::macos::on_main(crate::macos::show_windows);
         #[cfg(windows)]
         unsafe {
             use windows::core::{w, PCWSTR};

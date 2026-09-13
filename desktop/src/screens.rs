@@ -1,13 +1,16 @@
-//! Disposición de monitores (Linux). El ratón absoluto de uinput cubre el
-//! rectángulo envolvente de TODO el escritorio (así lo mapean KWin, mutter,
-//! wlroots y X11); con varios monitores, "centro" caería en una esquina y el
-//! recorrido se repartiría entre pantallas. Aquí se obtiene la disposición
-//! real y el apuntado se mapea a UNA pantalla, la de juego.
+//! Disposición de monitores (Linux y macOS). El ratón absoluto de uinput
+//! cubre el rectángulo envolvente de TODO el escritorio (así lo mapean KWin,
+//! mutter, wlroots y X11), y en macOS los CGEvent usan el espacio global de
+//! todas las pantallas; con varios monitores, "centro" caería en una esquina
+//! y el recorrido se repartiría entre pantallas. Aquí se obtiene la
+//! disposición real y el apuntado se mapea a UNA pantalla, la de juego.
 //!
 //! Wayland: xdg-output, en coordenadas LÓGICAS — las mismas que usa el
 //! compositor para mapear el dispositivo (escala incluida). X11: xrandr.
+//! macOS: CGDisplay, en puntos (las coordenadas de los CGEvent).
 
 use crate::state::SharedState;
+#[cfg(target_os = "linux")]
 use std::process::Command;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -114,6 +117,7 @@ pub fn watch(shared: SharedState) {
 
 /// Disposición actual, o None si no hay forma de saberla (entonces se asume
 /// una sola pantalla: mapeo identidad).
+#[cfg(target_os = "linux")]
 pub fn detect() -> Option<Layout> {
     if std::env::var_os("WAYLAND_DISPLAY").is_some() {
         if let Some(l) = wayland::detect() {
@@ -132,7 +136,44 @@ pub fn detect() -> Option<Layout> {
     None
 }
 
+#[cfg(target_os = "macos")]
+pub fn detect() -> Option<Layout> {
+    macos::detect()
+}
+
+/// macOS: las pantallas activas en puntos (las coordenadas de los CGEvent),
+/// la principal primero: «Pantalla 1 (principal)», «Pantalla 2»…
+#[cfg(target_os = "macos")]
+mod macos {
+    use super::{Layout, Screen};
+    use core_graphics::display::CGDisplay;
+
+    pub fn detect() -> Option<Layout> {
+        let main_id = CGDisplay::main().id;
+        let mut ids = CGDisplay::active_displays().ok()?;
+        ids.sort_by_key(|id| if *id == main_id { 0 } else { 1 });
+        let screens = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let b = CGDisplay::new(*id).bounds();
+                let primary = *id == main_id;
+                Screen {
+                    name: if primary { format!("Pantalla {} (principal)", i + 1) } else { format!("Pantalla {}", i + 1) },
+                    x: b.origin.x.round() as i32,
+                    y: b.origin.y.round() as i32,
+                    w: (b.size.width.round() as i32).max(1),
+                    h: (b.size.height.round() as i32).max(1),
+                    primary,
+                }
+            })
+            .collect();
+        Some(Layout { screens })
+    }
+}
+
 /// `DP-3 connected primary 2560x1440+2400+1350 (normal left …) 597mm x 336mm`
+#[cfg(any(target_os = "linux", test))]
 pub fn parse_xrandr(text: &str) -> Layout {
     let mut screens = Vec::new();
     for line in text.lines() {
@@ -156,6 +197,7 @@ pub fn parse_xrandr(text: &str) -> Layout {
     Layout { screens }
 }
 
+#[cfg(target_os = "linux")]
 mod wayland {
     use super::{Layout, Screen};
     use std::collections::BTreeMap;
@@ -405,6 +447,7 @@ HDMI-2 connected primary 1920x1080+320+1440 (normal) 530mm x 300mm
         assert_eq!(norm, [0.0, 0.0, 1.0, 1.0]);
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn fallback_wl_output_resuelve_logico_con_escala() {
         use super::wayland::Out;

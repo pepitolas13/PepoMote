@@ -233,12 +233,60 @@ pub fn kill(pid: u32) -> bool {
     std::process::Command::new("kill").args(["-KILL", &pid.to_string()]).status().map(|s| s.success()).unwrap_or(false)
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+// ---------------------------------------------------------------------------
+// macOS: lsof (solo cuando un puerto está ocupado, no en caliente)
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+pub fn owner(port: u16, proto: Proto) -> Option<Owner> {
+    let mut cmd = std::process::Command::new("lsof");
+    cmd.args(["-nP", "-Fpc"]);
+    match proto {
+        Proto::Udp => {
+            cmd.arg(format!("-iUDP:{port}"));
+        }
+        Proto::Tcp => {
+            cmd.arg(format!("-iTCP:{port}")).arg("-sTCP:LISTEN");
+        }
+    }
+    let out = cmd.output().ok()?;
+    parse_lsof(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Salida de `lsof -F pc`: una línea `p<pid>` y luego `c<nombre>` por proceso.
+#[cfg(any(target_os = "macos", test))]
+fn parse_lsof(out: &str) -> Option<Owner> {
+    let mut pid: Option<u32> = None;
+    for line in out.lines() {
+        if let Some(p) = line.strip_prefix('p') {
+            pid = p.trim().parse().ok();
+        } else if let Some(c) = line.strip_prefix('c') {
+            if let Some(pid) = pid {
+                return Some(Owner { pid, name: c.trim().to_owned() });
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+pub fn kill(pid: u32) -> bool {
+    let pid = pid as i32;
+    if unsafe { libc::kill(pid, libc::SIGTERM) } == 0 {
+        std::thread::sleep(Duration::from_millis(500));
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return true;
+        }
+    }
+    unsafe { libc::kill(pid, libc::SIGKILL) == 0 }
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn owner(_port: u16, _proto: Proto) -> Option<Owner> {
     None
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn kill(_pid: u32) -> bool {
     false
 }
@@ -278,5 +326,13 @@ mod tests {
                    0: 00000000:6889 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 777001 1 0000000000000000 100 0 0 10 0\n\
                    1: 0100007F:6889 0100007F:D431 01 00000000:00000000 00:00000000 00000000  1000        0 777002 1 0000000000000000 20 4 30 10 -1\n";
         assert_eq!(linux_socket_inode(tcp, 26761, Proto::Tcp), Some(777001), "solo el LISTEN");
+    }
+
+    #[test]
+    fn lsof_en_formato_f_da_pid_y_nombre() {
+        let o = parse_lsof("p1234\ncCemu\nf5\nn*:26760\n").unwrap();
+        assert_eq!((o.pid, o.name.as_str()), (1234, "Cemu"));
+        assert!(parse_lsof("").is_none());
+        assert!(parse_lsof("cSinPid\n").is_none());
     }
 }

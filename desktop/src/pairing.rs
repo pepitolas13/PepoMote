@@ -57,6 +57,11 @@ pub fn local_ip() -> IpAddr {
 }
 
 fn host_name() -> String {
+    // macOS: el nombre que puso el usuario («MacBook de Dani»)
+    #[cfg(target_os = "macos")]
+    if let Some(n) = crate::macos::computer_name() {
+        return n;
+    }
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .ok()

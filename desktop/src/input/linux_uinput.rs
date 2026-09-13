@@ -102,6 +102,7 @@ fn explain(e: std::io::Error) -> InjectError {
             .unwrap_or_else(|| format!("uinput: {e}")),
         uinput_denied: kind == std::io::ErrorKind::PermissionDenied,
         uinput_missing: kind == std::io::ErrorKind::NotFound,
+        ax_denied: false,
     }
 }
 

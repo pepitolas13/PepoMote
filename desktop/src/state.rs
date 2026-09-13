@@ -148,8 +148,8 @@ pub struct Config {
     /// Evita re-abrir el diálogo de contraseña en cada arranque si se canceló.
     #[serde(default)]
     pub fix_attempted: bool,
-    /// Linux multi-monitor: nombre de la pantalla de apuntado ("" = automática:
-    /// la primaria, o la mayor).
+    /// Linux y macOS con varios monitores: nombre de la pantalla de apuntado
+    /// ("" = todas: el escritorio entero).
     #[serde(default)]
     pub screen: String,
     /// Tema de la ventana: como el sistema (Windows lo sabe; en Linux, claro),
@@ -424,6 +424,9 @@ pub struct Shared {
     pub uinput_denied: bool,
     /// Linux: no existe /dev/uinput (módulo uinput sin cargar).
     pub uinput_missing: bool,
+    /// macOS: falta el permiso de Accesibilidad (la tarjeta de permisos lo
+    /// explica; telemetría reintenta cada pocos segundos).
+    pub ax_denied: bool,
     /// Hay un diálogo de reparación (pkexec) abierto ahora mismo.
     pub fixing: bool,
     /// Linux: por qué falló la última reparación (None = nunca, bien o cancelada).
@@ -462,6 +465,7 @@ impl Shared {
             injector: None,
             uinput_denied: false,
             uinput_missing: false,
+            ax_denied: false,
             fixing: false,
             fix_failed: None,
             screens: Vec::new(),

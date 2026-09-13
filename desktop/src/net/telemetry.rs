@@ -120,7 +120,7 @@ pub fn run(
     let mut aspect = screen_aspect();
     #[allow(unused_mut)]
     let mut screen_w = screen_width();
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let mut last_norm: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
     let mut engine = PointerEngine::new();
     let start = Instant::now();
@@ -157,7 +157,7 @@ pub fn run(
             match input::new_injector() {
                 Ok(i) => {
                     // inyector nuevo: que reciba la pantalla de apuntado ya
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", target_os = "macos"))]
                     {
                         last_norm = [-1.0, -1.0, -1.0, -1.0]; // forzar re-aplicar
                     }
@@ -166,6 +166,7 @@ pub fn run(
                     s.injector = Some(i.name());
                     s.uinput_denied = false;
                     s.uinput_missing = false;
+                    s.ax_denied = false;
                     if s.injection_error {
                         s.last_error = None;
                         s.injection_error = false;
@@ -179,11 +180,18 @@ pub fn run(
                         crate::log_line!("Inyección de entrada: sin inyector: {}", e.msg);
                         injector_err_seen = Some(e.msg.clone());
                     }
+                    // macOS: el diálogo del sistema que lleva a Ajustes →
+                    // Accesibilidad, una sola vez por proceso
+                    #[cfg(target_os = "macos")]
+                    if e.ax_denied {
+                        crate::macos::ax_prompt_once();
+                    }
                     let mut s = shared.lock().unwrap();
                     // solo si uinput se intentó de verdad y /dev/uinput falló:
                     // enciende «Reparar ahora» (nunca con el backend Wayland)
                     s.uinput_denied = e.uinput_denied;
                     s.uinput_missing = e.uinput_missing;
+                    s.ax_denied = e.ax_denied;
                     s.injector = None;
                     s.last_error = Some(tr!("inj.error", e.msg));
                     s.injection_error = true;
@@ -191,10 +199,11 @@ pub fn run(
             }
         }
 
-        // Linux: aplicar el mapeo de pantalla que publica screens::watch (el
-        // dispositivo absoluto cubre TODO el escritorio; esto lo dirige a la
-        // pantalla elegida, o a todas). Solo se re-aplica cuando cambia.
-        #[cfg(target_os = "linux")]
+        // Linux y macOS: aplicar el mapeo de pantalla que publica
+        // screens::watch (el dispositivo absoluto cubre TODO el escritorio;
+        // esto lo dirige a la pantalla elegida, o a todas). Solo se re-aplica
+        // cuando cambia.
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             let pointing = shared.lock().unwrap().pointing;
             if let Some((norm, asp, sw)) = pointing {
@@ -226,14 +235,23 @@ pub fn run(
             // error de protocolo). Se tira el inyector y el reintento de
             // arriba lo recrea en ≤2 s; lo que el SO viera pulsado ya no existe.
             if injector.as_deref_mut().is_some_and(|i| !i.alive()) {
-                crate::log_line!("Inyección de entrada: conexión Wayland perdida; se vuelve a crear el inyector");
+                // (en macOS, `alive` = el permiso de Accesibilidad sigue dado)
+                crate::log_line!("Inyección de entrada: el inyector ha muerto; se vuelve a crear");
                 injector = None;
                 held = 0;
                 repeat = None;
                 injector_err_seen = None;
                 let mut s = shared.lock().unwrap();
                 s.injector = None;
-                s.last_error = Some(tr!("inj.wayland_lost").to_owned());
+                #[cfg(target_os = "macos")]
+                {
+                    s.ax_denied = true;
+                    s.last_error = Some(tr!("inj.mac_ax_denied").to_owned());
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    s.last_error = Some(tr!("inj.wayland_lost").to_owned());
+                }
                 s.injection_error = true;
             }
             let targets: Vec<(u32, std::net::SocketAddr)> = sessions

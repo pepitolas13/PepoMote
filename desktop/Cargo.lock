@@ -1056,6 +1056,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
  "bitflags 2.13.1",
+ "block2 0.6.2",
+ "libc",
  "objc2 0.6.4",
 ]
 
@@ -3115,14 +3117,20 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 name = "pepomote"
 version = "1.5.0"
 dependencies = [
+ "core-foundation",
+ "core-graphics",
  "crc32fast",
  "directories",
+ "dispatch2",
  "eframe",
  "egui",
  "evdev",
  "fast_image_resize",
  "jpeg-encoder",
+ "libc",
  "mdns-sd",
+ "objc2-app-kit 0.2.2",
+ "objc2-foundation 0.2.2",
  "pmp",
  "qrcode",
  "rand",

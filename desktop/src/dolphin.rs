@@ -116,6 +116,8 @@ pub struct Env {
     pub xdg_config: Option<PathBuf>,
     /// Linux: carpeta de config del Flatpak (solo si existe).
     pub flatpak: Option<PathBuf>,
+    /// macOS: ~/Library/Application Support/Dolphin (exista o no).
+    pub mac_app_support: Option<PathBuf>,
 }
 
 /// Una carpeta `Config` de Dolphin y de dónde sale.
@@ -148,6 +150,9 @@ pub fn resolve_user_dirs(env: &Env) -> Vec<UserDir> {
     }
     if let Some(p) = &env.userpath_env {
         push(p.join("Config"), "DOLPHIN_EMU_USERPATH");
+    }
+    if let Some(p) = &env.mac_app_support {
+        push(p.join("Config"), "~/Library/Application Support/Dolphin");
     }
     if let Some(p) = &env.flatpak {
         push(p.clone(), "Flatpak");
@@ -202,6 +207,7 @@ fn env_from_system(cfg_dolphin_dir: &str) -> Env {
             legacy_home: None,
             xdg_config: None,
             flatpak: None,
+            mac_app_support: None,
         }
     }
     #[cfg(not(windows))]
@@ -224,6 +230,11 @@ fn env_from_system(cfg_dolphin_dir: &str) -> Env {
                 .as_ref()
                 .map(|h| h.join(".var/app/org.DolphinEmu.dolphin-emu/config/dolphin-emu"))
                 .filter(|d| d.is_dir()),
+            mac_app_support: if cfg!(target_os = "macos") {
+                home.as_ref().map(|h| h.join("Library/Application Support/Dolphin"))
+            } else {
+                None
+            },
         }
     }
 }
@@ -279,8 +290,22 @@ fn has_exe(dir: &Path) -> bool {
     let Ok(rd) = std::fs::read_dir(dir) else { return false };
     rd.flatten().any(|e| {
         let n = e.file_name().to_string_lossy().to_lowercase();
-        e.path().is_file() && (n == "dolphin-emu" || n == "dolphin-emu-nogui" || (n.contains("dolphin") && n.ends_with(".appimage")))
+        // dolphin-emu (Linux), Dolphin (macOS: Dolphin.app/Contents/MacOS)
+        e.path().is_file()
+            && (n == "dolphin-emu" || n == "dolphin-emu-nogui" || n == "dolphin" || (n.contains("dolphin") && n.ends_with(".appimage")))
     })
+}
+
+/// macOS: `Dolphin.app` → `Dolphin.app/Contents/MacOS` si ahí está el ejecutable.
+fn app_bundle_exe_dir(p: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        if p.extension().is_some_and(|e| e == "app") {
+            return crate::procs::bundle_exe_dir(p, has_exe);
+        }
+    }
+    let _ = p;
+    None
 }
 
 fn name_has_dolphin(p: &Path) -> bool {
@@ -323,6 +348,8 @@ fn search_roots() -> Vec<(PathBuf, u8)> {
             roots.push((PathBuf::from(d), 2));
         }
     }
+    #[cfg(target_os = "macos")]
+    roots.push((PathBuf::from("/Applications"), 1));
     #[cfg(not(windows))]
     {
         roots.push((PathBuf::from("/opt"), 1));
@@ -358,6 +385,8 @@ pub fn find_exe_dirs() -> Vec<PathBuf> {
             }
             if has_exe(&p) {
                 push(p.clone());
+            } else if let Some(inner) = app_bundle_exe_dir(&p) {
+                push(inner);
             } else if depth >= 2 && (name_has_dolphin(&p) || name_is_emulators(&p)) {
                 if let Ok(rd2) = std::fs::read_dir(&p) {
                     for e2 in rd2.flatten().take(100) {
@@ -391,7 +420,12 @@ pub fn config_dirs_with(cfg_dolphin_dir: &str) -> Vec<UserDir> {
             if d.config.is_dir() {
                 return true;
             }
-            let creatable = d.why.starts_with("AppData") || d.why.starts_with("~/.config") || d.why.starts_with("portable") || d.why.contains("registro") || d.why == "DOLPHIN_EMU_USERPATH";
+            let creatable = d.why.starts_with("AppData")
+                || d.why.starts_with("~/.config")
+                || d.why.starts_with("~/Library")
+                || d.why.starts_with("portable")
+                || d.why.contains("registro")
+                || d.why == "DOLPHIN_EMU_USERPATH";
             creatable && evidence && std::fs::create_dir_all(&d.config).is_ok()
         })
         .collect()
@@ -498,7 +532,13 @@ pub fn running_exe() -> (bool, Option<PathBuf>) {
     (running, dir)
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+/// macOS: `Dolphin.app/Contents/MacOS/Dolphin` (por libproc, sin bifurcar `ps`).
+#[cfg(target_os = "macos")]
+pub fn running_exe() -> (bool, Option<PathBuf>) {
+    crate::procs::running_with_prefix("dolphin")
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn running_exe() -> (bool, Option<PathBuf>) {
     (false, None)
 }
@@ -881,7 +921,24 @@ mod tests {
             legacy_home: None,
             xdg_config: None,
             flatpak: None,
+            mac_app_support: None,
         }
+    }
+
+    #[test]
+    fn mac_app_support_va_tras_userpath_y_es_creable() {
+        let base = tmp_dir("mac");
+        let mut env = env_empty();
+        env.mac_app_support = Some(base.join("Library").join("Application Support").join("Dolphin"));
+        let dirs = resolve_user_dirs(&env);
+        assert_eq!(dirs.len(), 1);
+        assert_eq!(dirs[0].config, base.join("Library").join("Application Support").join("Dolphin").join("Config"));
+        assert!(dirs[0].why.starts_with("~/Library"));
+        // DOLPHIN_EMU_USERPATH manda sobre Application Support
+        env.userpath_env = Some(base.join("Mio"));
+        let dirs = resolve_user_dirs(&env);
+        assert_eq!(dirs[0].config, base.join("Mio").join("Config"));
+        assert_eq!(dirs.len(), 2);
     }
 
     #[test]
