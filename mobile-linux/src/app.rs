@@ -21,10 +21,18 @@ use egui::{RichText, Vec2};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use crate::i18n;
 use crate::tr;
+
+/// Resultado del hilo de versiones, a la espera de que la UI lo guarde en
+/// settings.json (solo la UI escribe ese archivo: sin carreras).
+static UPDATE_RESULT: Mutex<Option<(u64, crate::update::Version)>> = Mutex::new(None);
+
+pub fn push_update_result(now: u64, latest: crate::update::Version) {
+    *UPDATE_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = Some((now, latest));
+}
 
 /// Log de diagnóstico: ~/.config/pepomote/mobile.log (tamaño de
 /// pantalla, escala, toques…). Para saber qué ve la app en un móvil real.
@@ -681,6 +689,35 @@ impl MobileApp {
         });
         ui.add_space(18.0);
 
+        // Aviso de versión nueva: tarjeta con el enlace a la release de GitHub
+        if let Some(v) = crate::update::pending(
+            &crate::update::Version::current(),
+            self.settings.update_latest,
+            self.settings.update_dismissed,
+        ) {
+            egui::Frame::none()
+                .fill(theme::card())
+                .stroke(egui::Stroke::new(1.5_f32, theme::blue()))
+                .rounding(theme::RADIUS)
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    ui.label(RichText::new(tr!("upd.available", v)).size(15.0).strong().color(theme::text()));
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.hyperlink_to(
+                            RichText::new(tr!("upd.download")).size(14.0).color(theme::blue()),
+                            crate::update::release_url(&v),
+                        );
+                        ui.add_space(8.0);
+                        if ui.button(RichText::new(tr!("upd.dismiss")).size(13.0)).clicked() {
+                            self.settings.update_dismissed = Some(v);
+                            store::save_settings(&self.settings);
+                        }
+                    });
+                });
+            ui.add_space(12.0);
+        }
+
         let w = ui.available_width();
         let half = Vec2::new((w - 12.0) / 2.0, 96.0);
         let card = |ui: &mut egui::Ui, size: Vec2, title: &str, sub: &str, accent: egui::Color32| -> bool {
@@ -768,6 +805,13 @@ impl MobileApp {
                 theme::set_preference(ui.ctx(), pref);
             }
         });
+        if ui
+            .checkbox(&mut self.settings.update_check, RichText::new(tr!("upd.toggle")).size(12.0))
+            .on_hover_text(tr!("upd.toggle_help"))
+            .changed()
+        {
+            store::save_settings(&self.settings);
+        }
         ui.label(RichText::new(&self.diag).size(11.0).color(theme::text_dim()));
         ui.label(
             RichText::new(tr!("home.version", env!("CARGO_PKG_VERSION")))
@@ -1262,6 +1306,11 @@ impl eframe::App for MobileApp {
         ctx.request_repaint_after(Duration::from_millis(if self.screen == Screen::Calibrate { 30 } else { 100 }));
         self.poll_link();
         self.update_diag(ctx);
+        if let Some((t, v)) = UPDATE_RESULT.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            self.settings.update_last_check = t;
+            self.settings.update_latest = Some(v);
+            store::save_settings(&self.settings);
+        }
 
         // El hilo de paquetes manda 80 bytes (y remapea los sensores) solo
         // mientras se juega en la pantalla GamePad con Wii U CONFIRMADO por el

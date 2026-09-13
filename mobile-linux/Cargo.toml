@@ -21,6 +21,9 @@ if-addrs = "0.13"
 mdns-sd = "0.11"
 # Decodificador JPEG en Rust puro (sin compilador C: vale para el tarball musl)
 zune-jpeg = "0.4"
+# Aviso de versión nueva (desktop/src/update.rs por #[path]): un HEAD a GitHub
+# una vez al día, con rustls (ring compila en Alpine con build-base)
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

@@ -18,7 +18,7 @@ pub struct Pairing {
 /// por defecto, así un archivo de una versión anterior sigue valiendo. La
 /// elección GamePad / Mando de Wii NO se guarda: cada sesión empieza como
 /// diga el receptor.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Settings {
     /// Giro del móvil apaisado en el GamePad de Wii U (izquierda por defecto).
@@ -27,6 +27,27 @@ pub struct Settings {
     pub theme: crate::theme::ThemePref,
     /// Idioma de la interfaz: el del sistema, español o inglés.
     pub lang: LangPref,
+    /// Aviso de versión nueva: consultar GitHub una vez al día.
+    pub update_check: bool,
+    /// Versión anunciada que se ocultó (una posterior sí se enseña).
+    pub update_dismissed: Option<crate::update::Version>,
+    /// Última consulta (segundos UNIX) y última versión publicada vista.
+    pub update_last_check: u64,
+    pub update_latest: Option<crate::update::Version>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            rotation: Rotation::default(),
+            theme: crate::theme::ThemePref::default(),
+            lang: LangPref::default(),
+            update_check: true,
+            update_dismissed: None,
+            update_last_check: 0,
+            update_latest: None,
+        }
+    }
 }
 
 /// Idioma elegido (settings.json): el del sistema (español si no es inglés)
@@ -223,9 +244,19 @@ mod tests {
         assert_eq!(s.rotation, Rotation::Right);
         let s: Settings = serde_json::from_str(r#"{"otro":1,"pad_wii":true}"#).unwrap();
         assert_eq!(s.rotation, Rotation::Left, "campo ausente: por defecto; los desconocidos se ignoran");
-        let mine = Settings { rotation: Rotation::Right, theme: crate::theme::ThemePref::Dark, lang: LangPref::En };
+        let mine = Settings {
+            rotation: Rotation::Right,
+            theme: crate::theme::ThemePref::Dark,
+            lang: LangPref::En,
+            update_check: false,
+            update_dismissed: Some(crate::update::Version([1, 6, 0])),
+            update_last_check: 1_700_000_000,
+            update_latest: Some(crate::update::Version([1, 7, 0])),
+        };
         let back: Settings = serde_json::from_str(&serde_json::to_string(&mine).unwrap()).unwrap();
         assert_eq!(back, mine);
+        assert!(d.update_check, "el aviso de versión nueva viene activado");
+        assert_eq!(d.update_latest, None);
         let s: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
         assert_eq!(s.theme, crate::theme::ThemePref::Light, "el tema se guarda en minúsculas");
         assert_eq!(s.rotation, Rotation::Left);

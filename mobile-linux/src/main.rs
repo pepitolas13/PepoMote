@@ -25,6 +25,10 @@ mod theme;
 mod icon;
 #[path = "../../desktop/src/i18n.rs"]
 mod i18n;
+// Aviso de versión nueva: el mismo módulo que el receptor (la versión
+// «actual» es la de este crate)
+#[path = "../../desktop/src/update.rs"]
+mod update;
 mod strings;
 
 fn main() -> eframe::Result {
@@ -75,6 +79,14 @@ fn main() -> eframe::Result {
         .map(|i| args.get(i + 1).cloned().unwrap_or_else(|| "pointer".into()));
     let fullscreen = args.iter().any(|a| a == "--fullscreen");
     app::log_line(&format!("arranque v{} args={:?}", env!("CARGO_PKG_VERSION"), args));
+    // Aviso de versión nueva: un HEAD diario a GitHub (se apaga en Inicio);
+    // el resultado lo guarda la UI en settings.json
+    update::spawn(
+        || store::load_settings().update_check,
+        || store::load_settings().update_last_check,
+        app::push_update_result,
+        |m| app::log_line(&m),
+    );
     let options = eframe::NativeOptions {
         // Ventana de MÓVIL: maximizada (el compositor decide el tamaño real),
         // sin decoraciones de escritorio y sin tamaño mínimo. Un tamaño fijo
