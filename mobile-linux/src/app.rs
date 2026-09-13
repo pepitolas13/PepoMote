@@ -385,7 +385,14 @@ impl MobileApp {
         match sensor::open_corrected(self.fake) {
             Ok(source) => {
                 self.buttons.release_all();
-                self.link = Some(Link::connect(pairing, self.buttons.clone(), source, mode.map(|m| m.to_owned()), role));
+                self.link = Some(Link::connect(
+                    pairing,
+                    self.buttons.clone(),
+                    source,
+                    mode.map(|m| m.to_owned()),
+                    role,
+                    self.settings.own_nunchuk,
+                ));
                 self.link_role = role;
                 self.was_connected = false;
                 self.go_play();
@@ -1405,6 +1412,7 @@ mod tests {
             notice: None,
             mode_seq,
             pad_seq: 0,
+            own_nunchuk: false,
         }
     }
 

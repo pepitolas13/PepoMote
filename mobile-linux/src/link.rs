@@ -87,6 +87,9 @@ pub enum Status {
         /// en esta sesión: así la UI sabe si su petición ya tuvo respuesta.
         mode_seq: u32,
         pad_seq: u32,
+        /// El receptor confirmó el Nunchuk en el mismo móvil (`ok.nunchuk`
+        /// o eco de `nunchuk`).
+        own_nunchuk: bool,
     },
     Failed {
         code: String,
@@ -132,6 +135,7 @@ impl Link {
         source: Box<dyn Source>,
         pending_mode: Option<String>,
         role: Role,
+        own_nunchuk: bool,
     ) -> Link {
         let status = Arc::new(Mutex::new(Status::Connecting));
         let writer: Arc<Mutex<Option<TcpStream>>> = Arc::new(Mutex::new(None));
@@ -148,6 +152,7 @@ impl Link {
                 target: Arc::new(Mutex::new(None)),
                 buttons,
                 role,
+                own_nunchuk,
             };
             std::thread::Builder::new()
                 .name("pepomote-control".into())
@@ -194,6 +199,12 @@ impl Link {
         send_json(&self.writer, &text_message(text));
     }
 
+    /// Nunchuk en el mismo móvil (modo Dolphin), encendido o apagado; el
+    /// receptor lo confirma con el eco (uno antiguo lo ignora).
+    pub fn send_nunchuk(&self, own: bool) {
+        send_json(&self.writer, &json!({"m":"nunchuk","own":own}));
+    }
+
     /// Aviso local (mismo banner que un `notice` del receptor).
     pub fn notify(&self, text: &str) {
         if let Status::Connected { notice, .. } = &mut *self.status.lock().unwrap() {
@@ -227,6 +238,8 @@ struct Ctx {
     target: Arc<Mutex<Option<Target>>>,
     buttons: Arc<Buttons>,
     role: Role,
+    /// Mando con Nunchuk en el mismo móvil (ajuste): va en el hello.
+    own_nunchuk: bool,
 }
 
 /// Socket UDP y sesión de la conexión viva.
@@ -250,11 +263,14 @@ enum End {
 
 /// `hello` de sesión (PROTOCOL.md §3): `role` solo si somos Nunchuk; un
 /// mando no lo manda (compatibilidad con receptores anteriores). El tipo de
-/// mando en Wii U no va aquí: se elige ya en la sesión con `pad`.
-fn hello(token: &str, role: Role) -> Value {
+/// mando en Wii U no va aquí: se elige ya en la sesión con `pad`. Un mando
+/// con Nunchuk en el mismo móvil lo anuncia con `"nunchuk":"own"`.
+fn hello(token: &str, role: Role, own_nunchuk: bool) -> Value {
     let mut v = json!({"m":"hello","pv":1,"token":token,"name":device_name(),"model":"Linux móvil"});
     if role == Role::Nunchuk {
         v["role"] = json!("nunchuk");
+    } else if own_nunchuk {
+        v["nunchuk"] = json!("own");
     }
     v
 }
@@ -296,13 +312,18 @@ fn pad_of(ok: &Value, slot: u8) -> String {
 }
 
 /// Mensajes que solo actualizan el estado de una sesión ya conectada: `mode`
-/// (eco o difusión: se aplica igual), `pad` (eco del tipo efectivo) y
-/// `notice`. Cualquier otro se ignora (devuelve `false`).
+/// (eco o difusión: se aplica igual), `pad` (eco del tipo efectivo),
+/// `nunchuk` (eco del Nunchuk propio) y `notice`. Cualquier otro se ignora
+/// (devuelve `false`).
 fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
-    let Status::Connected { mode, mode_by_pc, pad, notice, mode_seq, pad_seq, .. } = st else {
+    let Status::Connected { mode, mode_by_pc, pad, notice, mode_seq, pad_seq, own_nunchuk, .. } = st else {
         return false;
     };
     match msg["m"].as_str() {
+        Some("nunchuk") => {
+            *own_nunchuk = msg["own"].as_bool().unwrap_or(false);
+            true
+        }
         Some("mode") => {
             *mode = msg["mode"].as_str().unwrap_or("pointer").to_owned();
             *mode_by_pc = msg["by"].as_str() == Some("pc");
@@ -505,7 +526,7 @@ fn session(
     let mut reader = BufReader::new(read_half);
     *ctx.writer.lock().unwrap() = Some(stream);
 
-    send_json(&ctx.writer, &hello(&pairing.token, ctx.role));
+    send_json(&ctx.writer, &hello(&pairing.token, ctx.role, ctx.own_nunchuk));
 
     // Latido TCP 1 Hz (muere con el writer)
     {
@@ -567,6 +588,7 @@ fn session(
                     notice: None,
                     mode_seq: 0,
                     pad_seq: 0,
+                    own_nunchuk: msg["nunchuk"].as_str() == Some("own"),
                 };
                 // la pantalla del GamePad va por otra conexión TCP al mismo
                 // puerto PMP que este control (el `udp_port` del ok es ese
@@ -911,16 +933,21 @@ mod tests {
 
     #[test]
     fn hello_declara_el_papel_solo_en_el_nunchuk() {
-        let w = hello("tok", Role::Wiimote);
+        let w = hello("tok", Role::Wiimote, false);
         assert_eq!(w["m"], "hello");
         assert_eq!(w["pv"], 1);
         assert_eq!(w["token"], "tok");
         assert!(w.get("role").is_none(), "un mando no manda role (receptores anteriores)");
         assert!(w.get("pad").is_none(), "el tipo de mando de Wii U se elige en la sesión, no en el hello");
-        let n = hello("tok", Role::Nunchuk);
+        assert!(w.get("nunchuk").is_none(), "sin Nunchuk propio no se manda nada (receptores anteriores)");
+        let n = hello("tok", Role::Nunchuk, true);
         assert_eq!(n["role"], "nunchuk");
         assert_eq!(n["token"], "tok");
         assert!(n.get("pad").is_none());
+        assert!(n.get("nunchuk").is_none(), "un Nunchuk (rol) nunca lleva Nunchuk propio");
+        let own = hello("tok", Role::Wiimote, true);
+        assert_eq!(own["nunchuk"], "own");
+        assert!(own.get("role").is_none());
     }
 
     #[test]
@@ -982,6 +1009,7 @@ mod tests {
             notice: None,
             mode_seq: 0,
             pad_seq: 0,
+            own_nunchuk: false,
         }
     }
 
