@@ -1,7 +1,8 @@
 import UIKit
 
-/// Solo para la orientación: el GamePad de Wii U se bloquea en apaisado
-/// mientras está en pantalla; al salir, como estaba.
+/// Solo para la orientación: el GamePad de Wii U y el mando + Nunchuk de
+/// Dolphin se bloquean en apaisado mientras están en pantalla; al salir, como
+/// estaba (y el bloqueo de giro del sistema manda en el resto).
 final class AppDelegate: NSObject, UIApplicationDelegate {
     static var orientationLock: UIInterfaceOrientationMask = .all
 

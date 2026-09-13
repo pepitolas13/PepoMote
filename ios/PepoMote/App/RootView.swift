@@ -8,24 +8,6 @@ struct RootView: View {
         model.screen == .controller && Route.forcesLandscape(link.link, link.intent)
     }
 
-    /// El resto del mando (vertical, NES, mando + Nunchuk, Nunchuk) gira con
-    /// el dispositivo aunque el bloqueo de giro del Centro de control esté
-    /// activo: se fuerza la orientación que dice el sensor.
-    private var followsDevice: Bool { model.screen == .controller && !wantLandscape }
-
-    private func followDevice() {
-        guard followsDevice else { return }
-        // La orientación del DISPOSITIVO es la contraria de la de la INTERFAZ:
-        // con el botón de inicio a la derecha (device landscapeLeft) la
-        // interfaz está en landscapeRight
-        switch UIDevice.current.orientation {
-        case .landscapeLeft: OrientationLock.set(.landscapeRight)
-        case .landscapeRight: OrientationLock.set(.landscapeLeft)
-        case .portrait: OrientationLock.set(.portrait)
-        default: break
-        }
-    }
-
     var body: some View {
         ZStack {
             Pepo.background.ignoresSafeArea()
@@ -45,14 +27,12 @@ struct RootView: View {
         .onReceive(link.$link) { l in
             if case .failed(let code, let msg) = l { model.onLinkFailed(code: code, msg: msg) }
         }
-        // Apaisado fijo mientras el GamePad esté en pantalla; al salir, como estaba
+        // Apaisado fijo mientras el GamePad o el mando + Nunchuk estén en
+        // pantalla; el resto gira solo si el bloqueo de giro del Centro de
+        // control está quitado (lo decide iOS). Al salir, como estaba
         .onChange(of: wantLandscape) { v in OrientationLock.set(v ? .landscape : .all) }
-        // El mando sigue al dispositivo (también con el bloqueo de giro); al salir del mando, como estaba
-        .onChange(of: followsDevice) { v in if v { followDevice() } else if !wantLandscape { OrientationLock.set(.all) } }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in followDevice() }
         .onAppear {
             OrientationLock.set(wantLandscape ? .landscape : .all)
-            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             model.startUpdateChecks()
         }
         .fullScreenCover(isPresented: $model.scanning) {

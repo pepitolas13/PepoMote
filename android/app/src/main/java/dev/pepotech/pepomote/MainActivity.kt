@@ -443,19 +443,16 @@ private fun Root(activity: MainActivity) {
         )
     }
 
-    // Orientación: el GamePad fijo en apaisado; el resto del mando sigue al
-    // sensor aunque el bloqueo de giro del sistema esté activo (el mando gira
-    // con el móvil: de lado = NES o mando + Nunchuk); las demás pantallas,
-    // como diga el sistema. Al salir del mando, como estaba.
+    // Orientación: el GamePad y el mando + Nunchuk de Dolphin van fijos en
+    // apaisado (el sensor solo elige entre los dos lados); todo lo demás gira
+    // únicamente si el giro automático del sistema está activo (con el
+    // bloqueo de giro puesto, la app no gira). Al salir del mando, como estaba.
     val padIntent by LinkState.intent.collectAsState()
-    val onController = activity.currentScreen == Screen.Controller
-    val wantLandscape = onController && Route.forcesLandscape(link, padIntent)
-    LaunchedEffect(wantLandscape, onController) {
-        activity.requestedOrientation = when {
-            wantLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            onController -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
-            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
+    val wantLandscape = activity.currentScreen == Screen.Controller && Route.forcesLandscape(link, padIntent)
+    LaunchedEffect(wantLandscape) {
+        activity.requestedOrientation =
+            if (wantLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 
     // Transición suave entre pantallas: fundido y un deslizamiento sutil

@@ -67,8 +67,9 @@ el acelerómetro llega como el de un mando de lado: para el volante de Mario
 Kart gira el móvil como un volante (da igual hacia qué lado hayas girado el
 móvil: se normaliza). En modo puntero, de lado, las flechas siguen siendo
 flechas del PC y el cursor sigue el borde largo del móvil, como con el
-GamePad. El mando gira con el móvil aunque el bloqueo de giro del sistema
-esté activo.
+GamePad. Para pasar al mando de lado gira el móvil con el giro automático del
+sistema activo: con el bloqueo de giro puesto la app no gira (solo el GamePad
+y el mando + Nunchuk se ponen solos en apaisado).
 
 ## Nunchuk: dos móviles, uno en cada mano
 
