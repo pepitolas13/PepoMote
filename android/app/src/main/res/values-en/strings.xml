@@ -80,7 +80,7 @@
     <string name="chips_title">Dolphin mode on the controller</string>
     <string name="chips_sub">Shows the Pointer/Dolphin selector when entering via Connect. Turn it off for a pointer-only controller, no selector</string>
     <string name="nunchuk_own_title">Nunchuk on this phone</string>
-    <string name="nunchuk_own_sub">For games that ask for a Nunchuk (Mario Galaxy, Zelda…): your Wii Remote carries one and, with the phone sideways, you get the stick, C and Z under your left hand. Off, sideways is the NES pad. Dolphin must be reopened after changing it. Remembered</string>
+    <string name="nunchuk_own_sub">For games that ask for a Nunchuk (Mario Galaxy, Zelda…): your Wii Remote carries one and the controller turns sideways by itself, with the stick, C and Z under your left hand. Off, sideways is the NES pad. Dolphin must be reopened after changing it. Remembered</string>
     <string name="notices_title">PC notices on screen</string>
     <string name="notices_sub">"Dolphin set up…", "Cemu is open…": shown for a few seconds over the controller when the mode changes. Turn them off if they get in the way</string>
     <string name="nunchuk_chip">Nunchuk</string>

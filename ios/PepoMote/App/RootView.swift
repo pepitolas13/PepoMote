@@ -5,7 +5,7 @@ struct RootView: View {
     @ObservedObject var link = LinkState.shared
 
     private var wantLandscape: Bool {
-        model.screen == .controller && Route.route(link.link, link.intent) == .gamePad
+        model.screen == .controller && Route.forcesLandscape(link.link, link.intent)
     }
 
     /// El resto del mando (vertical, NES, mando + Nunchuk, Nunchuk) gira con
