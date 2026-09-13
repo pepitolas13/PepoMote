@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,6 +57,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             .fillMaxSize()
             .background(PepoColors.Background)
             .statusBarsPadding()
+            .displayCutoutPadding()
             .padding(horizontal = 20.dp)
             .verticalScroll(rememberScrollState())
     ) {

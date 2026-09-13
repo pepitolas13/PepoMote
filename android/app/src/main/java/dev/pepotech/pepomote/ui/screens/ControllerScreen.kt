@@ -4,6 +4,7 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -95,6 +96,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
             .fillMaxSize()
             .background(PepoColors.Background)
             .statusBarsPadding()
+            .displayCutoutPadding()
             .navigationBarsPadding()
     ) {
         // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1),

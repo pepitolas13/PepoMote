@@ -7,6 +7,11 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
+import android.view.WindowManager
+import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.widget.Toast
@@ -228,6 +233,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        hideSystemBars()
         UiSounds.init(this)
         // Aviso de versión nueva: lo ya guardado se enseña al momento; la
         // consulta a GitHub (si toca: activada y ≥ 24 h) espera a que el
@@ -278,20 +284,60 @@ class MainActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         enableEdgeToEdge()
+        hideSystemBars()
+    }
+
+    /**
+     * Inmersivo: barras de estado y navegación escondidas mientras se usa la
+     * app; deslizar desde un borde las enseña unos segundos y se vuelven a
+     * ir. Con muesca, el contenido llega al borde también en apaisado (las
+     * pantallas apartan la muesca con displayCutoutPadding). Se repite al
+     * volver a la app y al recuperar el foco (tras diálogos o el escáner).
+     */
+    private fun hideSystemBars() {
+        if (Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hideSystemBars()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     /**
      * La doble pantalla del GamePad solo se recibe con la app a la vista:
      * en segundo plano (ON_STOP) se cierra el canal y al volver se reabre.
+     * El servicio del enlace, igual: con la app en pantalla va sin
+     * notificación; en segundo plano sube a primer plano con ella.
      */
     override fun onStart() {
         super.onStart()
         ScreenLink.setForeground(true)
+        LinkForegroundService.setAppVisible(true)
     }
 
     override fun onStop() {
         ScreenLink.setForeground(false)
+        LinkForegroundService.setAppVisible(false)
         super.onStop()
+    }
+
+    /** Cerrar la app (Atrás desde el inicio) = desconectar; recrearla (idioma, tema) no. */
+    override fun onDestroy() {
+        if (isFinishing) LinkForegroundService.stop(this)
+        super.onDestroy()
     }
 
     /**

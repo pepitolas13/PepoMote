@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.util.Log
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
@@ -38,6 +39,27 @@ class LinkForegroundService : Service() {
         private const val NOTIF_ID = 1
         private const val ACTION_STOP = "dev.pepotech.pepomote.STOP"
         private const val EXTRA_ROLE = "role"
+        /** Arrancado con startForegroundService (tile): hay que llamar a startForeground sí o sí. */
+        private const val EXTRA_FOREGROUND = "foreground"
+
+        /** El servicio vivo (mismo proceso): la actividad le dice si la app se ve. */
+        @Volatile
+        private var current: LinkForegroundService? = null
+
+        /** La app está en pantalla (MainActivity entre onStart y onStop). */
+        @Volatile
+        private var appVisible = false
+
+        /**
+         * MainActivity: la app se ve (onStart) o deja de verse (onStop). Con
+         * la app en pantalla el proceso ya es prioritario por la Activity y
+         * el servicio va sin notificación; al irse a segundo plano sube a
+         * primer plano (con notificación) para que Android no lo duerma.
+         */
+        fun setAppVisible(visible: Boolean) {
+            appVisible = visible
+            current?.applyVisibility()
+        }
         private const val MAX_ATTEMPTS = 3
 
         /**
@@ -45,15 +67,29 @@ class LinkForegroundService : Service() {
          * hello y lo conservan los reintentos; un start() con otro rol rehace
          * el enlace entero.
          */
-        fun start(context: Context, role: String = LinkState.ROLE_WIIMOTE) {
+        /**
+         * Arranca (o rehace) el enlace. Desde la app (visible) es un servicio
+         * normal: sin notificación mientras se vea; desde el tile
+         * (`background`) o si la app ya no está en primer plano, en primer
+         * plano con su notificación.
+         */
+        fun start(context: Context, role: String = LinkState.ROLE_WIIMOTE, background: Boolean = false) {
             // "Conectando" YA, antes de que el servicio llegue a arrancar: si
             // el intento anterior acabó en Failed, la pantalla del mando aún
             // lo veía y rebotaba al inicio repitiendo el error viejo.
             LinkState.role = role
             LinkState.publish(UiLink.Connecting)
-            context.startForegroundService(
-                Intent(context, LinkForegroundService::class.java).putExtra(EXTRA_ROLE, role)
-            )
+            val intent = Intent(context, LinkForegroundService::class.java).putExtra(EXTRA_ROLE, role)
+            if (background) {
+                context.startForegroundService(intent.putExtra(EXTRA_FOREGROUND, true))
+            } else {
+                try {
+                    context.startService(intent)
+                } catch (_: IllegalStateException) {
+                    // la app no está en primer plano (Android 8+): en primer plano
+                    context.startForegroundService(intent.putExtra(EXTRA_FOREGROUND, true))
+                }
+            }
         }
 
         fun stop(context: Context) {
@@ -95,7 +131,18 @@ class LinkForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
+    /** En primer plano (con notificación) ahora mismo. */
+    private var foregrounded = false
+
+    /** Texto de la notificación (se publica solo en primer plano; si no, queda para la próxima subida). */
+    private var notifText = ""
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        current = this
+    }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -115,12 +162,11 @@ class LinkForegroundService : Service() {
         LinkState.role = role
 
         createChannel()
-        val notif = buildNotification(getString(R.string.notif_connecting, pairing.pcName))
-        ServiceCompat.startForeground(
-            this, NOTIF_ID, notif,
-            if (Build.VERSION.SDK_INT >= 29)
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
-        )
+        notifText = getString(R.string.notif_connecting, pairing.pcName)
+        // Arrancado con startForegroundService: startForeground es obligatorio
+        // (luego, si la app se ve, se baja al momento); si no, según se vea la app
+        if (intent?.getBooleanExtra(EXTRA_FOREGROUND, false) == true) goForeground()
+        applyVisibility()
 
         // Un start() con el enlace ya vivo (QR nuevo desde Ajustes, Reconectar)
         // reemplaza el enlace entero: antes se apilaban sensores y sockets del
@@ -143,6 +189,38 @@ class LinkForegroundService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         stopSelf()
         super.onTaskRemoved(rootIntent)
+    }
+
+    /** Sube a primer plano con la notificación (idempotente). */
+    private fun goForeground() {
+        if (foregrounded) return
+        try {
+            ServiceCompat.startForeground(
+                this, NOTIF_ID, buildNotification(notifText),
+                if (Build.VERSION.SDK_INT >= 29)
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
+            )
+            foregrounded = true
+        } catch (e: Exception) {
+            // Android 12+ puede vetarlo fuera del periodo de gracia: el enlace
+            // sigue como servicio normal (con la app a la vista no hace falta)
+            Log.w("PepoMote", "startForeground rechazado: ${e.message}")
+        }
+    }
+
+    /**
+     * Con la app en pantalla, fuera la notificación (el servicio sigue vivo,
+     * el proceso es prioritario por la Activity); sin ella, a primer plano.
+     */
+    private fun applyVisibility() {
+        if (appVisible) {
+            if (foregrounded) {
+                ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                foregrounded = false
+            }
+        } else {
+            goForeground()
+        }
     }
 
     private fun connect(pairing: Pairing) {
@@ -384,6 +462,7 @@ class LinkForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        if (current === this) current = null
         if (LinkState.flow.value is UiLink.Connected) {
             UiSounds.disconnect()
         }
@@ -433,13 +512,17 @@ class LinkForegroundService : Service() {
             .setSmallIcon(R.drawable.ic_pepomote_glyph)
             .setContentTitle("PepoMote")
             .setContentText(text)
-            .setOngoing(true)
+            // Sin `ongoing`: en Android 13+ se puede deslizar (el servicio sigue);
+            // en 12 o menos el sistema no deja quitar la de un servicio en primer
+            // plano, pero ya solo existe con la app fuera de pantalla
             .setContentIntent(pi)
             .addAction(0, getString(R.string.notif_disconnect), stopPi)
             .build()
     }
 
     private fun updateNotification(text: String) {
+        notifText = text
+        if (!foregrounded) return // con la app a la vista no hay notificación
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIF_ID, buildNotification(text))
     }

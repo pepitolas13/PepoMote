@@ -291,6 +291,17 @@ Más en [MOBILE-LINUX.md](MOBILE-LINUX.md).
 
 PepoMote usa un servicio en primer plano con wakelock; concédele la exención de optimización de batería cuando la pida. En OEMs agresivos (Xiaomi, Huawei…): dontkillmyapp.com/<tu-marca>.
 
+## Android: la notificación de PepoMote
+
+Con la app en pantalla no hay notificación: el enlace va en un servicio
+normal. Al irte a otra app o apagar la pantalla, el servicio sube a primer
+plano y aparece la notificación «PepoMote · Conectado a …» (con
+«Desconectar»), que es lo que impide que Android duerma la conexión. Desde
+Android 13 se puede deslizar (el enlace sigue); en Android 12 o anterior el
+sistema no deja quitar la de un servicio en primer plano, y se va sola al
+volver a la app. Cerrar la app (Atrás desde el inicio, o deslizarla de
+recientes) desconecta y la quita.
+
 ## El modo cambia solo al abrir o cerrar Dolphin o Cemu
 
 Desde 1.4 el receptor vigila los emuladores: abrir Dolphin pone el modo

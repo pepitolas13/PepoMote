@@ -1,6 +1,7 @@
 package dev.pepotech.pepomote.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -69,6 +70,7 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             .fillMaxSize()
             .background(PepoColors.Background)
             .statusBarsPadding()
+            .displayCutoutPadding()
             .navigationBarsPadding()
     ) {
         // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1)

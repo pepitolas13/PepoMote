@@ -1,6 +1,7 @@
 package dev.pepotech.pepomote.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -64,6 +65,7 @@ fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
             .fillMaxSize()
             .background(PepoColors.Background)
             .statusBarsPadding()
+            .displayCutoutPadding()
             .navigationBarsPadding()
     ) {
         // De lado hay poca altura: todo más pequeño, mismo orden. En una
