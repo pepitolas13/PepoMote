@@ -392,6 +392,7 @@ impl MobileApp {
                     mode.map(|m| m.to_owned()),
                     role,
                     self.settings.own_nunchuk,
+                    self.settings.receiver_notices,
                 ));
                 self.link_role = role;
                 self.was_connected = false;
@@ -815,6 +816,14 @@ impl MobileApp {
         if ui
             .checkbox(&mut self.settings.update_check, RichText::new(tr!("upd.toggle")).size(12.0))
             .on_hover_text(tr!("upd.toggle_help"))
+            .changed()
+        {
+            store::save_settings(&self.settings);
+        }
+        // Avisos del receptor sobre el mando al cambiar de modo
+        if ui
+            .checkbox(&mut self.settings.receiver_notices, RichText::new(tr!("home.notices")).size(12.0))
+            .on_hover_text(tr!("home.notices_help"))
             .changed()
         {
             store::save_settings(&self.settings);

@@ -136,6 +136,7 @@ impl Link {
         pending_mode: Option<String>,
         role: Role,
         own_nunchuk: bool,
+        receiver_notices: bool,
     ) -> Link {
         let status = Arc::new(Mutex::new(Status::Connecting));
         let writer: Arc<Mutex<Option<TcpStream>>> = Arc::new(Mutex::new(None));
@@ -153,6 +154,7 @@ impl Link {
                 buttons,
                 role,
                 own_nunchuk,
+                receiver_notices,
             };
             std::thread::Builder::new()
                 .name("pepomote-control".into())
@@ -240,6 +242,8 @@ struct Ctx {
     role: Role,
     /// Mando con Nunchuk en el mismo móvil (ajuste): va en el hello.
     own_nunchuk: bool,
+    /// Ajuste «Avisos del PC en pantalla»: apagado, los `notice` se ignoran.
+    receiver_notices: bool,
 }
 
 /// Socket UDP y sesión de la conexión viva.
@@ -621,7 +625,10 @@ fn session(
             }
             // mode (eco o difundido), pad, notice… y lo desconocido se ignora
             _ => {
-                apply_update(&mut ctx.status.lock().unwrap(), &msg, Instant::now());
+                // Ajuste «Avisos del PC en pantalla»: apagado, los notice ni se guardan
+                if msg["m"].as_str() != Some("notice") || ctx.receiver_notices {
+                    apply_update(&mut ctx.status.lock().unwrap(), &msg, Instant::now());
+                }
             }
         }
     }

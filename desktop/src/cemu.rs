@@ -676,24 +676,28 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
         running_exe()
     };
     learn_dir(shared, dir);
-    let (ok, msg) = if running {
+    // `msg` para la ventana (con detalle); `phone` para los móviles (una línea corta)
+    let (ok, msg, phone) = if running {
         // Cemu sobreescribe sus perfiles al salir: se escribe en cuanto se
         // cierre (vigilante de auto_mode)
         shared.lock().unwrap().cemu_pending = true;
-        (false, tr!("cemu.open").to_owned())
+        (false, tr!("cemu.open").to_owned(), tr!("cemu.phone_open").to_owned())
     } else {
         shared.lock().unwrap().cemu_pending = false;
         let cfg = shared.lock().unwrap().config.clone();
         match configure(&cfg, layout) {
             Ok(details) => {
                 let prefix = if after_close { tr!("cemu.configured_after_close") } else { tr!("cemu.configured") };
-                (true, format!("{prefix} {details}"))
+                (true, format!("{prefix} {details}"), tr!("cemu.phone_configured").to_owned())
             }
-            Err(e) => (false, tr!("cemu.error", e)),
+            Err(e) => {
+                let text = tr!("cemu.error", e);
+                (false, text.clone(), text)
+            }
         }
     };
-    shared.lock().unwrap().cemu_cfg_status = Some(CfgStatus { ok, text: msg.clone() });
-    crate::net::notify_all(&msg);
+    shared.lock().unwrap().cemu_cfg_status = Some(CfgStatus { ok, text: msg });
+    crate::net::notify_all(&phone);
 }
 
 /// Disparo automático (conexión/desconexión/cambio de modo o de tipo de mando).

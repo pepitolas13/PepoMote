@@ -809,27 +809,34 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
     let assume_closed = std::env::var_os("PEPOMOTE_ASSUME_EMULATOR_CLOSED").is_some();
     let (running, exe_dir) = if assume_closed { (false, None) } else { running_exe() };
     learn_dir(shared, exe_dir);
-    let (ok, msg) = if running {
+    // `msg` para la ventana (con detalle); `phone` para los móviles: una
+    // línea corta, que el banner tapa los chips del mando
+    let (ok, msg, phone) = if running {
         // Dolphin sobreescribe su configuración al salir: se escribe en
         // cuanto se cierre (vigilante), sin que nadie tenga que pulsar nada
         shared.lock().unwrap().dolphin_pending = true;
-        let text = if layout.iter().any(|(_, n)| n.is_some()) { tr!("dolphin.open_nunchuk") } else { tr!("dolphin.open") };
-        (false, text.to_owned())
+        let nunchuk = layout.iter().any(|(_, n)| n.is_some());
+        let text = if nunchuk { tr!("dolphin.open_nunchuk") } else { tr!("dolphin.open") };
+        let phone = if nunchuk { tr!("dolphin.phone_open_nunchuk") } else { tr!("dolphin.phone_open") };
+        (false, text.to_owned(), phone.to_owned())
     } else {
         shared.lock().unwrap().dolphin_pending = false;
         let cfg_dir = shared.lock().unwrap().config.dolphin_dir.clone();
         match configure(&cfg_dir, layout) {
             Ok(details) => {
                 let prefix = if after_close { tr!("dolphin.configured_after_close") } else { tr!("dolphin.configured") };
-                (true, format!("{prefix} {details}"))
+                (true, format!("{prefix} {details}"), tr!("dolphin.phone_configured").to_owned())
             }
-            Err(e) => (false, tr!("dolphin.error", e)),
+            Err(e) => {
+                let text = tr!("dolphin.error", e);
+                (false, text.clone(), text)
+            }
         }
     };
-    shared.lock().unwrap().dolphin_cfg_status = Some(CfgStatus { ok, text: msg.clone() });
+    shared.lock().unwrap().dolphin_cfg_status = Some(CfgStatus { ok, text: msg });
     // Los móviles lo ven también (banner): hasta ahora un Nunchuk que
     // entraba con Dolphin abierto fallaba en silencio
-    crate::net::notify_all(&msg);
+    crate::net::notify_all(&phone);
 }
 
 /// Disparo automático (conexión/desconexión/cambio a modo Dolphin).

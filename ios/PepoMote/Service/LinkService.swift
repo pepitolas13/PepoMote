@@ -99,7 +99,8 @@ final class LinkService {
                 },
                 onNotice: { [weak self] text in
                     guard let self, gen == self.generation else { return }
-                    self.link.publishNotice(text)
+                    // Ajuste «Avisos del PC en pantalla»: apagado, ni banner
+                    if AppPrefs.receiverNotices { self.link.publishNotice(text) }
                 },
                 onClosed: { [weak self] in self?.onClosed(gen, pairing) }
             ),

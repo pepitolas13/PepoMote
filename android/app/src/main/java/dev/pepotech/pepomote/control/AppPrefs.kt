@@ -17,12 +17,27 @@ object AppPrefs {
 
     /**
      * Nunchuk en el mismo móvil (modo Dolphin): el mando lleva su propio
-     * Nunchuk y en apaisado sale el trazado con stick, C y Z. Encendido por
-     * defecto, como el Wiimote emulado de Dolphin.
+     * Nunchuk y en apaisado sale el trazado con stick, C y Z. Apagado de
+     * serie (entrar en Dolphin nunca lo enciende solo); se recuerda porque
+     * cambiarlo obliga a reabrir Dolphin.
      */
     fun ownNunchuk(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean("ownNunchuk", true)
+            .getBoolean("ownNunchuk", false)
+
+    /**
+     * Avisos del receptor en pantalla («Dolphin configurado…», «Cemu está
+     * abierto…»): unos segundos sobre el mando al cambiar de modo. Apagados,
+     * no se enseñan (los avisos locales de una petición fallida, sí).
+     */
+    fun receiverNotices(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("receiverNotices", true)
+
+    fun setReceiverNotices(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("receiverNotices", value).apply()
+    }
 
     fun setOwnNunchuk(context: Context, value: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
