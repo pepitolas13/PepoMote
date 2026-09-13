@@ -330,3 +330,51 @@ elige en el inicio. Idioma: español o inglés según el sistema (español para
 cualquier otro), y se cambia con ES/EN arriba a la derecha (receptor, Android
 y móvil Linux). Los avisos que el PC manda a los móviles van en el idioma
 del PC; el log y `--diag` siempre en español.
+
+## macOS: «Inyección: ninguna» o el cursor no se mueve
+
+Falta el permiso de **Accesibilidad** (así funciona cualquier app que mueva
+el ratón en macOS). La ventana enseña una tarjeta con **Abrir Ajustes →
+Accesibilidad**: marca PepoMote en la lista y vuelve; se activa solo, sin
+reiniciar, y el pie pasa a «Inyección: CGEvent». Si quitas el permiso, la
+tarjeta vuelve. Como cada versión va firmada con el mismo certificado, el
+permiso se conserva al actualizar. Más en [MACOS.md](MACOS.md).
+
+## macOS: no llega la doble pantalla de Cemu
+
+La captura de la ventana GamePad View necesita **Grabación de pantalla**
+(Ajustes del Sistema → Privacidad y seguridad) y macOS solo lo aplica al
+reiniciar la app: la tarjeta de la ventana tiene **Abrir Ajustes** y
+**Reiniciar PepoMote**. Además: Options → Separate GamePad view en Cemu, y la
+ventana GamePad View **no minimizada** (tapada por otra sí se captura). En
+macOS 15 o más, el sistema recuerda cada mes que PepoMote captura la ventana
+de Cemu: **Permitir**.
+
+## macOS: «Apple no ha podido verificar "PepoMote"» al abrirlo
+
+PepoMote no está notarizado (cuenta de desarrollador de pago). Una vez por
+versión descargada: en macOS 15/26, **Listo** → Ajustes del Sistema →
+Privacidad y seguridad → abajo del todo **Abrir igualmente** → **Abrir**; en
+macOS 13/14, Control-clic sobre la app → **Abrir**. Por terminal:
+`xattr -d com.apple.quarantine /Applications/PepoMote.app`.
+
+## macOS: el móvil no encuentra el Mac
+
+Permiso de **Red local** para PepoMote (macOS 15 o más lo pregunta al
+arrancar; si dijiste que no: Ajustes → Privacidad y seguridad → Red local),
+misma Wi-Fi, y el firewall del Mac con «Permitir» para PepoMote. El
+autodescubrimiento (mDNS) puede no funcionar en algún Mac: el **QR** funciona
+igual. Informe: `/Applications/PepoMote.app/Contents/MacOS/PepoMote --diag`.
+
+## Aviso de versión nueva
+
+Desde 1.6 el receptor y las apps consultan una vez al día si hay una versión
+publicada más reciente y, si la hay, enseñan una tarjeta con el enlace a la
+release de GitHub (en el receptor, también en el menú de la bandeja). La
+consulta es una sola petición a la página de la última release de GitHub
+(`releases/latest`), sin cuerpo ni identificadores: GitHub solo ve una
+petición más, como si abrieras la página. Se apaga en Ajustes («Avisar de
+versiones nuevas»). Si no sale la tarjeta: hace menos de 24 h de la última
+consulta, la ocultaste con «Ocultar» (una versión posterior sí se anuncia)
+o no hay salida a Internet (se reintenta en una hora). En iPhone/iPad,
+SideStore y AltStore avisan además por su cuenta con la fuente de PepoMote.

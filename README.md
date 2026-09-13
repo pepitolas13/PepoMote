@@ -15,13 +15,16 @@
 | Sender | iPhone / iPad, iOS 15+ (up to iPadOS 26) | `PepoMote.ipa` — installed with SideStore (my recommendation), AltStore or Sideloadly, see [docs/IOS.md](docs/IOS.md) |
 | Sender | Linux phones: Mobian, postmarketOS… (aarch64) | `pepomote-mobile_*_arm64.deb` (Mobian: tap to install) · `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receiver | Windows 10/11 | `PepoMote.exe` — single portable file |
-| Receiver | Linux, X11 & Wayland | `PepoMote-x86_64.AppImage` |
+| Receiver | Linux, X11 & Wayland | `PepoMote-x86_64.AppImage` · `PepoMote-linux-x86_64.tar.gz` (binary + launcher + `install.sh`) |
+| Receiver | macOS 13+ on Apple Silicon (M1 or later) — **beta** | `PepoMote-macOS.dmg`, see [docs/MACOS.md](docs/MACOS.md) |
 
 ## Install
 
 **PC (Windows)** — download `PepoMote.exe` and run it. No installer. SmartScreen may warn because the binary is unsigned: *More info → Run anyway* (verify `SHA256SUMS.txt` if in doubt). Allow it on *private networks* when the firewall asks.
 
-**PC (Linux)** — download the AppImage, make it executable and run it. On Sway, Hyprland, MangoWC, river, labwc, niri and other wlroots compositors nothing else is needed: the cursor is a Wayland virtual pointer. On GNOME, KDE or X11 the cursor goes through uinput: if that (or a firewall silently dropping the phone's traffic — many distros ship one enabled) needs setup, PepoMote detects it and asks for your admin password **once** in the system dialog, then fixes it by itself; if your session has no password dialog, the window shows the one-line command to paste in a terminal. Prefer a scripted install with a launcher entry? `packaging/linux/install.sh PepoMote-x86_64.AppImage` does the same setup non-interactively. Something odd? `./PepoMote-x86_64.AppImage --diag` prints a report to paste in an issue.
+**PC (Linux)** — download the AppImage, make it executable and run it (or the `tar.gz`: unpack it and run `./install.sh`, which installs the binary, the launcher and the uinput rule). On Sway, Hyprland, MangoWC, river, labwc, niri and other wlroots compositors nothing else is needed: the cursor is a Wayland virtual pointer. On GNOME, KDE or X11 the cursor goes through uinput: if that (or a firewall silently dropping the phone's traffic — many distros ship one enabled) needs setup, PepoMote detects it and asks for your admin password **once** in the system dialog, then fixes it by itself; if your session has no password dialog, the window shows the one-line command to paste in a terminal. Prefer a scripted install with a launcher entry? `packaging/linux/install.sh PepoMote-x86_64.AppImage` does the same setup non-interactively. Something odd? `./PepoMote-x86_64.AppImage --diag` prints a report to paste in an issue.
+
+**PC (macOS, beta)** — download `PepoMote-macOS.dmg`, open it and drag PepoMote to Applications. It is not notarized by Apple (that needs a paid developer account), so the first launch of each version takes one extra step: on macOS 15/26, System Settings → Privacy & Security → **Open Anyway** (on 13/14: Control-click → Open). Then allow **Local Network** and, from the card the window shows, **Accessibility** (moves the cursor; no restart needed) and, only for Cemu's second screen, **Screen Recording**. Apple Silicon only, macOS 13 or later. It is built and tested by the CI on a Mac, but I could not try it on a real one yet: details, permissions and troubleshooting in [docs/MACOS.md](docs/MACOS.md).
 
 **Phone** — install `PepoMote.apk` (enable "install from unknown sources"). Open it, tap **Conectar**, scan the QR shown on your PC. Paired forever.
 
@@ -51,12 +54,15 @@ See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold 
 - **Browser back/forward and volume that repeats**: in pointer mode the D-pad ← / → go back / forward in the browser (↑ / ↓ stay arrow keys), and holding − / + or the media 🔉 / 🔊 keeps stepping the volume
 - **iPhone and iPad** (1.5): the same sender in Swift, with the Wii U GamePad's second screen and everything else; installed with SideStore or AltStore from a one-tap source, built and tested by the CI on macOS
 - **Several PCs and automatic reconnection**: the app keeps all your PCs and, if the Wi-Fi drops or the receiver restarts, it comes back by itself without losing the screen or the mode
+- **macOS** (1.6, beta): the same receiver on Apple Silicon — cursor and keys through Accessibility, Cemu's second screen, an icon in the menu bar, start with the system, a signed `.app` in a DMG
+- **New-version notice** (1.6): every app tells you when a new release is out, with the link to it. The check is one request to GitHub once a day (only the latest-release page; nothing about you is sent) and it can be switched off in Settings. PepoMote never talks to anything else outside your network.
+- **iPad and tablets** (1.6): the controllers grow with the screen (same rule on iOS and Android; phones stay exactly as they were)
 - **Dark theme and English**: both follow the system; ES/EN at the top right of every app
 - **A chime per player, a tray icon that tells the state, a heartbeat with the RTT** in the receiver window; on Android a themed icon, launcher shortcuts and a Quick Settings tile
 
 ## Build from source
 
-- Receiver: `cd desktop && cargo build --release`
+- Receiver: `cd desktop && cargo build --release` (macOS: then `bash packaging/macos/bundle.sh` for the `.app` and the DMG)
 - Android: `cd android && ./gradlew assembleDebug`
 - iOS (Mac): `brew install xcodegen && cd ios && xcodegen generate && xcodebuild -scheme PepoMote build` (the CI builds the unsigned IPA on macOS runners)
 - Protocol spec: [protocol/PROTOCOL.md](protocol/PROTOCOL.md) · DSU notes: [protocol/DSU.md](protocol/DSU.md)

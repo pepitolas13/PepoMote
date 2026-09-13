@@ -244,7 +244,7 @@ jobs:
                   "bundleIdentifier": "dev.pepotech.pepomote",
                   "developerName": "PepoTech",
                   "subtitle": "Tu iPhone o iPad, mando de tu PC",
-                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual y a Cemu con un GamePad de Wii U con doble pantalla. Necesita el receptor PepoMote en el PC (Windows o Linux).",
+                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual y a Cemu con un GamePad de Wii U con doble pantalla. Necesita el receptor PepoMote en el PC (Windows, Linux o macOS).",
                   "iconURL": f"{raw}/assets/brand/logo.png",
                   "tintColor": "3FA9F5",
                   "category": "utilities",
