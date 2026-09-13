@@ -82,7 +82,12 @@
     <string name="link_other_pc">Vincular con otro PC</string>
     <string name="link_other_pc_sub">Escanear un QR nuevo</string>
     <string name="sens_note">La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.</string>
-    <string name="about">PepoMote · GPL-3.0 · hecho por PepoTech</string>
+    <string name="update_title">Avisar de versiones nuevas</string>
+    <string name="update_sub">Consulta GitHub una vez al día (solo la página de la última versión) y no envía nada tuyo</string>
+    <string name="update_available">PepoMote %1$s disponible</string>
+    <string name="update_download">Descargar en GitHub</string>
+    <string name="update_dismiss">Ocultar</string>
+    <string name="about">PepoMote %1$s · GPL-3.0 · hecho por PepoTech</string>
 
     <!-- primer arranque -->
     <string name="onboarding_sub">Tu móvil, mando de tu PC en 3 pasos</string>

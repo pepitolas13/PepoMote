@@ -37,6 +37,14 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var volB by remember { mutableStateOf(AppPrefs.volDownIsB(context)) }
     var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
     var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
+    var updateCheck by remember { mutableStateOf(AppPrefs.updateCheckEnabled(context)) }
+    val versionName = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
+        } catch (_: Exception) {
+            "?"
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -141,6 +149,38 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             }
         }
 
+        // Aviso de versión nueva: la única consulta fuera de la red local
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.update_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.update_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = updateCheck,
+                    onCheckedChange = {
+                        updateCheck = it
+                        AppPrefs.setUpdateCheckEnabled(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
         Spacer(Modifier.height(14.dp))
         Card(
             onClick = onNewPairing,
@@ -163,7 +203,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
 
         Spacer(Modifier.weight(1f))
         Text(
-            stringResource(R.string.about),
+            stringResource(R.string.about, versionName),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
