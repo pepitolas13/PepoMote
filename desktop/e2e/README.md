@@ -22,7 +22,10 @@ en el entorno:
 - `python e2e_cemu.py <dir>\appdata` — modo Wii U: `ok.modes`/`ok.pad`, perfiles
   de Cemu (GamePad, Pro, Mando de Wii + Nunchuk, backup/restauración), PadData
   Wii U (botones, gatillos, sticks, táctil, Home→Touch, puntero IR), avisos
-  `pad`/`notice`, difusión de `mode`, regresión de Dolphin.
+  `pad`/`notice`, difusión de `mode`, «solo pantalla» (fusión del DSU del
+  móvil con un mando ajeno en `controller0.xml`, copia y restauración, eco de
+  `screen_only`, táctil, aviso si el mando 1 no es un GamePad), regresión de
+  Dolphin.
 - `python e2e_nunchuk.py` — Nunchuk en modo Dolphin: slots, emparejamiento,
   stick/C/Z en su pad DSU.
 - `python e2e_screen.py <segundos> <salida.jpg>` — canal de pantalla (doble
