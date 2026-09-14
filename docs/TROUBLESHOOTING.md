@@ -201,6 +201,29 @@ Nunchuk se ponen solos en apaisado, con o sin bloqueo. En Dolphin, con el
 Nunchuk encendido, sale el mando + Nunchuk en vez del NES: apaga el chip
 «Nunchuk» para los juegos de lado (y reabre Dolphin).
 
+## A pantalla completa el mando de verdad no responde, o el táctil no llega
+
+«Pantalla del GamePad a pantalla completa» (desde 1.5.53) está pensada para
+un mando de verdad conectado al PC: el receptor añade el DSU del móvil como
+segundo mando dentro de tu `controllerProfiles/controller0.xml` sin pisar tu
+mando, y el táctil llega por ese DSU. Si algo no va:
+
+- **Cemu estaba abierto** al configurar: el cambio queda pendiente hasta
+  cerrarlo (el móvil lo dice). Cierra Cemu y vuelve a abrirlo.
+- **Controller 1 en Cemu no es un GamePad** (aviso «Cemu: el mando 1 no es un
+  GamePad»): el táctil de la Wii U solo existe en el GamePad emulado. En Cemu
+  → Configuración de mandos → Controller 1 → emulated controller **Wii U
+  GamePad**, con tu mando dentro; PepoMote añadirá el DSU del móvil al
+  reconfigurar (con Cemu cerrado).
+- **Tu mando ha desaparecido de Cemu**: mira `controller0.xml.pepomote.bak`
+  en `controllerProfiles`: es tu perfil tal cual, que vuelve solo al irse el
+  móvil o al apagar la opción. Si no vuelve, cópialo tú encima.
+- **«El receptor no conoce la pantalla completa»**: el PC lleva un PepoMote
+  anterior a 1.5.53, que escribe el perfil de siempre con el móvil como mando;
+  actualiza el receptor.
+- El móvil sigue en modo Wii U como GamePad: con «Mando de Wii» o como
+  Jugador 2 (Pro) la pantalla completa no se aplica (no tienen pantalla).
+
 ## «El puerto 26760/26761 está ocupado»
 
 Otro programa tenía abierto el puerto del servidor DSU (26760: DS4Windows,

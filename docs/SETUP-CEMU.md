@@ -90,6 +90,36 @@ Si prefieres botones más grandes a la pantalla, en Ajustes de la app está
 «**GamePad sin pantalla táctil**»: quita la pantalla del GamePad (y la doble
 pantalla) y sticks, cruceta y A/B/X/Y crecen para llenar el hueco.
 
+## Mando de verdad en el PC y el móvil como pantalla del GamePad
+
+Desde 1.5.53, en Ajustes de la app está «**Pantalla del GamePad a pantalla
+completa**» (apagada de serie; excluyente con «GamePad sin pantalla táctil»):
+con ella, al entrar en Wii U como GamePad el móvil enseña **solo** la pantalla
+del GamePad de Cemu, ajustada a su proporción real sobre fondo negro, y
+responde al tacto igual que la pantalla de la Wii U. Sin sticks ni botones:
+está pensada para jugar con un **mando de verdad conectado al PC** (XInput,
+DualShock, Pro Controller…) y el móvil delante como pantalla táctil. La
+subopción «**Botón de teclado**» (encendida de serie) deja un botón pequeño
+arriba a la derecha para escribir en el teclado en pantalla de Cemu. Para
+salir: Atrás en Android, la ✕ pequeña arriba a la izquierda en iPhone y en
+Linux móvil. Los avisos del PC siguen saliendo arriba.
+
+Lo que hace el receptor: el móvil se anuncia como «solo pantalla» y PepoMote,
+en vez de sustituir tu `controllerProfiles/controller0.xml`, lo **fusiona**:
+conserva tu mando tal cual (con sus botones) y añade el DSU del móvil como
+segundo mando del GamePad emulado, sin movimiento ni botones (`PepoMote J1
+pantalla`); el táctil llega por ese DSU. Deja copia `.pepomote.bak` de tu
+perfil, que vuelve cuando el móvil se va o apagas la opción. Si no tienes
+ningún perfil en Controller 1, escribe el perfil completo de siempre (táctil
+y movimiento del móvil). Cemu tiene que estar cerrado para aplicarlo (como
+cualquier cambio de perfil; si está abierto queda pendiente hasta cerrarlo).
+Si tu Controller 1 no es un «Wii U GamePad» (un Pro Controller, por
+ejemplo), la fusión se hace igual pero el táctil no se aplica: el móvil te
+avisa. El movimiento (giroscopio) lo pone tu mando, si lo tiene. La ventana
+del PC lista al móvil como «J1 · pantalla del GamePad». Con un receptor
+anterior a 1.5.53 la pantalla completa se ve igual, pero el perfil de Cemu se
+escribe como siempre (con el móvil como mando): el móvil te lo avisa.
+
 Linux: la captura es de X11, que vale también para XWayland. Con Cemu nativo
 en Wayland no hay ventana X que capturar: lanza Cemu con `GDK_BACKEND=x11`.
 
