@@ -1,6 +1,7 @@
 package dev.pepotech.pepomote.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,23 +13,30 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.sensor.SenderKind
+import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkState
+import dev.pepotech.pepomote.service.NunchukSide
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
 import dev.pepotech.pepomote.ui.components.HeaderSlot
@@ -122,6 +130,15 @@ fun WiimoteNunchukScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> U
     // El móvil puede girar 180° entre los dos apaisados: el remapeo lo sigue
     LaunchedEffect(engine, rotation) {
         engine?.rotation = rotation
+    }
+    // Primera vez: el lado del apaisado lo ha elegido el sensor; se pregunta
+    // si es el bueno y se guarda para siempre (Ajustes lo cambia). Al salir
+    // sin confirmar, la prueba («Darle la vuelta») se olvida
+    val context = LocalContext.current
+    val sideSaved by NunchukSide.saved.collectAsState()
+    val sideProvisional by NunchukSide.provisional.collectAsState()
+    DisposableEffect(Unit) {
+        onDispose { NunchukSide.setProvisional(null) }
     }
 
     BoxWithConstraints(
@@ -236,7 +253,7 @@ fun WiimoteNunchukScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> U
             horizontalArrangement = Arrangement.spacedBy(m.gap.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            PadCross(sizeDp = m.cross.dp, glyphSp = m.text(14f))
+            PadCross(sizeDp = m.cross.dp)
             RoundButton(
                 "A", m.a.dp, ButtonState.A,
                 background = PepoColors.Blue,
@@ -247,10 +264,42 @@ fun WiimoteNunchukScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> U
             )
         }
 
+        if (sideSaved == LandscapeSide.Unset) {
+            val shown = LandscapeSide.effective(LandscapeSide.current(rotation), sideProvisional)
+            SideAskCard(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = (m.headerH + 4f).dp),
+                onFlip = { NunchukSide.setProvisional(shown.flipped()) },
+                onKeep = { NunchukSide.save(context, shown) }
+            )
+        }
+
         NoticeBanner(
             Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 84.dp)
         )
+    }
+}
+
+/** Pregunta de la primera vez: ¿el mando está bien así? Darle la vuelta / Así lo quiero. */
+@Composable
+private fun SideAskCard(modifier: Modifier, onFlip: () -> Unit, onKeep: () -> Unit) {
+    Column(
+        modifier = modifier
+            .widthIn(max = 340.dp)
+            .background(PepoColors.Card, RoundedCornerShape(14.dp))
+            .border(1.5.dp, PepoColors.Blue, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(stringResource(R.string.side_ask), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.side_ask_sub), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ModeChip(stringResource(R.string.side_flip), selected = false, onClick = onFlip)
+            ModeChip(stringResource(R.string.side_keep), selected = true, onClick = onKeep)
+        }
     }
 }

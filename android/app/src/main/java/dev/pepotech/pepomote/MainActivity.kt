@@ -54,8 +54,11 @@ import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.service.LinkFailure
 import dev.pepotech.pepomote.service.LaunchAction
+import dev.pepotech.pepomote.service.LandscapeOrientation
+import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
+import dev.pepotech.pepomote.service.NunchukSide
 import dev.pepotech.pepomote.service.PadScreen
 import dev.pepotech.pepomote.service.Route
 import dev.pepotech.pepomote.service.ScreenLink
@@ -235,6 +238,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         hideSystemBars()
         UiSounds.init(this)
+        NunchukSide.load(this)
         // Aviso de versión nueva: lo ya guardado se enseña al momento; la
         // consulta a GitHub (si toca: activada y ≥ 24 h) espera a que el
         // inicio esté en pantalla
@@ -444,15 +448,27 @@ private fun Root(activity: MainActivity) {
     }
 
     // Orientación: el GamePad y el mando + Nunchuk de Dolphin van fijos en
-    // apaisado (el sensor solo elige entre los dos lados); todo lo demás gira
-    // únicamente si el giro automático del sistema está activo (con el
-    // bloqueo de giro puesto, la app no gira). Al salir del mando, como estaba.
+    // apaisado; todo lo demás gira únicamente si el giro automático del
+    // sistema está activo (con el bloqueo de giro puesto, la app no gira). En
+    // el GamePad el sensor elige entre los dos apaisados; el mando + Nunchuk
+    // va hacia el lado elegido (Ajustes, o el que se confirme la primera vez:
+    // hasta entonces, el sensor). Al salir del mando, como estaba.
     val padIntent by LinkState.intent.collectAsState()
+    val sideSaved by NunchukSide.saved.collectAsState()
+    val sideProvisional by NunchukSide.provisional.collectAsState()
     val wantLandscape = activity.currentScreen == Screen.Controller && Route.forcesLandscape(link, padIntent)
-    LaunchedEffect(wantLandscape) {
-        activity.requestedOrientation =
-            if (wantLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    val landscapeSide =
+        if (wantLandscape && Route.wiiLandscapeNunchuk(link)) LandscapeSide.effective(sideSaved, sideProvisional)
+        else LandscapeSide.Sensor
+    LaunchedEffect(wantLandscape, landscapeSide) {
+        activity.requestedOrientation = when {
+            !wantLandscape -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            else -> when (landscapeSide.orientation) {
+                LandscapeOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                LandscapeOrientation.ReverseLandscape -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                LandscapeOrientation.SensorLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+        }
     }
 
     // Transición suave entre pantallas: fundido y un deslizamiento sutil

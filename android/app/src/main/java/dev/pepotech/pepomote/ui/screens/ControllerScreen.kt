@@ -192,7 +192,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
             }
 
             Gap(10.dp * grow, flexible)
-            PadCross(sizeDp = 168.dp * grow, glyphSp = (14 * grow).roundToInt())
+            PadCross(sizeDp = 168.dp * grow)
 
             Gap(16.dp * grow, flexible)
             Row(

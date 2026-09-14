@@ -212,7 +212,6 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         val faceBtn = m.faceBtn.dp
         val touchW = m.touchW.dp
         val touchH = m.touchH.dp
-        val crossGlyph = m.crossGlyph.roundToInt()
 
         // Tamaño que se pide al PC: como máximo la resolución nativa (854×480)
         // o, si la zona táctil es más estrecha, su ancho real en píxeles
@@ -306,7 +305,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                 horizontalArrangement = Arrangement.spacedBy(gap)
                             ) {
                                 stick()
-                                PadCross(sizeDp = padSize, glyphSp = crossGlyph)
+                                PadCross(sizeDp = padSize)
                             }
                         } else {
                             shoulders()
@@ -321,7 +320,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             // Tablet: stick y cruceta juntos, abajo (donde llega el
                             // pulgar), en vez de repartidos por toda la altura
                             if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
-                            PadCross(sizeDp = padSize, glyphSp = crossGlyph)
+                            PadCross(sizeDp = padSize)
                         }
                     }
 

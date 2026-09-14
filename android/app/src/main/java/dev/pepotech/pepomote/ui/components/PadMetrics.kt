@@ -45,9 +45,6 @@ data class PadMetrics(
 ) {
     /** Tamaño de texto de los botones (sp): crece con la tablet. */
     fun text(base: Float): Float = base * k
-
-    /** Flechas de la cruceta: crecen con el pad (en un móvil con pantalla, 14). */
-    val crossGlyph: Float get() = maxOf(14f * k, padSize * 0.12f)
 }
 
 fun padMetrics(w: Float, h: Float, noScreen: Boolean = false, pro: Boolean = false): PadMetrics {

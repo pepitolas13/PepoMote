@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.displayCutoutPadding
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,7 +33,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkState
+import dev.pepotech.pepomote.service.NunchukSide
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -46,6 +50,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var fullScreen by remember { mutableStateOf(AppPrefs.gamePadFullScreen(context)) }
     var fullScreenKb by remember { mutableStateOf(AppPrefs.gamePadFullScreenKeyboard(context)) }
     var ownNunchuk by remember { mutableStateOf(AppPrefs.ownNunchuk(context)) }
+    val nunchukSide by NunchukSide.saved.collectAsState()
     var notices by remember { mutableStateOf(AppPrefs.receiverNotices(context)) }
     var updateCheck by remember { mutableStateOf(AppPrefs.updateCheckEnabled(context)) }
     val versionName = remember {
@@ -192,6 +197,30 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )
+            }
+        }
+
+        // Lado del mando + Nunchuk apaisado: se pregunta la primera vez; aquí se cambia
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                Text(stringResource(R.string.side_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.side_sub), style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for ((label, side) in listOf(
+                        R.string.side_left to LandscapeSide.Left,
+                        R.string.side_right to LandscapeSide.Right,
+                        R.string.side_sensor to LandscapeSide.Sensor
+                    )) {
+                        ModeChip(stringResource(label), selected = nunchukSide == side) { NunchukSide.save(context, side) }
+                    }
+                }
             }
         }
 

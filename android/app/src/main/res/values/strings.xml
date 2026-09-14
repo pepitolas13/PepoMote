@@ -92,6 +92,15 @@
     <string name="fullscreen_kb_title">Botón de teclado</string>
     <string name="fullscreen_kb_sub">Un botón pequeño arriba a la derecha para escribir en el teclado en pantalla de Cemu</string>
     <string name="fullscreen_old_receiver">El receptor no conoce la pantalla completa: actualízalo</string>
+    <string name="side_title">Lado del mando + Nunchuk</string>
+    <string name="side_sub">Hacia dónde se gira el mando apaisado de Dolphin con Nunchuk (Izquierda = el borde de la cámara queda a la izquierda). Se pregunta la primera vez y se queda fijo: el sensor de algunos móviles le da la vuelta solo</string>
+    <string name="side_left">Izquierda</string>
+    <string name="side_right">Derecha</string>
+    <string name="side_sensor">Según el sensor</string>
+    <string name="side_ask">¿El mando está bien así?</string>
+    <string name="side_ask_sub">Se quedará siempre hacia este lado (se cambia en Ajustes)</string>
+    <string name="side_flip">Darle la vuelta</string>
+    <string name="side_keep">Así lo quiero</string>
     <string name="link_other_pc">Vincular con otro PC</string>
     <string name="link_other_pc_sub">Escanear un QR nuevo</string>
     <string name="sens_note">La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.</string>
