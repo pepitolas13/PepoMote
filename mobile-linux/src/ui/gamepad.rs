@@ -25,6 +25,7 @@ use crate::frame::Rotation;
 use crate::link::Status;
 use crate::screen;
 use crate::theme;
+use crate::ui::dpad;
 use crate::ui::nunchuk::{knob_pos, stick_value};
 use crate::ui::touch::{self, fit_rect, Canvas, Input, Phase, Seg, Shape, Transform};
 use egui::{Align2, Color32, FontId, ImageData, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2};
@@ -87,6 +88,8 @@ enum Target {
     Button(u32),
     Stick(Side),
     Touch,
+    /// La cruceta de una pieza (un dedo, que lleva sus bits mientras está apoyado).
+    Dpad,
     /// Los chips y segmentos disparan al levantar el dedo encima.
     Chip(Chip),
 }
@@ -129,6 +132,9 @@ pub struct GamePadUi {
     transform: Transform,
     screen: Rect,
     sticks: [StickUi; 2],
+    /// Centro y media anchura de la cruceta del último frame, y sus bits pulsados.
+    dpad: (Pos2, f32),
+    dpad_held: u32,
     touch_rect: Rect,
     /// Zona cuyo tamaño se pide al receptor: la táctil de siempre o, en
     /// pantalla completa, toda el área (la imagen se ajusta dentro).
@@ -198,6 +204,8 @@ impl GamePadUi {
         Self {
             hits: Vec::new(),
             touches: HashMap::new(),
+            dpad: (Pos2::ZERO, 1.0),
+            dpad_held: 0,
             input: Input::default(),
             transform: Transform::Straight,
             screen: Rect::NOTHING,
@@ -574,27 +582,13 @@ impl GamePadUi {
         }
     }
 
-    /// Cruceta centrada en `dc` con brazos de lado `arm` (las flechas crecen con el brazo).
+    /// Cruceta de una pieza centrada en `dc` con brazos de lado `arm` (media
+    /// anchura de la cruz = 1,5 brazos); el cuadrado entero es su hit-test.
     fn dpad(&mut self, cv: &Canvas, dc: Pos2, arm: f32, s: f32, pressed: u32) {
-        let arms = [
-            (Vec2::new(0.0, -arm), "▲", pmp::BTN_DPAD_UP),
-            (Vec2::new(0.0, arm), "▼", pmp::BTN_DPAD_DOWN),
-            (Vec2::new(-arm, 0.0), "◀", pmp::BTN_DPAD_LEFT),
-            (Vec2::new(arm, 0.0), "▶", pmp::BTN_DPAD_RIGHT),
-        ];
-        for (off, label, bit) in arms {
-            let rc = Rect::from_center_size(dc + off, Vec2::splat(arm));
-            let down = pressed & bit != 0;
-            cv.rounded_rect(
-                rc.shrink(2.0),
-                8.0 * s,
-                if down { theme::glow() } else { theme::card() },
-                Stroke::new(1.0_f32, theme::card_border()),
-            );
-            cv.text(rc.center(), Align2::CENTER_CENTER, label, FontId::proportional(arm * 0.4), theme::text_dim());
-            self.hits.push((Shape::Rect(rc), Target::Button(bit)));
-        }
-        cv.rounded_rect(Rect::from_center_size(dc, Vec2::splat(arm)).shrink(2.0), 5.0 * s, theme::card(), Stroke::NONE);
+        let half = arm * 1.5;
+        let shape = dpad::draw(cv, dc, half, s, pressed);
+        self.dpad = (dc, half);
+        self.hits.push((shape, Target::Dpad));
     }
 
     /// A/B/X/Y en rombo alrededor de `ac`: radio `br`, a `off` del centro (A a
@@ -789,6 +783,13 @@ impl GamePadUi {
                 }
                 self.touch_at(pos, buttons);
             }
+            Target::Dpad => {
+                // un solo dedo lleva la cruceta; el segundo se ignora
+                if self.touches.values().any(|t| *t == Target::Dpad) {
+                    return;
+                }
+                self.dpad_at(pos, buttons);
+            }
             Target::Chip(_) => {}
         }
         self.touches.insert(key, target);
@@ -798,6 +799,8 @@ impl GamePadUi {
         match self.touches.get(&key).copied() {
             Some(Target::Stick(side)) => self.drag(side, pos, buttons),
             Some(Target::Touch) => self.touch_at(pos, buttons),
+            // deslizar por la cruceta cambia de dirección sin levantar el dedo
+            Some(Target::Dpad) => self.dpad_at(pos, buttons),
             _ => {}
         }
     }
@@ -805,6 +808,11 @@ impl GamePadUi {
     fn end(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
         match self.touches.remove(&key) {
             Some(Target::Button(bit)) => buttons.set(bit, false),
+            Some(Target::Dpad) => {
+                let mut held = self.dpad_held;
+                dpad::apply(buttons, &mut held, 0);
+                self.dpad_held = 0;
+            }
             Some(Target::Stick(side)) => {
                 // al soltar, al centro
                 self.sticks[side as usize].knob = Vec2::ZERO;
@@ -840,6 +848,14 @@ impl GamePadUi {
     fn touch_at(&self, pos: Pos2, buttons: &Buttons) {
         let (x, y) = touch_fraction(self.touch_rect, pos);
         buttons.set_touch(x, y, true);
+    }
+
+    /// Dedo en `pos` (virtual) sobre la cruceta → sus bits (suelta y pulsa lo que cambie).
+    fn dpad_at(&mut self, pos: Pos2, buttons: &Buttons) {
+        let (dc, half) = self.dpad;
+        let mut held = self.dpad_held;
+        dpad::apply(buttons, &mut held, dpad::bits(pos - dc, half));
+        self.dpad_held = held;
     }
 }
 

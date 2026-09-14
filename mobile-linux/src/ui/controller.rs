@@ -8,6 +8,7 @@
 use crate::buttons::Buttons;
 use crate::link::Status;
 use crate::theme;
+use crate::ui::dpad;
 use crate::ui::touch::{self, Canvas, Input, Phase, Shape, Transform};
 use egui::{Align2, FontId, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
 use std::collections::HashMap;
@@ -28,6 +29,8 @@ pub enum Action {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Target {
     Button(u32),
+    /// La cruceta de una pieza: el dedo lleva sus bits mientras está apoyado.
+    Dpad,
     Recenter,
     Scroll,
 }
@@ -37,6 +40,8 @@ struct Touch {
     start: Instant,
     last: Pos2,
     recentered: bool,
+    /// Bits de cruceta que lleva este dedo.
+    held: u32,
 }
 
 const RECENTER_HOLD: Duration = Duration::from_millis(150);
@@ -46,6 +51,8 @@ pub struct ControllerUi {
     touches: HashMap<u64, Touch>,
     input: Input,
     show_media: bool,
+    /// Centro y media anchura de la cruceta del último frame.
+    dpad: (Pos2, f32),
 }
 
 impl Default for ControllerUi {
@@ -123,6 +130,7 @@ impl ControllerUi {
             touches: HashMap::new(),
             input: Input::default(),
             show_media: false,
+            dpad: (Pos2::ZERO, 1.0),
         }
     }
 
@@ -242,33 +250,12 @@ impl ControllerUi {
         let cx = rect.center().x; // tiras simétricas: scroll a la derecha, precisión a la izquierda
         let mut y = rect.top() + 6.0 * s;
 
-        // Cruceta
+        // Cruceta de una pieza (como la del Mando de Wii): el cuadrado entero es su hit-test
         let arm = 56.0 * s;
         let pad_c = Pos2::new(cx, y + arm * 1.5);
-        let arms = [
-            (Vec2::new(0.0, -arm), "▲", pmp::BTN_DPAD_UP),
-            (Vec2::new(0.0, arm), "▼", pmp::BTN_DPAD_DOWN),
-            (Vec2::new(-arm, 0.0), "◀", pmp::BTN_DPAD_LEFT),
-            (Vec2::new(arm, 0.0), "▶", pmp::BTN_DPAD_RIGHT),
-        ];
-        for (off, label, bit) in arms {
-            let r = Rect::from_center_size(pad_c + off, Vec2::splat(arm));
-            let down = pressed & bit != 0;
-            painter.rect(
-                r.shrink(2.0),
-                Rounding::same(10.0),
-                if down { theme::glow() } else { theme::card() },
-                Stroke::new(1.0_f32, theme::card_border()),
-            );
-            painter.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(14.0 * s), theme::text_dim());
-            self.hits.push((Shape::Rect(r), Target::Button(bit)));
-        }
-        painter.rect(
-            Rect::from_center_size(pad_c, Vec2::splat(arm)).shrink(2.0),
-            Rounding::same(6.0),
-            theme::card(),
-            Stroke::NONE,
-        );
+        let shape = dpad::draw(&cv, pad_c, arm * 1.5, s, pressed);
+        self.dpad = (pad_c, arm * 1.5);
+        self.hits.push((shape, Target::Dpad));
         y += arm * 3.0 + 14.0 * s;
 
         // − ◎ +
@@ -413,8 +400,18 @@ impl ControllerUi {
 
     fn begin(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
         let Some(target) = touch::hit_test(&self.hits, pos) else { return };
-        if let Target::Button(bit) = target {
-            buttons.set(bit, true);
+        let mut held = 0;
+        match target {
+            Target::Button(bit) => buttons.set(bit, true),
+            Target::Dpad => {
+                // un solo dedo lleva la cruceta; el segundo se ignora
+                if self.touches.values().any(|t| t.target == Target::Dpad) {
+                    return;
+                }
+                let (dc, half) = self.dpad;
+                dpad::apply(buttons, &mut held, dpad::bits(pos - dc, half));
+            }
+            _ => {}
         }
         self.touches.insert(
             key,
@@ -423,24 +420,37 @@ impl ControllerUi {
                 start: Instant::now(),
                 last: pos,
                 recentered: false,
+                held,
             },
         );
     }
 
     fn moved(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
+        let (dc, half) = self.dpad;
         if let Some(t) = self.touches.get_mut(&key) {
-            if t.target == Target::Scroll {
-                // dedo hacia arriba (dy negativo) = scroll up = positivo
-                buttons.add_scroll((t.last.y - pos.y).round() as i32);
+            match t.target {
+                Target::Scroll => {
+                    // dedo hacia arriba (dy negativo) = scroll up = positivo
+                    buttons.add_scroll((t.last.y - pos.y).round() as i32);
+                }
+                // deslizar por la cruceta cambia de dirección sin levantar el dedo
+                Target::Dpad => {
+                    dpad::apply(buttons, &mut t.held, dpad::bits(pos - dc, half));
+                }
+                _ => {}
             }
             t.last = pos;
         }
     }
 
     fn end(&mut self, key: u64, buttons: &Buttons) {
-        if let Some(t) = self.touches.remove(&key) {
-            if let Target::Button(bit) = t.target {
-                buttons.set(bit, false);
+        if let Some(mut t) = self.touches.remove(&key) {
+            match t.target {
+                Target::Button(bit) => buttons.set(bit, false),
+                Target::Dpad => {
+                    dpad::apply(buttons, &mut t.held, 0);
+                }
+                _ => {}
             }
         }
     }
