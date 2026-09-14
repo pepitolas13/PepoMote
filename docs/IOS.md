@@ -169,6 +169,11 @@ hasta iOS 16.6.1 / 17.0: no sirve en dispositivos actuales.
   de Cemu, sobre negro y con el táctil, para jugar con un mando de verdad en
   el PC; ✕ arriba a la izquierda para salir y, con la subopción, el botón de
   **Teclado** arriba a la derecha. Ver `docs/SETUP-CEMU.md`.
+- «**Lado del mando + Nunchuk**» (1.6): la primera vez que sale el mando +
+  Nunchuk apaisado se pregunta si está bien girado («Darle la vuelta» / «Así
+  lo quiero») y el lado se queda fijo; en Ajustes se cambia.
+- La cruceta es de una pieza, como la del Mando de Wii (1.6): deslizar el
+  pulgar cambia de dirección sin levantarlo y las esquinas son diagonales.
 
 ## Si algo no va
 

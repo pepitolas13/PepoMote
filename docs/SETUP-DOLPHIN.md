@@ -49,6 +49,14 @@ lado, como con un GamePad, y agitar el móvil es agitar el mando (y el
 Nunchuk, que comparte sensores). Al apagar el Nunchuk (chip o Ajustes) el mando
 vuelve a seguir al móvil: vertical, o NES de lado.
 
+La primera vez que sale el mando apaisado, la app pregunta encima «**¿El
+mando está bien así?**»: si tu móvil lo ha girado del revés, «Darle la
+vuelta»; cuando esté como quieres, «Así lo quiero», y se queda fijo hacia ese
+lado para siempre (el sensor de giro de algunos móviles le daba la vuelta al
+mando con muy poco, o sin motivo). En Ajustes de la app, «**Lado del mando +
+Nunchuk**» lo cambia: Izquierda (el borde de la cámara queda a la izquierda),
+Derecha o Según el sensor, como antes.
+
 Para los juegos 2D con el mando de lado (New Super Mario Bros. Wii y
 parecidos) **apaga el Nunchuk** con el chip o en Ajustes: esos juegos cambian
 de esquema de control si detectan un Nunchuk, y así el apaisado vuelve a ser
@@ -72,6 +80,10 @@ flechas del PC y el cursor sigue el borde largo del móvil, como con el
 GamePad. Para pasar al mando de lado gira el móvil con el giro automático del
 sistema activo: con el bloqueo de giro puesto la app no gira (solo el GamePad
 y el mando + Nunchuk se ponen solos en apaisado).
+
+La cruceta (en todos los mandos de la app) es de una pieza, como la del Mando
+de Wii: se puede deslizar el pulgar de una dirección a otra sin levantarlo,
+las esquinas entre dos brazos son diagonales y el centro muerto es pequeño.
 
 ## Nunchuk: dos móviles, uno en cada mano
 

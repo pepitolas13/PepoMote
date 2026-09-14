@@ -201,6 +201,17 @@ Nunchuk se ponen solos en apaisado, con o sin bloqueo. En Dolphin, con el
 Nunchuk encendido, sale el mando + Nunchuk en vez del NES: apaga el chip
 «Nunchuk» para los juegos de lado (y reabre Dolphin).
 
+## El mando + Nunchuk sale del revés, o se da la vuelta solo
+
+El mando + Nunchuk de Dolphin va fijo en apaisado y, hasta ahora, el sensor de
+giro elegía hacia qué lado: en algunos móviles le daba la vuelta (180°) con
+muy poco movimiento, o sin motivo. Desde 1.6, la primera vez que sale el mando
+la app pregunta «¿El mando está bien así?»: «Darle la vuelta» lo gira 180° y
+«Así lo quiero» guarda ese lado para siempre. Para cambiarlo después: Ajustes
+→ «Lado del mando + Nunchuk» (Izquierda = el borde de la cámara a la
+izquierda; Derecha; o Según el sensor, como antes). El GamePad de Wii U sigue
+eligiendo el lado con el sensor.
+
 ## A pantalla completa el mando de verdad no responde, o el táctil no llega
 
 «Pantalla del GamePad a pantalla completa» (desde 1.5.53) está pensada para
