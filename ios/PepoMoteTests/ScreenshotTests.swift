@@ -40,6 +40,7 @@ final class ScreenshotTests: XCTestCase {
     override func tearDown() {
         LinkState.shared.publish(.disconnected)
         ScreenLink.shared.release()
+        AppModel.shared.nunchukSide = .unset
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKey)
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKeyboardKey)
@@ -125,7 +126,11 @@ final class ScreenshotTests: XCTestCase {
             try shoot(NunchukScreen(onDisconnect: {}), "nunchuk-\(dev)", size)
             // Dolphin con el Nunchuk en el mismo móvil (confirmado por el receptor)
             LinkState.shared.publish(.connected(ConnectedLink(pcName: "SALON", mode: LinkState.modeDolphin, rttMs: 12, sensorHz: 100, slot: 0, role: LinkState.roleWiimote, player: 1, supportsCemu: true, pad: LinkState.padGamepad, ownNunchuk: true)))
+            AppModel.shared.nunchukSide = .left
             try shoot(WiimoteNunchukScreen(showChips: true, onDisconnect: {}), "wii-nunchuk-\(dev)", size)
+            // La primera vez: la pregunta del lado encima del mando
+            AppModel.shared.nunchukSide = .unset
+            try shoot(WiimoteNunchukScreen(showChips: true, onDisconnect: {}), "wii-nunchuk-ask-\(dev)", size)
         }
     }
 }

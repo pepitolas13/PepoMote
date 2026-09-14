@@ -29,6 +29,22 @@ struct SettingsScreen: View {
                             // Con el enlace vivo se aplica ya (el receptor lo confirma con el eco)
                             LinkState.shared.sendNunchuk?($0)
                         }
+                    // Lado del mando + Nunchuk apaisado: se pregunta la primera vez; aquí se cambia
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tr("side_title")).pepoTitle()
+                        Text(tr("side_sub")).pepoBody()
+                        HStack(spacing: 8) {
+                            ForEach([LandscapeSide.left, .right, .sensor], id: \.self) { side in
+                                ModeChip(label: tr(sideLabel(side)), selected: model.nunchukSide == side) {
+                                    model.saveNunchukSide(side)
+                                }
+                            }
+                        }
+                        .padding(.top, 10)
+                    }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .pepoCard()
                     // GamePad de Wii U sin pantalla táctil: botones más grandes
                     SettingRow(title: tr("noscreen_title"), subtitle: tr("noscreen_sub"), on: $noScreen)
                         .onChange(of: noScreen) {
@@ -82,6 +98,15 @@ struct SettingsScreen: View {
         .frame(maxWidth: 620)
         .frame(maxWidth: .infinity)
         .background(Pepo.background.ignoresSafeArea())
+    }
+}
+
+/// Clave del texto de cada lado del selector.
+private func sideLabel(_ s: LandscapeSide) -> String {
+    switch s {
+    case .left: return "side_left"
+    case .right: return "side_right"
+    default: return "side_sensor"
     }
 }
 

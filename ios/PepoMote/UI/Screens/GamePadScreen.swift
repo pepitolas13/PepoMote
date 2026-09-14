@@ -97,9 +97,6 @@ struct PadMetrics {
     /// Tamaño de texto de los botones: crece con el iPad.
     func text(_ base: CGFloat) -> CGFloat { base * k }
 
-    /// Flechas de la cruceta: crecen con el pad (en un iPhone con pantalla, 14).
-    var crossGlyph: CGFloat { Swift.max(14 * k, padSize * 0.12) }
-
     /// Tamaño máximo que se pide al receptor (píxeles, tope nativo 854×480).
     func screenRequest(scale: CGFloat) -> (Int, Int) {
         let px = Swift.min(ScreenClient.nativeWidth, Int((touchW * scale).rounded()))
@@ -299,7 +296,7 @@ private struct LeftColumn: View {
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: m.gap) {
                     stick
-                    PadCross(size: m.padSize, glyph: m.crossGlyph)
+                    PadCross(size: m.padSize)
                 }
             } else {
                 shoulders
@@ -311,7 +308,7 @@ private struct LeftColumn: View {
                 // iPad: stick y cruceta juntos, abajo (donde llega el pulgar), en
                 // vez de repartidos por toda la altura
                 if m.k > 1 { Spacer().frame(height: m.gap * 2) } else { Spacer(minLength: 0) }
-                PadCross(size: m.padSize, glyph: m.crossGlyph)
+                PadCross(size: m.padSize)
             }
         }
         .frame(width: m.sideW, height: m.bodyH)

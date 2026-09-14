@@ -53,7 +53,8 @@ final class StringsParityTests: XCTestCase {
                     "ios_note", "scan_prompt", "cancel", "about", "update_title", "update_sub", "update_available",
                     "update_download", "update_dismiss", "noscreen_title", "noscreen_sub",
                     "nunchuk_own_title", "nunchuk_own_sub", "nunchuk_chip", "mode_dolphin_nunchuk", "notices_title", "notices_sub",
-                    "fullscreen_title", "fullscreen_sub", "fullscreen_kb_title", "fullscreen_kb_sub", "fullscreen_old_receiver"] {
+                    "fullscreen_title", "fullscreen_sub", "fullscreen_kb_title", "fullscreen_kb_sub", "fullscreen_old_receiver",
+                    "side_title", "side_sub", "side_left", "side_right", "side_sensor", "side_ask", "side_ask_sub", "side_flip", "side_keep"] {
             XCTAssertNotNil(es[key], "falta \(key)")
         }
     }

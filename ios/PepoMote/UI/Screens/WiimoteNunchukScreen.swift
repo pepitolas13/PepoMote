@@ -69,6 +69,7 @@ struct WiimoteNunchukScreen: View {
     let showChips: Bool
     let onDisconnect: () -> Void
     @ObservedObject var link = LinkState.shared
+    @EnvironmentObject var model: AppModel
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
 
     var body: some View {
@@ -138,7 +139,7 @@ struct WiimoteNunchukScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 
                 HStack(spacing: m.gap) {
-                    PadCross(size: m.cross, glyph: m.text(14))
+                    PadCross(size: m.cross)
                     RoundButton(
                         label: "A", size: m.a, bit: Btn.a,
                         background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent,
@@ -148,6 +149,20 @@ struct WiimoteNunchukScreen: View {
                 .padding(.trailing, m.margin)
                 .padding(.bottom, m.margin)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+
+                // Primera vez: el lado del apaisado lo ha elegido iOS; se pregunta
+                // si es el bueno y se guarda para siempre (Ajustes lo cambia)
+                if model.nunchukSide == .unset {
+                    let shown = LandscapeSide.effective(saved: LandscapeSide.current(OrientationLock.current), provisional: model.nunchukSideProvisional)
+                    VStack {
+                        SideAskCard(
+                            onFlip: { model.nunchukSideProvisional = shown.flipped },
+                            onKeep: { model.saveNunchukSide(shown) }
+                        )
+                        .padding(.top, m.headerH + 4)
+                        Spacer()
+                    }
+                }
 
                 VStack {
                     NoticeBanner().padding(.top, 84)
@@ -170,7 +185,9 @@ struct WiimoteNunchukScreen: View {
             applyEngine()
         }
         .onDisappear {
-            // Vertical o Salir: el Wiimote de siempre, y nada queda pulsado ni inclinado
+            // Vertical o Salir: el Wiimote de siempre, y nada queda pulsado ni
+            // inclinado; la prueba del lado sin confirmar se olvida
+            model.nunchukSideProvisional = nil
             UIApplication.shared.isIdleTimerDisabled = false
             if let engine = link.motion {
                 engine.kind = .wiimote
@@ -184,6 +201,29 @@ struct WiimoteNunchukScreen: View {
         guard let engine = link.motion else { return }
         engine.rotation = rotation
         engine.kind = .wiiNunchuk
+    }
+}
+
+/// Pregunta de la primera vez: ¿el mando está bien así? Darle la vuelta / Así lo quiero.
+private struct SideAskCard: View {
+    let onFlip: () -> Void
+    let onKeep: () -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(tr("side_ask")).pepoTitle().multilineTextAlignment(.center)
+            Text(tr("side_ask_sub")).pepoBody().multilineTextAlignment(.center)
+            HStack(spacing: 10) {
+                ModeChip(label: tr("side_flip"), selected: false, action: onFlip)
+                ModeChip(label: tr("side_keep"), selected: true, action: onKeep)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 340)
+        .background(Pepo.card)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Pepo.blue, lineWidth: 1.5))
     }
 }
 

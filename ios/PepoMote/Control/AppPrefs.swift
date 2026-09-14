@@ -40,6 +40,14 @@ enum AppPrefs {
         set { d.set(newValue, forKey: "ownNunchuk") }
     }
 
+    /// Lado del mando + Nunchuk apaisado (`LandscapeSide`): "" hasta que se
+    /// elige la primera vez; "left", "right" o "sensor" (Ajustes).
+    static let nunchukSideKey = "nunchukSide"
+    static var nunchukSide: String {
+        get { d.string(forKey: nunchukSideKey) ?? "" }
+        set { d.set(newValue, forKey: nunchukSideKey) }
+    }
+
     /// Avisos del receptor en pantalla («Dolphin configurado…»): unos
     /// segundos sobre el mando al cambiar de modo. Apagados, no se enseñan.
     static var receiverNotices: Bool {

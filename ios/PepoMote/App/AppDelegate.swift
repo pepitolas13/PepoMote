@@ -20,8 +20,19 @@ enum OrientationLock {
             scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
         } else {
             // iOS 15: se fuerza la orientación del dispositivo y se pide el giro
-            if mask == .landscape, !scene.interfaceOrientation.isLandscape {
-                UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+            // (un lado concreto del mando + Nunchuk, o cualquier apaisado)
+            let wanted: UIInterfaceOrientation?
+            if mask == .landscapeLeft {
+                wanted = .landscapeLeft
+            } else if mask == .landscapeRight {
+                wanted = .landscapeRight
+            } else if mask == .landscape, !scene.interfaceOrientation.isLandscape {
+                wanted = .landscapeRight
+            } else {
+                wanted = nil
+            }
+            if let wanted = wanted, scene.interfaceOrientation != wanted {
+                UIDevice.current.setValue(wanted.rawValue, forKey: "orientation")
             }
             UIViewController.attemptRotationToDeviceOrientation()
         }

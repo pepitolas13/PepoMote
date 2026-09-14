@@ -32,6 +32,10 @@ final class AppModel: ObservableObject {
     @Published var scanning = false
     /// Versión nueva publicada que anunciar (nil = ninguna).
     @Published var updateAvailable: AppVersion?
+    /// Lado elegido para el mando + Nunchuk (Ajustes; la primera vez se pregunta encima del mando).
+    @Published var nunchukSide = LandscapeSide.fromPref(AppPrefs.nunchukSide)
+    /// «Darle la vuelta» sin confirmar aún (mientras se pregunta); nil fuera de la prueba.
+    @Published var nunchukSideProvisional: LandscapeSide?
 
     private let link = LinkState.shared
     private let service = LinkService.shared
@@ -198,6 +202,14 @@ final class AppModel: ObservableObject {
     func disconnectNunchuk() {
         service.stop()
         screen = .home
+    }
+
+    /// «Así lo quiero» o Ajustes: el lado del mando + Nunchuk se guarda para
+    /// siempre y se acaba la prueba.
+    func saveNunchukSide(_ side: LandscapeSide) {
+        AppPrefs.nunchukSide = side.rawValue
+        nunchukSide = side
+        nunchukSideProvisional = nil
     }
 
     /// Reconectar desde una cabecera «Sin conexión».

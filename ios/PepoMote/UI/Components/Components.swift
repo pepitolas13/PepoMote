@@ -186,65 +186,6 @@ struct TriggerZone: View {
     }
 }
 
-/// Cruceta: cuatro brazos momentáneos. En modo puntero el receptor hace
-/// ↑/↓ = flechas del PC y ←/→ = atrás/adelante del navegador. Con
-/// `sideways` (mando de lado en un juego) manda los botones del mando girado
-/// con el IR a la izquierda (`Btn.sideways`).
-struct PadCross: View {
-    let size: CGFloat
-    /// Tamaño de las flechas (crece con el iPad).
-    var glyph: CGFloat = 14
-    var sideways = false
-
-    private func bit(_ b: UInt32) -> UInt32 { sideways ? Btn.sideways(b) : b }
-
-    var body: some View {
-        let arm = size / 3
-        return ZStack {
-            PadArm(label: "▲", arm: arm, glyph: glyph, bit: bit(Btn.dpadUp)).offset(y: -arm)
-            PadArm(label: "▼", arm: arm, glyph: glyph, bit: bit(Btn.dpadDown)).offset(y: arm)
-            PadArm(label: "◀", arm: arm, glyph: glyph, bit: bit(Btn.dpadLeft)).offset(x: -arm)
-            PadArm(label: "▶", arm: arm, glyph: glyph, bit: bit(Btn.dpadRight)).offset(x: arm)
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Pepo.card)
-                .frame(width: arm, height: arm)
-        }
-        .frame(width: size, height: size)
-    }
-}
-
-private struct PadArm: View {
-    let label: String
-    let arm: CGFloat
-    let glyph: CGFloat
-    let bit: UInt32
-    @State private var down = false
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(down ? Pepo.glow : Pepo.card)
-            Text(label)
-                .font(.system(size: glyph))
-                .foregroundColor(Pepo.textDim)
-        }
-        .frame(width: arm, height: arm)
-        .contentShape(Rectangle())
-        .holdGesture(
-            onDown: {
-                down = true
-                ButtonState.shared.set(bit, true)
-                Haptics.tap()
-                UiSounds.shared.blip()
-            },
-            onUp: {
-                down = false
-                ButtonState.shared.set(bit, false)
-            }
-        )
-    }
-}
-
 // MARK: - Stick analógico
 
 /// Stick analógico virtual. El pomo sigue al pulgar dentro del círculo

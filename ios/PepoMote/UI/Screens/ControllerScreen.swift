@@ -135,7 +135,7 @@ struct ControllerScreen: View {
                 }
             }
             Gap(m.gap(10), flexible: m.flexible)
-            PadCross(size: m.cross, glyph: m.text(14))
+            PadCross(size: m.cross)
             Gap(m.gap(16), flexible: m.flexible)
             HStack(spacing: m.spacing) {
                 RoundButton(label: "−", size: m.small, bit: Btn.minus, textSize: m.text(20))
