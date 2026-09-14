@@ -60,6 +60,11 @@ pub struct Inputs<'a> {
     pub screen: Option<&'a screen::Client>,
     /// Ajuste «GamePad sin pantalla táctil»: sin zona táctil, botones más grandes.
     pub no_screen: bool,
+    /// Ajuste «pantalla completa»: solo la pantalla de Cemu y el táctil (con
+    /// Wii U confirmado y como GamePad; si no, el trazado de siempre).
+    pub full_screen: bool,
+    /// En pantalla completa, botón de teclado arriba a la derecha.
+    pub keyboard_button: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -125,6 +130,9 @@ pub struct GamePadUi {
     screen: Rect,
     sticks: [StickUi; 2],
     touch_rect: Rect,
+    /// Zona cuyo tamaño se pide al receptor: la táctil de siempre o, en
+    /// pantalla completa, toda el área (la imagen se ajusta dentro).
+    zone_rect: Rect,
     active: bool,
     fired: Option<Chip>,
     /// La pantalla del GamePad de Cemu (se crea con la primera imagen y se
@@ -195,6 +203,7 @@ impl GamePadUi {
             screen: Rect::NOTHING,
             sticks: [stick(), stick()],
             touch_rect: Rect::NOTHING,
+            zone_rect: Rect::NOTHING,
             active: false,
             fired: None,
             texture: None,
@@ -205,9 +214,9 @@ impl GamePadUi {
     /// última vez; `None` antes del primer frame. Es lo que se pide al
     /// receptor como tamaño máximo de la pantalla.
     pub fn touch_size_px(&self, pixels_per_point: f32) -> Option<(f32, f32)> {
-        self.touch_rect
+        self.zone_rect
             .is_positive()
-            .then(|| (self.touch_rect.width() * pixels_per_point, self.touch_rect.height() * pixels_per_point))
+            .then(|| (self.zone_rect.width() * pixels_per_point, self.zone_rect.height() * pixels_per_point))
     }
 
     /// Sube a la textura la imagen que haya dejado el hilo de la pantalla
@@ -284,7 +293,14 @@ impl GamePadUi {
         self.hits.clear();
         {
             let cv = Canvas::new(ui.painter(), rect, self.transform);
-            self.layout(&cv, buttons, &view, inp.rotation, inp.sensor_hz);
+            // pantalla completa solo con Wii U confirmado y como GamePad con
+            // pantalla; si no, el trazado de siempre (con cabecera y «Salir»)
+            let full = inp.full_screen && view.active && !view.no_screen && view.pad == "gamepad";
+            if full {
+                self.layout_full(&cv, buttons, &view, inp.keyboard_button);
+            } else {
+                self.layout(&cv, buttons, &view, inp.rotation, inp.sensor_hz);
+            }
         }
         self.process_events(ui.ctx(), buttons);
         if !self.active {
@@ -404,6 +420,7 @@ impl GamePadUi {
         let by = sel_y + sel_h + 6.0 * s;
         // sin zona táctil pintada no hay tamaño que pedir al receptor
         self.touch_rect = Rect::NOTHING;
+        self.zone_rect = Rect::NOTHING;
 
         // Hombros: L sobre ZL en la esquina izquierda, R sobre ZR en la derecha
         let (sw, sh_) = (96.0 * s, 24.0 * s);
@@ -663,6 +680,77 @@ impl GamePadUi {
         }
         self.hits.push((Shape::Rect(tr), Target::Touch));
         self.touch_rect = tr;
+        self.zone_rect = tr;
+    }
+
+    /// «Pantalla del GamePad a pantalla completa»: solo la pantalla de Cemu,
+    /// ajustada a su proporción real sobre fondo negro, con el táctil sobre
+    /// la imagen (las bandas negras no cuentan), una ✕ pequeña arriba a la
+    /// izquierda para salir y, si el ajuste lo pide, el botón de teclado
+    /// arriba a la derecha. Sin sticks ni botones: el mando real va en el PC.
+    /// Los chips van ANTES que la zona táctil en `hits` (primer acierto).
+    fn layout_full(&mut self, cv: &Canvas, buttons: &Buttons, v: &View, keyboard: bool) {
+        let r = cv.rect();
+        let (vw, vh) = (r.width(), r.height());
+        let s = (vh / 370.0).min(vw / 700.0).clamp(0.5, 1.6);
+        cv.rounded_rect(r, 0.0, Color32::BLACK, Stroke::NONE);
+        self.touch_rect = Rect::NOTHING;
+        self.zone_rect = r;
+
+        // chips: ✕ arriba a la izquierda, Teclado arriba a la derecha
+        let chip_h = 26.0 * s;
+        let chip_font = 13.0 * s;
+        let close = Rect::from_min_size(Pos2::new(r.left() + 8.0 * s, r.top() + 8.0 * s), Vec2::new(34.0 * s, chip_h));
+        self.chip(cv, close, "✕", chip_font, false, theme::error(), Chip::Exit);
+        if keyboard && v.mode == "cemu" {
+            let kb = Rect::from_min_size(Pos2::new(r.right() - 8.0 * s - 64.0 * s, r.top() + 8.0 * s), Vec2::new(64.0 * s, chip_h));
+            self.chip(cv, kb, tr!("common.keyboard"), chip_font, false, theme::text(), Chip::Keyboard);
+        }
+
+        // la imagen, ajustada a su proporción real (16:9 mientras no hay fotograma)
+        let live = v.screen.is_some_and(|c| c.showing());
+        let fitted = match (&self.texture, live) {
+            (Some(tex), true) => {
+                let f = fit_rect(r, tex.size());
+                cv.image(f, tex.id());
+                f
+            }
+            _ => {
+                let f = fit_rect(r, [16, 9]);
+                cv.text(
+                    Pos2::new(f.center().x, f.center().y - 10.0 * s),
+                    Align2::CENTER_CENTER,
+                    tr!("gp.touch"),
+                    FontId::proportional(13.0 * s),
+                    theme::text_dim(),
+                );
+                if let Some(c) = v.screen {
+                    let font = FontId::proportional(12.0 * s);
+                    let text = cv.fit_text(&c.placeholder(), font.clone(), f.width() - 12.0 * s);
+                    cv.text(Pos2::new(f.center().x, f.center().y + 10.0 * s), Align2::CENTER_CENTER, &text, font, theme::text_dim());
+                }
+                f
+            }
+        };
+        let (tx, ty, down) = buttons.touch();
+        if down {
+            let p = Pos2::new(
+                fitted.left() + tx as f32 / 65535.0 * fitted.width(),
+                fitted.top() + ty as f32 / 65535.0 * fitted.height(),
+            );
+            cv.circle_filled(p, 6.0 * s, theme::blue());
+        }
+        self.hits.push((Shape::Rect(fitted), Target::Touch));
+        self.touch_rect = fitted;
+
+        // Aviso transitorio del receptor (o local), arriba
+        if let Some(n) = v.notice {
+            let w = (0.6 * vw).min(360.0 * s);
+            let nr = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 22.0 * s), Vec2::new(w, 28.0 * s));
+            cv.rounded_rect(nr, 14.0 * s, theme::card(), Stroke::new(1.5_f32, theme::warn()));
+            let font = FontId::proportional(12.0 * s);
+            cv.text(nr.center(), Align2::CENTER_CENTER, &cv.fit_text(n, font.clone(), w - 16.0 * s), font, theme::text());
+        }
     }
 
     fn process_events(&mut self, ctx: &egui::Context, buttons: &Buttons) {
@@ -777,6 +865,21 @@ mod tests {
         let big = row_metrics(1050.0, 459.0, 1.5, false);
         assert!((big.pad - 145.0 * 1.5).abs() < 0.01, "{}", big.pad);
         assert!(row_metrics(100.0, 100.0, 1.0, false).pad >= 40.0, "nunca por debajo del mínimo");
+    }
+
+    #[test]
+    fn pantalla_completa_ajusta_la_imagen_y_el_tactil_va_sobre_ella() {
+        // móvil apaisado 852×393 con un fotograma 854×480: bandas a los lados
+        let r = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(852.0, 393.0));
+        let f = fit_rect(r, [854, 480]);
+        assert!((f.width() - 699.2).abs() < 0.5 && (f.height() - 393.0).abs() < 0.5, "{f:?}");
+        assert!((f.left() - 76.4).abs() < 0.5 && f.top().abs() < 0.5, "centrada: {f:?}");
+        assert_eq!(touch_fraction(f, f.center()), (0x8000, 0x8000));
+        assert!(!Shape::Rect(f).hit(Pos2::new(20.0, 100.0)), "las bandas negras no son la pantalla");
+        assert!(Shape::Rect(f).hit(Pos2::new(426.0, 196.0)));
+        // sin fotograma: 16:9
+        let g = fit_rect(r, [16, 9]);
+        assert!((g.width() - 698.7).abs() < 0.5, "{g:?}");
     }
 
     #[test]

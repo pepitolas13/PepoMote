@@ -90,6 +90,9 @@ pub enum Status {
         /// El receptor confirmó el Nunchuk en el mismo móvil (`ok.nunchuk`
         /// o eco de `nunchuk`).
         own_nunchuk: bool,
+        /// El receptor confirmó «solo pantalla» (`ok.screen_only` o eco de
+        /// `screen_only`); `None` = receptor anterior a 1.5.53, que no lo conoce.
+        screen_only: Option<bool>,
     },
     Failed {
         code: String,
@@ -136,6 +139,7 @@ impl Link {
         pending_mode: Option<String>,
         role: Role,
         own_nunchuk: bool,
+        screen_only: bool,
         receiver_notices: bool,
     ) -> Link {
         let status = Arc::new(Mutex::new(Status::Connecting));
@@ -154,6 +158,7 @@ impl Link {
                 buttons,
                 role,
                 own_nunchuk,
+                screen_only,
                 receiver_notices,
             };
             std::thread::Builder::new()
@@ -207,6 +212,12 @@ impl Link {
         send_json(&self.writer, &json!({"m":"nunchuk","own":own}));
     }
 
+    /// Modo Wii U: el móvil solo como pantalla táctil (pantalla completa), sí
+    /// o no; el receptor lo confirma con el eco (uno antiguo lo ignora).
+    pub fn send_screen_only(&self, on: bool) {
+        send_json(&self.writer, &json!({"m":"screen_only","on":on}));
+    }
+
     /// Aviso local (mismo banner que un `notice` del receptor).
     pub fn notify(&self, text: &str) {
         if let Status::Connected { notice, .. } = &mut *self.status.lock().unwrap() {
@@ -242,6 +253,8 @@ struct Ctx {
     role: Role,
     /// Mando con Nunchuk en el mismo móvil (ajuste): va en el hello.
     own_nunchuk: bool,
+    /// Solo pantalla (Wii U, pantalla completa; ajuste): va en el hello.
+    screen_only: bool,
     /// Ajuste «Avisos del PC en pantalla»: apagado, los `notice` se ignoran.
     receiver_notices: bool,
 }
@@ -269,12 +282,16 @@ enum End {
 /// mando no lo manda (compatibilidad con receptores anteriores). El tipo de
 /// mando en Wii U no va aquí: se elige ya en la sesión con `pad`. Un mando
 /// con Nunchuk en el mismo móvil lo anuncia con `"nunchuk":"own"`.
-fn hello(token: &str, role: Role, own_nunchuk: bool) -> Value {
+fn hello(token: &str, role: Role, own_nunchuk: bool, screen_only: bool) -> Value {
     let mut v = json!({"m":"hello","pv":1,"token":token,"name":device_name(),"model":"Linux móvil"});
     if role == Role::Nunchuk {
         v["role"] = json!("nunchuk");
     } else if own_nunchuk {
         v["nunchuk"] = json!("own");
+    }
+    // Solo pantalla (Wii U): un receptor antiguo lo ignora (y no lo confirma)
+    if role == Role::Wiimote && screen_only {
+        v["screen_only"] = json!(true);
     }
     v
 }
@@ -320,12 +337,16 @@ fn pad_of(ok: &Value, slot: u8) -> String {
 /// `nunchuk` (eco del Nunchuk propio) y `notice`. Cualquier otro se ignora
 /// (devuelve `false`).
 fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
-    let Status::Connected { mode, mode_by_pc, pad, notice, mode_seq, pad_seq, own_nunchuk, .. } = st else {
+    let Status::Connected { mode, mode_by_pc, pad, notice, mode_seq, pad_seq, own_nunchuk, screen_only, .. } = st else {
         return false;
     };
     match msg["m"].as_str() {
         Some("nunchuk") => {
             *own_nunchuk = msg["own"].as_bool().unwrap_or(false);
+            true
+        }
+        Some("screen_only") => {
+            *screen_only = Some(msg["on"].as_bool().unwrap_or(false));
             true
         }
         Some("mode") => {
@@ -530,7 +551,7 @@ fn session(
     let mut reader = BufReader::new(read_half);
     *ctx.writer.lock().unwrap() = Some(stream);
 
-    send_json(&ctx.writer, &hello(&pairing.token, ctx.role, ctx.own_nunchuk));
+    send_json(&ctx.writer, &hello(&pairing.token, ctx.role, ctx.own_nunchuk, ctx.screen_only));
 
     // Latido TCP 1 Hz (muere con el writer)
     {
@@ -593,6 +614,7 @@ fn session(
                     mode_seq: 0,
                     pad_seq: 0,
                     own_nunchuk: msg["nunchuk"].as_str() == Some("own"),
+                    screen_only: msg["screen_only"].as_bool(),
                 };
                 // la pantalla del GamePad va por otra conexión TCP al mismo
                 // puerto PMP que este control (el `udp_port` del ok es ese
@@ -940,19 +962,19 @@ mod tests {
 
     #[test]
     fn hello_declara_el_papel_solo_en_el_nunchuk() {
-        let w = hello("tok", Role::Wiimote, false);
+        let w = hello("tok", Role::Wiimote, false, false);
         assert_eq!(w["m"], "hello");
         assert_eq!(w["pv"], 1);
         assert_eq!(w["token"], "tok");
         assert!(w.get("role").is_none(), "un mando no manda role (receptores anteriores)");
         assert!(w.get("pad").is_none(), "el tipo de mando de Wii U se elige en la sesión, no en el hello");
         assert!(w.get("nunchuk").is_none(), "sin Nunchuk propio no se manda nada (receptores anteriores)");
-        let n = hello("tok", Role::Nunchuk, true);
+        let n = hello("tok", Role::Nunchuk, true, true);
         assert_eq!(n["role"], "nunchuk");
         assert_eq!(n["token"], "tok");
         assert!(n.get("pad").is_none());
         assert!(n.get("nunchuk").is_none(), "un Nunchuk (rol) nunca lleva Nunchuk propio");
-        let own = hello("tok", Role::Wiimote, true);
+        let own = hello("tok", Role::Wiimote, true, false);
         assert_eq!(own["nunchuk"], "own");
         assert!(own.get("role").is_none());
     }
@@ -1017,7 +1039,30 @@ mod tests {
             mode_seq: 0,
             pad_seq: 0,
             own_nunchuk: false,
+            screen_only: None,
         }
+    }
+
+    #[test]
+    fn hello_anuncia_solo_pantalla_solo_en_el_mando() {
+        let v = hello("tok", Role::Wiimote, false, true);
+        assert_eq!(v["screen_only"], json!(true));
+        assert!(v.get("nunchuk").is_none());
+        let n = hello("tok", Role::Nunchuk, false, true);
+        assert!(n.get("screen_only").is_none(), "un Nunchuk nunca es solo pantalla");
+        let w = hello("tok", Role::Wiimote, false, false);
+        assert!(w.get("screen_only").is_none(), "apagado: ausente, como un móvil anterior");
+    }
+
+    #[test]
+    fn el_eco_de_solo_pantalla_actualiza_la_sesion() {
+        let mut st = connected();
+        assert!(matches!(&st, Status::Connected { screen_only: None, .. }), "sin el campo en el ok: None (receptor antiguo)");
+        let now = std::time::Instant::now();
+        assert!(apply_update(&mut st, &json!({"m":"screen_only","on":true}), now));
+        assert!(matches!(&st, Status::Connected { screen_only: Some(true), .. }));
+        assert!(apply_update(&mut st, &json!({"m":"screen_only","on":false}), now));
+        assert!(matches!(&st, Status::Connected { screen_only: Some(false), .. }));
     }
 
     #[test]

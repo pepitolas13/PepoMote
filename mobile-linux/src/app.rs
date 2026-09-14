@@ -242,6 +242,10 @@ pub struct MobileApp {
     /// Canal de la pantalla del GamePad (doble pantalla): abierto solo
     /// mientras se juega en la pantalla GamePad como GamePad.
     pad_screen: Option<screen::Client>,
+    /// Pantalla completa del GamePad: desde cuándo está activa (para avisar,
+    /// una vez, de un receptor que no la conoce).
+    full_screen_since: Option<Instant>,
+    full_screen_warned: bool,
     /// Teclado para el teclado en pantalla de Cemu (modo Wii U): tapa la
     /// pantalla de juego sin cambiarla (los INPUT siguen saliendo).
     text_dialog: Option<TextDialog>,
@@ -288,6 +292,8 @@ impl MobileApp {
             calib: None,
             inhibit: None,
             pad_screen: None,
+            full_screen_since: None,
+            full_screen_warned: false,
             text_dialog: None,
             discovered: Vec::new(),
             scan_rx: None,
@@ -392,6 +398,7 @@ impl MobileApp {
                     mode.map(|m| m.to_owned()),
                     role,
                     self.settings.own_nunchuk,
+                    self.settings.gamepad_full_screen,
                     self.settings.receiver_notices,
                 ));
                 self.link_role = role;
@@ -412,6 +419,8 @@ impl MobileApp {
 
     fn close_link(&mut self) {
         self.close_screen();
+        self.full_screen_since = None;
+        self.full_screen_warned = false;
         if let Some(l) = self.link.take() {
             l.disconnect();
         }
@@ -478,7 +487,7 @@ impl MobileApp {
     /// `pad == "gamepad"`); cerrado al salir de esa pantalla, al pasar a
     /// Pro/Mando de Wii o al perder el enlace. Idempotente: una sola
     /// instancia, que se reabre si cambia la sesión o el tamaño de la zona.
-    fn sync_screen(&mut self, ctx: &egui::Context, want: bool) {
+    fn sync_screen(&mut self, ctx: &egui::Context, want: bool, full: bool) {
         let endpoint = if want { self.link.as_ref().and_then(|l| l.screen_endpoint()) } else { None };
         let Some(endpoint) = endpoint else {
             self.close_screen();
@@ -487,7 +496,7 @@ impl MobileApp {
         // el tamaño se pide como la zona táctil real: hasta que esté
         // maquetada (siguiente frame) no se abre
         let Some(zone) = self.gamepad.touch_size_px(ctx.pixels_per_point()) else { return };
-        let size = screen::wanted_size(zone);
+        let size = if full { screen::wanted_size_full(zone) } else { screen::wanted_size(zone) };
         if self
             .pad_screen
             .as_ref()
@@ -834,8 +843,39 @@ impl MobileApp {
             .on_hover_text(tr!("gp.no_screen_help"))
             .changed()
         {
+            if self.settings.gamepad_no_screen {
+                self.settings.gamepad_full_screen = false;
+            }
             store::save_settings(&self.settings);
         }
+        // Pantalla del GamePad a pantalla completa (mando real en el PC), con
+        // la subopción del botón de teclado; excluyente con «sin pantalla»
+        if ui
+            .checkbox(&mut self.settings.gamepad_full_screen, RichText::new(tr!("gp.full_screen")).size(12.0))
+            .on_hover_text(tr!("gp.full_screen_help"))
+            .changed()
+        {
+            if self.settings.gamepad_full_screen {
+                self.settings.gamepad_no_screen = false;
+            }
+            store::save_settings(&self.settings);
+            // con el enlace vivo se aplica ya (el receptor lo confirma con el eco)
+            if let Some(l) = &self.link {
+                l.send_screen_only(self.settings.gamepad_full_screen);
+            }
+        }
+        ui.indent("gp_full_kb", |ui| {
+            if ui
+                .add_enabled(
+                    self.settings.gamepad_full_screen,
+                    egui::Checkbox::new(&mut self.settings.gamepad_full_screen_kb, RichText::new(tr!("gp.full_screen_kb")).size(12.0)),
+                )
+                .on_hover_text(tr!("gp.full_screen_kb_help"))
+                .changed()
+            {
+                store::save_settings(&self.settings);
+            }
+        });
         ui.label(RichText::new(&self.diag).size(11.0).color(theme::text_dim()));
         ui.label(
             RichText::new(tr!("home.version", env!("CARGO_PKG_VERSION")))
@@ -1109,6 +1149,8 @@ impl MobileApp {
             sensor_hz: link.sensor_hz(),
             screen: self.pad_screen.as_ref(),
             no_screen: self.settings.gamepad_no_screen,
+            full_screen: self.settings.gamepad_full_screen,
+            keyboard_button: self.settings.gamepad_full_screen_kb,
         };
         match self.gamepad.show(ui, &self.buttons, &inputs) {
             GamePadAction::Exit => {
@@ -1353,7 +1395,25 @@ impl eframe::App for MobileApp {
         // juega aquí como GamePad (un Pro Controller no tiene pantalla) y sin
         // el ajuste «GamePad sin pantalla táctil»
         let want_screen = gamepad && self.pad_is_gamepad() && !self.settings.gamepad_no_screen;
-        self.sync_screen(ctx, want_screen);
+        // Pantalla completa: solo la pantalla de Cemu y el táctil (el mando
+        // real va en el PC); el área entera se pide al receptor
+        let full = want_screen && self.settings.gamepad_full_screen;
+        self.sync_screen(ctx, want_screen, full);
+        // Receptor anterior a 1.5.53: no confirma «solo pantalla» ni en el ok
+        // ni con el eco; se avisa una vez (a los 2 s, por si el eco llega tarde)
+        if full {
+            let since = *self.full_screen_since.get_or_insert_with(Instant::now);
+            if !self.full_screen_warned && since.elapsed() > Duration::from_secs(2) {
+                self.full_screen_warned = true;
+                if let Some(l) = &self.link {
+                    if matches!(l.status(), Status::Connected { screen_only: None, .. }) {
+                        l.notify(&tr!("gp.full_screen_old_pc"));
+                    }
+                }
+            }
+        } else {
+            self.full_screen_since = None;
+        }
 
         // El teclado para Cemu tapa la pantalla de juego sin cambiarla (los
         // INPUT siguen saliendo, el giro no cambia); se va solo si se pierde
@@ -1382,9 +1442,15 @@ impl eframe::App for MobileApp {
                 });
         }
 
+        // en pantalla completa, sin margen y sobre negro
+        let full_now = full && !text_open;
         egui::CentralPanel::default()
             // el GamePad se pinta a mano y aprovecha hasta el borde
-            .frame(egui::Frame::default().fill(theme::background()).inner_margin(if on_gamepad && !text_open { 6.0 } else { 16.0 }))
+            .frame(
+                egui::Frame::default()
+                    .fill(if full_now { egui::Color32::BLACK } else { theme::background() })
+                    .inner_margin(if full_now { 0.0 } else if on_gamepad && !text_open { 6.0 } else { 16.0 }),
+            )
             .show(ctx, |ui| {
                 if text_open {
                     return self.ui_text(ui);
@@ -1422,6 +1488,7 @@ mod tests {
             mode_seq,
             pad_seq: 0,
             own_nunchuk: false,
+            screen_only: None,
         }
     }
 
