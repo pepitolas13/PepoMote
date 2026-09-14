@@ -36,6 +36,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("win.badge_nunchuk_spare", "J{0} · Nunchuk (sin uso: J{0} ya lleva Nunchuk)", "P{0} · Nunchuk (unused: P{0} already has a Nunchuk)"),
     ("win.badge_player_nunchuk", "J{0} · Mando + Nunchuk", "P{0} · Wii Remote + Nunchuk"),
     ("win.badge_gamepad", "J{0} · GamePad", "P{0} · GamePad"),
+    ("win.badge_screen_only", "J{0} · pantalla del GamePad", "P{0} · GamePad screen"),
     ("win.badge_pro", "J{0} · Pro", "P{0} · Pro"),
     ("win.badge_wiimote", "J{0} · Mando Wii", "P{0} · Wii Remote"),
     ("win.badge_player", "J{0}", "P{0}"),
@@ -278,6 +279,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("dolphin.why_documents", "Documentos\\Dolphin Emulator", "Documents\\Dolphin Emulator"),
     // --- Cemu
     ("cemu.kind_gamepad", "GamePad", "GamePad"),
+    ("cemu.kind_gamepad_screen", "GamePad (solo pantalla)", "GamePad (screen only)"),
     ("cemu.kind_pro", "Pro", "Pro"),
     ("cemu.kind_wiimote_nunchuk", "Mando Wii + Nunchuk", "Wii Remote + Nunchuk"),
     ("cemu.kind_wiimote", "Mando Wii", "Wii Remote"),
@@ -286,6 +288,11 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("cemu.configured_after_close", "Cemu configurado al cerrarse, ábrelo y a jugar:", "Cemu set up on close, open it and play:"),
     ("cemu.phone_configured", "Cemu configurado", "Cemu set up"),
     ("cemu.phone_open", "Cemu abierto: se configurará al cerrarlo", "Cemu is open: it will be set up when closed"),
+    (
+        "cemu.phone_not_gamepad",
+        "Cemu: el mando 1 no es un GamePad, la pantalla táctil no se aplicará",
+        "Cemu: Controller 1 is not a GamePad, the touch screen will not apply",
+    ),
     ("cemu.installs", " (en {0} instalaciones)", " (in {0} installs)"),
     (
         "cemu.open",

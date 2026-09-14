@@ -887,10 +887,11 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         } else if !cemu && p.own_nunchuk {
             tr!("win.badge_player_nunchuk", number)
         } else if cemu {
-            match cemu_layout.iter().find(|c| c.dsu_slot == i as u8).map(|c| c.kind) {
-                Some(crate::state::PadKind::GamePad) => tr!("win.badge_gamepad", number),
-                Some(crate::state::PadKind::Pro) => tr!("win.badge_pro", number),
-                Some(crate::state::PadKind::Wiimote) => tr!("win.badge_wiimote", number),
+            match cemu_layout.iter().find(|c| c.dsu_slot == i as u8).map(|c| (c.kind, c.screen_only)) {
+                Some((crate::state::PadKind::GamePad, true)) => tr!("win.badge_screen_only", number),
+                Some((crate::state::PadKind::GamePad, false)) => tr!("win.badge_gamepad", number),
+                Some((crate::state::PadKind::Pro, _)) => tr!("win.badge_pro", number),
+                Some((crate::state::PadKind::Wiimote, _)) => tr!("win.badge_wiimote", number),
                 None => tr!("win.badge_player", number),
             }
         } else {

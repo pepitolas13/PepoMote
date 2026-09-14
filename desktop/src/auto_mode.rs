@@ -125,15 +125,18 @@ pub fn start_watcher(shared: SharedState) {
         loop {
             std::thread::sleep(Duration::from_secs(2));
             let sample = observe(&shared);
-            let (dolphin_pending, cemu_pending) = {
+            let (dolphin_pending, cemu_pending, cemu_cleanup) = {
                 let s = shared.lock().unwrap_or_else(|e| e.into_inner());
-                (s.dolphin_pending, s.cemu_pending)
+                (s.dolphin_pending, s.cemu_pending, s.cemu_cleanup_pending)
             };
             if dolphin_pending && !sample.dolphin {
                 crate::dolphin::apply_pending(&shared);
             }
             if cemu_pending && !sample.cemu {
                 crate::cemu::apply_pending(&shared);
+            }
+            if cemu_cleanup && !sample.cemu {
+                crate::cemu::apply_cleanup_pending(&shared);
             }
             if let Some((prev, now)) = debounce.observe(sample) {
                 let (enabled, mode) = {

@@ -259,6 +259,11 @@ pub struct PlayerInfo {
     /// pad DSU. Se anuncia en el `hello` (`"nunchuk":"own"`) o con el
     /// mensaje `nunchuk`.
     pub own_nunchuk: bool,
+    /// Modo Wii U: el móvil GamePad solo hace de pantalla táctil (a pantalla
+    /// completa); el mando real del usuario sigue siendo el Controller 1 de
+    /// Cemu y el receptor fusiona el DSU del móvil en su perfil. Se anuncia en
+    /// el `hello` (`"screen_only":true`) o con el mensaje `screen_only`.
+    pub screen_only: bool,
 }
 
 /// Tipo de mando emulado en Cemu (modo Wii U) de un jugador.
@@ -289,6 +294,9 @@ pub struct CemuPlayer {
     pub dsu_slot: u8,
     /// Pad DSU del Nunchuk emparejado (solo si el jugador es Mando Wii).
     pub nunchuk_slot: Option<u8>,
+    /// El móvil solo hace de pantalla táctil junto al mando real del usuario
+    /// (solo tiene sentido en el GamePad).
+    pub screen_only: bool,
 }
 
 /// Reparto para Cemu: el Jugador 1 es el GamePad y los demás Pro Controller,
@@ -312,6 +320,8 @@ pub fn cemu_layout(players: &[Option<PlayerInfo>]) -> Vec<CemuPlayer> {
                 kind,
                 dsu_slot: *wslot,
                 nunchuk_slot: if kind == PadKind::Wiimote { *nslot } else { None },
+                screen_only: kind == PadKind::GamePad
+                    && players[*wslot as usize].as_ref().is_some_and(|p| p.screen_only),
             }
         })
         .collect()
@@ -429,6 +439,9 @@ pub struct Shared {
     /// El emulador estaba abierto: se configurará en cuanto se cierre.
     pub dolphin_pending: bool,
     pub cemu_pending: bool,
+    /// Cemu estaba abierto cuando se fue el último móvil «solo pantalla»: su
+    /// nodo DSU se quita del perfil del usuario en cuanto Cemu se cierre.
+    pub cemu_cleanup_pending: bool,
     /// Un puerto estaba ocupado y se cerró al proceso que lo tenía (aviso).
     pub port_notice: Option<String>,
     /// Resultado del último intento de configurar Cemu (para la UI).
@@ -486,6 +499,7 @@ impl Shared {
             dolphin_cfg_status: None,
             dolphin_pending: false,
             cemu_pending: false,
+            cemu_cleanup_pending: false,
             port_notice: None,
             cemu_cfg_status: None,
             cemu_screen_status: None,
@@ -578,6 +592,7 @@ mod tests {
             role,
             pad_wii: false,
             own_nunchuk: false,
+            screen_only: false,
         })
     }
 
@@ -603,14 +618,27 @@ mod tests {
     }
 
     #[test]
+    fn solo_pantalla_solo_para_el_gamepad() {
+        let mut p = [player(Role::Wiimote), player(Role::Wiimote), None, None];
+        p[0].as_mut().unwrap().screen_only = true;
+        p[1].as_mut().unwrap().screen_only = true;
+        let l = cemu_layout(&p);
+        assert!(l[0].screen_only, "J1 GamePad solo pantalla");
+        assert!(!l[1].screen_only, "J2 es Pro: sin pantalla que dar");
+        // como Mando de Wii no aplica
+        p[0].as_mut().unwrap().pad_wii = true;
+        assert!(!cemu_layout(&p)[0].screen_only);
+    }
+
+    #[test]
     fn reparto_para_cemu() {
         // J1 GamePad, J2 Pro; el Nunchuk (slot 3) acompaña a J1 solo si es Mando Wii
         let p = [player(Role::Wiimote), player(Role::Wiimote), None, player(Role::Nunchuk)];
         assert_eq!(
             cemu_layout(&p),
             vec![
-                CemuPlayer { index: 0, kind: PadKind::GamePad, dsu_slot: 0, nunchuk_slot: None },
-                CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None },
+                CemuPlayer { index: 0, kind: PadKind::GamePad, dsu_slot: 0, nunchuk_slot: None, screen_only: false },
+                CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None, screen_only: false },
             ]
         );
         assert_eq!(effective_pad(&p, 0), "gamepad");
@@ -623,8 +651,8 @@ mod tests {
         assert_eq!(
             cemu_layout(&p),
             vec![
-                CemuPlayer { index: 0, kind: PadKind::Wiimote, dsu_slot: 0, nunchuk_slot: Some(3) },
-                CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None },
+                CemuPlayer { index: 0, kind: PadKind::Wiimote, dsu_slot: 0, nunchuk_slot: Some(3), screen_only: false },
+                CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None, screen_only: false },
             ]
         );
         assert_eq!(effective_pad(&p, 0), "wiimote");

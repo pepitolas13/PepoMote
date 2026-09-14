@@ -174,6 +174,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     let pad_wii = role == Role::Wiimote && hello["pad"].as_str() == Some("wiimote");
     // Nunchuk en el mismo móvil (ausente = no: como un móvil anterior a 1.5.5)
     let own_nunchuk = role == Role::Wiimote && hello["nunchuk"].as_str() == Some("own");
+    // Modo Wii U: el móvil GamePad solo hace de pantalla táctil (ausente = no)
+    let screen_only = role == Role::Wiimote && hello["screen_only"].as_bool() == Some(true);
 
     let session_id: u32 = rand::thread_rng().gen();
     let (slot, evicted_slots) = {
@@ -212,6 +214,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             "Nunchuk"
         } else if own_nunchuk {
             "mando + Nunchuk"
+        } else if screen_only {
+            "GamePad solo pantalla"
         } else {
             "mando"
         },
@@ -232,6 +236,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             role,
             pad_wii,
             own_nunchuk,
+            screen_only,
         });
         if !s.injection_error {
             s.last_error = None;
@@ -249,7 +254,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         "player":player,
                         "modes":modes,
                         "pad":pad,
-                        "nunchuk":if own_nunchuk { "own" } else { "none" }});
+                        "nunchuk":if own_nunchuk { "own" } else { "none" },
+                        "screen_only":screen_only});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }
@@ -364,6 +370,35 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                     let _ = send(&writer, &json!({"m":"nunchuk","own":false}));
                 }
             }
+            Some("screen_only") => {
+                // Modo Wii U: el móvil GamePad solo hace de pantalla táctil; el
+                // mando real del usuario sigue siendo el Controller 1 de Cemu y
+                // el receptor fusiona el DSU del móvil en su perfil. Eco
+                // siempre; reconfigurar Cemu solo si cambia (abierto: pendiente).
+                if role == Role::Wiimote {
+                    let on = msg["on"].as_bool().unwrap_or(false);
+                    let changed = {
+                        let mut s = shared.lock_tolerant();
+                        match s.players[slot as usize].as_mut() {
+                            Some(p) if p.screen_only != on => {
+                                p.screen_only = on;
+                                true
+                            }
+                            _ => false,
+                        }
+                    };
+                    let _ = send(&writer, &json!({"m":"screen_only","on":on}));
+                    if changed {
+                        crate::log_line!(
+                            "Móvil «{device_name}»: solo pantalla {}",
+                            if on { "activado" } else { "desactivado" }
+                        );
+                        crate::cemu::maybe_auto_configure(shared);
+                    }
+                } else {
+                    let _ = send(&writer, &json!({"m":"screen_only","on":false}));
+                }
+            }
             Some("text") => {
                 // Teclado del móvil → teclado en pantalla de Cemu (no acepta
                 // toques, solo teclas): a la ventana de Cemu en modo Wii U;
@@ -401,10 +436,11 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     if !still_mine {
         return;
     }
-    let (empty, player) = {
+    let (empty, player, was_screen_only) = {
         let mut s = shared.lock_tolerant();
         // el número de jugador se calcula ANTES de vaciar la plaza (su campanita)
         let player = player_number(&s.players, slot);
+        let was_screen_only = s.players[slot as usize].as_ref().is_some_and(|p| p.screen_only);
         s.players[slot as usize] = None;
         let empty = s.player_count() == 0;
         if empty {
@@ -413,11 +449,14 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             s.sensor_hz = 0.0;
             s.rtt_hist.clear();
         }
-        (empty, player)
+        (empty, player, was_screen_only)
     };
     crate::sound::disconnect_chime(player);
     if !empty {
         auto_configure(shared, sessions);
+    } else if was_screen_only {
+        // el último móvil era «solo pantalla»: el perfil del usuario vuelve
+        crate::cemu::cleanup_after_screen_only(shared);
     }
 }
 

@@ -78,6 +78,21 @@ pub fn notify_all(text: &str) {
     broadcast(&serde_json::json!({"m":"notice","text":text}), None);
 }
 
+/// Aviso para UN móvil: el que ocupa `slot`.
+pub fn notify_slot(slot: u8, text: &str) {
+    let Some(sessions) = SESSIONS.get() else { return };
+    let writers: Vec<Arc<Mutex<TcpStream>>> = sessions
+        .lock_tolerant()
+        .values()
+        .filter(|s| s.slot == slot)
+        .filter_map(|s| s.writer.clone())
+        .collect();
+    let v = serde_json::json!({"m":"notice","text":text});
+    for w in writers {
+        send_line(&w, &v);
+    }
+}
+
 /// Sesiones de ESTE mismo móvil que siguen vivas (reconexión tras caída de
 /// Wi-Fi, app en segundo plano…). Sin desalojarlas, el móvil entraría como
 /// Jugador 2: sin puntero y sin poder cambiar a Dolphin hasta que caducaran.
