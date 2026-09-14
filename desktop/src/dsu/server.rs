@@ -5,6 +5,7 @@
 //! PadData, ~1/s). El streaming de PadData sale inline del hilo de telemetría
 //! (dsu::Dsu::push) para no añadir latencia.
 
+use crate::state::LockTolerant;
 use super::{mapping, Client, Clients, DsuProfile, MotionSample, SlotSamples};
 use crate::net::MAX_PLAYERS;
 use crate::state::SharedState;
@@ -82,7 +83,7 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
                         let _ = socket.send_to(&finish(out), from);
                     }
                     MSG_PORT_INFO => {
-                        let samples = last.lock().unwrap();
+                        let samples = last.lock_tolerant();
                         let count = payload
                             .first_chunk::<4>()
                             .map(|c| i32::from_le_bytes(*c))
@@ -99,7 +100,7 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
                         }
                     }
                     MSG_PAD_DATA => {
-                        clients.lock().unwrap().insert(
+                        clients.lock_tolerant().insert(
                             from,
                             Client {
                                 last_seen: Instant::now(),
@@ -114,9 +115,9 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
 
         if last_sweep.elapsed() > Duration::from_secs(1) {
             last_sweep = Instant::now();
-            let mut c = clients.lock().unwrap();
+            let mut c = clients.lock_tolerant();
             c.retain(|_, cl| cl.last_seen.elapsed() < CLIENT_TTL);
-            shared.lock().unwrap().dsu_clients = c.len();
+            shared.lock_tolerant().dsu_clients = c.len();
         }
     }
 }

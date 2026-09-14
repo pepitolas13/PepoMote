@@ -17,6 +17,7 @@
 //! Nunca escribe con Cemu abierto (su config se sobreescribe al salir) y
 //! deja backup `.pepomote.bak` de cualquier perfil ajeno que sustituya.
 
+use crate::state::LockTolerant;
 use crate::state::{cemu_layout, CemuPlayer, Config, Mode, PadKind, SharedState};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -658,7 +659,7 @@ pub fn configure(cfg: &Config, layout: &Layout) -> Result<String, String> {
 pub(crate) fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
     let Some(dir) = dir else { return };
     let dir_s = dir.to_string_lossy().to_string();
-    let mut s = shared.lock().unwrap();
+    let mut s = shared.lock_tolerant();
     if s.config.cemu_dir != dir_s {
         s.config.cemu_dir = dir_s;
         s.config.save();
@@ -680,11 +681,11 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
     let (ok, msg, phone) = if running {
         // Cemu sobreescribe sus perfiles al salir: se escribe en cuanto se
         // cierre (vigilante de auto_mode)
-        shared.lock().unwrap().cemu_pending = true;
+        shared.lock_tolerant().cemu_pending = true;
         (false, tr!("cemu.open").to_owned(), tr!("cemu.phone_open").to_owned())
     } else {
-        shared.lock().unwrap().cemu_pending = false;
-        let cfg = shared.lock().unwrap().config.clone();
+        shared.lock_tolerant().cemu_pending = false;
+        let cfg = shared.lock_tolerant().config.clone();
         match configure(&cfg, layout) {
             Ok(details) => {
                 let prefix = if after_close { tr!("cemu.configured_after_close") } else { tr!("cemu.configured") };
@@ -696,16 +697,16 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
             }
         }
     };
-    shared.lock().unwrap().cemu_cfg_status = Some(CfgStatus { ok, text: msg });
+    shared.lock_tolerant().cemu_cfg_status = Some(CfgStatus { ok, text: msg });
     crate::net::notify_all(&phone);
 }
 
 /// Disparo automático (conexión/desconexión/cambio de modo o de tipo de mando).
 pub fn maybe_auto_configure(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
+    let _ = crate::threads::spawn_once("emu-configure", move || {
         let (auto, mode, layout) = {
-            let s = shared.lock().unwrap();
+            let s = shared.lock_tolerant();
             (s.config.auto_cemu, s.mode, cemu_layout(&s.players))
         };
         if auto && mode == Mode::Cemu && !layout.is_empty() {
@@ -718,21 +719,21 @@ pub fn maybe_auto_configure(shared: &SharedState) {
 /// lo llama el vigilante de `auto_mode` al ver a Cemu cerrado.
 pub fn apply_pending(shared: &SharedState) {
     let (auto, mode, layout) = {
-        let s = shared.lock().unwrap();
+        let s = shared.lock_tolerant();
         (s.config.auto_cemu, s.mode, cemu_layout(&s.players))
     };
     if auto && mode == Mode::Cemu && !layout.is_empty() {
         run_configure(shared, &layout, true);
     } else {
-        shared.lock().unwrap().cemu_pending = false;
+        shared.lock_tolerant().cemu_pending = false;
     }
 }
 
 /// Botón manual de la ventana.
 pub fn configure_now(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
-        let mut layout = cemu_layout(&shared.lock().unwrap().players);
+    let _ = crate::threads::spawn_once("emu-configure", move || {
+        let mut layout = cemu_layout(&shared.lock_tolerant().players);
         if layout.is_empty() {
             layout.push(CemuPlayer { index: 0, kind: PadKind::GamePad, dsu_slot: 0, nunchuk_slot: None });
         }
@@ -743,10 +744,10 @@ pub fn configure_now(shared: &SharedState) {
 /// Botón «Detectar» de Ajustes: busca Cemu y guarda su carpeta.
 pub fn detect_now(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
+    let _ = crate::threads::spawn_once("emu-detect", move || {
         let (_, dir) = running_exe();
         let found = dir.into_iter().chain(find_exe_dirs()).next();
-        let mut s = shared.lock().unwrap();
+        let mut s = shared.lock_tolerant();
         match found {
             Some(d) => {
                 s.config.cemu_dir = d.to_string_lossy().to_string();

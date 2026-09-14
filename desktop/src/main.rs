@@ -31,9 +31,12 @@ mod sound;
 mod state;
 mod strings;
 mod theme;
+mod threads;
 #[cfg(any(windows, target_os = "macos"))]
 mod tray;
 mod update;
+
+use crate::state::LockTolerant;
 
 fn main() -> eframe::Result {
     // Lo primero de todo: que ningún pánico se pierda ni cierre el receptor
@@ -78,7 +81,7 @@ fn main() -> eframe::Result {
     log::attach_shared(shared.clone());
     // Idioma: el guardado en Ajustes; si no, el del sistema (español si no es inglés)
     {
-        let saved = shared.lock().unwrap().config.lang.as_deref().and_then(i18n::Lang::parse);
+        let saved = shared.lock_tolerant().config.lang.as_deref().and_then(i18n::Lang::parse);
         i18n::set(saved.unwrap_or_else(i18n::detect_system));
     }
     let pairing = pairing::PairingInfo::generate();
@@ -94,10 +97,10 @@ fn main() -> eframe::Result {
     {
         let (s1, s2, s3) = (shared.clone(), shared.clone(), shared.clone());
         update::spawn(
-            move || s1.lock().unwrap().config.update_check,
-            move || s2.lock().unwrap().config.update_last_check,
+            move || s1.lock_tolerant().config.update_check,
+            move || s2.lock_tolerant().config.update_last_check,
             move |now, latest| {
-                let mut s = s3.lock().unwrap();
+                let mut s = s3.lock_tolerant();
                 s.config.update_last_check = now;
                 s.config.update_latest = Some(latest);
                 s.config.save();

@@ -44,10 +44,13 @@ pub fn line(msg: &str) {
     let thread = std::thread::current();
     let name = thread.name().unwrap_or("?");
     let (secs, millis) = now();
-    eprintln!("[pepomote] {msg}");
     if let Some(p) = path() {
         append(&p, LOG_CAP, &format_line(secs, millis, name, msg));
     }
+    // stderr DESPUÉS del archivo y sin `eprintln!`: con stderr cerrado
+    // (terminal que se fue, tubería rota) `eprintln!` entra en pánico, y si
+    // eso pasa dentro del hook de pánico el proceso aborta sin dejar rastro
+    let _ = writeln!(std::io::stderr(), "[pepomote] {msg}");
 }
 
 #[macro_export]
@@ -168,6 +171,14 @@ pub fn install_panic_hook() {
             SHARED.get(),
         );
     }));
+}
+
+/// Solo tests: silencia el hook de pánico por defecto, para que los tests
+/// que provocan pánicos a propósito no llenen la salida.
+#[cfg(test)]
+pub fn quiet_panics() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| std::panic::set_hook(Box::new(|_| {})));
 }
 
 #[cfg(test)]

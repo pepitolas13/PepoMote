@@ -503,6 +503,20 @@ impl Shared {
 
 pub type SharedState = Arc<Mutex<Shared>>;
 
+/// Candado que sobrevive a un pánico de otro hilo: el hook de `log.rs` ya
+/// dejó ese pánico apuntado; aquí se recupera el estado tal cual quedó en vez
+/// de propagar el envenenamiento (que tumbaría la ventana en el siguiente
+/// frame). Vale para cualquier `Mutex`; es lo que usa todo el receptor.
+pub trait LockTolerant<T> {
+    fn lock_tolerant(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> LockTolerant<T> for Mutex<T> {
+    fn lock_tolerant(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 pub fn new_shared() -> SharedState {
     Arc::new(Mutex::new(Shared::new()))
 }
@@ -510,6 +524,22 @@ pub fn new_shared() -> SharedState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn el_candado_tolerante_se_recupera_tras_un_panico() {
+        crate::log::quiet_panics();
+        let m = Arc::new(Mutex::new(7));
+        let m2 = m.clone();
+        let r = std::panic::catch_unwind(move || {
+            let _g = m2.lock().unwrap();
+            panic!("boom con el candado cogido");
+        });
+        assert!(r.is_err());
+        assert!(m.is_poisoned(), "el pánico con el candado cogido lo envenena");
+        assert_eq!(*m.lock_tolerant(), 7);
+        *m.lock_tolerant() = 8;
+        assert_eq!(*m.lock_tolerant(), 8);
+    }
 
     #[test]
     fn config_sin_campos_de_update_carga_con_defaults() {

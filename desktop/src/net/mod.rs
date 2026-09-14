@@ -5,6 +5,7 @@ pub mod discovery;
 pub mod screen;
 pub mod telemetry;
 
+use crate::state::LockTolerant;
 use crate::dsu::Dsu;
 use crate::pairing::PairingInfo;
 use crate::screen::ScreenHub;
@@ -62,8 +63,7 @@ pub(crate) fn sessions() -> Option<Sessions> {
 pub fn broadcast(v: &serde_json::Value, except: Option<u32>) {
     let Some(sessions) = SESSIONS.get() else { return };
     let writers: Vec<Arc<Mutex<TcpStream>>> = sessions
-        .lock()
-        .unwrap()
+        .lock_tolerant()
         .values()
         .filter(|s| Some(s.id) != except)
         .filter_map(|s| s.writer.clone())
@@ -128,10 +128,12 @@ pub fn start(shared: SharedState, pairing: PairingInfo, dsu: Option<Arc<Dsu>>, h
     }
     {
         let shared = shared.clone();
-        std::thread::Builder::new()
-            .name("pmp-mdns".into())
-            .spawn(move || discovery::run(shared, pairing))
-            .expect("hilo mdns");
+        crate::threads::spawn_guarded(
+            "pmp-mdns",
+            crate::threads::OnPanic::Restart { after: std::time::Duration::from_secs(30), max: 10 },
+            move || discovery::run(shared.clone(), pairing.clone()),
+        )
+        .expect("hilo mdns");
     }
 }
 

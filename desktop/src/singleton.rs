@@ -4,6 +4,7 @@
 //! el primer "mostrar" (bandeja o relanzar el exe) desbloquea su creación.
 //! Con la UI ya viva, "mostrar" restaura por WinAPI + comandos de viewport.
 
+use crate::state::LockTolerant;
 use std::net::UdpSocket;
 use std::sync::mpsc::Sender;
 use std::sync::{Mutex, OnceLock};
@@ -25,7 +26,7 @@ pub fn set_ctx(ctx: egui::Context) {
 
 /// Canal que desbloquea la CREACIÓN de la ventana (arranque --minimized).
 pub fn set_show_signal(tx: Sender<()>) {
-    *SHOW_SIGNAL.lock().unwrap() = Some(tx);
+    *SHOW_SIGNAL.lock_tolerant() = Some(tx);
 }
 
 /// Muestra la ventana: si aún no existe, desbloquea su creación; si existe,
@@ -53,7 +54,7 @@ pub fn request_show() {
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         ctx.request_repaint();
-    } else if let Some(tx) = SHOW_SIGNAL.lock().unwrap().as_ref() {
+    } else if let Some(tx) = SHOW_SIGNAL.lock_tolerant().as_ref() {
         let _ = tx.send(());
     }
 }

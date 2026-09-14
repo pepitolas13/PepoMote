@@ -1,6 +1,7 @@
 //! Anuncio mDNS del receptor: _pepomote._tcp.local.
 //! Es opcional: si falla, el broadcast UDP y el QR siguen funcionando.
 
+use crate::state::LockTolerant;
 use crate::pairing::PairingInfo;
 use crate::state::SharedState;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
@@ -43,7 +44,7 @@ pub fn run(shared: SharedState, pairing: PairingInfo) {
     let fail = |msg: String| {
         crate::log_line!("{msg}");
         if !cfg!(target_os = "macos") {
-            shared.lock().unwrap().last_error = Some(msg);
+            shared.lock_tolerant().last_error = Some(msg);
         }
     };
     let daemon = match ServiceDaemon::new() {

@@ -22,6 +22,7 @@ mod capture;
 #[path = "capture_none.rs"]
 mod capture;
 
+use crate::state::LockTolerant;
 use crate::state::{Mode, SharedState};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -234,14 +235,14 @@ impl ScreenHub {
             drop(st);
             self.changed.notify_all();
             if !s.is_empty() {
-                self.shared.lock().unwrap().cemu_screen_status = Some(CfgStatus::warn(s));
+                self.shared.lock_tolerant().cemu_screen_status = Some(CfgStatus::warn(s));
             }
         }
     }
 
     /// Solo para la ventana del PC (fps, tamaño).
     fn set_ui_status(&self, ok: bool, s: String) {
-        self.shared.lock().unwrap().cemu_screen_status = Some(CfgStatus { ok, text: s });
+        self.shared.lock_tolerant().cemu_screen_status = Some(CfgStatus { ok, text: s });
     }
 }
 
@@ -311,7 +312,10 @@ pub fn rect_inside(inner: [i32; 4], outer: [i32; 4]) -> bool {
 /// GamePad View de Cemu escondida detrás de la principal (la segunda pantalla
 /// se ve en el móvil, no en el PC) y la devuelve a la normalidad al salir.
 pub fn start_minder(shared: SharedState) {
-    let _ = std::thread::Builder::new().name("pad-minder".into()).spawn(move || {
+    let _ = crate::threads::spawn_guarded(
+        "pad-minder",
+        crate::threads::OnPanic::Restart { after: Duration::from_secs(2), max: 50 },
+        move || {
         let mut minder = capture::Minder::new();
         loop {
             let active = {
@@ -326,7 +330,8 @@ pub fn start_minder(shared: SharedState) {
             };
             std::thread::sleep(Duration::from_millis(if hidden { 1500 } else { 500 }));
         }
-    });
+    },
+    );
 }
 
 /// Teclea `text` en Cemu (su teclado en pantalla no acepta toques, solo
@@ -524,7 +529,7 @@ mod tests {
     fn hub_espera_fotogramas_nuevos() {
         let hub = ScreenHub::new(crate::state::new_shared());
         assert!(hub.wait_frame(0, Duration::from_millis(20)).is_none());
-        *hub.latest.lock().unwrap() = Some(Encoded { id: 1, jpeg: Arc::new(vec![1, 2, 3]) });
+        *hub.latest.lock_tolerant() = Some(Encoded { id: 1, jpeg: Arc::new(vec![1, 2, 3]) });
         let e = hub.wait_frame(0, Duration::from_millis(20)).unwrap();
         assert_eq!(e.id, 1);
         assert!(hub.wait_frame(1, Duration::from_millis(20)).is_none(), "ya visto");

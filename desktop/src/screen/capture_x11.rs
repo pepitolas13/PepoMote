@@ -23,7 +23,7 @@ pub struct Capturer {
 
 impl Capturer {
     pub fn new() -> Self {
-        Self { conn: None, win: None, last_search: Instant::now() - Duration::from_secs(10), conn_error: None }
+        Self { conn: None, win: None, last_search: Instant::now().checked_sub(Duration::from_secs(10)).unwrap_or_else(Instant::now), conn_error: None }
     }
 
     fn connect(&mut self) -> Result<(), String> {

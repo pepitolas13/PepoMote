@@ -124,7 +124,10 @@ pub fn spawn(
     if std::env::var_os("PEPOMOTE_NO_UPDATE_CHECK").is_some() {
         return;
     }
-    let _ = std::thread::Builder::new().name("pmp-update".into()).spawn(move || {
+    let _ = crate::threads::spawn_guarded(
+        "pmp-update",
+        crate::threads::OnPanic::Restart { after: Duration::from_secs(60), max: 10 },
+        move || {
         std::thread::sleep(FIRST_DELAY);
         let mut failed_at: Option<Instant> = None;
         loop {
@@ -145,7 +148,8 @@ pub fn spawn(
             }
             std::thread::sleep(TICK);
         }
-    });
+    },
+    );
 }
 
 #[cfg(test)]

@@ -11,6 +11,8 @@
 //! ([`UINPUT_MANUAL_CMD`]) con un botón para copiarlo.
 
 #[cfg(target_os = "linux")]
+use crate::state::LockTolerant;
+#[cfg(target_os = "linux")]
 use crate::state::SharedState;
 #[cfg(target_os = "linux")]
 use std::process::Command;
@@ -103,7 +105,7 @@ pub fn pkexec_available() -> bool {
 #[cfg(target_os = "linux")]
 pub fn fix_all(shared: SharedState, port: u16) {
     {
-        let mut s = shared.lock().unwrap();
+        let mut s = shared.lock_tolerant();
         if s.fixing {
             return; // ya hay un diálogo abierto
         }
@@ -118,7 +120,7 @@ pub fn fix_all(shared: SharedState, port: u16) {
                 .arg("-c")
                 .arg(script(port, &user))
                 .output();
-            let mut s = shared.lock().unwrap();
+            let mut s = shared.lock_tolerant();
             s.fixing = false;
             match out {
                 Ok(o) => {

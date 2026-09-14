@@ -117,7 +117,10 @@ fn observe(shared: &SharedState) -> EmuState {
 /// Cemu sobreescriben su configuración al salir) y, con el modo automático
 /// activado, cambia de modo al abrir o cerrar Dolphin o Cemu.
 pub fn start_watcher(shared: SharedState) {
-    let _ = std::thread::Builder::new().name("emu-watch".into()).spawn(move || {
+    let _ = crate::threads::spawn_guarded(
+        "emu-watch",
+        crate::threads::OnPanic::Restart { after: Duration::from_secs(5), max: 50 },
+        move || {
         let mut debounce = Debounce::default();
         loop {
             std::thread::sleep(Duration::from_secs(2));
@@ -142,7 +145,8 @@ pub fn start_watcher(shared: SharedState) {
                 }
             }
         }
-    });
+    },
+    );
 }
 
 #[cfg(test)]

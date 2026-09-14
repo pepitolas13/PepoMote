@@ -9,6 +9,7 @@
 //! compositor para mapear el dispositivo (escala incluida). X11: xrandr.
 //! macOS: CGDisplay, en puntos (las coordenadas de los CGEvent).
 
+use crate::state::LockTolerant;
 use crate::state::SharedState;
 #[cfg(target_os = "linux")]
 use std::process::Command;
@@ -78,13 +79,14 @@ impl Layout {
 /// Publica en el estado compartido la lista de pantallas (para el selector)
 /// y el mapeo ya resuelto (`pointing`) para la config vigente.
 pub fn watch(shared: SharedState) {
-    let _ = std::thread::Builder::new()
-        .name("pmp-screens".into())
-        .spawn(move || {
+    let _ = crate::threads::spawn_guarded(
+        "pmp-screens",
+        crate::threads::OnPanic::Restart { after: std::time::Duration::from_secs(3), max: 50 },
+        move || {
             let debug = std::env::var_os("PEPOMOTE_DEBUG").is_some();
             let mut last_desc = String::new();
             loop {
-                let wanted = shared.lock().unwrap().config.screen.clone();
+                let wanted = shared.lock_tolerant().config.screen.clone();
                 match detect() {
                     Some(layout) if !layout.screens.is_empty() => {
                         let pointing = layout.pointing(&wanted);
@@ -100,19 +102,20 @@ pub fn watch(shared: SharedState) {
                                 last_desc = desc;
                             }
                         }
-                        let mut s = shared.lock().unwrap();
+                        let mut s = shared.lock_tolerant();
                         s.screens = list;
                         s.pointing = Some(pointing);
                     }
                     // Sin datos (X11 sin xrandr, Wayland raro): el inyector usa
                     // todo el escritorio. No borramos una lista previa buena.
                     _ => {
-                        shared.lock().unwrap().pointing.get_or_insert(([0.0, 0.0, 1.0, 1.0], 16.0 / 9.0, 1920.0));
+                        shared.lock_tolerant().pointing.get_or_insert(([0.0, 0.0, 1.0, 1.0], 16.0 / 9.0, 1920.0));
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_secs(3));
             }
-        });
+        },
+    );
 }
 
 /// Disposición actual, o None si no hay forma de saberla (entonces se asume

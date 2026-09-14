@@ -1,3 +1,4 @@
+use crate::state::LockTolerant;
 use crate::pairing::PairingInfo;
 use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use crate::theme;
@@ -37,7 +38,7 @@ impl PepoMoteApp {
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     pub fn new(cc: &eframe::CreationContext<'_>, shared: SharedState, pairing: PairingInfo, start_hidden: bool) -> Self {
         theme::apply(&cc.egui_ctx);
-        let pref = shared.lock().unwrap().config.theme;
+        let pref = shared.lock_tolerant().config.theme;
         theme::set_preference(&cc.egui_ctx, pref);
         // macOS: el icono de la barra de menús solo puede nacer en el hilo
         // principal con el bucle de eventos ya en marcha: aquí
@@ -139,7 +140,7 @@ impl eframe::App for PepoMoteApp {
         self.refresh_ip();
 
         let snap = {
-            let s = self.shared.lock().unwrap();
+            let s = self.shared.lock_tolerant();
             Snapshot {
                 status: s.status,
                 mode: s.mode,
@@ -176,7 +177,7 @@ impl eframe::App for PepoMoteApp {
                     .stroke(Stroke::new(1.0_f32, theme::card_border()));
                 if ui.add(button).on_hover_text(tr!("win.lang_switch", lang.other().name())).clicked() {
                     let next = i18n::toggle();
-                    let mut s = self.shared.lock().unwrap();
+                    let mut s = self.shared.lock_tolerant();
                     s.config.lang = Some(next.code().to_owned());
                     s.config.save();
                 }
@@ -258,7 +259,7 @@ impl PepoMoteApp {
     /// GitHub si la última publicada es mayor que esta y no se ocultó.
     fn ui_update(&mut self, ui: &mut egui::Ui) {
         let (latest, dismissed) = {
-            let s = self.shared.lock().unwrap();
+            let s = self.shared.lock_tolerant();
             (s.config.update_latest, s.config.update_dismissed)
         };
         let Some(v) = crate::update::pending(&crate::update::Version::current(), latest, dismissed) else {
@@ -279,7 +280,7 @@ impl PepoMoteApp {
                     );
                     ui.add_space(4.0);
                     if ui.button(RichText::new(tr!("upd.dismiss")).size(12.0)).clicked() {
-                        let mut s = self.shared.lock().unwrap();
+                        let mut s = self.shared.lock_tolerant();
                         s.config.update_dismissed = Some(v);
                         s.config.save();
                     }
@@ -436,7 +437,7 @@ impl PepoMoteApp {
                 .color(theme::text_dim()),
         );
         // Sin cámara (Linux móvil): código de 4 dígitos, un solo uso, 120 s
-        let (code, left) = self.shared.lock().unwrap().pair_code.current();
+        let (code, left) = self.shared.lock_tolerant().pair_code.current();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new(tr!("win.no_camera_code")).size(12.0).color(theme::text_dim()));
@@ -502,7 +503,7 @@ impl PepoMoteApp {
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
-        let mut config = self.shared.lock().unwrap().config.clone();
+        let mut config = self.shared.lock_tolerant().config.clone();
         let before = config.clone();
 
         egui::CollapsingHeader::new(
@@ -580,7 +581,7 @@ impl PepoMoteApp {
             // Linux y macOS con varios monitores: a cuál apunta el móvil
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             {
-                let screens = self.shared.lock().unwrap().screens.clone();
+                let screens = self.shared.lock_tolerant().screens.clone();
                 if screens.len() > 1 {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
@@ -628,7 +629,7 @@ impl PepoMoteApp {
             );
             if self.autostart != before_auto {
                 if let Err(e) = crate::autostart::set_enabled(self.autostart) {
-                    self.shared.lock().unwrap().last_error = Some(tr!("cfg.autostart_err", e));
+                    self.shared.lock_tolerant().last_error = Some(tr!("cfg.autostart_err", e));
                     self.autostart = before_auto;
                 }
             }
@@ -645,7 +646,7 @@ impl PepoMoteApp {
         if config != before {
             // En caliente para el puntero ya; a disco cuando sueltes el
             // slider (arrastrarlo escribía el archivo en cada frame)
-            self.shared.lock().unwrap().config = config.clone();
+            self.shared.lock_tolerant().config = config.clone();
             self.config_dirty = true;
         }
         if self.config_dirty && !ui.input(|i| i.pointer.any_down()) {

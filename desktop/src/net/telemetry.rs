@@ -1,6 +1,7 @@
 //! Hilo caliente: UDP INPUT → puntero (Jugador 1) y DSU (todos los slots).
 //! También responde el broadcast de descubrimiento y mide RTT por jugador.
 
+use crate::state::LockTolerant;
 use super::codec::{self, Packet};
 use super::Sessions;
 use crate::dsu::{Dsu, DsuProfile, MotionSample};
@@ -97,7 +98,7 @@ pub fn run(
     let socket = match crate::ports::bind_udp(&shared, "0.0.0.0", pairing.port, tr!("port.what_phone")) {
         Ok(s) => s,
         Err(e) => {
-            shared.lock().unwrap().last_error = Some(e);
+            shared.lock_tolerant().last_error = Some(e);
             return;
         }
     };
@@ -108,7 +109,7 @@ pub fn run(
     // no lo necesita) y se reintenta en el bucle — la auto-reparación da
     // permiso sin reiniciar la app.
     let mut injector: Option<Box<dyn input::Injector>> = None;
-    let mut injector_retry = Instant::now() - Duration::from_secs(60);
+    let mut injector_retry = Instant::now().checked_sub(Duration::from_secs(60)).unwrap_or_else(Instant::now);
     // Último error de creación ya enseñado (para no repetirlo cada 2 s)
     let mut injector_err_seen: Option<String> = None;
 
@@ -162,7 +163,7 @@ pub fn run(
                         last_norm = [-1.0, -1.0, -1.0, -1.0]; // forzar re-aplicar
                     }
                     crate::log_line!("Inyección: {}", i.name());
-                    let mut s = shared.lock().unwrap();
+                    let mut s = shared.lock_tolerant();
                     s.injector = Some(i.name());
                     s.uinput_denied = false;
                     s.uinput_missing = false;
@@ -186,7 +187,7 @@ pub fn run(
                     if e.ax_denied {
                         crate::macos::ax_prompt_once();
                     }
-                    let mut s = shared.lock().unwrap();
+                    let mut s = shared.lock_tolerant();
                     // solo si uinput se intentó de verdad y /dev/uinput falló:
                     // enciende «Reparar ahora» (nunca con el backend Wayland)
                     s.uinput_denied = e.uinput_denied;
@@ -205,7 +206,7 @@ pub fn run(
         // cuando cambia.
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
-            let pointing = shared.lock().unwrap().pointing;
+            let pointing = shared.lock_tolerant().pointing;
             if let Some((norm, asp, sw)) = pointing {
                 aspect = asp;
                 screen_w = sw;
@@ -219,7 +220,7 @@ pub fn run(
         }
 
         // Texto pendiente de teclear (teclado de Cemu desde el móvil)
-        let pending: Vec<String> = std::mem::take(&mut shared.lock().unwrap().text_queue);
+        let pending: Vec<String> = std::mem::take(&mut shared.lock_tolerant().text_queue);
         if !pending.is_empty() {
             if let Some(inj) = injector.as_deref_mut() {
                 for t in &pending {
@@ -241,7 +242,7 @@ pub fn run(
                 held = 0;
                 repeat = None;
                 injector_err_seen = None;
-                let mut s = shared.lock().unwrap();
+                let mut s = shared.lock_tolerant();
                 s.injector = None;
                 #[cfg(target_os = "macos")]
                 {
@@ -255,8 +256,7 @@ pub fn run(
                 s.injection_error = true;
             }
             let targets: Vec<(u32, std::net::SocketAddr)> = sessions
-                .lock()
-                .unwrap()
+                .lock_tolerant()
                 .values()
                 .filter_map(|s| s.phone_udp.map(|a| (s.id, a)))
                 .collect();
@@ -270,7 +270,7 @@ pub fn run(
             }
             // El Jugador 1 se ha ido (bye o timeout): nada puede quedar pulsado
             let j1_gone = match engine_session {
-                Some(id) => !sessions.lock().unwrap().contains_key(&id),
+                Some(id) => !sessions.lock_tolerant().contains_key(&id),
                 None => false,
             };
             if j1_gone {
@@ -280,7 +280,7 @@ pub fn run(
                 }
             }
             if !ir_engines.is_empty() {
-                let alive = sessions.lock().unwrap();
+                let alive = sessions.lock_tolerant();
                 ir_engines.retain(|id, _| alive.contains_key(id));
             }
         }
@@ -294,7 +294,7 @@ pub fn run(
                 _ => 0.0,
             };
             {
-                let mut s = shared.lock().unwrap();
+                let mut s = shared.lock_tolerant();
                 s.pps = win_packets as f32 / secs;
                 s.sensor_hz = hz;
             }
@@ -327,12 +327,11 @@ pub fn run(
             Some(Packet::Pong { session_id, t_us }) => {
                 let rtt_ms = (now_us(start).saturating_sub(t_us)) as f32 / 1000.0;
                 let slot = sessions
-                    .lock()
-                    .unwrap()
+                    .lock_tolerant()
                     .get(&session_id)
                     .map(|s| s.slot as usize);
                 if let Some(slot) = slot {
-                    let mut s = shared.lock().unwrap();
+                    let mut s = shared.lock_tolerant();
                     if let Some(p) = s.players[slot].as_mut() {
                         p.rtt_ms = Some(rtt_ms);
                     }
@@ -348,7 +347,7 @@ pub fn run(
             Some(Packet::Input(p)) => {
                 // Validar sesión, seq y aprender la dirección UDP del jugador
                 let (slot, role) = {
-                    let mut guard = sessions.lock().unwrap();
+                    let mut guard = sessions.lock_tolerant();
                     let Some(sess) = guard.get_mut(&p.session_id) else {
                         continue;
                     };
@@ -377,7 +376,7 @@ pub fn run(
                 }
 
                 let (mode, sens_deg, abs_mode, pad_wii) = {
-                    let mut s = shared.lock().unwrap();
+                    let mut s = shared.lock_tolerant();
                     let mut pad_wii = false;
                     if let Some(pl) = s.players[slot as usize].as_mut() {
                         pl.battery_pct = p.battery_pct;
@@ -434,7 +433,7 @@ pub fn run(
                     };
                     if engine_session != Some(p.session_id) {
                         engine_session = Some(p.session_id);
-                        let device = sessions.lock().unwrap().get(&p.session_id).map(|s| s.device.clone());
+                        let device = sessions.lock_tolerant().get(&p.session_id).map(|s| s.device.clone());
                         let same_phone = device.is_some() && device == engine_device;
                         engine = if same_phone { PointerEngine::with_bias(engine.bias()) } else { PointerEngine::new() };
                         engine_device = device;

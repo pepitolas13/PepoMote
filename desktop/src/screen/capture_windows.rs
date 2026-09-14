@@ -243,7 +243,7 @@ impl Capturer {
     pub fn new() -> Self {
         Self {
             hwnd: None,
-            last_search: Instant::now() - Duration::from_secs(10),
+            last_search: Instant::now().checked_sub(Duration::from_secs(10)).unwrap_or_else(Instant::now),
             dib: None,
             wgc: None,
             wgc_broken: std::env::var_os("PEPOMOTE_NO_WGC").is_some(),

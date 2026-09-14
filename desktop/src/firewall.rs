@@ -7,6 +7,7 @@
 //! `packaging/linux/install.sh` abre estos puertos él mismo; esto cubre a
 //! quien ejecuta el AppImage a pelo.
 
+use crate::state::LockTolerant;
 use crate::state::SharedState;
 use std::path::Path;
 use std::process::Command;
@@ -29,7 +30,7 @@ pub fn watch(shared: SharedState, port: u16) {
             std::thread::sleep(Duration::from_millis(1500));
             loop {
                 let hint = {
-                    let connected = shared.lock().unwrap().player_count() > 0;
+                    let connected = shared.lock_tolerant().player_count() > 0;
                     if connected {
                         None // hay un móvil dentro: el firewall no está bloqueando
                     } else {
@@ -37,7 +38,7 @@ pub fn watch(shared: SharedState, port: u16) {
                     }
                 };
                 let auto_fix = {
-                    let mut s = shared.lock().unwrap();
+                    let mut s = shared.lock_tolerant();
                     if s.firewall_hint != hint {
                         match &hint {
                             Some(h) => crate::log_line!("Firewall: {}", h.replace('\n', " ")),
