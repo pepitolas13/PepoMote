@@ -68,12 +68,18 @@ fn main() -> eframe::Result {
     // bandeja), se le pide que se muestre y este proceso termina.
     match singleton::acquire() {
         singleton::Singleton::Primary(lock) => singleton::watch(lock),
-        singleton::Singleton::AlreadyRunning(e) => {
+        singleton::Singleton::AlreadyRunning => {
             log_line!(
-                "Ya hay un PepoMote escuchando en 127.0.0.1:{} ({e}): le pido que se muestre y salgo",
+                "Ya hay un PepoMote escuchando en 127.0.0.1:{}: le he pedido que se muestre y salgo",
                 singleton::port()
             );
             return Ok(());
+        }
+        singleton::Singleton::NoLock(e) => {
+            log_line!(
+                "Cerrojo de instancia única en 127.0.0.1:{} no disponible ({e}): sigo sin cerrojo",
+                singleton::port()
+            );
         }
     }
 
