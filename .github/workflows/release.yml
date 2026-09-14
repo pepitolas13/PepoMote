@@ -38,6 +38,15 @@ jobs:
         run: bash packaging/linux/appimage.sh
       - name: Tarball (binario + lanzador + install.sh)
         run: bash packaging/linux/tarball.sh
+      # La ventana se abre de verdad (Wayland y X11, binario y AppImage) antes
+      # de publicar: desktop/e2e/smoke_gui.sh
+      - name: Humo de la ventana
+        run: |
+          sudo apt-get install -y --no-install-recommends sway xvfb x11-utils libegl1 libgl1 libgl1-mesa-dri libgles2 libwayland-egl1 libxkbcommon-x11-0 libnotify-bin
+          bash desktop/e2e/smoke_gui.sh wayland
+          bash desktop/e2e/smoke_gui.sh x11
+          PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1 bash desktop/e2e/smoke_gui.sh wayland
+          PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1 bash desktop/e2e/smoke_gui.sh x11
       - uses: actions/upload-artifact@v4
         with:
           name: linux

@@ -50,6 +50,16 @@ Necesita `sway`, `wev` y `python3`; deja `wev.log`, `sway.log`,
 `python3 e2e_wayland.py --parse-only fixtures/wev_ok.log` prueba solo el
 parser (vale en Windows).
 
+Ventana (Linux): `bash smoke_gui.sh wayland|x11 [fallback]` abre la ventana de
+verdad bajo un sway sin cabeza o un Xvfb, espera el primer fotograma y sale
+sola (`PEPOMOTE_SMOKE=2500`); comprueba el código de salida, la línea «Ventana:
+primer fotograma pintado» del log y que la ventana esté en el árbol de
+ventanas. Con `fallback`, el primer intento falla a propósito
+(`PEPOMOTE_SMOKE_FAIL_FIRST=1`) y se exige el relanzamiento con render por
+software. `PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1`
+lo prueba con el AppImage. Necesita `sway` o `Xvfb` + `x11-utils` y las
+bibliotecas de Mesa; deja todo en `/tmp/pepomote-smoke/<modo>`.
+
 Puntero: `PEPOMOTE_RECORD=<archivo>` en el receptor graba cada INPUT del
 Jugador 1 (llegada + paquete crudo) y `PepoMote --replay <archivo> [sens_deg]`
 lo pasa por el motor del puntero y saca un CSV (sensor, llegada, gyro, quat,

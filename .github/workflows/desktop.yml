@@ -5,7 +5,7 @@ on:
     branches: [main, next]
     paths: ["desktop/**", "pmp/**", "protocol/**", "packaging/linux/**", "packaging/macos/**", ".github/workflows/desktop.yml"]
   pull_request:
-    paths: ["desktop/**", "pmp/**", "protocol/**", "packaging/linux/**", "packaging/macos/**"]
+    paths: ["desktop/**", "pmp/**", "protocol/**", "packaging/linux/**", "packaging/macos/**", ".github/workflows/desktop.yml"]
   workflow_call:
 
 jobs:
@@ -92,6 +92,34 @@ jobs:
           path: |
             dist/PepoMote-x86_64.AppImage
             dist/PepoMote-linux-x86_64.tar.gz
+      # Solo glibc y libasound pueden ser dependencias duras: cualquier otra
+      # (GTK, udev, ssl…) haría que el AppImage no arrancase en una distro
+      # que no la tenga
+      - name: Dependencias dinámicas del binario
+        run: |
+          objdump -p desktop/target/release/PepoMote | grep NEEDED
+          extra=$(objdump -p desktop/target/release/PepoMote | awk '/NEEDED/ {print $2}' \
+            | grep -Ev '^(libasound\.so\.2|libgcc_s\.so\.1|libm\.so\.6|libc\.so\.6|libpthread\.so\.0|libdl\.so\.2|librt\.so\.1|ld-linux-x86-64\.so\.2)$' || true)
+          [ -z "$extra" ] || { echo "dependencia dinámica nueva: $extra"; exit 1; }
+      # La VENTANA de verdad, bajo sway (Wayland) y Xvfb (X11), con el binario
+      # y con el AppImage, y el relanzamiento con render por software cuando el
+      # primer intento falla (desktop/e2e/smoke_gui.sh). Antes el AppImage se
+      # publicaba sin haberse abierto nunca.
+      - name: Humo de la ventana (sway, Xvfb, AppImage, relanzamiento)
+        run: |
+          sudo apt-get install -y --no-install-recommends sway xvfb x11-utils libegl1 libgl1 libgl1-mesa-dri libgles2 libwayland-egl1 libxkbcommon-x11-0 libnotify-bin
+          bash desktop/e2e/smoke_gui.sh wayland
+          bash desktop/e2e/smoke_gui.sh x11
+          PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1 bash desktop/e2e/smoke_gui.sh wayland
+          PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1 bash desktop/e2e/smoke_gui.sh x11
+          bash desktop/e2e/smoke_gui.sh wayland fallback
+          PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1 bash desktop/e2e/smoke_gui.sh x11 fallback
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-gui-logs
+          path: /tmp/pepomote-smoke/**
+          if-no-files-found: warn
       # Compositor wlroots de verdad, sin GPU: el receptor tiene que elegir el
       # puntero virtual de Wayland y mover el cursor, hacer clic, ir atrás y
       # adelante con la cruceta, girar la rueda y teclear en wev
