@@ -25,7 +25,7 @@ pub enum ActivationMode {
     /// Un `SendInput` vacío (movimiento nulo) y otro `SetForegroundWindow`:
     /// inyectar entrada es lo que da al proceso el derecho de activar.
     Modern,
-    /// Vía anterior a 1.5.53: `AttachThreadInput` al hilo en primer plano y,
+    /// Vía anterior a 1.6: `AttachThreadInput` al hilo en primer plano y,
     /// si tampoco, la pulsación de ALT. `PEPOMOTE_WIN_ACTIVATE=legacy`.
     Legacy,
 }
@@ -111,7 +111,7 @@ impl WinInjector {
         }
     }
 
-    /// Vía anterior a 1.5.53 (`PEPOMOTE_WIN_ACTIVATE=legacy`): cola de
+    /// Vía anterior a 1.6 (`PEPOMOTE_WIN_ACTIVATE=legacy`): cola de
     /// entrada compartida con el hilo en primer plano y, si tampoco, la
     /// pulsación de ALT que da el derecho, soltándola ya activada.
     unsafe fn activate_legacy(&self, root: HWND, fg: HWND) {

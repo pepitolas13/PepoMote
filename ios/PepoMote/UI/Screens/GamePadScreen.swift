@@ -151,7 +151,7 @@ struct GamePadScreen: View {
                 .frame(width: geo.size.width, height: geo.size.height)
         }
         .background((fullScreen ? Color.black : Pepo.background).ignoresSafeArea())
-        // Receptor anterior a 1.5.53: no confirma «solo pantalla» ni en el ok
+        // Receptor anterior a 1.6: no confirma «solo pantalla» ni en el ok
         // ni con el eco; se avisa una vez (a los 2 s, por si el eco llega tarde)
         .task(id: fullScreen && link.link.connected?.screenOnly == nil) {
             guard fullScreen, link.link.connected?.screenOnly == nil, !warnedOld else { return }

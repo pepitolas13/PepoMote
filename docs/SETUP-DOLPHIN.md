@@ -9,7 +9,7 @@ directamente a un adaptador de Bluetooth" el juego se cierra al arrancar),
 escribe un mando emulado por móvil conectado (Wiimote N = móvil N por orden
 de conexión) con el mapeo PepoMote, deja los demás en «Ninguno» (un mando de
 más aparece en pantalla en los juegos y molesta), registra el servidor DSU y
-activa **Background Input** (desde 1.5.53: sin él Dolphin ignora el mando en
+activa **Background Input** (desde 1.6: sin él Dolphin ignora el mando en
 cuanto su ventana pierde el foco). Deja copia `.pepomote.bak` de cada archivo que
 toca. Abre Dolphin y a jugar: cada móvil es su propio Wiimote. Si Dolphin
 estaba abierto, PepoMote lo deja pendiente y lo escribe solo en cuanto lo

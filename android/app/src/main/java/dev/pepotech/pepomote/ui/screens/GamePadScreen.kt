@@ -184,7 +184,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     // sigue con cabecera y «Salir»
     val fullScreen = wantScreen && fullScreenPref
 
-    // Receptor anterior a 1.5.53: no confirma «solo pantalla» ni en el ok ni
+    // Receptor anterior a 1.6: no confirma «solo pantalla» ni en el ok ni
     // con el eco; se avisa una vez (a los 2 s, por si el eco llega tarde)
     var warnedOld by remember { mutableStateOf(false) }
     LaunchedEffect(fullScreen, connected?.screenOnly) {

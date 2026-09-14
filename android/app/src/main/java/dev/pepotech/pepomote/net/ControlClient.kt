@@ -44,7 +44,7 @@ class ControlClient(
         val name: String = "",
         /** El receptor confirma el Nunchuk propio (`"own"`); "none" si no, o receptor antiguo. */
         val nunchuk: String = "none",
-        /** El receptor conoce «solo pantalla» (`ok.screen_only`); null = receptor anterior a 1.5.53. */
+        /** El receptor conoce «solo pantalla» (`ok.screen_only`); null = receptor anterior a 1.6. */
         val screenOnly: Boolean? = null
     )
 

@@ -22,7 +22,7 @@ final class ControlClient {
         let name: String
         /// El receptor confirma el Nunchuk propio ("own"); "none" si no, o receptor antiguo.
         var nunchuk: String = "none"
-        /// El receptor conoce «solo pantalla» (`ok.screen_only`); nil = receptor anterior a 1.5.53.
+        /// El receptor conoce «solo pantalla» (`ok.screen_only`); nil = receptor anterior a 1.6.
         var screenOnly: Bool? = nil
     }
 

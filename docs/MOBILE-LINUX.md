@@ -70,7 +70,7 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
   zona central enseña la pantalla del GamePad que manda Cemu, y el botón
   **Teclado** escribe en el teclado en pantalla de Cemu (que no acepta
   toques). Con la casilla **Pantalla del GamePad a pantalla completa** de
-  Inicio (1.5.53), el móvil enseña solo esa pantalla, sobre negro y con el
+  Inicio (1.6), el móvil enseña solo esa pantalla, sobre negro y con el
   táctil: para jugar con un mando de verdad en el PC; ✕ arriba a la izquierda
   para salir y, si su subcasilla está activa, **Teclado** arriba a la derecha.
   El giro es el del ajuste **Giro**. Ver `docs/SETUP-CEMU.md`.

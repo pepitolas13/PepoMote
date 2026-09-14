@@ -20,7 +20,7 @@ struct ConnectedLink: Equatable {
     /// de `nunchuk`): en Dolphin, apaisado = mando + Nunchuk.
     var ownNunchuk: Bool = false
     /// El receptor confirmó «solo pantalla» (`ok.screen_only` o eco de
-    /// `screen_only`); nil = receptor anterior a 1.5.53, que no lo conoce.
+    /// `screen_only`); nil = receptor anterior a 1.6, que no lo conoce.
     var screenOnly: Bool? = nil
 }
 

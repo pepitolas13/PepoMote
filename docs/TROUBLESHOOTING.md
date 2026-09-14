@@ -15,7 +15,7 @@ Se completa con cada hito. Esqueleto:
    cancelaste, queda el botón «Reparar ahora». Ojo: con ufw el receptor no
    puede leer las reglas sin root, así que dice «no puedo leer sus reglas»
    en vez de «bloqueado» hasta que la reparación abre el puerto o entra un
-   móvil (desde 1.5.53; antes decía «bloqueado» para siempre, aunque la
+   móvil (desde 1.6; antes decía «bloqueado» para siempre, aunque la
    reparación hubiera funcionado). `packaging/linux/install.sh` hace lo
    mismo por script. A mano:
    - ufw: `sudo ufw allow 26761/tcp && sudo ufw allow 26761/udp && sudo ufw allow 5353/udp`
@@ -76,7 +76,7 @@ necesita ningún permiso y el pie de la ventana dice «Inyección: Wayland
 
 ## Linux: la ventana no aparece, o se cierra nada más abrirla
 
-Desde 1.5.53 el receptor no puede «cerrarse sin decir nada»: todo fallo al
+Desde 1.6 el receptor no puede «cerrarse sin decir nada»: todo fallo al
 abrir la ventana queda en `~/.config/pepomote/receptor.log` (líneas
 «Ventana: …»), y antes de rendirse se relanza solo con render por software
 (`LIBGL_ALWAYS_SOFTWARE=1`) y, en Wayland con XWayland, por X11; si nada
@@ -215,7 +215,7 @@ primera vez: los dos lados se guardan por separado.
 
 ## A pantalla completa el mando de verdad no responde, o el táctil no llega
 
-«Pantalla del GamePad a pantalla completa» (desde 1.5.53) está pensada para
+«Pantalla del GamePad a pantalla completa» (desde 1.6) está pensada para
 un mando de verdad conectado al PC: el receptor añade el DSU del móvil como
 segundo mando dentro de tu `controllerProfiles/controller0.xml` sin pisar tu
 mando, y el táctil llega por ese DSU. Si algo no va:
@@ -231,7 +231,7 @@ mando, y el táctil llega por ese DSU. Si algo no va:
   en `controllerProfiles`: es tu perfil tal cual, que vuelve solo al irse el
   móvil o al apagar la opción. Si no vuelve, cópialo tú encima.
 - **«El receptor no conoce la pantalla completa»**: el PC lleva un PepoMote
-  anterior a 1.5.53, que escribe el perfil de siempre con el móvil como mando;
+  anterior a 1.6, que escribe el perfil de siempre con el móvil como mando;
   actualiza el receptor.
 - El móvil sigue en modo Wii U como GamePad: con «Mando de Wii» o como
   Jugador 2 (Pro) la pantalla completa no se aplica (no tienen pantalla).
@@ -350,7 +350,7 @@ de Windows. El apuntado absoluto no pasa por esa aceleración.
 Un clic inyectado no siempre lleva la ventana a primer plano: Windows solo se
 lo concede al proceso que proveyó la última entrada. Desde 1.3.0 el receptor
 activa a mano la ventana sobre la que cae el clic (izquierdo o derecho), como
-haría el ratón; desde 1.5.53 lo hace inyectando antes un movimiento nulo (lo
+haría el ratón; desde 1.6 lo hace inyectando antes un movimiento nulo (lo
 que da el derecho), sin enganchar la cola de entrada del hilo en primer plano
 (podía colgar la telemetría) ni pulsar ALT (activaba barras de menú y dejaba
 ALT «pegado» en juegos). `PEPOMOTE_WIN_ACTIVATE=legacy` recupera la vía
@@ -362,10 +362,10 @@ entrada desde un programa normal.
 
 Casi siempre es **Dolphin**: ignora el mando (también el DSU del móvil) en
 cuanto su ventana pierde el foco, salvo que tenga marcado «Background Input»
-en la configuración de mandos. Desde 1.5.53 PepoMote lo deja activado al
+en la configuración de mandos. Desde 1.6 PepoMote lo deja activado al
 configurar Dolphin (`[Input] BackgroundInput = True` en `Dolphin.ini`): con
 Dolphin cerrado, entra en modo Dolphin y vuelve a abrirlo. Si es el propio
-receptor el que se para al pasar a segundo plano: desde 1.5.53 se excluye del
+receptor el que se para al pasar a segundo plano: desde 1.6 se excluye del
 ahorro de energía de Windows 11 (EcoQoS), que frenaba los procesos sin foco;
 el log dice «Ahorro de energía de Windows (EcoQoS): desactivado». Y si lo que
 no responde es una ventana elevada (administrador), ver el punto anterior.

@@ -92,7 +92,7 @@ pantalla) y sticks, cruceta y A/B/X/Y crecen para llenar el hueco.
 
 ## Mando de verdad en el PC y el móvil como pantalla del GamePad
 
-Desde 1.5.53, en Ajustes de la app está «**Pantalla del GamePad a pantalla
+Desde 1.6, en Ajustes de la app está «**Pantalla del GamePad a pantalla
 completa**» (apagada de serie; excluyente con «GamePad sin pantalla táctil»):
 con ella, al entrar en Wii U como GamePad el móvil enseña **solo** la pantalla
 del GamePad de Cemu, ajustada a su proporción real sobre fondo negro, y
@@ -117,7 +117,7 @@ Si tu Controller 1 no es un «Wii U GamePad» (un Pro Controller, por
 ejemplo), la fusión se hace igual pero el táctil no se aplica: el móvil te
 avisa. El movimiento (giroscopio) lo pone tu mando, si lo tiene. La ventana
 del PC lista al móvil como «J1 · pantalla del GamePad». Con un receptor
-anterior a 1.5.53 la pantalla completa se ve igual, pero el perfil de Cemu se
+anterior a 1.6 la pantalla completa se ve igual, pero el perfil de Cemu se
 escribe como siempre (con el móvil como mando): el móvil te lo avisa.
 
 Linux: la captura es de X11, que vale también para XWayland. Con Cemu nativo

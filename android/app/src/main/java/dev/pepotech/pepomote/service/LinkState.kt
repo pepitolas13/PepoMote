@@ -35,7 +35,7 @@ sealed class UiLink {
         val ownNunchuk: Boolean = false,
         /**
          * El receptor confirmó «solo pantalla» (`ok.screen_only` o eco de
-         * `screen_only`); null = receptor anterior a 1.5.53, que no lo conoce.
+         * `screen_only`); null = receptor anterior a 1.6, que no lo conoce.
          */
         val screenOnly: Boolean? = null
     ) : UiLink()

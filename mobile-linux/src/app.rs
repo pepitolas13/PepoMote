@@ -1399,7 +1399,7 @@ impl eframe::App for MobileApp {
         // real va en el PC); el área entera se pide al receptor
         let full = want_screen && self.settings.gamepad_full_screen;
         self.sync_screen(ctx, want_screen, full);
-        // Receptor anterior a 1.5.53: no confirma «solo pantalla» ni en el ok
+        // Receptor anterior a 1.6: no confirma «solo pantalla» ni en el ok
         // ni con el eco; se avisa una vez (a los 2 s, por si el eco llega tarde)
         if full {
             let since = *self.full_screen_since.get_or_insert_with(Instant::now);
