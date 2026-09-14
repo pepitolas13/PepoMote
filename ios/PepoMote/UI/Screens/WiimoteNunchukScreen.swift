@@ -69,6 +69,7 @@ struct WiimoteNunchukScreen: View {
     let showChips: Bool
     let onDisconnect: () -> Void
     @ObservedObject var link = LinkState.shared
+    @EnvironmentObject var model: AppModel
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
 
     var body: some View {
@@ -138,7 +139,7 @@ struct WiimoteNunchukScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 
                 HStack(spacing: m.gap) {
-                    PadCross(size: m.cross, glyph: m.text(14))
+                    PadCross(size: m.cross)
                     RoundButton(
                         label: "A", size: m.a, bit: Btn.a,
                         background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent,
@@ -148,6 +149,21 @@ struct WiimoteNunchukScreen: View {
                 .padding(.trailing, m.margin)
                 .padding(.bottom, m.margin)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+
+                // Primera vez: el lado del apaisado lo ha elegido iOS; se pregunta
+                // si es el bueno y se guarda para siempre (Ajustes lo cambia)
+                if model.nunchukSide == .unset {
+                    let shown = LandscapeSide.effective(saved: LandscapeSide.current(OrientationLock.current), provisional: model.nunchukSideProvisional)
+                    VStack {
+                        SideAskCard(
+                            title: tr("side_ask"),
+                            onFlip: { model.nunchukSideProvisional = shown.flipped },
+                            onKeep: { model.saveNunchukSide(shown) }
+                        )
+                        .padding(.top, m.headerH + 4)
+                        Spacer()
+                    }
+                }
 
                 VStack {
                     NoticeBanner().padding(.top, 84)
@@ -170,7 +186,9 @@ struct WiimoteNunchukScreen: View {
             applyEngine()
         }
         .onDisappear {
-            // Vertical o Salir: el Wiimote de siempre, y nada queda pulsado ni inclinado
+            // Vertical o Salir: el Wiimote de siempre, y nada queda pulsado ni
+            // inclinado; la prueba del lado sin confirmar se olvida
+            model.nunchukSideProvisional = nil
             UIApplication.shared.isIdleTimerDisabled = false
             if let engine = link.motion {
                 engine.kind = .wiimote
@@ -187,6 +205,32 @@ struct WiimoteNunchukScreen: View {
     }
 }
 
+/// Pregunta de la primera vez de un mando apaisado fijo (mando + Nunchuk,
+/// GamePad): ¿está bien así? «Darle la vuelta» lo gira 180° y «Así lo quiero»
+/// guarda ese lado para siempre.
+struct SideAskCard: View {
+    let title: String
+    let onFlip: () -> Void
+    let onKeep: () -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title).pepoTitle().multilineTextAlignment(.center)
+            Text(tr("side_ask_sub")).pepoBody().multilineTextAlignment(.center)
+            HStack(spacing: 10) {
+                ModeChip(label: tr("side_flip"), selected: false, action: onFlip)
+                ModeChip(label: tr("side_keep"), selected: true, action: onKeep)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 340)
+        .background(Pepo.card)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Pepo.blue, lineWidth: 1.5))
+    }
+}
+
 /// Chip «Nunchuk» (modo Dolphin): el mando lleva su propio Nunchuk (con el
 /// móvil de lado: stick, C y Z). Cambia el ajuste y se lo pide al receptor;
 /// marcado solo cuando el receptor lo ha confirmado. Cambiarlo exige reabrir
@@ -194,9 +238,10 @@ struct WiimoteNunchukScreen: View {
 struct NunchukChip: View {
     let link: ConnectedLink
     var compact = false
+    var dense = false
 
     var body: some View {
-        ModeChip(label: tr("nunchuk_chip"), selected: link.ownNunchuk, compact: compact) {
+        ModeChip(label: tr("nunchuk_chip"), selected: link.ownNunchuk, compact: compact, dense: dense, toggle: true) {
             let want = !link.ownNunchuk
             AppPrefs.ownNunchuk = want
             LinkState.shared.sendNunchuk?(want)

@@ -186,65 +186,6 @@ struct TriggerZone: View {
     }
 }
 
-/// Cruceta: cuatro brazos momentáneos. En modo puntero el receptor hace
-/// ↑/↓ = flechas del PC y ←/→ = atrás/adelante del navegador. Con
-/// `sideways` (mando de lado en un juego) manda los botones del mando girado
-/// con el IR a la izquierda (`Btn.sideways`).
-struct PadCross: View {
-    let size: CGFloat
-    /// Tamaño de las flechas (crece con el iPad).
-    var glyph: CGFloat = 14
-    var sideways = false
-
-    private func bit(_ b: UInt32) -> UInt32 { sideways ? Btn.sideways(b) : b }
-
-    var body: some View {
-        let arm = size / 3
-        return ZStack {
-            PadArm(label: "▲", arm: arm, glyph: glyph, bit: bit(Btn.dpadUp)).offset(y: -arm)
-            PadArm(label: "▼", arm: arm, glyph: glyph, bit: bit(Btn.dpadDown)).offset(y: arm)
-            PadArm(label: "◀", arm: arm, glyph: glyph, bit: bit(Btn.dpadLeft)).offset(x: -arm)
-            PadArm(label: "▶", arm: arm, glyph: glyph, bit: bit(Btn.dpadRight)).offset(x: arm)
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Pepo.card)
-                .frame(width: arm, height: arm)
-        }
-        .frame(width: size, height: size)
-    }
-}
-
-private struct PadArm: View {
-    let label: String
-    let arm: CGFloat
-    let glyph: CGFloat
-    let bit: UInt32
-    @State private var down = false
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(down ? Pepo.glow : Pepo.card)
-            Text(label)
-                .font(.system(size: glyph))
-                .foregroundColor(Pepo.textDim)
-        }
-        .frame(width: arm, height: arm)
-        .contentShape(Rectangle())
-        .holdGesture(
-            onDown: {
-                down = true
-                ButtonState.shared.set(bit, true)
-                Haptics.tap()
-                UiSounds.shared.blip()
-            },
-            onUp: {
-                down = false
-                ButtonState.shared.set(bit, false)
-            }
-        )
-    }
-}
-
 // MARK: - Stick analógico
 
 /// Stick analógico virtual. El pomo sigue al pulgar dentro del círculo
@@ -409,17 +350,19 @@ struct ModeChips: View {
     let current: String
     let supportsCemu: Bool
     var compact = false
+    /// Chips estrechos (iPhone): caben cuatro en una fila.
+    var dense = false
 
     var body: some View {
-        HStack(spacing: compact ? 6 : 10) {
-            ModeChip(label: tr("mode_pointer"), selected: current == LinkState.modePointer, compact: compact) {
+        HStack(spacing: compact ? 6 : dense ? 8 : 10) {
+            ModeChip(label: tr("mode_pointer"), selected: current == LinkState.modePointer, compact: compact, dense: dense) {
                 LinkState.shared.requestMode(LinkState.modePointer)
             }
-            ModeChip(label: tr("mode_dolphin"), selected: current == LinkState.modeDolphin, compact: compact) {
+            ModeChip(label: tr("mode_dolphin"), selected: current == LinkState.modeDolphin, compact: compact, dense: dense) {
                 LinkState.shared.requestMode(LinkState.modeDolphin)
             }
             if supportsCemu {
-                ModeChip(label: tr("mode_wiiu"), selected: current == LinkState.modeCemu, compact: compact) {
+                ModeChip(label: tr("mode_wiiu"), selected: current == LinkState.modeCemu, compact: compact, dense: dense) {
                     LinkState.shared.requestMode(LinkState.modeCemu)
                 }
             }
@@ -427,22 +370,33 @@ struct ModeChips: View {
     }
 }
 
+/// Chip de modo (azul cuando es el activo). `compact`: bajo y estrecho, para
+/// las cabeceras apaisadas; `dense`: solo estrecho, para que quepan cuatro en
+/// la fila de un iPhone; `toggle`: no es un modo sino un interruptor (el
+/// Nunchuk): verde encendido y con contorno verde apagado, para que se vea
+/// que es una opción activable.
 struct ModeChip: View {
     let label: String
     let selected: Bool
     var compact = false
+    var dense = false
+    var toggle = false
     let action: () -> Void
 
     var body: some View {
+        let fill = !selected ? Pepo.card : toggle ? Pepo.ok : Pepo.blue
+        let text = !selected ? Pepo.textDim : toggle ? Pepo.onAccent : Pepo.card
         Button(action: action) {
             Text(label)
                 .font(PepoFont.bodyMedium())
-                .foregroundColor(selected ? Pepo.card : Pepo.textDim)
+                .foregroundColor(text)
                 .lineLimit(1)
-                .padding(.horizontal, compact ? 12 : 18)
+                .minimumScaleFactor(0.75)
+                .padding(.horizontal, compact || dense ? 12 : 18)
                 .padding(.vertical, compact ? 6 : 8)
-                .background(selected ? Pepo.blue : Pepo.card)
+                .background(fill)
                 .clipShape(Capsule())
+                .overlay(Capsule().stroke(Pepo.ok, lineWidth: toggle && !selected ? 1.5 : 0))
         }
         .buttonStyle(.plain)
     }

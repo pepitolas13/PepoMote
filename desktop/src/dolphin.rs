@@ -10,6 +10,7 @@
 //! carpeta de usuario con la misma lógica que Dolphin (portable, registro,
 //! Documentos, AppData; XDG/Flatpak en Linux).
 
+use crate::state::LockTolerant;
 use crate::state::{Mode, SharedState};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -627,27 +628,41 @@ fn write_if_changed(path: &Path, original: &str, new: String) -> Result<(), Stri
 /// nada más arrancar. El resto de la sección (VID, PID, LinkKeys) y del
 /// archivo se conservan.
 pub fn ensure_emulated_adapter(cfg_dir: &Path) -> Result<(), String> {
-    let path = cfg_dir.join("Dolphin.ini");
-    let original = std::fs::read_to_string(&path).unwrap_or_default();
+    set_ini_key(&cfg_dir.join("Dolphin.ini"), "BluetoothPassthrough", "Enabled", "False")
+}
+
+/// Dolphin.ini: [Input] BackgroundInput = True. Sin él, Dolphin ignora el
+/// mando (el DSU del móvil incluido) en cuanto su ventana pierde el foco: con
+/// la ventana de PepoMote (o cualquier otra) seleccionada, «deja de
+/// funcionar». Con la ventana de Dolphin en primer plano no cambia nada.
+pub fn ensure_background_input(cfg_dir: &Path) -> Result<(), String> {
+    set_ini_key(&cfg_dir.join("Dolphin.ini"), "Input", "BackgroundInput", "True")
+}
+
+/// Pone `key = value` en la sección `section` del INI (creando la sección si
+/// no existe; una clave nueva va la primera); el resto de la sección y del
+/// archivo se conservan. Solo escribe si cambia algo.
+fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> Result<(), String> {
+    let original = std::fs::read_to_string(path).unwrap_or_default();
     let mut ini = parse_ini(&original);
     let mut body: Vec<String> = ini
         .sections
         .iter()
-        .find(|(n, _)| n == "BluetoothPassthrough")
+        .find(|(n, _)| n == section)
         .map(|(_, b)| b.clone())
         .unwrap_or_default();
     let mut found = false;
     for l in body.iter_mut() {
-        if ini_key(l) == Some("Enabled") {
-            *l = "Enabled = False".to_owned();
+        if ini_key(l) == Some(key) {
+            *l = format!("{key} = {value}");
             found = true;
         }
     }
     if !found {
-        body.insert(0, "Enabled = False".to_owned());
+        body.insert(0, format!("{key} = {value}"));
     }
-    set_section(&mut ini, "BluetoothPassthrough", body);
-    write_if_changed(&path, &original, serialize_ini(&ini))
+    set_section(&mut ini, section, body);
+    write_if_changed(path, &original, serialize_ini(&ini))
 }
 
 /// [Wiimote1..n] con nuestro mapeo (Source=1) y [Wiimote n+1..4] con
@@ -777,6 +792,7 @@ pub fn configure(cfg_dolphin_dir: &str, layout: &Layout) -> Result<String, Strin
     let nunchuks = layout.iter().filter(|(_, n)| n.is_some()).count();
     for dir in &dirs {
         ensure_emulated_adapter(&dir.config)?;
+        ensure_background_input(&dir.config)?;
         ensure_dsu_server(&dir.config)?;
         write_wiimotes(&dir.config, layout)?;
         write_profiles(&dir.config, crate::net::MAX_PLAYERS);
@@ -794,7 +810,7 @@ pub fn configure(cfg_dolphin_dir: &str, layout: &Layout) -> Result<String, Strin
 pub(crate) fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
     let Some(dir) = dir else { return };
     let dir_s = dir.to_string_lossy().to_string();
-    let mut s = shared.lock().unwrap();
+    let mut s = shared.lock_tolerant();
     if s.config.dolphin_dir != dir_s {
         s.config.dolphin_dir = dir_s;
         s.config.save();
@@ -814,14 +830,14 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
     let (ok, msg, phone) = if running {
         // Dolphin sobreescribe su configuración al salir: se escribe en
         // cuanto se cierre (vigilante), sin que nadie tenga que pulsar nada
-        shared.lock().unwrap().dolphin_pending = true;
+        shared.lock_tolerant().dolphin_pending = true;
         let nunchuk = layout.iter().any(|(_, n)| n.is_some());
         let text = if nunchuk { tr!("dolphin.open_nunchuk") } else { tr!("dolphin.open") };
         let phone = if nunchuk { tr!("dolphin.phone_open_nunchuk") } else { tr!("dolphin.phone_open") };
         (false, text.to_owned(), phone.to_owned())
     } else {
-        shared.lock().unwrap().dolphin_pending = false;
-        let cfg_dir = shared.lock().unwrap().config.dolphin_dir.clone();
+        shared.lock_tolerant().dolphin_pending = false;
+        let cfg_dir = shared.lock_tolerant().config.dolphin_dir.clone();
         match configure(&cfg_dir, layout) {
             Ok(details) => {
                 let prefix = if after_close { tr!("dolphin.configured_after_close") } else { tr!("dolphin.configured") };
@@ -833,7 +849,7 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
             }
         }
     };
-    shared.lock().unwrap().dolphin_cfg_status = Some(CfgStatus { ok, text: msg });
+    shared.lock_tolerant().dolphin_cfg_status = Some(CfgStatus { ok, text: msg });
     // Los móviles lo ven también (banner): hasta ahora un Nunchuk que
     // entraba con Dolphin abierto fallaba en silencio
     crate::net::notify_all(&phone);
@@ -842,9 +858,9 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
 /// Disparo automático (conexión/desconexión/cambio a modo Dolphin).
 pub fn maybe_auto_configure(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
+    let _ = crate::threads::spawn_once("emu-configure", move || {
         let (auto, mode, layout) = {
-            let s = shared.lock().unwrap();
+            let s = shared.lock_tolerant();
             (s.config.auto_dolphin, s.mode, crate::state::player_layout(&s.players))
         };
         // al menos un mando: un Nunchuk solo no tiene a quién acompañar
@@ -857,8 +873,8 @@ pub fn maybe_auto_configure(shared: &SharedState) {
 /// Botón manual de la ventana.
 pub fn configure_now(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
-        let mut layout = crate::state::player_layout(&shared.lock().unwrap().players);
+    let _ = crate::threads::spawn_once("emu-configure", move || {
+        let mut layout = crate::state::player_layout(&shared.lock_tolerant().players);
         if layout.is_empty() {
             layout.push((0, None));
         }
@@ -869,10 +885,10 @@ pub fn configure_now(shared: &SharedState) {
 /// Botón «Detectar» de Ajustes: busca Dolphin y guarda su carpeta.
 pub fn detect_now(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
+    let _ = crate::threads::spawn_once("emu-detect", move || {
         let (_, dir) = running_exe();
         let found = dir.into_iter().chain(find_exe_dirs()).next();
-        let mut s = shared.lock().unwrap();
+        let mut s = shared.lock_tolerant();
         match found {
             Some(d) => {
                 s.config.dolphin_dir = d.to_string_lossy().to_string();
@@ -892,13 +908,13 @@ pub fn detect_now(shared: &SharedState) {
 /// tiene que acordarse de pulsar «Configurar».
 pub fn apply_pending(shared: &SharedState) {
     let (auto, mode, layout) = {
-        let s = shared.lock().unwrap();
+        let s = shared.lock_tolerant();
         (s.config.auto_dolphin, s.mode, crate::state::player_layout(&s.players))
     };
     if auto && mode == Mode::Dolphin && !layout.is_empty() {
         run_configure(shared, &layout, true);
     } else {
-        shared.lock().unwrap().dolphin_pending = false;
+        shared.lock_tolerant().dolphin_pending = false;
     }
 }
 
@@ -1222,6 +1238,32 @@ VID = 1234
 Enabled = False
 VID = 1234
 ");
+    }
+
+    #[test]
+    fn background_input_se_activa_y_lo_demas_se_conserva() {
+        let dir = tmp_dir("bg");
+        std::fs::write(
+            dir.join("Dolphin.ini"),
+            "[Core]\nWiimoteContinuousScanning = False\n[Input]\nBackgroundInput = False\nOther = 1\n",
+        )
+        .unwrap();
+        ensure_background_input(&dir).unwrap();
+        let out = std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap();
+        assert!(out.contains("[Input]\nBackgroundInput = True\nOther = 1\n"), "{out}");
+        assert!(!out.contains("BackgroundInput = False"));
+        assert!(out.contains("[Core]\nWiimoteContinuousScanning = False\n"));
+        // idempotente
+        ensure_background_input(&dir).unwrap();
+        assert_eq!(out, std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap());
+        // sin sección ni archivo: se crea con la clave
+        let dir = tmp_dir("bg-nuevo");
+        ensure_background_input(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap(), "[Input]\nBackgroundInput = True\n");
+        // las dos claves conviven en el mismo archivo
+        ensure_emulated_adapter(&dir).unwrap();
+        let out = std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap();
+        assert!(out.contains("[Input]\nBackgroundInput = True\n") && out.contains("[BluetoothPassthrough]\nEnabled = False\n"), "{out}");
     }
 
     #[test]

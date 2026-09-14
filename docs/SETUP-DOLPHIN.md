@@ -8,7 +8,9 @@ selecciona **Emular el adaptador Bluetooth de la Wii** (con "Acceder
 directamente a un adaptador de Bluetooth" el juego se cierra al arrancar),
 escribe un mando emulado por móvil conectado (Wiimote N = móvil N por orden
 de conexión) con el mapeo PepoMote, deja los demás en «Ninguno» (un mando de
-más aparece en pantalla en los juegos y molesta) y registra el servidor DSU. Deja copia `.pepomote.bak` de cada archivo que
+más aparece en pantalla en los juegos y molesta), registra el servidor DSU y
+activa **Background Input** (desde 1.6: sin él Dolphin ignora el mando en
+cuanto su ventana pierde el foco). Deja copia `.pepomote.bak` de cada archivo que
 toca. Abre Dolphin y a jugar: cada móvil es su propio Wiimote. Si Dolphin
 estaba abierto, PepoMote lo deja pendiente y lo escribe solo en cuanto lo
 cierras (Dolphin pisa su configuración al salir): ciérralo, ábrelo y listo.
@@ -32,7 +34,8 @@ Muchos juegos de Wii piden el Nunchuk (Super Mario Galaxy, Zelda, Metroid
 Prime, Mario Kart con stick…): «Conecta un Nunchuk al Mando de Wii del
 Jugador 1». Con un solo móvil no hace falta nada más: el ajuste **Nunchuk en
 el mismo móvil** (apagado de serie: enciéndelo en Ajustes de la app o con el
-chip **Nunchuk** de la cabecera del mando en modo Dolphin; se recuerda) hace
+chip verde **Nunchuk** de la cabecera del mando en Dolphin, a la derecha de
+los modos; se recuerda) hace
 que tu mando lleve su propio Nunchuk. La ventana del PC lo lista como «J1 · Mando + Nunchuk» y
 el Wiimote emulado de Dolphin sale con `Extension = Nunchuk` leyendo del
 mismo pad.
@@ -46,6 +49,14 @@ centro). El puntero sigue siendo el de siempre: se apunta con el móvil de
 lado, como con un GamePad, y agitar el móvil es agitar el mando (y el
 Nunchuk, que comparte sensores). Al apagar el Nunchuk (chip o Ajustes) el mando
 vuelve a seguir al móvil: vertical, o NES de lado.
+
+La primera vez que sale el mando apaisado, la app pregunta encima «**¿El
+mando está bien así?**»: si tu móvil lo ha girado del revés, «Darle la
+vuelta»; cuando esté como quieres, «Así lo quiero», y se queda fijo hacia ese
+lado para siempre (el sensor de giro de algunos móviles le daba la vuelta al
+mando con muy poco, o sin motivo). En Ajustes de la app, «**Lado del mando +
+Nunchuk**» lo cambia: Izquierda (el borde de la cámara queda a la izquierda),
+Derecha o Según el sensor, como antes.
 
 Para los juegos 2D con el mando de lado (New Super Mario Bros. Wii y
 parecidos) **apaga el Nunchuk** con el chip o en Ajustes: esos juegos cambian
@@ -70,6 +81,10 @@ flechas del PC y el cursor sigue el borde largo del móvil, como con el
 GamePad. Para pasar al mando de lado gira el móvil con el giro automático del
 sistema activo: con el bloqueo de giro puesto la app no gira (solo el GamePad
 y el mando + Nunchuk se ponen solos en apaisado).
+
+La cruceta (en todos los mandos de la app) es de una pieza, como la del Mando
+de Wii: se puede deslizar el pulgar de una dirección a otra sin levantarlo,
+las esquinas entre dos brazos son diagonales y el centro muerto es pequeño.
 
 ## Nunchuk: dos móviles, uno en cada mano
 

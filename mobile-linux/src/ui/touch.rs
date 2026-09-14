@@ -157,6 +157,17 @@ impl Transform {
         Rect::from_two_pos(self.to_screen(screen, r.min), self.to_screen(screen, r.max))
     }
 
+    /// Redondeo por esquina de un rectángulo virtual, llevado a las esquinas
+    /// de pantalla: girado a la izquierda la esquina superior izquierda
+    /// virtual cae en la superior derecha del móvil, y así con las demás.
+    pub fn rounding(self, r: Rounding) -> Rounding {
+        match self {
+            Transform::Straight => r,
+            Transform::RotLeft => Rounding { nw: r.sw, ne: r.nw, se: r.ne, sw: r.se },
+            Transform::RotRight => Rounding { nw: r.ne, ne: r.se, se: r.sw, sw: r.nw },
+        }
+    }
+
     /// Ángulo del texto (radianes, horario) para `TextShape`: el eje X
     /// virtual cae hacia abajo en la pantalla con el giro a la izquierda y
     /// hacia arriba con el giro a la derecha.
@@ -197,6 +208,17 @@ impl<'a> Canvas<'a> {
 
     pub fn rounded_rect(&self, r: Rect, rounding: f32, fill: Color32, stroke: Stroke) {
         self.painter.rect(self.t.rect_to_screen(self.screen, r), Rounding::same(rounding), fill, stroke);
+    }
+
+    /// Rectángulo virtual con redondeo por esquina: las esquinas giran con la pantalla.
+    pub fn rect_corners(&self, r: Rect, rounding: Rounding, fill: Color32, stroke: Stroke) {
+        self.painter.rect(self.t.rect_to_screen(self.screen, r), self.t.rounding(rounding), fill, stroke);
+    }
+
+    /// Línea cerrada por los puntos virtuales `pts`.
+    pub fn closed_line(&self, pts: &[Pos2], stroke: Stroke) {
+        let screen: Vec<Pos2> = pts.iter().map(|p| self.t.to_screen(self.screen, *p)).collect();
+        self.painter.add(egui::Shape::closed_line(screen, stroke));
     }
 
     /// Texto anclado en `pos` (virtual), girado con la pantalla. Devuelve el
@@ -470,6 +492,18 @@ mod tests {
         assert!(near(t.to_screen(s, v.max), s.right_top()));
         assert!(near(t.to_screen(s, v.min + Vec2::new(100.0, 0.0)), s.left_bottom() - Vec2::new(0.0, 100.0)));
         assert_eq!(t.angle(), -FRAC_PI_2, "texto girado en sentido antihorario");
+    }
+
+    #[test]
+    fn el_redondeo_gira_con_las_esquinas() {
+        let r = Rounding { nw: 1.0, ne: 2.0, se: 3.0, sw: 4.0 };
+        assert_eq!(Transform::Straight.rounding(r), r);
+        // A la izquierda: la esquina superior izquierda virtual es la superior derecha del móvil
+        let l = Transform::RotLeft.rounding(r);
+        assert_eq!((l.ne, l.se, l.sw, l.nw), (1.0, 2.0, 3.0, 4.0));
+        // A la derecha: la superior izquierda virtual es la inferior izquierda del móvil
+        let d = Transform::RotRight.rounding(r);
+        assert_eq!((d.sw, d.nw, d.ne, d.se), (1.0, 2.0, 3.0, 4.0));
     }
 
     #[test]

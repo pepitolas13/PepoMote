@@ -22,6 +22,8 @@ final class ControlClient {
         let name: String
         /// El receptor confirma el Nunchuk propio ("own"); "none" si no, o receptor antiguo.
         var nunchuk: String = "none"
+        /// El receptor conoce «solo pantalla» (`ok.screen_only`); nil = receptor anterior a 1.6.
+        var screenOnly: Bool? = nil
     }
 
     struct Callbacks {
@@ -33,6 +35,8 @@ final class ControlClient {
         var onPadChanged: (String) -> Void
         /// Eco del `nunchuk`: el receptor aplica (o no) el Nunchuk propio (opcional: los tests no lo usan).
         var onNunchukChanged: (Bool) -> Void = { _ in }
+        /// Eco del `screen_only`: el receptor aplica (o no) el modo «solo pantalla».
+        var onScreenOnlyChanged: (Bool) -> Void = { _ in }
         var onNotice: (String) -> Void
         var onClosed: () -> Void
     }
@@ -49,6 +53,8 @@ final class ControlClient {
     private let role: String
     /// Mando con su propio Nunchuk (`"nunchuk":"own"` en el hello; solo rol mando).
     private let ownNunchuk: Bool
+    /// Modo Wii U: el móvil solo hace de pantalla táctil (`"screen_only":true` en el hello; solo rol mando).
+    private let screenOnly: Bool
     private let callbacks: Callbacks
     private let defaultPort: Int
     private var buffer = Data()
@@ -66,13 +72,15 @@ final class ControlClient {
         deviceModel: String,
         role: String,
         callbacks: Callbacks,
-        ownNunchuk: Bool = false
+        ownNunchuk: Bool = false,
+        screenOnly: Bool = false
     ) {
         self.token = token
         self.deviceName = deviceName
         self.deviceModel = deviceModel
         self.role = role
         self.ownNunchuk = ownNunchuk
+        self.screenOnly = screenOnly
         self.callbacks = callbacks
         defaultPort = port
         let tcp = NWProtocolTCP.Options()
@@ -120,6 +128,8 @@ final class ControlClient {
         if role == "nunchuk" { hello["role"] = role }
         // Nunchuk en el mismo móvil: un receptor antiguo lo ignora (y no lo confirma)
         if role != "nunchuk", ownNunchuk { hello["nunchuk"] = "own" }
+        // Solo pantalla (Wii U): un receptor antiguo lo ignora (y no lo confirma)
+        if role != "nunchuk", screenOnly { hello["screen_only"] = true }
         // Sin `pad`: en Wii U se empieza siempre como GamePad/Pro (lo dice el ok)
         sendJson(hello)
     }
@@ -171,7 +181,8 @@ final class ControlClient {
                 supportsCemu: ControlClient.supportsCemu(obj),
                 pad: obj["pad"] as? String ?? "gamepad",
                 name: obj["name"] as? String ?? "",
-                nunchuk: obj["nunchuk"] as? String ?? "none"
+                nunchuk: obj["nunchuk"] as? String ?? "none",
+                screenOnly: obj["screen_only"] as? Bool
             )
             DispatchQueue.main.async { self.callbacks.onOk(ok) }
         case "err":
@@ -192,6 +203,9 @@ final class ControlClient {
         case "nunchuk":
             let own = obj["own"] as? Bool ?? false
             DispatchQueue.main.async { self.callbacks.onNunchukChanged(own) }
+        case "screen_only":
+            let on = obj["on"] as? Bool ?? false
+            DispatchQueue.main.async { self.callbacks.onScreenOnlyChanged(on) }
         case "notice":
             if let text = obj["text"] as? String, !text.trimmingCharacters(in: .whitespaces).isEmpty {
                 DispatchQueue.main.async { self.callbacks.onNotice(text) }
@@ -243,6 +257,9 @@ final class ControlClient {
 
     /// Nunchuk en el mismo móvil, encendido o apagado; el receptor lo confirma con el eco.
     func sendNunchuk(_ own: Bool) { sendJson(["m": "nunchuk", "own": own]) }
+
+    /// Modo Wii U: el móvil solo como pantalla táctil, sí o no; el receptor lo confirma con el eco.
+    func sendScreenOnly(_ on: Bool) { sendJson(["m": "screen_only", "on": on]) }
 
     /// Modo Wii U: texto para el teclado en pantalla de Cemu.
     func sendText(_ text: String) { sendLine(TextInput.encode(text)) }

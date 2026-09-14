@@ -100,6 +100,16 @@ pub fn wanted_size(zone_px: (f32, f32)) -> (u32, u32) {
     (w, h)
 }
 
+/// Tamaño a pedir en pantalla completa: el área entera en píxeles físicos,
+/// sin pasar del nativo (el receptor conserva la proporción de la imagen).
+pub fn wanted_size_full(zone_px: (f32, f32)) -> (u32, u32) {
+    let ok = |v: f32| v.is_finite() && v >= 1.0;
+    if !ok(zone_px.0) || !ok(zone_px.1) {
+        return (MAX_W, MAX_H);
+    }
+    ((zone_px.0.round() as u32).min(MAX_W), (zone_px.1.round() as u32).min(MAX_H))
+}
+
 /// Cambio de tamaño que merece reabrir el canal (más de 8 px por eje).
 pub fn size_differs(a: (u32, u32), b: (u32, u32)) -> bool {
     a.0.abs_diff(b.0) > 8 || a.1.abs_diff(b.1) > 8
@@ -868,6 +878,11 @@ mod tests {
         assert_eq!(wanted_size((300.6, 169.0)), (301, 169));
         assert_eq!(wanted_size((0.0, 0.0)), (854, 480), "sin zona: el nativo");
         assert_eq!(wanted_size((f32::NAN, 1.0)), (854, 480));
+        // pantalla completa: el área entera, como mucho el nativo
+        assert_eq!(wanted_size_full((2340.0, 1080.0)), (854, 480));
+        assert_eq!(wanted_size_full((720.4, 405.0)), (720, 405));
+        assert_eq!(wanted_size_full((0.0, 0.0)), (854, 480));
+        assert_eq!(wanted_size_full((f32::NAN, 100.0)), (854, 480));
         assert!(!size_differs((640, 360), (646, 364)));
         assert!(size_differs((640, 360), (660, 371)));
     }

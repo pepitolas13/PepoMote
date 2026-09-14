@@ -40,6 +40,21 @@ enum AppPrefs {
         set { d.set(newValue, forKey: "ownNunchuk") }
     }
 
+    /// Lado del mando + Nunchuk apaisado (`LandscapeSide`): "" hasta que se
+    /// elige la primera vez; "left", "right" o "sensor" (Ajustes).
+    static let nunchukSideKey = "nunchukSide"
+    static var nunchukSide: String {
+        get { d.string(forKey: nunchukSideKey) ?? "" }
+        set { d.set(newValue, forKey: nunchukSideKey) }
+    }
+
+    /// Lado del GamePad de Wii U apaisado (`LandscapeSide`), aparte del del mando + Nunchuk.
+    static let gamePadSideKey = "gamePadSide"
+    static var gamePadSide: String {
+        get { d.string(forKey: gamePadSideKey) ?? "" }
+        set { d.set(newValue, forKey: gamePadSideKey) }
+    }
+
     /// Avisos del receptor en pantalla («Dolphin configurado…»): unos
     /// segundos sobre el mando al cambiar de modo. Apagados, no se enseñan.
     static var receiverNotices: Bool {
@@ -52,7 +67,31 @@ enum AppPrefs {
     static let gamePadNoScreenKey = "gamePadNoScreen"
     static var gamePadNoScreen: Bool {
         get { d.bool(forKey: gamePadNoScreenKey) }
-        set { d.set(newValue, forKey: gamePadNoScreenKey) }
+        set {
+            d.set(newValue, forKey: gamePadNoScreenKey)
+            // excluyente con la pantalla completa
+            if newValue { d.set(false, forKey: gamePadFullScreenKey) }
+        }
+    }
+
+    /// Pantalla del GamePad a pantalla completa: solo la pantalla de Cemu y el
+    /// táctil, sin sticks ni botones (el mando real va en el PC). Ajustes.
+    /// `GamePadScreen` lo observa con @AppStorage.
+    static let gamePadFullScreenKey = "gamePadFullScreen"
+    static var gamePadFullScreen: Bool {
+        get { d.bool(forKey: gamePadFullScreenKey) }
+        set {
+            d.set(newValue, forKey: gamePadFullScreenKey)
+            // excluyente con «GamePad sin pantalla táctil»
+            if newValue { d.set(false, forKey: gamePadNoScreenKey) }
+        }
+    }
+
+    /// En pantalla completa, botón de teclado arriba a la derecha (Ajustes).
+    static let gamePadFullScreenKeyboardKey = "gamePadFullScreenKeyboard"
+    static var gamePadFullScreenKeyboard: Bool {
+        get { d.object(forKey: gamePadFullScreenKeyboardKey) as? Bool ?? true }
+        set { d.set(newValue, forKey: gamePadFullScreenKeyboardKey) }
     }
 
     // MARK: aviso de versión nueva (UpdateCheck)

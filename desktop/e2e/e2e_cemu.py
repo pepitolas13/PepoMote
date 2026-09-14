@@ -176,6 +176,70 @@ s3.sendall(b'{"m":"bye"}\n'); s3.close()
 s2.sendall(b'{"m":"bye"}\n'); s2.close()
 check(wait_profile(1, lambda x: x is None), "Cemu: controller1.xml eliminado al irse el jugador 2")
 
+# 8b) «solo pantalla»: el móvil GamePad solo hace de pantalla táctil junto al mando real del usuario
+def readnotice(f, prefix, timeout=4.0):
+    """Lee avisos hasta uno que empiece por `prefix` (los demás se saltan)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        n = readmsg(f, "notice", max(0.1, end - time.time()))
+        if n is None: return None
+        if n.get("text", "").startswith(prefix): return n
+    return None
+
+AJENO = ('<?xml version="1.0" encoding="UTF-8"?>\n<emulated_controller>\n\t<type>Wii U GamePad</type>\n\t<profile>MiMando</profile>\n'
+         '\t<controller>\n\t\t<api>XInput</api>\n\t\t<uuid>0</uuid>\n\t\t<display_name>Controller 1</display_name>\n'
+         '\t\t<mappings>\n\t\t\t<entry>\n\t\t\t\t<mapping>1</mapping>\n\t\t\t\t<button>0</button>\n\t\t\t</entry>\n\t\t</mappings>\n'
+         '\t</controller>\n</emulated_controller>\n')
+BAK0 = os.path.join(PROFILES, "controller0.xml.pepomote.bak")
+s1.sendall(b'{"m":"bye"}\n'); s1.close()
+time.sleep(0.6)
+os.makedirs(PROFILES, exist_ok=True)
+open(os.path.join(PROFILES, "controller0.xml"), "w", encoding="utf-8").write(AJENO)
+if os.path.exists(BAK0): os.remove(BAK0)
+s1, f1, ok1 = hello({"token": token, "name": "MandoE2E", "screen_only": True})
+check(ok1.get("screen_only") is True and ok1.get("pad") == "gamepad", f"solo pantalla: ok.screen_only y pad gamepad ({ok1})")
+check(wait_profile(0, lambda x: x and x.count("<controller>") == 2 and "<api>XInput</api>" in x and "PepoMote J1 pantalla" in x
+                   and "<profile>MiMando</profile>" in x and "<profile>PepoMote</profile>" not in x),
+      "Cemu: controller0.xml fusionado (mando XInput del usuario + DSU del móvil, sin marca PepoMote)")
+p0 = profile(0) or ""
+ours = p0[p0.find("PepoMote J1 pantalla"):]
+check("<motion>" not in ours and "<entry>" not in ours and "<ip>127.0.0.1</ip>" in ours and "<port>26760</port>" in ours,
+      "Cemu: nuestro nodo sin movimiento ni botones, con ip y puerto del DSU")
+check(os.path.exists(BAK0) and open(BAK0, encoding="utf-8").read() == AJENO, "Cemu: copia .pepomote.bak del perfil del usuario tal cual")
+notice = readnotice(f1, "Cemu configurado", 3.0)
+check(notice is not None, f"solo pantalla: notice de configuración ({notice})")
+# el táctil sigue llegando por el pad DSU del móvil
+d = pad_data(0, lambda i: send(ok1["session_id"], FLAG_QUAT | FLAG_STICK | FLAG_EXT | FLAG_TOUCH, 0, touch=(0x8000, 0x4000)))
+check(d is not None and d[56] == 1 and struct.unpack_from("<H", d, 58)[0] == 960 and struct.unpack_from("<H", d, 60)[0] == 236,
+      f"DSU: táctil del móvil solo pantalla activo (960, 236) (got {struct.unpack_from('<HH', d, 58) if d else None})")
+# apagar: perfil completo nuestro (queda la copia); encender: fusión otra vez desde la copia
+s1.sendall(b'{"m":"screen_only","on":false}\n'); r = readmsg(f1, "screen_only")
+check(r is not None and r.get("on") is False, f"solo pantalla: eco off ({r})")
+check(wait_profile(0, lambda x: x and "<profile>PepoMote</profile>" in x and x.count("<controller>") == 1), "Cemu: apagado → perfil completo nuestro")
+check(open(BAK0, encoding="utf-8").read() == AJENO, "Cemu: la copia del usuario sigue intacta")
+s1.sendall(b'{"m":"screen_only","on":true}\n'); r = readmsg(f1, "screen_only")
+check(r is not None and r.get("on") is True, f"solo pantalla: eco on ({r})")
+check(wait_profile(0, lambda x: x and x.count("<controller>") == 2 and "<api>XInput</api>" in x and "<profile>PepoMote</profile>" not in x),
+      "Cemu: encendido → fusionado otra vez desde la copia")
+# un jugador 2 (sin la opción) es Pro; se va antes que J1
+s2, f2, ok2 = hello({"token": token, "name": "Mando2E2E"})
+check(ok2.get("screen_only") is False and ok2.get("pad") == "pro", f"jugador 2: ok.screen_only false, pad pro ({ok2})")
+check(wait_profile(1, lambda x: x and "<type>Wii U Pro Controller</type>" in x), "Cemu: controller1.xml Pro para el jugador 2")
+s2.sendall(b'{"m":"bye"}\n'); s2.close()
+check(wait_profile(1, lambda x: x is None), "Cemu: controller1.xml eliminado al irse el jugador 2")
+check((profile(0) or "").count("<controller>") == 2, "Cemu: controller0.xml sigue fusionado con J2 fuera")
+# el último en irse era solo pantalla → el perfil del usuario vuelve tal cual y la copia desaparece
+s1.sendall(b'{"m":"bye"}\n'); s1.close()
+check(wait_profile(0, lambda x: x == AJENO), "Cemu: al irse el móvil solo pantalla, el perfil del usuario vuelve tal cual")
+check(not os.path.exists(BAK0), "Cemu: y la copia desaparece")
+# Controller 1 del usuario que no es un GamePad: se fusiona igual y el móvil recibe el aviso
+open(os.path.join(PROFILES, "controller0.xml"), "w", encoding="utf-8").write(AJENO.replace("Wii U GamePad", "Wii U Pro Controller"))
+s1, f1, ok1 = hello({"token": token, "name": "MandoE2E", "screen_only": True})
+check(readnotice(f1, "Cemu: el mando 1 no es un GamePad", 4.0) is not None, "solo pantalla: aviso de que el mando 1 no es un GamePad")
+check(wait_profile(0, lambda x: x and x.count("<controller>") == 2 and "Wii U Pro Controller" in x), "Cemu: fusionado también con tipo Pro (sin cambiar el tipo)")
+s1.sendall(b'{"m":"screen_only","on":false}\n'); r = readmsg(f1, "screen_only")
+check(r is not None and r.get("on") is False, "solo pantalla: apagado para seguir con el resto")
+
 # 9) difusión del modo: un jugador 2 nuevo recibe el cambio a dolphin sin pedirlo, y Dolphin se configura como antes (regresión)
 s2, f2, ok2 = hello({"token": token, "name": "Mando2E2E"})
 s1.sendall(b'{"m":"mode","mode":"dolphin"}\n'); r = readmsg(f1, "mode")

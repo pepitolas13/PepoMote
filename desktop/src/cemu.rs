@@ -17,6 +17,7 @@
 //! Nunca escribe con Cemu abierto (su config se sobreescribe al salir) y
 //! deja backup `.pepomote.bak` de cualquier perfil ajeno que sustituya.
 
+use crate::state::LockTolerant;
 use crate::state::{cemu_layout, CemuPlayer, Config, Mode, PadKind, SharedState};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -227,6 +228,144 @@ fn backup_path(path: &Path) -> PathBuf {
     path.with_extension("xml.pepomote.bak")
 }
 
+// ---------------------------------------------------------------------------
+// Solo pantalla: el móvil como pantalla táctil junto al mando real del usuario
+// ---------------------------------------------------------------------------
+
+/// Algo que decirle al móvil aunque la configuración se haya hecho.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Warning {
+    /// El perfil del usuario en ese índice no es un GamePad: el táctil del
+    /// móvil no se aplicará.
+    NotGamePad { index: u8, dsu_slot: u8 },
+}
+
+/// Nodo DSU del móvil «solo pantalla»: sin movimiento ni botones (los pone
+/// el mando real del usuario); el táctil viene implícito con el DSU.
+fn screen_only_node(pl: &CemuPlayer) -> String {
+    let mut out = String::new();
+    controller_node(&mut out, pl.dsu_slot, &format!("PepoMote J{} pantalla", pl.index + 1), false, &[]);
+    out
+}
+
+/// Rangos (inicio, fin) de cada `<controller>…</controller>`: el inicio
+/// retrocede al principio de línea si solo hay espacios delante y el fin se
+/// lleva el salto de línea, así quitar un bloque no deja huecos.
+fn controller_blocks(xml: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(i) = xml[from..].find("<controller>") {
+        let start = from + i;
+        let Some(j) = xml[start..].find("</controller>") else { break };
+        let end = start + j + "</controller>".len();
+        let line_start = xml[..start].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        let s = if xml[line_start..start].trim().is_empty() { line_start } else { start };
+        let e = if xml[end..].starts_with("\r\n") {
+            end + 2
+        } else if xml[end..].starts_with('\n') {
+            end + 1
+        } else {
+            end
+        };
+        out.push((s, e));
+        from = end;
+    }
+    out
+}
+
+/// Texto (recortado) entre `<tag>` y `</tag>`.
+fn tag_text<'a>(block: &'a str, tag: &str) -> Option<&'a str> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let i = block.find(&open)? + open.len();
+    let j = block[i..].find(&close)? + i;
+    Some(block[i..j].trim())
+}
+
+fn is_pepomote_named(block: &str) -> bool {
+    tag_text(block, "display_name").is_some_and(|n| n.starts_with("PepoMote"))
+}
+
+/// Nuestro nodo, por nombre («PepoMote …») o por servidor (un DSUController
+/// en la ip y puerto de PepoMote): Cemu re-guarda los perfiles al cerrar y
+/// puede cambiarle el nombre, la ip y el puerto sobreviven.
+fn is_pepomote_node(block: &str) -> bool {
+    is_pepomote_named(block)
+        || (tag_text(block, "api") == Some("DSUController")
+            && tag_text(block, "ip") == Some(DSU_IP)
+            && tag_text(block, "port") == Some(&DSU_PORT.to_string()))
+}
+
+fn strip_nodes(xml: &str, pred: fn(&str) -> bool) -> String {
+    let mut out = String::with_capacity(xml.len());
+    let mut last = 0;
+    for (s, e) in controller_blocks(xml) {
+        if pred(&xml[s..e]) {
+            out.push_str(&xml[last..s]);
+            last = e;
+        }
+    }
+    out.push_str(&xml[last..]);
+    out
+}
+
+pub(crate) fn strip_pepomote_nodes(xml: &str) -> String {
+    strip_nodes(xml, is_pepomote_node)
+}
+
+pub(crate) fn has_pepomote_node(xml: &str) -> bool {
+    controller_blocks(xml).iter().any(|(s, e)| is_pepomote_node(&xml[*s..*e]))
+}
+
+pub(crate) fn has_gamepad_type(xml: &str) -> bool {
+    tag_text(xml, "type") == Some("Wii U GamePad")
+}
+
+/// El perfil del usuario con nuestro nodo (y sin restos de nodos nuestros
+/// anteriores) justo antes del cierre; `None` si no es un perfil de Cemu.
+pub(crate) fn merge_screen_only(original: &str, node: &str) -> Option<String> {
+    let base = strip_pepomote_nodes(original);
+    let at = base.rfind("</emulated_controller>")?;
+    let mut out = String::with_capacity(base.len() + node.len() + 1);
+    out.push_str(&base[..at]);
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(node);
+    out.push_str(&base[at..]);
+    Some(out)
+}
+
+/// Perfil de un móvil «solo pantalla»: fusión con el mando real del usuario
+/// (el perfil ajeno actual, o el que guardamos antes en `.pepomote.bak`),
+/// con copia del ajeno una sola vez. Sin mando del usuario, el perfil
+/// completo de siempre (táctil y movimiento del móvil, nada que fusionar).
+fn write_screen_only(path: &Path, pl: &CemuPlayer) -> Result<Option<Warning>, String> {
+    let current = std::fs::read_to_string(path).unwrap_or_default();
+    let bak = backup_path(path);
+    let base = if !current.is_empty() && !is_ours(&current) {
+        Some(current.clone())
+    } else {
+        std::fs::read_to_string(&bak).ok().filter(|b| !b.is_empty() && !is_ours(b))
+    };
+    let Some(base) = base else {
+        write_if_changed(path, &profile_xml(pl))?;
+        return Ok(None);
+    };
+    let Some(merged) = merge_screen_only(&base, &screen_only_node(pl)) else {
+        write_if_changed(path, &profile_xml(pl))?;
+        return Ok(None);
+    };
+    if merged != current {
+        if !bak.exists() && !current.is_empty() {
+            // el ajeno tal cual (sin nodos nuestros de otra sesión), una sola vez
+            std::fs::write(&bak, strip_pepomote_nodes(&current)).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(path, &merged).map_err(|e| e.to_string())?;
+    }
+    Ok((!has_gamepad_type(&base)).then_some(Warning::NotGamePad { index: pl.index, dsu_slot: pl.dsu_slot }))
+}
+
 /// Escribe el perfil solo si cambia. Un perfil AJENO (un mando real del
 /// usuario) se guarda antes como `.pepomote.bak`, una sola vez.
 fn write_if_changed(path: &Path, new: &str) -> Result<bool, String> {
@@ -244,35 +383,50 @@ fn write_if_changed(path: &Path, new: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Un perfil nuestro en un índice sin jugador: fuera, y si sustituyó a uno
-/// ajeno, ese vuelve.
-fn remove_ours(path: &Path) {
+/// Un índice sin jugador: un perfil nuestro, fuera (y si sustituyó a uno
+/// ajeno, ese vuelve); un perfil ajeno con nuestro nodo «solo pantalla»,
+/// vuelve el respaldo o, sin respaldo, se le quita solo el nodo nuestro.
+fn clean_index(path: &Path) {
     let Ok(content) = std::fs::read_to_string(path) else { return };
-    if !is_ours(&content) {
-        return;
-    }
     let bak = backup_path(path);
-    if bak.exists() {
-        let _ = std::fs::rename(&bak, path);
-    } else {
-        let _ = std::fs::remove_file(path);
+    if is_ours(&content) {
+        if bak.exists() {
+            let _ = std::fs::rename(&bak, path);
+        } else {
+            let _ = std::fs::remove_file(path);
+        }
+    } else if has_pepomote_node(&content) {
+        if bak.exists() {
+            let _ = std::fs::rename(&bak, path);
+        } else {
+            let _ = std::fs::write(path, strip_nodes(&content, is_pepomote_named));
+        }
     }
 }
 
-/// `controllerProfiles/controller{N}.xml` por jugador; los índices sin
-/// jugador se limpian si eran nuestros.
-pub fn write_profiles(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
+/// `controllerProfiles/controller{N}.xml` por jugador (fusionado con el mando
+/// real del usuario si el móvil es «solo pantalla»); los índices sin jugador
+/// se limpian si eran nuestros. Devuelve los avisos para los móviles.
+pub fn write_profiles(cfg_dir: &Path, layout: &Layout) -> Result<Vec<Warning>, String> {
     let dir = cfg_dir.join("controllerProfiles");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut warnings = Vec::new();
     for pl in layout {
-        write_if_changed(&profile_path(&dir, pl.index), &profile_xml(pl))?;
+        let path = profile_path(&dir, pl.index);
+        if pl.screen_only {
+            if let Some(w) = write_screen_only(&path, pl)? {
+                warnings.push(w);
+            }
+        } else {
+            write_if_changed(&path, &profile_xml(pl))?;
+        }
     }
     for index in 0..MAX_CONTROLLERS {
         if !layout.iter().any(|p| p.index == index) {
-            remove_ours(&profile_path(&dir, index));
+            clean_index(&profile_path(&dir, index));
         }
     }
-    Ok(())
+    Ok(warnings)
 }
 
 /// `settings.xml`: `<open_pad>true</open_pad>`, es decir, Cemu abre su ventana
@@ -619,6 +773,7 @@ fn describe(layout: &Layout) -> String {
         .iter()
         .map(|p| {
             let kind = match p.kind {
+                PadKind::GamePad if p.screen_only => tr!("cemu.kind_gamepad_screen"),
                 PadKind::GamePad => tr!("cemu.kind_gamepad"),
                 PadKind::Pro => tr!("cemu.kind_pro"),
                 PadKind::Wiimote => {
@@ -636,20 +791,24 @@ fn describe(layout: &Layout) -> String {
 }
 
 /// Escribe los perfiles en todas las instalaciones de Cemu a la vista.
-pub fn configure(cfg: &Config, layout: &Layout) -> Result<String, String> {
+pub fn configure(cfg: &Config, layout: &Layout) -> Result<(String, Vec<Warning>), String> {
     let dirs = config_dirs_from(&exe_dirs(cfg))?;
     let gamepad = layout.iter().any(|p| p.kind == PadKind::GamePad);
+    let mut warnings = Vec::new();
     for dir in &dirs {
-        write_profiles(dir, layout)?;
+        warnings.extend(write_profiles(dir, layout)?);
         if gamepad {
             // la segunda pantalla del GamePad vive en la ventana GamePad View
             ensure_pad_window(dir)?;
         }
     }
-    Ok(format!(
-        "{}{}",
-        describe(layout),
-        if dirs.len() > 1 { tr!("cemu.installs", dirs.len()) } else { String::new() }
+    Ok((
+        format!(
+            "{}{}",
+            describe(layout),
+            if dirs.len() > 1 { tr!("cemu.installs", dirs.len()) } else { String::new() }
+        ),
+        warnings,
     ))
 }
 
@@ -658,7 +817,7 @@ pub fn configure(cfg: &Config, layout: &Layout) -> Result<String, String> {
 pub(crate) fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
     let Some(dir) = dir else { return };
     let dir_s = dir.to_string_lossy().to_string();
-    let mut s = shared.lock().unwrap();
+    let mut s = shared.lock_tolerant();
     if s.config.cemu_dir != dir_s {
         s.config.cemu_dir = dir_s;
         s.config.save();
@@ -677,16 +836,18 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
     };
     learn_dir(shared, dir);
     // `msg` para la ventana (con detalle); `phone` para los móviles (una línea corta)
+    let mut warnings = Vec::new();
     let (ok, msg, phone) = if running {
         // Cemu sobreescribe sus perfiles al salir: se escribe en cuanto se
         // cierre (vigilante de auto_mode)
-        shared.lock().unwrap().cemu_pending = true;
+        shared.lock_tolerant().cemu_pending = true;
         (false, tr!("cemu.open").to_owned(), tr!("cemu.phone_open").to_owned())
     } else {
-        shared.lock().unwrap().cemu_pending = false;
-        let cfg = shared.lock().unwrap().config.clone();
+        shared.lock_tolerant().cemu_pending = false;
+        let cfg = shared.lock_tolerant().config.clone();
         match configure(&cfg, layout) {
-            Ok(details) => {
+            Ok((details, warns)) => {
+                warnings = warns;
                 let prefix = if after_close { tr!("cemu.configured_after_close") } else { tr!("cemu.configured") };
                 (true, format!("{prefix} {details}"), tr!("cemu.phone_configured").to_owned())
             }
@@ -696,16 +857,24 @@ fn run_configure(shared: &SharedState, layout: &Layout, after_close: bool) {
             }
         }
     };
-    shared.lock().unwrap().cemu_cfg_status = Some(CfgStatus { ok, text: msg });
+    shared.lock_tolerant().cemu_cfg_status = Some(CfgStatus { ok, text: msg });
     crate::net::notify_all(&phone);
+    // Avisos para un móvil concreto, después del general (queda a la vista)
+    for w in warnings {
+        match w {
+            Warning::NotGamePad { dsu_slot, .. } => {
+                crate::net::notify_slot(dsu_slot, &tr!("cemu.phone_not_gamepad"));
+            }
+        }
+    }
 }
 
 /// Disparo automático (conexión/desconexión/cambio de modo o de tipo de mando).
 pub fn maybe_auto_configure(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
+    let _ = crate::threads::spawn_once("emu-configure", move || {
         let (auto, mode, layout) = {
-            let s = shared.lock().unwrap();
+            let s = shared.lock_tolerant();
             (s.config.auto_cemu, s.mode, cemu_layout(&s.players))
         };
         if auto && mode == Mode::Cemu && !layout.is_empty() {
@@ -718,23 +887,69 @@ pub fn maybe_auto_configure(shared: &SharedState) {
 /// lo llama el vigilante de `auto_mode` al ver a Cemu cerrado.
 pub fn apply_pending(shared: &SharedState) {
     let (auto, mode, layout) = {
-        let s = shared.lock().unwrap();
+        let s = shared.lock_tolerant();
         (s.config.auto_cemu, s.mode, cemu_layout(&s.players))
     };
     if auto && mode == Mode::Cemu && !layout.is_empty() {
         run_configure(shared, &layout, true);
     } else {
-        shared.lock().unwrap().cemu_pending = false;
+        shared.lock_tolerant().cemu_pending = false;
+    }
+}
+
+/// El último móvil se ha ido y era «solo pantalla»: su nodo DSU sobra en el
+/// perfil del usuario (Cemu lo enseñaría como desconectado) y el respaldo
+/// vuelve. Solo en este caso: en el modo normal el perfil del móvil se queda
+/// escrito, como siempre. Con Cemu abierto queda pendiente para el vigilante.
+pub fn cleanup_after_screen_only(shared: &SharedState) {
+    let shared = shared.clone();
+    let _ = crate::threads::spawn_once("emu-configure", move || {
+        let (auto, mode) = {
+            let s = shared.lock_tolerant();
+            (s.config.auto_cemu, s.mode)
+        };
+        if auto && mode == Mode::Cemu {
+            run_cleanup(&shared);
+        }
+    });
+}
+
+/// Lo llama el vigilante de `auto_mode` al ver a Cemu cerrado.
+pub fn apply_cleanup_pending(shared: &SharedState) {
+    run_cleanup(shared);
+}
+
+fn run_cleanup(shared: &SharedState) {
+    let _serial = CONFIGURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let (running, dir) = if std::env::var_os("PEPOMOTE_ASSUME_EMULATOR_CLOSED").is_some() {
+        (false, None)
+    } else {
+        running_exe()
+    };
+    learn_dir(shared, dir);
+    if running {
+        shared.lock_tolerant().cemu_cleanup_pending = true;
+        return;
+    }
+    shared.lock_tolerant().cemu_cleanup_pending = false;
+    let cfg = shared.lock_tolerant().config.clone();
+    if let Ok(dirs) = config_dirs_from(&exe_dirs(&cfg)) {
+        for dir in &dirs {
+            if let Err(e) = write_profiles(dir, &[]) {
+                crate::log_line!("Cemu: no se pudo restaurar el perfil del usuario en {}: {e}", dir.display());
+            }
+        }
+        crate::log_line!("Cemu: perfil del usuario restaurado tras el móvil «solo pantalla»");
     }
 }
 
 /// Botón manual de la ventana.
 pub fn configure_now(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
-        let mut layout = cemu_layout(&shared.lock().unwrap().players);
+    let _ = crate::threads::spawn_once("emu-configure", move || {
+        let mut layout = cemu_layout(&shared.lock_tolerant().players);
         if layout.is_empty() {
-            layout.push(CemuPlayer { index: 0, kind: PadKind::GamePad, dsu_slot: 0, nunchuk_slot: None });
+            layout.push(CemuPlayer { index: 0, kind: PadKind::GamePad, dsu_slot: 0, nunchuk_slot: None, screen_only: false });
         }
         run_configure(&shared, &layout, false);
     });
@@ -743,10 +958,10 @@ pub fn configure_now(shared: &SharedState) {
 /// Botón «Detectar» de Ajustes: busca Cemu y guarda su carpeta.
 pub fn detect_now(shared: &SharedState) {
     let shared = shared.clone();
-    std::thread::spawn(move || {
+    let _ = crate::threads::spawn_once("emu-detect", move || {
         let (_, dir) = running_exe();
         let found = dir.into_iter().chain(find_exe_dirs()).next();
-        let mut s = shared.lock().unwrap();
+        let mut s = shared.lock_tolerant();
         match found {
             Some(d) => {
                 s.config.cemu_dir = d.to_string_lossy().to_string();
@@ -772,16 +987,23 @@ mod tests {
     }
 
     fn gamepad(index: u8, slot: u8) -> CemuPlayer {
-        CemuPlayer { index, kind: PadKind::GamePad, dsu_slot: slot, nunchuk_slot: None }
+        CemuPlayer { index, kind: PadKind::GamePad, dsu_slot: slot, nunchuk_slot: None, screen_only: false }
+    }
+
+    fn gamepad_screen(index: u8, slot: u8) -> CemuPlayer {
+        CemuPlayer { index, kind: PadKind::GamePad, dsu_slot: slot, nunchuk_slot: None, screen_only: true }
     }
 
     fn pro(index: u8, slot: u8) -> CemuPlayer {
-        CemuPlayer { index, kind: PadKind::Pro, dsu_slot: slot, nunchuk_slot: None }
+        CemuPlayer { index, kind: PadKind::Pro, dsu_slot: slot, nunchuk_slot: None, screen_only: false }
     }
 
     fn wii(index: u8, slot: u8, nunchuk: Option<u8>) -> CemuPlayer {
-        CemuPlayer { index, kind: PadKind::Wiimote, dsu_slot: slot, nunchuk_slot: nunchuk }
+        CemuPlayer { index, kind: PadKind::Wiimote, dsu_slot: slot, nunchuk_slot: nunchuk, screen_only: false }
     }
+
+    /// Perfil de un mando real del usuario tal como lo guarda Cemu.
+    const AJENO: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<emulated_controller>\n\t<type>Wii U GamePad</type>\n\t<profile>MiMando</profile>\n\t<controller>\n\t\t<api>XInput</api>\n\t\t<uuid>0</uuid>\n\t\t<display_name>Controller 1</display_name>\n\t\t<mappings>\n\t\t\t<entry>\n\t\t\t\t<mapping>1</mapping>\n\t\t\t\t<button>0</button>\n\t\t\t</entry>\n\t\t</mappings>\n\t</controller>\n</emulated_controller>\n";
 
     /// (mapping → button) de un XML, en orden.
     fn mappings(xml: &str) -> Vec<(u32, u32)> {
@@ -908,6 +1130,138 @@ mod tests {
         write_profiles(&dir, &[gamepad(0, 0)]).unwrap();
         assert_eq!(std::fs::read_to_string(profiles.join("controller1.xml")).unwrap(), ajeno);
         assert!(!bak.exists());
+    }
+
+    #[test]
+    fn nodo_solo_pantalla_sin_movimiento_ni_botones() {
+        let n = screen_only_node(&gamepad_screen(0, 2));
+        assert!(n.starts_with("\t<controller>\n\t\t<api>DSUController</api>\n\t\t<uuid>2</uuid>\n"), "{n}");
+        assert!(n.contains("<display_name>PepoMote J1 pantalla</display_name>"));
+        assert!(!n.contains("<motion>"));
+        assert!(!n.contains("<entry>"));
+        assert!(n.contains("<ip>127.0.0.1</ip>\n\t\t<port>26760</port>"));
+        assert!(n.ends_with("\t</controller>\n"));
+    }
+
+    #[test]
+    fn fusion_con_el_mando_del_usuario() {
+        let node = screen_only_node(&gamepad_screen(0, 0));
+        let merged = merge_screen_only(AJENO, &node).unwrap();
+        assert_eq!(merged.matches("<controller>").count(), 2);
+        let start = AJENO.find("\t<controller>").unwrap();
+        let end = AJENO.find("\t</controller>\n").unwrap() + "\t</controller>\n".len();
+        assert!(merged.contains(&AJENO[start..end]), "el mando del usuario queda byte a byte");
+        assert!(merged.contains("<type>Wii U GamePad</type>") && merged.contains("<profile>MiMando</profile>"));
+        assert!(!is_ours(&merged), "sin la marca: es el perfil del usuario con nuestro nodo");
+        assert!(merged.trim_end().ends_with("</controller>\n</emulated_controller>"), "{merged}");
+        assert!(merged.find("PepoMote J1 pantalla").unwrap() > merged.find("XInput").unwrap(), "nuestro nodo va el último");
+        // idempotente
+        assert_eq!(merge_screen_only(&merged, &node).unwrap(), merged);
+        // re-guardado por Cemu (4 espacios, nuestro nodo renombrado): siguen siendo 2
+        let resaved = merged.replace('\t', "    ").replace("PepoMote J1 pantalla", "Controller 2");
+        let again = merge_screen_only(&resaved, &node).unwrap();
+        assert_eq!(again.matches("<controller>").count(), 2, "{again}");
+        assert!(again.contains("PepoMote J1 pantalla") && again.contains("XInput"));
+    }
+
+    #[test]
+    fn nodos_pepomote_por_nombre_o_por_servidor() {
+        let mine_named = "<controller>\n<api>SDLController</api>\n<display_name>PepoMote J1 GamePad</display_name>\n</controller>\n";
+        let mine_server = "<controller>\n<api>DSUController</api>\n<display_name>Controller 3</display_name>\n<ip>127.0.0.1</ip>\n<port>26760</port>\n</controller>\n";
+        let other_dsu = "<controller>\n<api>DSUController</api>\n<display_name>Otro DSU</display_name>\n<ip>127.0.0.1</ip>\n<port>26761</port>\n</controller>\n";
+        let xinput = "<controller>\n<api>XInput</api>\n<display_name>Controller 1</display_name>\n</controller>\n";
+        let xml = format!("<emulated_controller>\n{mine_named}{mine_server}{other_dsu}{xinput}</emulated_controller>\n");
+        let stripped = strip_pepomote_nodes(&xml);
+        assert!(!stripped.contains("PepoMote") && !stripped.contains("Controller 3"), "{stripped}");
+        assert!(stripped.contains("Otro DSU") && stripped.contains("XInput"));
+        assert!(has_pepomote_node(&xml) && !has_pepomote_node(&stripped));
+        assert!(has_gamepad_type(AJENO) && !has_gamepad_type(&xml));
+        assert!(merge_screen_only("no es un perfil", "<controller></controller>\n").is_none());
+    }
+
+    #[test]
+    fn solo_pantalla_con_copia_y_restauracion() {
+        let dir = tmp_dir("screen-only");
+        let profiles = dir.join("controllerProfiles");
+        std::fs::create_dir_all(&profiles).unwrap();
+        let path = profiles.join("controller0.xml");
+        let bak = profiles.join("controller0.xml.pepomote.bak");
+        std::fs::write(&path, AJENO).unwrap();
+        assert!(write_profiles(&dir, &[gamepad_screen(0, 0)]).unwrap().is_empty(), "GamePad: sin aviso");
+        let merged = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(merged.matches("<controller>").count(), 2);
+        assert!(!is_ours(&merged));
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), AJENO, "copia del ajeno tal cual");
+        // segunda pasada: nada cambia
+        write_profiles(&dir, &[gamepad_screen(0, 0)]).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), merged);
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), AJENO);
+        // el móvil pasa a GamePad normal: perfil completo nuestro, la copia sigue
+        write_profiles(&dir, &[gamepad(0, 0)]).unwrap();
+        assert!(is_ours(&std::fs::read_to_string(&path).unwrap()));
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), AJENO);
+        // y vuelve a solo pantalla: se fusiona desde la copia
+        write_profiles(&dir, &[gamepad_screen(0, 0)]).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), merged);
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), AJENO);
+        // se va: el mando del usuario vuelve tal cual
+        write_profiles(&dir, &[]).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), AJENO);
+        assert!(!bak.exists());
+    }
+
+    #[test]
+    fn solo_pantalla_sin_perfil_ajeno_escribe_el_completo() {
+        let dir = tmp_dir("screen-only-nuevo");
+        let profiles = dir.join("controllerProfiles");
+        write_profiles(&dir, &[gamepad_screen(0, 0)]).unwrap();
+        let path = profiles.join("controller0.xml");
+        assert!(is_ours(&std::fs::read_to_string(&path).unwrap()));
+        assert!(!profiles.join("controller0.xml.pepomote.bak").exists());
+        write_profiles(&dir, &[]).unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn solo_pantalla_tras_reguardado_de_cemu() {
+        let dir = tmp_dir("screen-only-resaved");
+        let profiles = dir.join("controllerProfiles");
+        std::fs::create_dir_all(&profiles).unwrap();
+        let path = profiles.join("controller0.xml");
+        std::fs::write(&path, AJENO).unwrap();
+        write_profiles(&dir, &[gamepad_screen(0, 0)]).unwrap();
+        let resaved = std::fs::read_to_string(&path).unwrap().replace('\t', "    ").replace("PepoMote J1 pantalla", "Controller 2");
+        std::fs::write(&path, &resaved).unwrap();
+        write_profiles(&dir, &[gamepad_screen(0, 0)]).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap().matches("<controller>").count(), 2, "no se acumulan nodos");
+        write_profiles(&dir, &[]).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), AJENO);
+    }
+
+    #[test]
+    fn solo_pantalla_con_tipo_no_gamepad_avisa() {
+        let dir = tmp_dir("screen-only-pro");
+        let profiles = dir.join("controllerProfiles");
+        std::fs::create_dir_all(&profiles).unwrap();
+        std::fs::write(profiles.join("controller0.xml"), AJENO.replace("Wii U GamePad", "Wii U Pro Controller")).unwrap();
+        let w = write_profiles(&dir, &[gamepad_screen(0, 0)]).unwrap();
+        assert_eq!(w, vec![Warning::NotGamePad { index: 0, dsu_slot: 0 }]);
+        let out = std::fs::read_to_string(profiles.join("controller0.xml")).unwrap();
+        assert_eq!(out.matches("<controller>").count(), 2);
+        assert!(out.contains("Wii U Pro Controller"));
+    }
+
+    #[test]
+    fn perfil_ajeno_con_nodo_nuestro_y_sin_copia_solo_pierde_el_nodo() {
+        let dir = tmp_dir("screen-only-nobak");
+        let profiles = dir.join("controllerProfiles");
+        std::fs::create_dir_all(&profiles).unwrap();
+        let path = profiles.join("controller0.xml");
+        let merged = merge_screen_only(AJENO, &screen_only_node(&gamepad_screen(0, 0))).unwrap();
+        std::fs::write(&path, &merged).unwrap();
+        write_profiles(&dir, &[]).unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(!out.contains("PepoMote") && out.contains("XInput"), "{out}");
     }
 
     #[test]

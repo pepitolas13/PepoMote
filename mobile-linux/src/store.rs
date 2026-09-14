@@ -36,6 +36,11 @@ pub struct Settings {
     pub update_latest: Option<crate::update::Version>,
     /// GamePad de Wii U sin pantalla táctil (ni doble pantalla): botones más grandes.
     pub gamepad_no_screen: bool,
+    /// Pantalla del GamePad a pantalla completa: solo la pantalla de Cemu y el
+    /// táctil, sin sticks ni botones (el mando real va en el PC).
+    pub gamepad_full_screen: bool,
+    /// En pantalla completa, botón de teclado arriba a la derecha.
+    pub gamepad_full_screen_kb: bool,
     /// Nunchuk en el mismo móvil (Dolphin): el mando lleva su propio Nunchuk
     /// (`"nunchuk":"own"` en el hello). Sin trazado apaisado propio todavía en
     /// esta app, así que no se enseña en Inicio y va apagado.
@@ -56,6 +61,8 @@ impl Default for Settings {
             update_last_check: 0,
             update_latest: None,
             gamepad_no_screen: false,
+            gamepad_full_screen: false,
+            gamepad_full_screen_kb: true,
             own_nunchuk: false,
             receiver_notices: true,
         }
@@ -265,6 +272,8 @@ mod tests {
             update_last_check: 1_700_000_000,
             update_latest: Some(crate::update::Version([1, 7, 0])),
             gamepad_no_screen: true,
+            gamepad_full_screen: true,
+            gamepad_full_screen_kb: false,
             own_nunchuk: true,
             receiver_notices: false,
         };
@@ -272,6 +281,8 @@ mod tests {
         assert_eq!(back, mine);
         assert!(d.update_check, "el aviso de versión nueva viene activado");
         assert!(!d.gamepad_no_screen, "el GamePad lleva pantalla táctil salvo que se quite");
+        assert!(!d.gamepad_full_screen, "la pantalla completa viene apagada");
+        assert!(d.gamepad_full_screen_kb, "con pantalla completa, el botón de teclado viene encendido");
         assert!(!d.own_nunchuk, "sin trazado propio, el Nunchuk en el mismo móvil va apagado");
         assert!(d.receiver_notices, "los avisos del receptor vienen encendidos");
         assert_eq!(d.update_latest, None);

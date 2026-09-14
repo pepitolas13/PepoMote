@@ -53,7 +53,9 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
   recentrar (mantener 150 ms). A = clic izquierdo, B = derecho, tira derecha =
   scroll, tira izquierda (mirilla) = precisión, cruceta ↑/↓ = flechas y ←/→ =
   atrás/adelante del navegador, 1/2 = Enter/Esc, ± = volumen (mantener
-  repite), multimedia plegable.
+  repite), multimedia plegable. La cruceta es de una pieza, como la del Mando
+  de Wii (1.6): deslizar el pulgar cambia de dirección sin levantarlo y las
+  esquinas entre dos brazos son diagonales.
 - **Dolphin**: Wiimote virtual (el receptor alimenta el servidor DSU). Con
   varios móviles, cada uno entra como Jugador N; el modo lo manda el Jugador 1.
 - **Mando**: solo botones, sin cambiar el modo.
@@ -67,7 +69,11 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
   sensores. Chip **Mando Wii** para ser un mando de Wii dentro de Cemu. La
   zona central enseña la pantalla del GamePad que manda Cemu, y el botón
   **Teclado** escribe en el teclado en pantalla de Cemu (que no acepta
-  toques). Ver `docs/SETUP-CEMU.md`.
+  toques). Con la casilla **Pantalla del GamePad a pantalla completa** de
+  Inicio (1.6), el móvil enseña solo esa pantalla, sobre negro y con el
+  táctil: para jugar con un mando de verdad en el PC; ✕ arriba a la izquierda
+  para salir y, si su subcasilla está activa, **Teclado** arriba a la derecha.
+  El giro es el del ajuste **Giro**. Ver `docs/SETUP-CEMU.md`.
 - La cabecera enseña RTT y la frecuencia real del sensor.
 
 ## Sensores

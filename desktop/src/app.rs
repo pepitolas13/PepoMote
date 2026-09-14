@@ -1,3 +1,4 @@
+use crate::state::LockTolerant;
 use crate::pairing::PairingInfo;
 use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use crate::theme;
@@ -17,12 +18,22 @@ pub struct PepoMoteApp {
     ip_checked: Instant,
     /// Ajustes cambiados en la UI pendientes de escribir a disco.
     config_dirty: bool,
+    /// Fotogramas pintados (el segundo marca la ventana como viva).
+    frames: u32,
+    /// Cuándo se pintó el primer fotograma útil (modo humo).
+    painted_at: Option<Instant>,
+    /// PEPOMOTE_SMOKE: salir con 0 pasado este tiempo desde ese fotograma.
+    smoke: Option<Duration>,
     /// Linux: hay pkexec para el botón "Reparar ahora" (se mira una vez).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pkexec_ok: bool,
-    /// Linux: cuándo se copió el comando manual (para el «Copiado» efímero).
+    /// Linux: qué comando manual se copió y cuándo (para el «Copiado» efímero).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    copied_at: Option<Instant>,
+    copied_at: Option<(String, Instant)>,
+    /// Linux: desde cuándo está a la vista la tarjeta de reparación (cuenta
+    /// atrás de la reparación automática).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    repair_seen_at: Option<Instant>,
     /// macOS: permiso de Accesibilidad (sondeado una vez por segundo).
     #[cfg(target_os = "macos")]
     ax_ok: bool,
@@ -37,7 +48,7 @@ impl PepoMoteApp {
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     pub fn new(cc: &eframe::CreationContext<'_>, shared: SharedState, pairing: PairingInfo, start_hidden: bool) -> Self {
         theme::apply(&cc.egui_ctx);
-        let pref = shared.lock().unwrap().config.theme;
+        let pref = shared.lock_tolerant().config.theme;
         theme::set_preference(&cc.egui_ctx, pref);
         // macOS: el icono de la barra de menús solo puede nacer en el hilo
         // principal con el bucle de eventos ya en marcha: aquí
@@ -59,11 +70,15 @@ impl PepoMoteApp {
             autostart: crate::autostart::is_enabled(),
             ip_checked: Instant::now(),
             config_dirty: false,
+            frames: 0,
+            painted_at: None,
+            smoke: crate::launch::smoke_linger(std::env::var(crate::launch::ENV_SMOKE).ok().as_deref()),
             #[cfg(target_os = "linux")]
             pkexec_ok: crate::fixes::pkexec_available(),
             #[cfg(not(target_os = "linux"))]
             pkexec_ok: false,
             copied_at: None,
+            repair_seen_at: None,
             #[cfg(target_os = "macos")]
             ax_ok: crate::macos::ax_trusted(),
             #[cfg(target_os = "macos")]
@@ -104,7 +119,10 @@ struct Snapshot {
     cemu_screen: Option<CfgStatus>,
     error: Option<String>,
     port_notice: Option<String>,
-    firewall_hint: Option<String>,
+    firewall: Option<crate::firewall::FirewallIssue>,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    auto_fix_due: bool,
+    fix_done: Option<(String, Instant)>,
     /// Backend de inyección activo (pie de la ventana).
     injector: Option<&'static str>,
     uinput_denied: bool,
@@ -120,6 +138,27 @@ struct Snapshot {
 impl eframe::App for PepoMoteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         theme::sync(ctx);
+
+        // Ventana viva: egui usa el primer fotograma para medir; el segundo ya
+        // está en pantalla. Marca «pintada» (a partir de ahí un fallo no se
+        // relanza) y, en modo humo, programa la salida limpia
+        self.frames = self.frames.saturating_add(1);
+        if self.frames == 2 {
+            crate::launch::mark_first_frame();
+            self.painted_at = Some(Instant::now());
+            crate::log_line!("Ventana: primer fotograma pintado ({})", crate::launch::describe(crate::launch::attempt()));
+        }
+        if let (Some(t), Some(linger)) = (self.painted_at, self.smoke) {
+            if t.elapsed() >= linger {
+                crate::log_line!("PEPOMOTE_SMOKE: fin, salgo con 0");
+                std::process::exit(0);
+            }
+        }
+        // Linux: cerrar = salir (no hay bandeja); solo queda constancia
+        #[cfg(target_os = "linux")]
+        if ctx.input(|i| i.viewport().close_requested()) {
+            crate::log_line!("Ventana cerrada por el usuario: salgo (en Linux no hay bandeja)");
+        }
 
         // En Windows, cerrar = esconder a la bandeja ("Salir" está en el tray)
         #[cfg(windows)]
@@ -139,7 +178,7 @@ impl eframe::App for PepoMoteApp {
         self.refresh_ip();
 
         let snap = {
-            let s = self.shared.lock().unwrap();
+            let s = self.shared.lock_tolerant();
             Snapshot {
                 status: s.status,
                 mode: s.mode,
@@ -154,7 +193,9 @@ impl eframe::App for PepoMoteApp {
                 cemu_screen: s.cemu_screen_status.clone(),
                 error: s.last_error.clone(),
                 port_notice: s.port_notice.clone(),
-                firewall_hint: s.firewall_hint.clone(),
+                firewall: s.firewall,
+                auto_fix_due: s.auto_fix_due,
+                fix_done: s.fix_done.clone(),
                 injector: s.injector,
                 uinput_denied: s.uinput_denied,
                 uinput_missing: s.uinput_missing,
@@ -176,7 +217,7 @@ impl eframe::App for PepoMoteApp {
                     .stroke(Stroke::new(1.0_f32, theme::card_border()));
                 if ui.add(button).on_hover_text(tr!("win.lang_switch", lang.other().name())).clicked() {
                     let next = i18n::toggle();
-                    let mut s = self.shared.lock().unwrap();
+                    let mut s = self.shared.lock_tolerant();
                     s.config.lang = Some(next.code().to_owned());
                     s.config.save();
                 }
@@ -202,6 +243,8 @@ impl eframe::App for PepoMoteApp {
                                     .color(theme::text_dim()),
                             );
                             ui.add_space(18.0);
+
+                            self.ui_repair(ui, &snap);
 
                             if snap.player_count == 0 {
                                 self.ui_qr(ui, 280.0, tr!("win.waiting"));
@@ -258,7 +301,7 @@ impl PepoMoteApp {
     /// GitHub si la última publicada es mayor que esta y no se ocultó.
     fn ui_update(&mut self, ui: &mut egui::Ui) {
         let (latest, dismissed) = {
-            let s = self.shared.lock().unwrap();
+            let s = self.shared.lock_tolerant();
             (s.config.update_latest, s.config.update_dismissed)
         };
         let Some(v) = crate::update::pending(&crate::update::Version::current(), latest, dismissed) else {
@@ -279,7 +322,7 @@ impl PepoMoteApp {
                     );
                     ui.add_space(4.0);
                     if ui.button(RichText::new(tr!("upd.dismiss")).size(12.0)).clicked() {
-                        let mut s = self.shared.lock().unwrap();
+                        let mut s = self.shared.lock_tolerant();
                         s.config.update_dismissed = Some(v);
                         s.config.save();
                     }
@@ -338,92 +381,156 @@ impl PepoMoteApp {
             });
     }
 
-    /// Linux: aviso de firewall/uinput con reparación de un clic (pkexec) y,
-    /// si no hay diálogo de contraseña (sin pkexec, o sesión sin agente de
-    /// polkit), el comando manual listo para copiar. Con el backend Wayland
-    /// nunca hay nada que pintar (uinput ni se intenta); en Windows tampoco
-    /// (los flags jamás se activan).
+    /// Linux: lo que el sistema necesita para que el móvil funcione (uinput
+    /// para el cursor, el puerto del firewall) va ARRIBA de la ventana, con la
+    /// explicación de lo que va a pedir el diálogo de contraseña antes de
+    /// abrirlo (cuenta atrás, o botón), «Listo» al terminar y, sin diálogo
+    /// posible (sin pkexec, sesión sin agente de polkit), los comandos para
+    /// pegar en un terminal. Con el backend Wayland nunca hay uinput que
+    /// pintar; en Windows y macOS los flags jamás se activan.
     fn ui_repair(&mut self, ui: &mut egui::Ui, snap: &Snapshot) {
+        self.ui_fix_done(ui, snap);
         let uinput_problem = snap.uinput_denied || snap.uinput_missing;
-        if snap.firewall_hint.is_none() && !uinput_problem {
+        if snap.firewall.is_none() && !uinput_problem {
+            self.repair_seen_at = None;
             return;
         }
+        let port = self.pairing.port;
+        egui::Frame::none()
+            .fill(theme::card())
+            .stroke(Stroke::new(1.5_f32, theme::warn()))
+            .rounding(theme::RADIUS)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width().min(412.0));
+                ui.label(RichText::new(tr!("fix.title")).size(15.0).strong().color(theme::text()));
+                ui.add_space(4.0);
+                if let Some(fw) = &snap.firewall {
+                    let text = if fw.certain {
+                        tr!("fw.blocked", fw.kind.name(), port)
+                    } else {
+                        tr!("fw.unknown", fw.kind.name(), port)
+                    };
+                    ui.label(RichText::new(text).size(12.0).color(theme::warn()));
+                }
+                if snap.uinput_missing {
+                    ui.label(RichText::new(tr!("fix.uinput_missing")).size(12.0).color(theme::warn()));
+                } else if snap.uinput_denied {
+                    ui.label(RichText::new(tr!("fix.uinput_denied")).size(12.0).color(theme::warn()));
+                }
+                #[cfg(target_os = "linux")]
+                self.ui_repair_actions(ui, snap, uinput_problem, port);
+            });
         ui.add_space(10.0);
-        if let Some(hint) = &snap.firewall_hint {
-            ui.label(RichText::new(hint).size(12.0).color(theme::warn()));
+    }
+
+    /// Tarjeta verde tras una reparación con éxito (30 s o hasta «Vale»).
+    fn ui_fix_done(&mut self, ui: &mut egui::Ui, snap: &Snapshot) {
+        let Some((text, when)) = &snap.fix_done else {
+            return;
+        };
+        if when.elapsed() > Duration::from_secs(30) {
+            self.shared.lock_tolerant().fix_done = None;
+            return;
         }
-        if snap.uinput_missing {
-            ui.label(
-                RichText::new(tr!("fix.uinput_missing"))
-                .size(12.0)
-                .color(theme::warn()),
-            );
-        } else if snap.uinput_denied {
-            ui.label(
-                RichText::new(tr!("fix.uinput_denied"))
-                    .size(12.0)
-                    .color(theme::warn()),
-            );
+        egui::Frame::none()
+            .fill(theme::card())
+            .stroke(Stroke::new(1.5_f32, theme::ok()))
+            .rounding(theme::RADIUS)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width().min(412.0));
+                ui.label(RichText::new(text).size(13.0).strong().color(theme::ok()));
+                if ui.button(RichText::new(tr!("fix.ok_dismiss")).size(12.0)).clicked() {
+                    self.shared.lock_tolerant().fix_done = None;
+                }
+            });
+        ui.add_space(10.0);
+    }
+
+    /// Botones y textos de la reparación: explicación del diálogo, cuenta
+    /// atrás de la automática, «Reparar ahora» / «Ahora no», y los comandos
+    /// manuales cuando no hay diálogo posible.
+    #[cfg(target_os = "linux")]
+    fn ui_repair_actions(&mut self, ui: &mut egui::Ui, snap: &Snapshot, uinput_problem: bool, port: u16) {
+        ui.add_space(6.0);
+        if snap.fixing {
+            ui.label(RichText::new(tr!("fix.applying")).size(12.0).color(theme::text_dim()));
+            return;
         }
-        #[cfg(target_os = "linux")]
-        {
+        if self.pkexec_ok {
+            ui.label(RichText::new(tr!("fix.explain_dialog", port)).size(11.0).color(theme::text_dim()));
             ui.add_space(4.0);
-            if snap.fixing {
-                ui.label(
-                    RichText::new(tr!("fix.applying"))
-                        .size(12.0)
-                        .color(theme::text_dim()),
-                );
-            } else if self.pkexec_ok {
+            let mut fire = false;
+            if snap.auto_fix_due {
+                let seen = *self.repair_seen_at.get_or_insert_with(Instant::now);
+                if crate::fixes::auto_fire_due(seen, Instant::now()) {
+                    fire = true;
+                } else {
+                    let left = crate::fixes::AUTO_FIX_DELAY.saturating_sub(seen.elapsed()).as_secs() + 1;
+                    ui.label(RichText::new(tr!("fix.auto_in", left)).size(12.0).color(theme::text()));
+                }
+            }
+            ui.horizontal(|ui| {
                 let label = if snap.fix_failed.is_some() { tr!("fix.retry") } else { tr!("fix.now") };
                 if ui.button(RichText::new(label).size(14.0)).clicked() {
-                    crate::fixes::fix_all(self.shared.clone(), self.pairing.port);
+                    fire = true;
                 }
-                match &snap.fix_failed {
-                    Some(why) => {
-                        ui.label(RichText::new(why).size(11.0).color(theme::warn()));
-                    }
-                    None => {
-                        ui.label(
-                            RichText::new(tr!("fix.dialog_once"))
-                                .size(11.0)
-                                .color(theme::text_dim()),
-                        );
-                    }
+                if snap.auto_fix_due && ui.button(RichText::new(tr!("fix.not_now")).size(12.0)).clicked() {
+                    let mut s = self.shared.lock_tolerant();
+                    s.auto_fix_due = false;
+                    s.config.fix_attempted = true;
+                    s.config.save();
+                    self.repair_seen_at = None;
                 }
+            });
+            if fire {
+                self.repair_seen_at = None;
+                crate::fixes::fix_all(self.shared.clone(), port);
             }
-            // Sin pkexec, o con el diálogo fallando (sesión sin agente de
-            // polkit): el comando manual, listo para copiar
-            if uinput_problem && (!self.pkexec_ok || snap.fix_failed.is_some()) {
-                ui.add_space(6.0);
-                let intro = if self.pkexec_ok {
-                    tr!("fix.manual_no_dialog")
-                } else {
-                    tr!("fix.manual_no_pkexec")
-                };
-                ui.label(RichText::new(intro).size(11.0).color(theme::text_dim()));
-                ui.label(
-                    RichText::new(crate::fixes::UINPUT_MANUAL_CMD)
-                        .monospace()
-                        .size(11.0)
-                        .color(theme::text()),
-                );
-                ui.horizontal(|ui| {
-                    if ui.button(RichText::new(tr!("fix.copy_cmd")).size(12.0)).clicked() {
-                        ui.output_mut(|o| o.copied_text = crate::fixes::UINPUT_MANUAL_CMD.to_owned());
-                        self.copied_at = Some(Instant::now());
-                    }
-                    if self.copied_at.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
-                        ui.label(RichText::new(tr!("fix.copied")).size(11.0).color(theme::ok()));
-                    }
-                });
-                ui.label(
-                    RichText::new(tr!("fix.relogin"))
-                    .size(11.0)
-                    .color(theme::text_dim()),
-                );
+            match &snap.fix_failed {
+                Some(why) => {
+                    ui.label(RichText::new(why).size(11.0).color(theme::warn()));
+                }
+                None => {
+                    ui.label(RichText::new(tr!("fix.dialog_once")).size(11.0).color(theme::text_dim()));
+                }
             }
         }
+        // Sin pkexec, o con el diálogo fallando (sesión sin agente de
+        // polkit): los comandos manuales, listos para copiar
+        if !self.pkexec_ok || snap.fix_failed.is_some() {
+            ui.add_space(6.0);
+            let intro = if self.pkexec_ok { tr!("fix.manual_no_dialog") } else { tr!("fix.manual_no_pkexec") };
+            ui.label(RichText::new(intro).size(11.0).color(theme::text_dim()));
+            if uinput_problem {
+                self.ui_manual_cmd(ui, "uinput", crate::fixes::UINPUT_MANUAL_CMD);
+                ui.label(RichText::new(tr!("fix.relogin")).size(11.0).color(theme::text_dim()));
+            }
+            if let Some(fw) = &snap.firewall {
+                ui.label(RichText::new(tr!("fix.manual_firewall")).size(11.0).color(theme::text_dim()));
+                self.ui_manual_cmd(ui, "firewall", &crate::fixes::firewall_manual_cmd(fw.kind, port));
+            }
+        }
+    }
+
+    /// Un comando en monoespaciada con su botón «Copiar comando».
+    #[cfg(target_os = "linux")]
+    fn ui_manual_cmd(&mut self, ui: &mut egui::Ui, id: &str, cmd: &str) {
+        ui.label(RichText::new(cmd).monospace().size(11.0).color(theme::text()));
+        ui.horizontal(|ui| {
+            if ui.button(RichText::new(tr!("fix.copy_cmd")).size(12.0)).clicked() {
+                ui.output_mut(|o| o.copied_text = cmd.to_owned());
+                self.copied_at = Some((id.to_owned(), Instant::now()));
+            }
+            if self
+                .copied_at
+                .as_ref()
+                .is_some_and(|(i, t)| i == id && t.elapsed() < Duration::from_secs(2))
+            {
+                ui.label(RichText::new(tr!("fix.copied")).size(11.0).color(theme::ok()));
+            }
+        });
     }
 
     fn ui_qr(&self, ui: &mut egui::Ui, size: f32, caption: &str) {
@@ -436,7 +543,7 @@ impl PepoMoteApp {
                 .color(theme::text_dim()),
         );
         // Sin cámara (Linux móvil): código de 4 dígitos, un solo uso, 120 s
-        let (code, left) = self.shared.lock().unwrap().pair_code.current();
+        let (code, left) = self.shared.lock_tolerant().pair_code.current();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new(tr!("win.no_camera_code")).size(12.0).color(theme::text_dim()));
@@ -502,7 +609,7 @@ impl PepoMoteApp {
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
-        let mut config = self.shared.lock().unwrap().config.clone();
+        let mut config = self.shared.lock_tolerant().config.clone();
         let before = config.clone();
 
         egui::CollapsingHeader::new(
@@ -580,7 +687,7 @@ impl PepoMoteApp {
             // Linux y macOS con varios monitores: a cuál apunta el móvil
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             {
-                let screens = self.shared.lock().unwrap().screens.clone();
+                let screens = self.shared.lock_tolerant().screens.clone();
                 if screens.len() > 1 {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
@@ -628,7 +735,7 @@ impl PepoMoteApp {
             );
             if self.autostart != before_auto {
                 if let Err(e) = crate::autostart::set_enabled(self.autostart) {
-                    self.shared.lock().unwrap().last_error = Some(tr!("cfg.autostart_err", e));
+                    self.shared.lock_tolerant().last_error = Some(tr!("cfg.autostart_err", e));
                     self.autostart = before_auto;
                 }
             }
@@ -645,7 +752,7 @@ impl PepoMoteApp {
         if config != before {
             // En caliente para el puntero ya; a disco cuando sueltes el
             // slider (arrastrarlo escribía el archivo en cada frame)
-            self.shared.lock().unwrap().config = config.clone();
+            self.shared.lock_tolerant().config = config.clone();
             self.config_dirty = true;
         }
         if self.config_dirty && !ui.input(|i| i.pointer.any_down()) {
@@ -780,10 +887,11 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         } else if !cemu && p.own_nunchuk {
             tr!("win.badge_player_nunchuk", number)
         } else if cemu {
-            match cemu_layout.iter().find(|c| c.dsu_slot == i as u8).map(|c| c.kind) {
-                Some(crate::state::PadKind::GamePad) => tr!("win.badge_gamepad", number),
-                Some(crate::state::PadKind::Pro) => tr!("win.badge_pro", number),
-                Some(crate::state::PadKind::Wiimote) => tr!("win.badge_wiimote", number),
+            match cemu_layout.iter().find(|c| c.dsu_slot == i as u8).map(|c| (c.kind, c.screen_only)) {
+                Some((crate::state::PadKind::GamePad, true)) => tr!("win.badge_screen_only", number),
+                Some((crate::state::PadKind::GamePad, false)) => tr!("win.badge_gamepad", number),
+                Some((crate::state::PadKind::Pro, _)) => tr!("win.badge_pro", number),
+                Some((crate::state::PadKind::Wiimote, _)) => tr!("win.badge_wiimote", number),
                 None => tr!("win.badge_player", number),
             }
         } else {

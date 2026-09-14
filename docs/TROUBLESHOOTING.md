@@ -8,14 +8,21 @@ Se completa con cada hito. Esqueleto:
 2. Firewall de Windows: permite PepoMote en redes privadas (pregunta en el primer arranque).
 3. Firewall de Linux: muchas distros (CachyOS, Fedora, openSUSE…) traen ufw o
    firewalld activados y descartan TODO lo entrante — el receptor arranca
-   perfecto pero ningún paquete del móvil llega. El receptor lo detecta solo:
-   en el primer arranque pide tu contraseña en el diálogo del sistema y abre
-   el puerto él mismo; si cancelaste, queda el botón «Reparar ahora» en la
-   ventana. `packaging/linux/install.sh` hace lo mismo por script. A mano:
-   - ufw: `sudo ufw allow 26761/tcp && sudo ufw allow 26761/udp`
-   - firewalld: `sudo firewall-cmd --permanent --add-port=26761/tcp --add-port=26761/udp && sudo firewall-cmd --reload`
-   Si el diálogo de contraseña no aparece (sesión sin agente de polkit), usa
-   estos comandos: la ventana te lo dirá.
+   perfecto pero ningún paquete del móvil llega. El receptor lo detecta: la
+   tarjeta de arriba de la ventana explica lo que va a pedir y, a los tres
+   segundos, el diálogo del sistema pide tu contraseña y abre el puerto (y
+   da acceso a uinput, todo de una vez); al acabar dice «Listo: …». Si
+   cancelaste, queda el botón «Reparar ahora». Ojo: con ufw el receptor no
+   puede leer las reglas sin root, así que dice «no puedo leer sus reglas»
+   en vez de «bloqueado» hasta que la reparación abre el puerto o entra un
+   móvil (desde 1.6; antes decía «bloqueado» para siempre, aunque la
+   reparación hubiera funcionado). `packaging/linux/install.sh` hace lo
+   mismo por script. A mano:
+   - ufw: `sudo ufw allow 26761/tcp && sudo ufw allow 26761/udp && sudo ufw allow 5353/udp`
+   - firewalld: `sudo firewall-cmd --permanent --add-port=26761/tcp --add-port=26761/udp --add-service=mdns && sudo firewall-cmd --reload`
+   Si el diálogo de contraseña no aparece (sesión sin agente de polkit), la
+   ventana enseña estos comandos con un botón para copiarlos. Más en
+   [docs/LINUX.md](LINUX.md).
 4. Si el mDNS está roto en tu router, PepoMote prueba solo el broadcast; si tampoco, teclea la IP:puerto que muestra el receptor bajo el QR.
 5. Último recurso: hotspot del móvil + PC conectado a él. Funciona siempre.
 
@@ -66,6 +73,45 @@ necesita ningún permiso y el pie de la ventana dice «Inyección: Wayland
    hace lo mismo por script.
 5. Para forzar un backend: `PEPOMOTE_INJECT=uinput` o `PEPOMOTE_INJECT=wayland`
    al lanzar el receptor.
+
+## Linux: la ventana no aparece, o se cierra nada más abrirla
+
+Desde 1.6 el receptor no puede «cerrarse sin decir nada»: todo fallo al
+abrir la ventana queda en `~/.config/pepomote/receptor.log` (líneas
+«Ventana: …»), y antes de rendirse se relanza solo con render por software
+(`LIBGL_ALWAYS_SOFTWARE=1`) y, en Wayland con XWayland, por X11; si nada
+funciona, avisa con una notificación de escritorio. Los motivos de siempre:
+
+- **Sin OpenGL usable** (driver roto o a medias tras una actualización,
+  máquina virtual sin 3D): el log dice «failed to find a matching
+  configuration» o «NoGlutinConfigs». El relanzamiento con software lo
+  cubre si Mesa está instalado (`libgl1-mesa-dri` / `mesa-dri-drivers`).
+- **Falta una biblioteca**: `PepoMote --diag` → sección «Bibliotecas» dice
+  cuál (`libxkbcommon.so.0`, `libEGL.so.1`, `libasound.so.2`…) y qué paquete
+  instalar según la distro está en [docs/LINUX.md](LINUX.md).
+- **glibc antigua** (Ubuntu 20.04, Debian 11, RHEL 8/9): «GLIBC_2.34 not
+  found» al lanzarlo desde un terminal; el binario necesita glibc 2.35 o más
+  nueva, y no hay log porque el proceso ni arranca.
+- **Otra copia ya abierta**: la nueva le pide a la primera que se muestre y
+  se retira (el log dice «Ya hay un PepoMote escuchando»); si la primera no
+  contesta, la nueva arranca igual.
+- **Cerrar la ventana = salir**: en Linux no hay bandeja; minimízala para
+  dejarlo corriendo.
+
+Si sigue sin abrir: `PepoMote --diag` y pega el informe en un issue, junto con
+`receptor.log`. `PEPOMOTE_NO_UI_FALLBACK=1` desde un terminal enseña el error
+tal cual, sin relanzamientos.
+
+## Linux: el diálogo «Se requiere autenticación para ejecutar /bin/sh como superusuario»
+
+Es PepoMote (pkexec) pidiendo permiso para dos cosas, una sola vez y cada una
+por su cuenta: la regla udev y el módulo uinput para mover el cursor, y el
+puerto 26761 (y mDNS) en el firewall. La tarjeta de arriba de la ventana lo
+explica antes de que salte, cuenta atrás incluida; «Ahora no» lo deja para el
+botón «Reparar ahora». Al terminar sale «Listo: cursor y firewall
+configurados» (o «Aplicado en parte: …» con lo que falló y por qué). Qué
+escribe exactamente, y los comandos manuales para hacerlo sin diálogo, en
+[docs/LINUX.md](LINUX.md).
 
 ## El receptor se cierra al conectar el móvil (Linux)
 
@@ -154,6 +200,41 @@ como está (quítalo para el mando de lado). Solo el GamePad y el mando +
 Nunchuk se ponen solos en apaisado, con o sin bloqueo. En Dolphin, con el
 Nunchuk encendido, sale el mando + Nunchuk en vez del NES: apaga el chip
 «Nunchuk» para los juegos de lado (y reabre Dolphin).
+
+## El mando + Nunchuk (o el GamePad) sale del revés, o se da la vuelta solo
+
+El mando + Nunchuk de Dolphin va fijo en apaisado y, hasta ahora, el sensor de
+giro elegía hacia qué lado: en algunos móviles le daba la vuelta (180°) con
+muy poco movimiento, o sin motivo. Desde 1.6, la primera vez que sale el mando
+la app pregunta «¿El mando está bien así?»: «Darle la vuelta» lo gira 180° y
+«Así lo quiero» guarda ese lado para siempre. Para cambiarlo después: Ajustes
+→ «Lado del mando + Nunchuk» (Izquierda = el borde de la cámara a la
+izquierda; Derecha; o Según el sensor, como antes). El GamePad de Wii U tiene
+su propio ajuste, «Lado del GamePad de Wii U», con la misma pregunta la
+primera vez: los dos lados se guardan por separado.
+
+## A pantalla completa el mando de verdad no responde, o el táctil no llega
+
+«Pantalla del GamePad a pantalla completa» (desde 1.6) está pensada para
+un mando de verdad conectado al PC: el receptor añade el DSU del móvil como
+segundo mando dentro de tu `controllerProfiles/controller0.xml` sin pisar tu
+mando, y el táctil llega por ese DSU. Si algo no va:
+
+- **Cemu estaba abierto** al configurar: el cambio queda pendiente hasta
+  cerrarlo (el móvil lo dice). Cierra Cemu y vuelve a abrirlo.
+- **Controller 1 en Cemu no es un GamePad** (aviso «Cemu: el mando 1 no es un
+  GamePad»): el táctil de la Wii U solo existe en el GamePad emulado. En Cemu
+  → Configuración de mandos → Controller 1 → emulated controller **Wii U
+  GamePad**, con tu mando dentro; PepoMote añadirá el DSU del móvil al
+  reconfigurar (con Cemu cerrado).
+- **Tu mando ha desaparecido de Cemu**: mira `controller0.xml.pepomote.bak`
+  en `controllerProfiles`: es tu perfil tal cual, que vuelve solo al irse el
+  móvil o al apagar la opción. Si no vuelve, cópialo tú encima.
+- **«El receptor no conoce la pantalla completa»**: el PC lleva un PepoMote
+  anterior a 1.6, que escribe el perfil de siempre con el móvil como mando;
+  actualiza el receptor.
+- El móvil sigue en modo Wii U como GamePad: con «Mando de Wii» o como
+  Jugador 2 (Pro) la pantalla completa no se aplica (no tienen pantalla).
 
 ## «El puerto 26760/26761 está ocupado»
 
@@ -267,11 +348,27 @@ de Windows. El apuntado absoluto no pasa por esa aceleración.
 ## El clic del móvil no activa la ventana (Windows)
 
 Un clic inyectado no siempre lleva la ventana a primer plano: Windows solo se
-lo concede al proceso que «recibió la última entrada». Desde 1.3.0 el
-receptor activa a mano la ventana sobre la que cae el clic (izquierdo o
-derecho), como haría el ratón. Si una ventana no responde a nada, suele ser
-que está elevada (administrador): Windows no deja inyectarle entrada desde un
-programa normal.
+lo concede al proceso que proveyó la última entrada. Desde 1.3.0 el receptor
+activa a mano la ventana sobre la que cae el clic (izquierdo o derecho), como
+haría el ratón; desde 1.6 lo hace inyectando antes un movimiento nulo (lo
+que da el derecho), sin enganchar la cola de entrada del hilo en primer plano
+(podía colgar la telemetría) ni pulsar ALT (activaba barras de menú y dejaba
+ALT «pegado» en juegos). `PEPOMOTE_WIN_ACTIVATE=legacy` recupera la vía
+antigua si con la nueva algo no se activa. Si una ventana no responde a nada,
+suele ser que está elevada (administrador): Windows no deja inyectarle
+entrada desde un programa normal.
+
+## Windows: deja de funcionar cuando la ventana del emulador no está seleccionada
+
+Casi siempre es **Dolphin**: ignora el mando (también el DSU del móvil) en
+cuanto su ventana pierde el foco, salvo que tenga marcado «Background Input»
+en la configuración de mandos. Desde 1.6 PepoMote lo deja activado al
+configurar Dolphin (`[Input] BackgroundInput = True` en `Dolphin.ini`): con
+Dolphin cerrado, entra en modo Dolphin y vuelve a abrirlo. Si es el propio
+receptor el que se para al pasar a segundo plano: desde 1.6 se excluye del
+ahorro de energía de Windows 11 (EcoQoS), que frenaba los procesos sin foco;
+el log dice «Ahorro de energía de Windows (EcoQoS): desactivado». Y si lo que
+no responde es una ventana elevada (administrador), ver el punto anterior.
 
 ## El cursor va a tirones
 

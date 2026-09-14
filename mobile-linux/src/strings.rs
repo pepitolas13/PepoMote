@@ -129,6 +129,19 @@ pub const TABLE: &[(&str, &str, &str)] = &[
         "Quita la pantalla del GamePad de Wii U (y la doble pantalla) para que los botones sean más grandes",
         "Removes the Wii U GamePad's screen (and the second screen) so the buttons get bigger",
     ),
+    ("gp.full_screen", "Pantalla del GamePad a pantalla completa", "GamePad screen full screen"),
+    (
+        "gp.full_screen_help",
+        "Para jugar con un mando de verdad conectado al PC: el móvil solo enseña la pantalla del GamePad de Cemu (y responde al tacto), sin sticks ni botones. Al entrar en Wii U como GamePad",
+        "To play with a real controller plugged into the PC: the phone only shows Cemu's GamePad screen (and takes touch), no sticks or buttons. When entering Wii U as the GamePad",
+    ),
+    ("gp.full_screen_kb", "Botón de teclado", "Keyboard button"),
+    (
+        "gp.full_screen_kb_help",
+        "Un botón pequeño arriba a la derecha para escribir en el teclado en pantalla de Cemu",
+        "A small button at the top right to type into Cemu's on-screen keyboard",
+    ),
+    ("gp.full_screen_old_pc", "El receptor no conoce la pantalla completa: actualízalo", "The receiver does not know about full screen: update it"),
     // --- Nunchuk
     ("nk.line", "Nunchuk · Jugador {0} · {1}", "Nunchuk · Player {0} · {1}"),
     ("nk.old_pc", "El PC te ve como mando: actualiza el receptor", "The PC sees you as a controller: update the receiver"),

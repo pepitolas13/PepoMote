@@ -168,7 +168,7 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 .padding(start = 34.dp * s)
         ) {
             // En un juego, la cruceta de un mando girado (IR a la izquierda)
-            PadCross(sizeDp = 190.dp * s, glyphSp = (14 * s).roundToInt(), sideways = Route.sidewaysDpad(link))
+            PadCross(sizeDp = 190.dp * s, sideways = Route.sidewaysDpad(link))
         }
 
         // − / + / A centro (un 20 % más grandes que en la primera versión:

@@ -3,6 +3,7 @@
 //! slot (Jugador 1 = slot 0). El modo puntero/dolphin/cemu solo lo cambia el
 //! slot 0; cuando cambia se difunde a los demás móviles.
 
+use crate::state::LockTolerant;
 use super::{broadcast, free_slot, ghosts_of, send_line, Session, Sessions};
 use crate::pairing::PairingInfo;
 use crate::screen::ScreenHub;
@@ -24,7 +25,7 @@ pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo, hub: A
     let listener = match crate::ports::bind_tcp(&shared, "0.0.0.0", pairing.port, tr!("port.what_phone")) {
         Ok(l) => l,
         Err(e) => {
-            shared.lock().unwrap().last_error = Some(e);
+            shared.lock_tolerant().last_error = Some(e);
             return;
         }
     };
@@ -47,15 +48,15 @@ type Writer = Arc<Mutex<TcpStream>>;
 
 /// Nombre del tipo de mando Wii U de la sesión del `slot` (`ok.pad` / eco `pad`).
 fn pad_str(shared: &SharedState, slot: u8) -> &'static str {
-    effective_pad(&shared.lock().unwrap().players, slot)
+    effective_pad(&shared.lock_tolerant().players, slot)
 }
 
 /// El reparto de Cemu cambia con cada entrada, salida o elección de Mando de
 /// Wii: a cada móvil cuyo `pad` efectivo haya cambiado se le manda (J2 pasa
 /// a GamePad si J1 se va; el Nunchuk entra en uso, o deja de estarlo).
 fn push_pad_states(shared: &SharedState, sessions: &Sessions) {
-    let players = shared.lock().unwrap().players.clone();
-    let mut guard = sessions.lock().unwrap();
+    let players = shared.lock_tolerant().players.clone();
+    let mut guard = sessions.lock_tolerant();
     for s in guard.values_mut() {
         let pad = effective_pad(&players, s.slot);
         if s.last_pad == Some(pad) {
@@ -83,7 +84,7 @@ fn auto_configure(shared: &SharedState, sessions: &Sessions) {
 /// queda puesto y el siguiente `ok` lo lleva.
 pub fn set_mode_from_pc(shared: &SharedState, mode: Mode, notice: &str) {
     {
-        let mut s = shared.lock().unwrap();
+        let mut s = shared.lock_tolerant();
         if s.mode == mode {
             return;
         }
@@ -138,7 +139,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     let code_ok = !token_ok
         && hello["code"]
             .as_str()
-            .is_some_and(|c| shared.lock().unwrap().pair_code.try_accept(c.trim()));
+            .is_some_and(|c| shared.lock_tolerant().pair_code.try_accept(c.trim()));
     if !token_ok && !code_ok {
         let (code, msg) = if hello["code"].is_string() {
             ("bad_code", tr!("err.bad_code"))
@@ -147,7 +148,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             // qué el móvil no entra (token.txt regenerado, PC reinstalado…)
             let who = hello["name"].as_str().filter(|n| !n.trim().is_empty()).unwrap_or(tr!("err.a_phone"));
             crate::log_line!("Móvil «{who}» ({peer_ip}) trae un QR antiguo: token rechazado");
-            shared.lock().unwrap().last_error = Some(tr!("err.old_qr", who, peer_ip));
+            shared.lock_tolerant().last_error = Some(tr!("err.old_qr", who, peer_ip));
             ("bad_token", tr!("err.bad_token"))
         };
         let _ = send(&writer, &json!({"m":"err","code":code,"msg":msg}));
@@ -160,7 +161,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         let _ = send(
             &writer,
             &json!({"m":"ok","probe":true,"name":pairing.name,"token":pairing.token,
-                    "mode":shared.lock().unwrap().mode.as_str()}),
+                    "mode":shared.lock_tolerant().mode.as_str()}),
         );
         return;
     }
@@ -173,10 +174,12 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     let pad_wii = role == Role::Wiimote && hello["pad"].as_str() == Some("wiimote");
     // Nunchuk en el mismo móvil (ausente = no: como un móvil anterior a 1.5.5)
     let own_nunchuk = role == Role::Wiimote && hello["nunchuk"].as_str() == Some("own");
+    // Modo Wii U: el móvil GamePad solo hace de pantalla táctil (ausente = no)
+    let screen_only = role == Role::Wiimote && hello["screen_only"].as_bool() == Some(true);
 
     let session_id: u32 = rand::thread_rng().gen();
     let (slot, evicted_slots) = {
-        let mut guard = sessions.lock().unwrap();
+        let mut guard = sessions.lock_tolerant();
         // Reconexión del mismo móvil: fuera su sesión fantasma, y así
         // recupera su plaza (Jugador 1 sigue siendo Jugador 1).
         let evicted: Vec<u8> = ghosts_of(&guard, peer_ip, &device_name)
@@ -211,6 +214,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             "Nunchuk"
         } else if own_nunchuk {
             "mando + Nunchuk"
+        } else if screen_only {
+            "GamePad solo pantalla"
         } else {
             "mando"
         },
@@ -218,7 +223,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     );
 
     let (mode, player) = {
-        let mut s = shared.lock().unwrap();
+        let mut s = shared.lock_tolerant();
         for e in &evicted_slots {
             s.players[*e as usize] = None;
         }
@@ -231,6 +236,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             role,
             pad_wii,
             own_nunchuk,
+            screen_only,
         });
         if !s.injection_error {
             s.last_error = None;
@@ -239,7 +245,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     };
     let modes: Vec<&str> = Mode::ALL.iter().map(|m| m.as_str()).collect();
     let pad = pad_str(shared, slot);
-    if let Some(sess) = sessions.lock().unwrap().get_mut(&session_id) {
+    if let Some(sess) = sessions.lock_tolerant().get_mut(&session_id) {
         sess.last_pad = Some(pad);
     }
     let mut ok = json!({"m":"ok","session_id":session_id,"udp_port":pairing.port,
@@ -248,7 +254,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         "player":player,
                         "modes":modes,
                         "pad":pad,
-                        "nunchuk":if own_nunchuk { "own" } else { "none" }});
+                        "nunchuk":if own_nunchuk { "own" } else { "none" },
+                        "screen_only":screen_only});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }
@@ -276,7 +283,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 if slot == 0 {
                     let new_mode = Mode::parse(msg["mode"].as_str());
                     let changed = {
-                        let mut s = shared.lock().unwrap();
+                        let mut s = shared.lock_tolerant();
                         let changed = s.mode != new_mode;
                         s.mode = new_mode;
                         changed
@@ -292,7 +299,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                     }
                     auto_configure(shared, sessions);
                 } else {
-                    let cur = shared.lock().unwrap().mode;
+                    let cur = shared.lock_tolerant().mode;
                     if debug() {
                         eprintln!("[control] {device_name} (slot {slot}) pidió modo: solo decide el Jugador 1, sigue {}", cur.as_str());
                     }
@@ -304,7 +311,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 if role == Role::Wiimote {
                     let wants_wii = msg["pad"].as_str() == Some("wiimote");
                     let changed = {
-                        let mut s = shared.lock().unwrap();
+                        let mut s = shared.lock_tolerant();
                         match s.players[slot as usize].as_mut() {
                             Some(p) if p.pad_wii != wants_wii => {
                                 p.pad_wii = wants_wii;
@@ -314,7 +321,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         }
                     };
                     let effective = pad_str(shared, slot);
-                    if let Some(sess) = sessions.lock().unwrap().get_mut(&session_id) {
+                    if let Some(sess) = sessions.lock_tolerant().get_mut(&session_id) {
                         sess.pad_wii = wants_wii;
                         sess.last_pad = Some(effective);
                     }
@@ -339,7 +346,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 if role == Role::Wiimote {
                     let own = msg["own"].as_bool().unwrap_or(false);
                     let changed = {
-                        let mut s = shared.lock().unwrap();
+                        let mut s = shared.lock_tolerant();
                         match s.players[slot as usize].as_mut() {
                             Some(p) if p.own_nunchuk != own => {
                                 p.own_nunchuk = own;
@@ -363,13 +370,42 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                     let _ = send(&writer, &json!({"m":"nunchuk","own":false}));
                 }
             }
+            Some("screen_only") => {
+                // Modo Wii U: el móvil GamePad solo hace de pantalla táctil; el
+                // mando real del usuario sigue siendo el Controller 1 de Cemu y
+                // el receptor fusiona el DSU del móvil en su perfil. Eco
+                // siempre; reconfigurar Cemu solo si cambia (abierto: pendiente).
+                if role == Role::Wiimote {
+                    let on = msg["on"].as_bool().unwrap_or(false);
+                    let changed = {
+                        let mut s = shared.lock_tolerant();
+                        match s.players[slot as usize].as_mut() {
+                            Some(p) if p.screen_only != on => {
+                                p.screen_only = on;
+                                true
+                            }
+                            _ => false,
+                        }
+                    };
+                    let _ = send(&writer, &json!({"m":"screen_only","on":on}));
+                    if changed {
+                        crate::log_line!(
+                            "Móvil «{device_name}»: solo pantalla {}",
+                            if on { "activado" } else { "desactivado" }
+                        );
+                        crate::cemu::maybe_auto_configure(shared);
+                    }
+                } else {
+                    let _ = send(&writer, &json!({"m":"screen_only","on":false}));
+                }
+            }
             Some("text") => {
                 // Teclado del móvil → teclado en pantalla de Cemu (no acepta
                 // toques, solo teclas): a la ventana de Cemu en modo Wii U;
                 // si no se la encuentra, o en otros modos, al SO (ventana con
                 // el foco) desde el hilo de telemetría
                 if let Some(t) = msg["text"].as_str().filter(|t| !t.is_empty()) {
-                    let wiiu = shared.lock().unwrap().mode == Mode::Cemu;
+                    let wiiu = shared.lock_tolerant().mode == Mode::Cemu;
                     let to_os = if wiiu {
                         // sin camino directo a la ventana (Linux): al SO, pero
                         // solo con Cemu abierto (que tendrá el foco)
@@ -378,7 +414,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         true
                     };
                     if to_os {
-                        shared.lock().unwrap().text_queue.push(t.to_owned());
+                        shared.lock_tolerant().text_queue.push(t.to_owned());
                     }
                 }
             }
@@ -392,7 +428,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
 
     // Limpieza de ESTA sesión. Si otra conexión del mismo móvil ya la
     // desalojó, la plaza es suya: no tocar nada.
-    let still_mine = sessions.lock().unwrap().remove(&session_id).is_some();
+    let still_mine = sessions.lock_tolerant().remove(&session_id).is_some();
     crate::log_line!(
         "Móvil «{device_name}» (slot {slot}) se va{}",
         if still_mine { "" } else { " — ya desalojada por su reconexión" }
@@ -400,10 +436,11 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     if !still_mine {
         return;
     }
-    let (empty, player) = {
-        let mut s = shared.lock().unwrap();
+    let (empty, player, was_screen_only) = {
+        let mut s = shared.lock_tolerant();
         // el número de jugador se calcula ANTES de vaciar la plaza (su campanita)
         let player = player_number(&s.players, slot);
+        let was_screen_only = s.players[slot as usize].as_ref().is_some_and(|p| p.screen_only);
         s.players[slot as usize] = None;
         let empty = s.player_count() == 0;
         if empty {
@@ -412,11 +449,14 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             s.sensor_hz = 0.0;
             s.rtt_hist.clear();
         }
-        (empty, player)
+        (empty, player, was_screen_only)
     };
     crate::sound::disconnect_chime(player);
     if !empty {
         auto_configure(shared, sessions);
+    } else if was_screen_only {
+        // el último móvil era «solo pantalla»: el perfil del usuario vuelve
+        crate::cemu::cleanup_after_screen_only(shared);
     }
 }
 

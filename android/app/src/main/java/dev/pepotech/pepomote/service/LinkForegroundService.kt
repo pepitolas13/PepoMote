@@ -234,6 +234,7 @@ class LinkForegroundService : Service() {
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
             role = role,
             ownNunchuk = AppPrefs.ownNunchuk(this),
+            screenOnly = AppPrefs.gamePadFullScreen(this),
             callbacks = object : ControlClient.Callbacks {
                 override fun onOk(ok: ControlClient.Ok) {
                     if (gen != generation) return
@@ -271,6 +272,7 @@ class LinkForegroundService : Service() {
                     }
                     LinkState.sendText = { t -> control?.sendText(t) }
                     LinkState.sendNunchuk = { own -> control?.sendNunchuk(own) }
+                    LinkState.sendScreenOnly = { on -> control?.sendScreenOnly(on) }
                     LinkState.publish(
                         UiLink.Connected(
                             pcName, ok.mode, null, 0f, ok.slot,
@@ -279,7 +281,8 @@ class LinkForegroundService : Service() {
                             player = if (ok.player > 0) ok.player else ok.slot + 1,
                             supportsCemu = ok.supportsCemu,
                             pad = ok.pad,
-                            ownNunchuk = ok.nunchuk == "own"
+                            ownNunchuk = ok.nunchuk == "own",
+                            screenOnly = ok.screenOnly
                         )
                     )
                     LinkState.pendingMode?.let { m ->
@@ -356,6 +359,11 @@ class LinkForegroundService : Service() {
                 override fun onNunchukChanged(own: Boolean) {
                     if (gen != generation) return
                     LinkState.updateConnected { it.copy(ownNunchuk = own) }
+                }
+
+                override fun onScreenOnlyChanged(on: Boolean) {
+                    if (gen != generation) return
+                    LinkState.updateConnected { it.copy(screenOnly = on) }
                 }
 
                 override fun onNotice(text: String) {
@@ -452,6 +460,7 @@ class LinkForegroundService : Service() {
         LinkState.sendPad = null
         LinkState.sendText = null
         LinkState.sendNunchuk = null
+        LinkState.sendScreenOnly = null
         LinkState.motion = null
         ScreenLink.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()

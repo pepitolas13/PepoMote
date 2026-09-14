@@ -1,6 +1,7 @@
 mod mapping;
 mod server;
 
+use crate::state::LockTolerant;
 use crate::net::MAX_PLAYERS;
 use crate::state::SharedState;
 use std::collections::HashMap;
@@ -85,7 +86,7 @@ impl Dsu {
         }
 
         let touch = {
-            let mut pulses = self.pulse.lock().unwrap();
+            let mut pulses = self.pulse.lock_tolerant();
             let p = &mut pulses[slot_idx];
             if p.last_recenter != Some(sample.recenter_count) {
                 if p.last_recenter.is_some() {
@@ -96,9 +97,9 @@ impl Dsu {
             Instant::now() < p.until
         };
 
-        self.last.lock().unwrap()[slot_idx] = Some((*sample, Instant::now()));
+        self.last.lock_tolerant()[slot_idx] = Some((*sample, Instant::now()));
 
-        let clients = self.clients.lock().unwrap();
+        let clients = self.clients.lock_tolerant();
         let slot_bit = 1u8 << slot;
         if !clients.values().any(|c| c.slots & slot_bit != 0) {
             return;
@@ -129,14 +130,14 @@ pub fn start(shared: SharedState) -> Option<Arc<Dsu>> {
     let socket = match crate::ports::bind_udp(&shared, "127.0.0.1", port, "DSU") {
         Ok(s) => s,
         Err(e) => {
-            shared.lock().unwrap().last_error = Some(e);
+            shared.lock_tolerant().last_error = Some(e);
             return None;
         }
     };
     let recv_socket = match socket.try_clone() {
         Ok(s) => s,
         Err(e) => {
-            shared.lock().unwrap().last_error = Some(format!("DSU: {e}"));
+            shared.lock_tolerant().last_error = Some(format!("DSU: {e}"));
             return None;
         }
     };

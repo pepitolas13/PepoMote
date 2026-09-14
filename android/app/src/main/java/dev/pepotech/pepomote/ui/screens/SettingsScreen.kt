@@ -1,10 +1,12 @@
 package dev.pepotech.pepomote.ui.screens
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.displayCutoutPadding
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,19 +23,50 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.service.GamePadSide
+import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkState
+import dev.pepotech.pepomote.service.NunchukSide
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
+
+/** Tarjeta del lado de un mando apaisado fijo: Izquierda / Derecha / Según el sensor. */
+@Composable
+private fun SideCard(@StringRes title: Int, @StringRes sub: Int, side: LandscapeSide, onPick: (LandscapeSide) -> Unit) {
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+        border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(sub), style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((label, s) in listOf(
+                    R.string.side_left to LandscapeSide.Left,
+                    R.string.side_right to LandscapeSide.Right,
+                    R.string.side_sensor to LandscapeSide.Sensor
+                )) {
+                    ModeChip(stringResource(label), selected = side == s) { onPick(s) }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
@@ -42,7 +75,11 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
     var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
     var noScreen by remember { mutableStateOf(AppPrefs.gamePadNoScreen(context)) }
+    var fullScreen by remember { mutableStateOf(AppPrefs.gamePadFullScreen(context)) }
+    var fullScreenKb by remember { mutableStateOf(AppPrefs.gamePadFullScreenKeyboard(context)) }
     var ownNunchuk by remember { mutableStateOf(AppPrefs.ownNunchuk(context)) }
+    val nunchukSide by NunchukSide.saved.collectAsState()
+    val gamePadSide by GamePadSide.saved.collectAsState()
     var notices by remember { mutableStateOf(AppPrefs.receiverNotices(context)) }
     var updateCheck by remember { mutableStateOf(AppPrefs.updateCheckEnabled(context)) }
     val versionName = remember {
@@ -192,6 +229,10 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
             }
         }
 
+        // Lado del mando + Nunchuk apaisado: se pregunta la primera vez; aquí se cambia
+        Spacer(Modifier.height(14.dp))
+        SideCard(R.string.side_title, R.string.side_sub, nunchukSide) { NunchukSide.save(context, it) }
+
         // GamePad de Wii U sin pantalla táctil: botones más grandes
         Spacer(Modifier.height(14.dp))
         Card(
@@ -218,11 +259,75 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         noScreen = it
                         AppPrefs.setGamePadNoScreen(context, it)
+                        if (it) fullScreen = false
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )
             }
         }
+
+        // Pantalla del GamePad a pantalla completa (mando real en el PC), con la
+        // subopción del botón de teclado
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.fullscreen_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.fullscreen_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = fullScreen,
+                    onCheckedChange = {
+                        fullScreen = it
+                        AppPrefs.setGamePadFullScreen(context, it)
+                        if (it) noScreen = false
+                        LinkState.sendScreenOnly?.invoke(it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 30.dp, end = 18.dp, bottom = 16.dp)
+                    .alpha(if (fullScreen) 1f else 0.5f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.fullscreen_kb_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.fullscreen_kb_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = fullScreenKb,
+                    enabled = fullScreen,
+                    onCheckedChange = {
+                        fullScreenKb = it
+                        AppPrefs.setGamePadFullScreenKeyboard(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
+        // Lado del GamePad de Wii U: el suyo, aparte del mando + Nunchuk
+        Spacer(Modifier.height(14.dp))
+        SideCard(R.string.side_gamepad_title, R.string.side_gamepad_sub, gamePadSide) { GamePadSide.save(context, it) }
 
         // Avisos del receptor sobre el mando al cambiar de modo
         Spacer(Modifier.height(14.dp))

@@ -44,14 +44,55 @@ object AppPrefs {
             .edit().putBoolean("ownNunchuk", value).apply()
     }
 
+    /**
+     * Lado de un mando apaisado fijo ([dev.pepotech.pepomote.service.LandscapeSide]):
+     * "" hasta que se elige la primera vez; "left", "right" o "sensor"
+     * (Ajustes). [key]: "nunchukSide" (mando + Nunchuk) o "gamePadSide" (GamePad).
+     */
+    fun landscapeSide(context: Context, key: String): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(key, "") ?: ""
+
+    fun setLandscapeSide(context: Context, key: String, value: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(key, value).apply()
+    }
+
     /** GamePad de Wii U sin pantalla táctil (ni doble pantalla): los botones crecen (Ajustes). */
     fun gamePadNoScreen(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean("gamePadNoScreen", false)
 
     fun setGamePadNoScreen(context: Context, value: Boolean) {
+        val e = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("gamePadNoScreen", value)
+        // excluyente con la pantalla completa
+        if (value) e.putBoolean("gamePadFullScreen", false)
+        e.apply()
+    }
+
+    /**
+     * Pantalla del GamePad a pantalla completa: solo la pantalla de Cemu y el
+     * táctil, sin sticks ni botones (el mando real va en el PC). Ajustes.
+     */
+    fun gamePadFullScreen(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean("gamePadNoScreen", value).apply()
+            .getBoolean("gamePadFullScreen", false)
+
+    fun setGamePadFullScreen(context: Context, value: Boolean) {
+        val e = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("gamePadFullScreen", value)
+        // excluyente con «GamePad sin pantalla táctil»
+        if (value) e.putBoolean("gamePadNoScreen", false)
+        e.apply()
+    }
+
+    /** En pantalla completa, botón de teclado arriba a la derecha (Ajustes). */
+    fun gamePadFullScreenKeyboard(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("gamePadFullScreenKeyboard", true)
+
+    fun setGamePadFullScreenKeyboard(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("gamePadFullScreenKeyboard", value).apply()
     }
 
     /** Mostrar el selector Puntero/Dolphin en el mando al entrar por Conectar. */

@@ -87,7 +87,7 @@ struct ControllerLandscapeScreen: View {
                 // Cruceta izquierda
                 HStack {
                     // En un juego, la cruceta de un mando girado (IR a la izquierda)
-                    PadCross(size: m.cross, glyph: m.text(14), sideways: Route.sidewaysDpad(link.link)).padding(.leading, m.crossInset)
+                    PadCross(size: m.cross, sideways: Route.sidewaysDpad(link.link)).padding(.leading, m.crossInset)
                     Spacer()
                 }
 

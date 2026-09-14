@@ -19,7 +19,6 @@ final class PadMetricsTests: XCTestCase {
         XCTAssertEqual(phone.clickSize, 34.3, accuracy: 0.5)
         XCTAssertEqual(phone.roundBtn, 40.9, accuracy: 0.5)
         XCTAssertEqual(phone.pillW, 66, accuracy: 0.5)
-        XCTAssertEqual(phone.crossGlyph, 14)
         XCTAssertEqual(phone.shoulderH, 27.1, accuracy: 0.5)
 
         let ipad13 = PadMetrics(size: sz(1376, 1032))
@@ -29,7 +28,6 @@ final class PadMetricsTests: XCTestCase {
         XCTAssertEqual(ipad13.sideW, 399.0, accuracy: 0.5)
         XCTAssertEqual(ipad13.touchW, 565.9, accuracy: 0.5)
         XCTAssertEqual(ipad13.faceBtn, 126.8, accuracy: 0.5)
-        XCTAssertEqual(ipad13.crossGlyph, 39.6, accuracy: 0.5)
         XCTAssertEqual(PadMetrics(size: sz(1180, 820)).padSize, 281.9, accuracy: 0.5)
         XCTAssertEqual(PadMetrics(size: sz(1133, 744)).padSize, 269.6, accuracy: 0.5)
     }

@@ -117,20 +117,26 @@ fn observe(shared: &SharedState) -> EmuState {
 /// Cemu sobreescriben su configuración al salir) y, con el modo automático
 /// activado, cambia de modo al abrir o cerrar Dolphin o Cemu.
 pub fn start_watcher(shared: SharedState) {
-    let _ = std::thread::Builder::new().name("emu-watch".into()).spawn(move || {
+    let _ = crate::threads::spawn_guarded(
+        "emu-watch",
+        crate::threads::OnPanic::Restart { after: Duration::from_secs(5), max: 50 },
+        move || {
         let mut debounce = Debounce::default();
         loop {
             std::thread::sleep(Duration::from_secs(2));
             let sample = observe(&shared);
-            let (dolphin_pending, cemu_pending) = {
+            let (dolphin_pending, cemu_pending, cemu_cleanup) = {
                 let s = shared.lock().unwrap_or_else(|e| e.into_inner());
-                (s.dolphin_pending, s.cemu_pending)
+                (s.dolphin_pending, s.cemu_pending, s.cemu_cleanup_pending)
             };
             if dolphin_pending && !sample.dolphin {
                 crate::dolphin::apply_pending(&shared);
             }
             if cemu_pending && !sample.cemu {
                 crate::cemu::apply_pending(&shared);
+            }
+            if cemu_cleanup && !sample.cemu {
+                crate::cemu::apply_cleanup_pending(&shared);
             }
             if let Some((prev, now)) = debounce.observe(sample) {
                 let (enabled, mode) = {
@@ -142,7 +148,8 @@ pub fn start_watcher(shared: SharedState) {
                 }
             }
         }
-    });
+    },
+    );
 }
 
 #[cfg(test)]

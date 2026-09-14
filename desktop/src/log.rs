@@ -19,9 +19,13 @@ static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 static SHARED: OnceLock<SharedState> = OnceLock::new();
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
-/// Resuelve la ruta del log (una vez) y crea la carpeta.
+/// Resuelve la ruta del log (una vez), crea la carpeta y engancha el `log`
+/// de las bibliotecas.
 pub fn init() {
     let _ = path();
+    if logfacade::set_logger(&BRIDGE).is_ok() {
+        logfacade::set_max_level(logfacade::LevelFilter::Info);
+    }
 }
 
 /// Ruta del log (None si no hay carpeta de configuración).
@@ -39,15 +43,45 @@ pub fn attach_shared(shared: SharedState) {
     let _ = SHARED.set(shared);
 }
 
+/// Puente del `log` de las bibliotecas (eframe, glutin, egui_glow, winit vía
+/// tracing…) a receptor.log: sin él, el «Exiting because of error: …» de
+/// eframe y los «X11 error» de winit se perdían. Avisos y errores de todo;
+/// lo informativo, solo de la pila de ventana.
+struct Bridge;
+
+fn bridged(level: logfacade::Level, target: &str) -> bool {
+    level <= logfacade::Level::Warn
+        || (level == logfacade::Level::Info && (target.starts_with("eframe") || target.starts_with("egui_glow")))
+}
+
+impl logfacade::Log for Bridge {
+    fn enabled(&self, m: &logfacade::Metadata) -> bool {
+        bridged(m.level(), m.target())
+    }
+
+    fn log(&self, r: &logfacade::Record) {
+        if self.enabled(r.metadata()) {
+            line(&format!("[{}] {}", r.target(), r.args()));
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static BRIDGE: Bridge = Bridge;
+
 /// Una línea al log y a stderr.
 pub fn line(msg: &str) {
     let thread = std::thread::current();
     let name = thread.name().unwrap_or("?");
     let (secs, millis) = now();
-    eprintln!("[pepomote] {msg}");
     if let Some(p) = path() {
         append(&p, LOG_CAP, &format_line(secs, millis, name, msg));
     }
+    // stderr DESPUÉS del archivo y sin `eprintln!`: con stderr cerrado
+    // (terminal que se fue, tubería rota) `eprintln!` entra en pánico, y si
+    // eso pasa dentro del hook de pánico el proceso aborta sin dejar rastro
+    let _ = writeln!(std::io::stderr(), "[pepomote] {msg}");
 }
 
 #[macro_export]
@@ -106,7 +140,7 @@ fn append(path: &Path, cap: u64, text: &str) {
 }
 
 /// Texto del mensaje de un pánico (`&str` o `String`; si no, sin mensaje).
-fn payload_text(payload: &(dyn Any + Send)) -> String {
+pub fn payload_text(payload: &(dyn Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_owned()
     } else if let Some(s) = payload.downcast_ref::<String>() {
@@ -170,6 +204,14 @@ pub fn install_panic_hook() {
     }));
 }
 
+/// Solo tests: silencia el hook de pánico por defecto, para que los tests
+/// que provocan pánicos a propósito no llenen la salida.
+#[cfg(test)]
+pub fn quiet_panics() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| std::panic::set_hook(Box::new(|_| {})));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,6 +221,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn el_puente_deja_pasar_avisos_y_lo_informativo_de_la_ventana() {
+        use logfacade::Level::*;
+        assert!(bridged(Error, "mdns_sd"));
+        assert!(bridged(Warn, "winit::platform_impl"));
+        assert!(bridged(Info, "eframe::native::run"));
+        assert!(bridged(Info, "egui_glow::painter"));
+        assert!(!bridged(Info, "mdns_sd"));
+        assert!(!bridged(Debug, "eframe"));
     }
 
     #[test]

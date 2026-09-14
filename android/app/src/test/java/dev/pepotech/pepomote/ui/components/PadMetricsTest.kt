@@ -26,7 +26,6 @@ class PadMetricsTest {
         assertEquals(34.3f, phone.clickSize, eps)
         assertEquals(40.9f, phone.roundBtn, eps)
         assertEquals(66f, phone.pillW, eps)
-        assertEquals(14f, phone.crossGlyph, 1e-3f)
         assertEquals(27.1f, phone.shoulderH, eps)
 
         val tablet13 = padMetrics(1376f, 1032f)
@@ -36,7 +35,6 @@ class PadMetricsTest {
         assertEquals(399.0f, tablet13.sideW, eps)
         assertEquals(565.9f, tablet13.touchW, eps)
         assertEquals(126.8f, tablet13.faceBtn, eps)
-        assertEquals(39.6f, tablet13.crossGlyph, eps)
         assertEquals(281.9f, padMetrics(1180f, 820f).padSize, eps)
         assertEquals(269.6f, padMetrics(1133f, 744f).padSize, eps)
     }

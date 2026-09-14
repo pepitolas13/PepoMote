@@ -2,6 +2,7 @@ package dev.pepotech.pepomote.ui.screens
 
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.displayCutoutPadding
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -71,6 +74,7 @@ import dev.pepotech.pepomote.R
  * modo Wii U la cabecera lleva además «Teclado» (texto para el teclado en
  * pantalla de Cemu).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
     val view = LocalView.current
@@ -174,15 +178,25 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
             }
 
             if (link is UiLink.Connected) {
-                // Chips de modo: Jugador 1 con el ajuste activo, y siempre dentro de Wii U
-                if (showModeChips(link, showChips)) {
+                // Chips de modo (Jugador 1 con el ajuste activo, y siempre dentro de
+                // Wii U) y, en Dolphin, el interruptor «Nunchuk» a la derecha de Wii U
+                // con otro tono: es una opción, no un modo. Todo en UNA fila, lejos
+                // de la cruceta (antes el Nunchuk iba en una fila propia justo
+                // encima y se pulsaba sin querer): en un móvil los chips van densos
+                // para que quepan los cuatro; si aun así no caben (letra grande),
+                // el último pasa a la fila siguiente
+                val modeChips = showModeChips(link, showChips)
+                val nunchuk = showNunchukChip(link)
+                if (modeChips || nunchuk) {
                     Spacer(Modifier.height(6.dp))
-                    ModeChips(current = link.mode, supportsCemu = link.supportsCemu)
-                }
-                // Dolphin: el Nunchuk en el mismo móvil (gira el móvil para usarlo)
-                if (showNunchukChip(link)) {
-                    Spacer(Modifier.height(6.dp))
-                    NunchukChip(link)
+                    val dense = colW < 420.dp
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 10.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, dense = dense)
+                        if (nunchuk) NunchukChip(link, dense = dense, modifier = Modifier.padding(start = 4.dp))
+                    }
                 }
                 // Wii U como Mando de Wii: qué mando soy en Cemu, con su ayuda
                 if (isWiiUAsWiimote(link)) {
@@ -191,8 +205,9 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 }
             }
 
-            Gap(10.dp * grow, flexible)
-            PadCross(sizeDp = 168.dp * grow, glyphSp = (14 * grow).roundToInt())
+            // Hueco de sobra entre los chips y la cruceta: que ir a por ↑ no toque un chip
+            Gap(18.dp * grow, flexible)
+            PadCross(sizeDp = 168.dp * grow)
 
             Gap(16.dp * grow, flexible)
             Row(
@@ -281,9 +296,9 @@ internal fun showNunchukChip(link: UiLink.Connected): Boolean =
  * Dolphin (el receptor lo avisa).
  */
 @Composable
-internal fun NunchukChip(link: UiLink.Connected, compact: Boolean = false) {
+internal fun NunchukChip(link: UiLink.Connected, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    ModeChip(stringResource(R.string.nunchuk_chip), selected = link.ownNunchuk, compact = compact) {
+    ModeChip(stringResource(R.string.nunchuk_chip), selected = link.ownNunchuk, compact = compact, dense = dense, toggle = true, modifier = modifier) {
         val want = !link.ownNunchuk
         dev.pepotech.pepomote.control.AppPrefs.setOwnNunchuk(context, want)
         LinkState.sendNunchuk?.invoke(want)
@@ -305,47 +320,61 @@ internal fun modeLabel(mode: String): String = when (mode) {
  * el eco lo confirma. Lo comparten el mando vertical, el apaisado y el GamePad.
  */
 @Composable
-internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean = false, modifier: Modifier = Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)) {
-        ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact) {
+internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else if (dense) 8.dp else 10.dp)) {
+        ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact, dense = dense) {
             LinkState.requestMode(LinkState.MODE_POINTER)
         }
-        ModeChip(stringResource(R.string.mode_dolphin), selected = current == LinkState.MODE_DOLPHIN, compact = compact) {
+        ModeChip(stringResource(R.string.mode_dolphin), selected = current == LinkState.MODE_DOLPHIN, compact = compact, dense = dense) {
             LinkState.requestMode(LinkState.MODE_DOLPHIN)
         }
         if (supportsCemu) {
-            ModeChip(stringResource(R.string.mode_wiiu), selected = current == LinkState.MODE_CEMU, compact = compact) {
+            ModeChip(stringResource(R.string.mode_wiiu), selected = current == LinkState.MODE_CEMU, compact = compact, dense = dense) {
                 LinkState.requestMode(LinkState.MODE_CEMU)
             }
         }
     }
 }
 
+/**
+ * Chip de modo (azul cuando es el activo). [compact]: bajo y estrecho, para
+ * las cabeceras apaisadas; [dense]: solo estrecho, para que quepan cuatro en
+ * la fila de un móvil; [toggle]: no es un modo sino un interruptor (el
+ * Nunchuk): verde encendido y con contorno verde apagado, para que se vea
+ * que es una opción activable.
+ */
 @Composable
-internal fun ModeChip(label: String, selected: Boolean, compact: Boolean = false, onClick: () -> Unit) {
+internal fun ModeChip(
+    label: String,
+    selected: Boolean,
+    compact: Boolean = false,
+    dense: Boolean = false,
+    toggle: Boolean = false,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     // pointerInput(label) arranca una vez: sin esto el gesto se quedaba con el
     // onClick de la primera composición (el chip Nunchuk, que calcula «lo
     // contrario de ahora», solo funcionaba la primera vez)
     val current by rememberUpdatedState(onClick)
+    val shape = RoundedCornerShape(18.dp)
+    val fill = if (!selected) PepoColors.Card else if (toggle) PepoColors.Ok else PepoColors.Blue
+    val text = if (!selected) PepoColors.TextDim else if (toggle) PepoColors.OnAccent else PepoColors.Card
     Box(
-        modifier = Modifier
-            .background(
-                if (selected) PepoColors.Blue else PepoColors.Card,
-                RoundedCornerShape(18.dp)
-            )
+        modifier = modifier
+            .background(fill, shape)
+            .then(if (toggle && !selected) Modifier.border(1.5.dp, PepoColors.Ok, shape) else Modifier)
             .pointerInput(label) {
                 detectTapGestures(onTap = { current() })
             }
             .padding(
-                horizontal = if (compact) 12.dp else 18.dp,
+                horizontal = if (compact || dense) 12.dp else 18.dp,
                 vertical = if (compact) 6.dp else 8.dp
             )
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = if (selected) PepoColors.Card else PepoColors.TextDim
-            ),
+            style = MaterialTheme.typography.bodyMedium.copy(color = text),
             maxLines = 1
         )
     }

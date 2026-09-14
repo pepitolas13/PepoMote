@@ -4,8 +4,17 @@ struct RootView: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var link = LinkState.shared
 
-    private var wantLandscape: Bool {
-        model.screen == .controller && Route.forcesLandscape(link.link, link.intent)
+    /// Apaisado fijo mientras el GamePad o el mando + Nunchuk estén en
+    /// pantalla; el resto gira solo si el bloqueo de giro del Centro de
+    /// control está quitado (lo decide iOS). Cada uno de los dos va hacia su
+    /// lado elegido (Ajustes, o el que se confirme la primera vez: hasta
+    /// entonces, los dos apaisados).
+    private var orientationMask: UIInterfaceOrientationMask {
+        guard model.screen == .controller, Route.forcesLandscape(link.link, link.intent) else { return .all }
+        if Route.wiiLandscapeNunchuk(link.link) {
+            return LandscapeSide.effective(saved: model.nunchukSide, provisional: model.nunchukSideProvisional).mask
+        }
+        return LandscapeSide.effective(saved: model.gamePadSide, provisional: model.gamePadSideProvisional).mask
     }
 
     var body: some View {
@@ -27,12 +36,10 @@ struct RootView: View {
         .onReceive(link.$link) { l in
             if case .failed(let code, let msg) = l { model.onLinkFailed(code: code, msg: msg) }
         }
-        // Apaisado fijo mientras el GamePad o el mando + Nunchuk estén en
-        // pantalla; el resto gira solo si el bloqueo de giro del Centro de
-        // control está quitado (lo decide iOS). Al salir, como estaba
-        .onChange(of: wantLandscape) { v in OrientationLock.set(v ? .landscape : .all) }
+        // Al salir del mando, como estaba
+        .onChange(of: orientationMask) { m in OrientationLock.set(m) }
         .onAppear {
-            OrientationLock.set(wantLandscape ? .landscape : .all)
+            OrientationLock.set(orientationMask)
             model.startUpdateChecks()
         }
         .fullScreenCover(isPresented: $model.scanning) {

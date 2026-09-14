@@ -32,7 +32,12 @@ sealed class UiLink {
          * El receptor confirmó el Nunchuk en el mismo móvil (`ok.nunchuk` o
          * eco de `nunchuk`): en Dolphin, apaisado = mando + Nunchuk.
          */
-        val ownNunchuk: Boolean = false
+        val ownNunchuk: Boolean = false,
+        /**
+         * El receptor confirmó «solo pantalla» (`ok.screen_only` o eco de
+         * `screen_only`); null = receptor anterior a 1.6, que no lo conoce.
+         */
+        val screenOnly: Boolean? = null
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
@@ -105,6 +110,10 @@ object LinkState {
     /** Nunchuk en el mismo móvil (modo Dolphin): pedirlo o quitarlo; el eco lo confirma. */
     @Volatile
     var sendNunchuk: ((Boolean) -> Unit)? = null
+
+    /** Modo Wii U: el móvil solo como pantalla táctil (pantalla completa); el eco lo confirma. */
+    @Volatile
+    var sendScreenOnly: ((Boolean) -> Unit)? = null
 
     /**
      * Motor de sensores del enlace vivo: la pantalla GamePad le fija

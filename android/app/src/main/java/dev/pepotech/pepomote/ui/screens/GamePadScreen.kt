@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
@@ -71,11 +72,15 @@ import androidx.compose.ui.unit.sp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.net.ScreenClient
 import dev.pepotech.pepomote.sensor.SenderKind
+import dev.pepotech.pepomote.service.GamePadSide
+import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.Route
 import dev.pepotech.pepomote.service.ScreenLink
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
+import dev.pepotech.pepomote.ui.components.FitRect
+import dev.pepotech.pepomote.ui.components.FullScreenMetrics
 import dev.pepotech.pepomote.ui.components.HeaderSlot
 import dev.pepotech.pepomote.ui.components.KeyboardButton
 import dev.pepotech.pepomote.ui.components.KeyboardDialog
@@ -123,6 +128,14 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val engine = LinkState.motion
     val rotation = rememberDisplayRotation()
     val screen by ScreenLink.client.collectAsState()
+    // Primera vez: el lado del apaisado lo ha elegido el sensor; se pregunta
+    // si es el bueno y se guarda para siempre (Ajustes lo cambia; aparte del
+    // lado del mando + Nunchuk). Al salir sin confirmar, la prueba se olvida
+    val sideSaved by GamePadSide.saved.collectAsState()
+    val sideProvisional by GamePadSide.provisional.collectAsState()
+    DisposableEffect(Unit) {
+        onDispose { GamePadSide.setProvisional(null) }
+    }
 
     // «Teclado»: texto para el teclado en pantalla de Cemu (GamePad y Pro)
     var keyboardOpen by remember { mutableStateOf(false) }
@@ -157,17 +170,39 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         if (operative) engine?.rotation = rotation
     }
 
+    val context = LocalContext.current
+    // Ajustes «GamePad sin pantalla táctil» y «pantalla completa»: se leen al
+    // entrar (Ajustes es otra pantalla)
+    val noScreenPref = remember { AppPrefs.gamePadNoScreen(context) }
+    val fullScreenPref = remember { AppPrefs.gamePadFullScreen(context) }
+    val fullScreenKb = remember { AppPrefs.gamePadFullScreenKeyboard(context) }
+    // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene),
+    // con el modo confirmado y sin el ajuste «GamePad sin pantalla»
+    val wantScreen = operative && connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
+    // Pantalla completa: solo la pantalla de Cemu y el táctil (mando real en
+    // el PC). Nunca sin el modo confirmado: el estado «Activando Wii U…»
+    // sigue con cabecera y «Salir»
+    val fullScreen = wantScreen && fullScreenPref
+
+    // Receptor anterior a 1.6: no confirma «solo pantalla» ni en el ok ni
+    // con el eco; se avisa una vez (a los 2 s, por si el eco llega tarde)
+    var warnedOld by remember { mutableStateOf(false) }
+    LaunchedEffect(fullScreen, connected?.screenOnly) {
+        if (fullScreen && connected?.screenOnly == null && !warnedOld) {
+            kotlinx.coroutines.delay(2000)
+            warnedOld = true
+            LinkState.publishNotice(context.getString(R.string.fullscreen_old_receiver))
+        }
+    }
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(PepoColors.Background)
+            .background(if (fullScreen) Color.Black else PepoColors.Background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .displayCutoutPadding()
     ) {
-        val context = LocalContext.current
-        // Ajuste «GamePad sin pantalla táctil»: se lee al entrar (Ajustes es otra pantalla)
-        val noScreenPref = remember { AppPrefs.gamePadNoScreen(context) }
         // Medidas (PadMetrics, las mismas que en iOS): en una tablet los topes
         // crecen con k y los pads llenan la columna; en cualquier móvil con
         // pantalla, lo de siempre; sin pantalla, en fila o apilado según cuál
@@ -187,26 +222,32 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         val faceBtn = m.faceBtn.dp
         val touchW = m.touchW.dp
         val touchH = m.touchH.dp
-        val crossGlyph = m.crossGlyph.roundToInt()
 
-        // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene),
-        // con el modo confirmado y sin el ajuste «GamePad sin pantalla». Se
-        // pide como máximo la resolución nativa (854×480) o, si la zona táctil
-        // es más estrecha, su ancho real en píxeles físicos con el alto 16:9.
-        // Al salir (o cambiar) se retira.
-        val wantScreen = operative && connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
-        val touchPx = with(LocalDensity.current) { touchW.roundToPx() }
-        DisposableEffect(wantScreen, touchPx) {
+        // Tamaño que se pide al PC: como máximo la resolución nativa (854×480)
+        // o, si la zona táctil es más estrecha, su ancho real en píxeles
+        // físicos con el alto 16:9; en pantalla completa, el área entera
+        // (estable: no depende de cada fotograma). Al salir (o cambiar) se
+        // retira.
+        val density = LocalDensity.current
+        val touchPx = with(density) { touchW.roundToPx() }
+        val (reqW, reqH) = if (fullScreen) {
+            FullScreenMetrics.streamRequest(with(density) { maxWidth.roundToPx() }, with(density) { maxHeight.roundToPx() })
+        } else {
+            val w = minOf(ScreenClient.NATIVE_WIDTH, touchPx)
+            w to w * 9 / 16
+        }
+        DisposableEffect(wantScreen, reqW, reqH) {
             if (wantScreen) {
-                val w = minOf(ScreenClient.NATIVE_WIDTH, touchPx)
-                ScreenLink.request(w, w * 9 / 16)
+                ScreenLink.request(reqW, reqH)
                 onDispose { ScreenLink.release() }
             } else {
                 onDispose { }
             }
         }
 
-        Column(Modifier.fillMaxSize()) {
+        if (fullScreen) {
+            FullScreenGamePad(screen, showKeyboard = fullScreenKb, onKeyboard = { keyboardOpen = true })
+        } else Column(Modifier.fillMaxSize()) {
             Header(
                 link, operative, headerH, screen,
                 width = screenW,
@@ -274,7 +315,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                 horizontalArrangement = Arrangement.spacedBy(gap)
                             ) {
                                 stick()
-                                PadCross(sizeDp = padSize, glyphSp = crossGlyph)
+                                PadCross(sizeDp = padSize)
                             }
                         } else {
                             shoulders()
@@ -289,7 +330,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             // Tablet: stick y cruceta juntos, abajo (donde llega el
                             // pulgar), en vez de repartidos por toda la altura
                             if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
-                            PadCross(sizeDp = padSize, glyphSp = crossGlyph)
+                            PadCross(sizeDp = padSize)
                         }
                     }
 
@@ -425,16 +466,143 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             }
         }
 
+        if (sideSaved == LandscapeSide.Unset) {
+            val shown = LandscapeSide.effective(LandscapeSide.current(rotation), sideProvisional)
+            SideAskCard(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = if (fullScreen) 8.dp else headerH + gap),
+                title = stringResource(R.string.side_ask_gamepad),
+                onFlip = { GamePadSide.setProvisional(shown.flipped()) },
+                onKeep = { GamePadSide.save(context, shown) }
+            )
+        }
+
         NoticeBanner(
             Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = headerH + selectorH + gap * 2)
+                .padding(top = if (fullScreen) 8.dp else headerH + selectorH + gap * 2)
         )
 
         if (keyboardOpen) {
             KeyboardDialog(
                 onSend = { LinkState.sendText?.invoke(it) },
                 onClose = { keyboardOpen = false }
+            )
+        }
+    }
+}
+
+/**
+ * «Pantalla del GamePad a pantalla completa»: solo la pantalla de Cemu,
+ * ajustada a su proporción real sobre fondo negro, con el táctil sobre la
+ * imagen (un gesto que empieza en las bandas negras se ignora) y, si el
+ * ajuste lo pide, el botón de teclado arriba a la derecha. Sin sticks ni
+ * botones: el mando real va en el PC. Atrás vuelve a Inicio.
+ */
+@Composable
+private fun FullScreenGamePad(screen: ScreenClient<Bitmap>?, showKeyboard: Boolean, onKeyboard: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        FullScreenTouch(screen, Modifier.fillMaxSize())
+        if (showKeyboard) {
+            KeyboardButton(
+                compact = true,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .alpha(0.7f),
+                onClick = onKeyboard
+            )
+        }
+    }
+}
+
+/**
+ * La pantalla del GamePad a pantalla completa: mismo dibujado y mismo ACK de
+ * fotograma que [TouchScreen], pero el rectángulo de la imagen (16:9 mientras
+ * no hay fotograma) lo da [FullScreenMetrics] y el táctil se mapea sobre él.
+ */
+@Composable
+private fun FullScreenTouch(screen: ScreenClient<Bitmap>?, modifier: Modifier) {
+    val view = LocalView.current
+    var finger by remember { mutableStateOf<Offset?>(null) }
+    val dot = 14.dp
+    val image = screen?.image?.collectAsState()
+    val status = screen?.status?.collectAsState()
+    val hasImage by remember(image) { derivedStateOf { image?.value != null } }
+    val paint = remember { Paint().apply { isFilterBitmap = true } }
+    val dst = remember { RectF() }
+    fun rectFor(w: Float, h: Float): FitRect {
+        val bmp = image?.value?.bitmap
+        return FullScreenMetrics.fitRect(w, h, bmp?.width?.toFloat() ?: 0f, bmp?.height?.toFloat() ?: 0f)
+    }
+
+    Box(
+        modifier = modifier
+            .background(Color.Black)
+            .drawBehind {
+                val img = image?.value ?: return@drawBehind
+                val r = rectFor(size.width, size.height)
+                if (r.w <= 0f || r.h <= 0f) return@drawBehind
+                dst.set(r.x, r.y, r.x + r.w, r.y + r.h)
+                drawIntoCanvas { it.nativeCanvas.drawBitmap(img.bitmap, null, dst, paint) }
+                screen?.shown(img.seq)
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val r = rectFor(size.width.toFloat(), size.height.toFloat())
+                    if (!FullScreenMetrics.contains(r, down.position.x, down.position.y)) {
+                        // en las bandas negras: no es un toque en la pantalla del GamePad
+                        return@awaitEachGesture
+                    }
+                    fun report(pos: Offset, isDown: Boolean) {
+                        val (fx, fy) = FullScreenMetrics.fraction(r, pos.x, pos.y)
+                        ButtonState.setTouch(fx, fy, isDown)
+                    }
+                    down.consume()
+                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    var last = down.position
+                    finger = last
+                    report(last, true)
+                    drag(down.id) { change ->
+                        change.consume()
+                        last = change.position
+                        finger = last
+                        report(last, true)
+                    }
+                    finger = null
+                    report(last, false)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        if (!hasImage) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    stringResource(R.string.touch_screen),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PepoColors.TextDim
+                )
+                if (screen != null) {
+                    Text(
+                        screenStatusText(status?.value),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                        color = PepoColors.TextDim,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 2.dp, start = 12.dp, end = 12.dp)
+                    )
+                }
+            }
+        }
+        finger?.let { p ->
+            val half = with(LocalDensity.current) { (dot / 2).toPx() }
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .offset { IntOffset((p.x - half).roundToInt(), (p.y - half).roundToInt()) }
+                    .size(dot)
+                    .background(PepoColors.Blue, CircleShape)
             )
         }
     }

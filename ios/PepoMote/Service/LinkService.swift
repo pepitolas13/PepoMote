@@ -97,6 +97,10 @@ final class LinkService {
                     guard let self, gen == self.generation else { return }
                     self.link.updateConnected { $0.ownNunchuk = own }
                 },
+                onScreenOnlyChanged: { [weak self] on in
+                    guard let self, gen == self.generation else { return }
+                    self.link.updateConnected { $0.screenOnly = on }
+                },
                 onNotice: { [weak self] text in
                     guard let self, gen == self.generation else { return }
                     // Ajuste «Avisos del PC en pantalla»: apagado, ni banner
@@ -104,7 +108,8 @@ final class LinkService {
                 },
                 onClosed: { [weak self] in self?.onClosed(gen, pairing) }
             ),
-            ownNunchuk: AppPrefs.ownNunchuk
+            ownNunchuk: AppPrefs.ownNunchuk,
+            screenOnly: AppPrefs.gamePadFullScreen
         )
     }
 
@@ -147,6 +152,7 @@ final class LinkService {
         }
         link.sendText = { [weak self] t in self?.control?.sendText(t) }
         link.sendNunchuk = { [weak self] own in self?.control?.sendNunchuk(own) }
+        link.sendScreenOnly = { [weak self] on in self?.control?.sendScreenOnly(on) }
         link.publish(.connected(ConnectedLink(
             pcName: pcName,
             mode: ok.mode,
@@ -158,7 +164,8 @@ final class LinkService {
             player: ok.player > 0 ? ok.player : ok.slot + 1,
             supportsCemu: ok.supportsCemu,
             pad: ok.pad,
-            ownNunchuk: ok.nunchuk == "own"
+            ownNunchuk: ok.nunchuk == "own",
+            screenOnly: ok.screenOnly
         )))
         if let m = link.pendingMode {
             link.pendingMode = nil
@@ -283,6 +290,7 @@ final class LinkService {
         link.sendPad = nil
         link.sendText = nil
         link.sendNunchuk = nil
+        link.sendScreenOnly = nil
         link.motion = nil
         ScreenLink.shared.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()

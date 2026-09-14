@@ -165,6 +165,16 @@ hasta iOS 16.6.1 / 17.0: no sirve en dispositivos actuales.
   (y la doble pantalla) para que los botones sean más grandes: en el iPhone
   stick y cruceta pasan a ir uno al lado del otro; en el iPad se quedan
   apilados pero en columnas más anchas. El Pro Controller ya va así.
+- «**Pantalla del GamePad a pantalla completa**» (1.6): solo la pantalla
+  de Cemu, sobre negro y con el táctil, para jugar con un mando de verdad en
+  el PC; ✕ arriba a la izquierda para salir y, con la subopción, el botón de
+  **Teclado** arriba a la derecha. Ver `docs/SETUP-CEMU.md`.
+- «**Lado del mando + Nunchuk**» (1.6): la primera vez que sale el mando +
+  Nunchuk apaisado se pregunta si está bien girado («Darle la vuelta» / «Así
+  lo quiero») y el lado se queda fijo; en Ajustes se cambia. El GamePad de
+  Wii U tiene el suyo, aparte.
+- La cruceta es de una pieza, como la del Mando de Wii (1.6): deslizar el
+  pulgar cambia de dirección sin levantarlo y las esquinas son diagonales.
 
 ## Si algo no va
 

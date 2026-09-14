@@ -36,6 +36,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("win.badge_nunchuk_spare", "J{0} · Nunchuk (sin uso: J{0} ya lleva Nunchuk)", "P{0} · Nunchuk (unused: P{0} already has a Nunchuk)"),
     ("win.badge_player_nunchuk", "J{0} · Mando + Nunchuk", "P{0} · Wii Remote + Nunchuk"),
     ("win.badge_gamepad", "J{0} · GamePad", "P{0} · GamePad"),
+    ("win.badge_screen_only", "J{0} · pantalla del GamePad", "P{0} · GamePad screen"),
     ("win.badge_pro", "J{0} · Pro", "P{0} · Pro"),
     ("win.badge_wiimote", "J{0} · Mando Wii", "P{0} · Wii Remote"),
     ("win.badge_player", "J{0}", "P{0}"),
@@ -76,6 +77,42 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("fix.exit_code", "código {0}", "code {0}"),
     ("fix.signal", "terminado por una señal", "killed by a signal"),
     ("fix.failed", "Reparación fallida: {0}", "Repair failed: {0}"),
+    ("fix.title", "Configuración del sistema pendiente", "System setup pending"),
+    (
+        "fix.explain_dialog",
+        "Un diálogo del sistema («Se requiere autenticación para ejecutar /bin/sh como superusuario») pedirá tu contraseña de administrador: es PepoMote aplicando esto una sola vez: la regla udev y el módulo uinput para mover el cursor, y el puerto {0} (y mDNS) en el firewall.",
+        "A system dialog (“Authentication is required to run /bin/sh as the super user”) will ask for your admin password: that is PepoMote applying this once: the udev rule and uinput module to move the cursor, and port {0} (and mDNS) in the firewall.",
+    ),
+    ("fix.auto_in", "Se abrirá solo en {0} s", "It opens by itself in {0} s"),
+    ("fix.not_now", "Ahora no", "Not now"),
+    ("fix.done_both", "Listo: cursor y firewall configurados", "Done: cursor and firewall set up"),
+    ("fix.done_uinput", "Listo: cursor configurado (no hay firewall activo)", "Done: cursor set up (no firewall active)"),
+    ("fix.done_partial", "Aplicado en parte: {0}", "Partly applied: {0}"),
+    ("fix.sec_uinput_ok", "cursor configurado", "cursor set up"),
+    ("fix.sec_uinput_no_module", "este kernel no trae el módulo uinput", "this kernel has no uinput module"),
+    ("fix.sec_firewall_ok", "firewall abierto ({0})", "firewall opened ({0})"),
+    ("fix.sec_firewall_none", "sin firewall activo", "no firewall active"),
+    ("fix.sec_error", "{0}: {1}", "{0}: {1}"),
+    ("fix.manual_firewall", "Para abrir el firewall a mano:", "To open the firewall by hand:"),
+    ("fix.ok_dismiss", "Vale", "OK"),
+    // --- firewall (Linux)
+    (
+        "fw.blocked",
+        "El firewall ({0}) está bloqueando el puerto {1} del móvil.",
+        "The firewall ({0}) is blocking the phone's port {1}.",
+    ),
+    (
+        "fw.unknown",
+        "{0} está activo y no puedo leer sus reglas: si el móvil no conecta, el puerto {1} está cerrado.",
+        "{0} is on and its rules cannot be read: if the phone cannot connect, port {1} is closed.",
+    ),
+    // --- la ventana no abre (Linux): último recurso, por notificación de escritorio
+    ("ui.start_failed_title", "PepoMote no ha podido abrir su ventana", "PepoMote could not open its window"),
+    (
+        "ui.start_failed_body",
+        "Detalles en {0}. Ejecuta «PepoMote --diag» y pega el informe en un issue. Prueba a lanzarlo con LIBGL_ALWAYS_SOFTWARE=1 o PEPOMOTE_UI_BACKEND=x11.",
+        "Details in {0}. Run “PepoMote --diag” and paste the report in an issue. Try launching it with LIBGL_ALWAYS_SOFTWARE=1 or PEPOMOTE_UI_BACKEND=x11.",
+    ),
     ("fix.no_pkexec_launch", "No pude lanzar pkexec: {0}", "Could not launch pkexec: {0}"),
     // --- ajustes
     ("cfg.title", "Ajustes", "Settings"),
@@ -242,6 +279,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("dolphin.why_documents", "Documentos\\Dolphin Emulator", "Documents\\Dolphin Emulator"),
     // --- Cemu
     ("cemu.kind_gamepad", "GamePad", "GamePad"),
+    ("cemu.kind_gamepad_screen", "GamePad (solo pantalla)", "GamePad (screen only)"),
     ("cemu.kind_pro", "Pro", "Pro"),
     ("cemu.kind_wiimote_nunchuk", "Mando Wii + Nunchuk", "Wii Remote + Nunchuk"),
     ("cemu.kind_wiimote", "Mando Wii", "Wii Remote"),
@@ -250,6 +288,11 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("cemu.configured_after_close", "Cemu configurado al cerrarse, ábrelo y a jugar:", "Cemu set up on close, open it and play:"),
     ("cemu.phone_configured", "Cemu configurado", "Cemu set up"),
     ("cemu.phone_open", "Cemu abierto: se configurará al cerrarlo", "Cemu is open: it will be set up when closed"),
+    (
+        "cemu.phone_not_gamepad",
+        "Cemu: el mando 1 no es un GamePad, la pantalla táctil no se aplicará",
+        "Cemu: Controller 1 is not a GamePad, the touch screen will not apply",
+    ),
     ("cemu.installs", " (en {0} instalaciones)", " (in {0} installs)"),
     (
         "cemu.open",
@@ -322,6 +365,7 @@ pub const SOURCES: &[&str] = &[
     include_str!("net/telemetry.rs"),
     include_str!("ports.rs"),
     include_str!("fixes.rs"),
+    include_str!("launch.rs"),
     include_str!("input/mod.rs"),
     include_str!("input/linux_wayland.rs"),
     include_str!("screen/mod.rs"),

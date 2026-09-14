@@ -22,7 +22,10 @@ en el entorno:
 - `python e2e_cemu.py <dir>\appdata` — modo Wii U: `ok.modes`/`ok.pad`, perfiles
   de Cemu (GamePad, Pro, Mando de Wii + Nunchuk, backup/restauración), PadData
   Wii U (botones, gatillos, sticks, táctil, Home→Touch, puntero IR), avisos
-  `pad`/`notice`, difusión de `mode`, regresión de Dolphin.
+  `pad`/`notice`, difusión de `mode`, «solo pantalla» (fusión del DSU del
+  móvil con un mando ajeno en `controller0.xml`, copia y restauración, eco de
+  `screen_only`, táctil, aviso si el mando 1 no es un GamePad), regresión de
+  Dolphin.
 - `python e2e_nunchuk.py` — Nunchuk en modo Dolphin: slots, emparejamiento,
   stick/C/Z en su pad DSU.
 - `python e2e_screen.py <segundos> <salida.jpg>` — canal de pantalla (doble
@@ -49,6 +52,16 @@ Necesita `sway`, `wev` y `python3`; deja `wev.log`, `sway.log`,
 `receptor.out` y `config/receptor.log` en `/tmp/pepomote-e2e`.
 `python3 e2e_wayland.py --parse-only fixtures/wev_ok.log` prueba solo el
 parser (vale en Windows).
+
+Ventana (Linux): `bash smoke_gui.sh wayland|x11 [fallback]` abre la ventana de
+verdad bajo un sway sin cabeza o un Xvfb, espera el primer fotograma y sale
+sola (`PEPOMOTE_SMOKE=2500`); comprueba el código de salida, la línea «Ventana:
+primer fotograma pintado» del log y que la ventana esté en el árbol de
+ventanas. Con `fallback`, el primer intento falla a propósito
+(`PEPOMOTE_SMOKE_FAIL_FIRST=1`) y se exige el relanzamiento con render por
+software. `PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1`
+lo prueba con el AppImage. Necesita `sway` o `Xvfb` + `x11-utils` y las
+bibliotecas de Mesa; deja todo en `/tmp/pepomote-smoke/<modo>`.
 
 Puntero: `PEPOMOTE_RECORD=<archivo>` en el receptor graba cada INPUT del
 Jugador 1 (llegada + paquete crudo) y `PepoMote --replay <archivo> [sens_deg]`

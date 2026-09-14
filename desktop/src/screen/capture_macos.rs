@@ -118,7 +118,7 @@ pub struct Capturer {
 
 impl Capturer {
     pub fn new() -> Self {
-        Self { win: None, searched: Instant::now() - Duration::from_secs(10) }
+        Self { win: None, searched: Instant::now().checked_sub(Duration::from_secs(10)).unwrap_or_else(Instant::now) }
     }
 
     pub fn capture(&mut self) -> Result<Capture, String> {

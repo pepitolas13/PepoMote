@@ -25,6 +25,7 @@ use crate::frame::Rotation;
 use crate::link::Status;
 use crate::screen;
 use crate::theme;
+use crate::ui::dpad;
 use crate::ui::nunchuk::{knob_pos, stick_value};
 use crate::ui::touch::{self, fit_rect, Canvas, Input, Phase, Seg, Shape, Transform};
 use egui::{Align2, Color32, FontId, ImageData, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2};
@@ -60,6 +61,11 @@ pub struct Inputs<'a> {
     pub screen: Option<&'a screen::Client>,
     /// Ajuste «GamePad sin pantalla táctil»: sin zona táctil, botones más grandes.
     pub no_screen: bool,
+    /// Ajuste «pantalla completa»: solo la pantalla de Cemu y el táctil (con
+    /// Wii U confirmado y como GamePad; si no, el trazado de siempre).
+    pub full_screen: bool,
+    /// En pantalla completa, botón de teclado arriba a la derecha.
+    pub keyboard_button: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -82,6 +88,8 @@ enum Target {
     Button(u32),
     Stick(Side),
     Touch,
+    /// La cruceta de una pieza (un dedo, que lleva sus bits mientras está apoyado).
+    Dpad,
     /// Los chips y segmentos disparan al levantar el dedo encima.
     Chip(Chip),
 }
@@ -124,7 +132,13 @@ pub struct GamePadUi {
     transform: Transform,
     screen: Rect,
     sticks: [StickUi; 2],
+    /// Centro y media anchura de la cruceta del último frame, y sus bits pulsados.
+    dpad: (Pos2, f32),
+    dpad_held: u32,
     touch_rect: Rect,
+    /// Zona cuyo tamaño se pide al receptor: la táctil de siempre o, en
+    /// pantalla completa, toda el área (la imagen se ajusta dentro).
+    zone_rect: Rect,
     active: bool,
     fired: Option<Chip>,
     /// La pantalla del GamePad de Cemu (se crea con la primera imagen y se
@@ -190,11 +204,14 @@ impl GamePadUi {
         Self {
             hits: Vec::new(),
             touches: HashMap::new(),
+            dpad: (Pos2::ZERO, 1.0),
+            dpad_held: 0,
             input: Input::default(),
             transform: Transform::Straight,
             screen: Rect::NOTHING,
             sticks: [stick(), stick()],
             touch_rect: Rect::NOTHING,
+            zone_rect: Rect::NOTHING,
             active: false,
             fired: None,
             texture: None,
@@ -205,9 +222,9 @@ impl GamePadUi {
     /// última vez; `None` antes del primer frame. Es lo que se pide al
     /// receptor como tamaño máximo de la pantalla.
     pub fn touch_size_px(&self, pixels_per_point: f32) -> Option<(f32, f32)> {
-        self.touch_rect
+        self.zone_rect
             .is_positive()
-            .then(|| (self.touch_rect.width() * pixels_per_point, self.touch_rect.height() * pixels_per_point))
+            .then(|| (self.zone_rect.width() * pixels_per_point, self.zone_rect.height() * pixels_per_point))
     }
 
     /// Sube a la textura la imagen que haya dejado el hilo de la pantalla
@@ -284,7 +301,14 @@ impl GamePadUi {
         self.hits.clear();
         {
             let cv = Canvas::new(ui.painter(), rect, self.transform);
-            self.layout(&cv, buttons, &view, inp.rotation, inp.sensor_hz);
+            // pantalla completa solo con Wii U confirmado y como GamePad con
+            // pantalla; si no, el trazado de siempre (con cabecera y «Salir»)
+            let full = inp.full_screen && view.active && !view.no_screen && view.pad == "gamepad";
+            if full {
+                self.layout_full(&cv, buttons, &view, inp.keyboard_button);
+            } else {
+                self.layout(&cv, buttons, &view, inp.rotation, inp.sensor_hz);
+            }
         }
         self.process_events(ui.ctx(), buttons);
         if !self.active {
@@ -404,6 +428,7 @@ impl GamePadUi {
         let by = sel_y + sel_h + 6.0 * s;
         // sin zona táctil pintada no hay tamaño que pedir al receptor
         self.touch_rect = Rect::NOTHING;
+        self.zone_rect = Rect::NOTHING;
 
         // Hombros: L sobre ZL en la esquina izquierda, R sobre ZR en la derecha
         let (sw, sh_) = (96.0 * s, 24.0 * s);
@@ -557,27 +582,13 @@ impl GamePadUi {
         }
     }
 
-    /// Cruceta centrada en `dc` con brazos de lado `arm` (las flechas crecen con el brazo).
+    /// Cruceta de una pieza centrada en `dc` con brazos de lado `arm` (media
+    /// anchura de la cruz = 1,5 brazos); el cuadrado entero es su hit-test.
     fn dpad(&mut self, cv: &Canvas, dc: Pos2, arm: f32, s: f32, pressed: u32) {
-        let arms = [
-            (Vec2::new(0.0, -arm), "▲", pmp::BTN_DPAD_UP),
-            (Vec2::new(0.0, arm), "▼", pmp::BTN_DPAD_DOWN),
-            (Vec2::new(-arm, 0.0), "◀", pmp::BTN_DPAD_LEFT),
-            (Vec2::new(arm, 0.0), "▶", pmp::BTN_DPAD_RIGHT),
-        ];
-        for (off, label, bit) in arms {
-            let rc = Rect::from_center_size(dc + off, Vec2::splat(arm));
-            let down = pressed & bit != 0;
-            cv.rounded_rect(
-                rc.shrink(2.0),
-                8.0 * s,
-                if down { theme::glow() } else { theme::card() },
-                Stroke::new(1.0_f32, theme::card_border()),
-            );
-            cv.text(rc.center(), Align2::CENTER_CENTER, label, FontId::proportional(arm * 0.4), theme::text_dim());
-            self.hits.push((Shape::Rect(rc), Target::Button(bit)));
-        }
-        cv.rounded_rect(Rect::from_center_size(dc, Vec2::splat(arm)).shrink(2.0), 5.0 * s, theme::card(), Stroke::NONE);
+        let half = arm * 1.5;
+        let shape = dpad::draw(cv, dc, half, s, pressed);
+        self.dpad = (dc, half);
+        self.hits.push((shape, Target::Dpad));
     }
 
     /// A/B/X/Y en rombo alrededor de `ac`: radio `br`, a `off` del centro (A a
@@ -663,6 +674,77 @@ impl GamePadUi {
         }
         self.hits.push((Shape::Rect(tr), Target::Touch));
         self.touch_rect = tr;
+        self.zone_rect = tr;
+    }
+
+    /// «Pantalla del GamePad a pantalla completa»: solo la pantalla de Cemu,
+    /// ajustada a su proporción real sobre fondo negro, con el táctil sobre
+    /// la imagen (las bandas negras no cuentan), una ✕ pequeña arriba a la
+    /// izquierda para salir y, si el ajuste lo pide, el botón de teclado
+    /// arriba a la derecha. Sin sticks ni botones: el mando real va en el PC.
+    /// Los chips van ANTES que la zona táctil en `hits` (primer acierto).
+    fn layout_full(&mut self, cv: &Canvas, buttons: &Buttons, v: &View, keyboard: bool) {
+        let r = cv.rect();
+        let (vw, vh) = (r.width(), r.height());
+        let s = (vh / 370.0).min(vw / 700.0).clamp(0.5, 1.6);
+        cv.rounded_rect(r, 0.0, Color32::BLACK, Stroke::NONE);
+        self.touch_rect = Rect::NOTHING;
+        self.zone_rect = r;
+
+        // chips: ✕ arriba a la izquierda, Teclado arriba a la derecha
+        let chip_h = 26.0 * s;
+        let chip_font = 13.0 * s;
+        let close = Rect::from_min_size(Pos2::new(r.left() + 8.0 * s, r.top() + 8.0 * s), Vec2::new(34.0 * s, chip_h));
+        self.chip(cv, close, "✕", chip_font, false, theme::error(), Chip::Exit);
+        if keyboard && v.mode == "cemu" {
+            let kb = Rect::from_min_size(Pos2::new(r.right() - 8.0 * s - 64.0 * s, r.top() + 8.0 * s), Vec2::new(64.0 * s, chip_h));
+            self.chip(cv, kb, tr!("common.keyboard"), chip_font, false, theme::text(), Chip::Keyboard);
+        }
+
+        // la imagen, ajustada a su proporción real (16:9 mientras no hay fotograma)
+        let live = v.screen.is_some_and(|c| c.showing());
+        let fitted = match (&self.texture, live) {
+            (Some(tex), true) => {
+                let f = fit_rect(r, tex.size());
+                cv.image(f, tex.id());
+                f
+            }
+            _ => {
+                let f = fit_rect(r, [16, 9]);
+                cv.text(
+                    Pos2::new(f.center().x, f.center().y - 10.0 * s),
+                    Align2::CENTER_CENTER,
+                    tr!("gp.touch"),
+                    FontId::proportional(13.0 * s),
+                    theme::text_dim(),
+                );
+                if let Some(c) = v.screen {
+                    let font = FontId::proportional(12.0 * s);
+                    let text = cv.fit_text(&c.placeholder(), font.clone(), f.width() - 12.0 * s);
+                    cv.text(Pos2::new(f.center().x, f.center().y + 10.0 * s), Align2::CENTER_CENTER, &text, font, theme::text_dim());
+                }
+                f
+            }
+        };
+        let (tx, ty, down) = buttons.touch();
+        if down {
+            let p = Pos2::new(
+                fitted.left() + tx as f32 / 65535.0 * fitted.width(),
+                fitted.top() + ty as f32 / 65535.0 * fitted.height(),
+            );
+            cv.circle_filled(p, 6.0 * s, theme::blue());
+        }
+        self.hits.push((Shape::Rect(fitted), Target::Touch));
+        self.touch_rect = fitted;
+
+        // Aviso transitorio del receptor (o local), arriba
+        if let Some(n) = v.notice {
+            let w = (0.6 * vw).min(360.0 * s);
+            let nr = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 22.0 * s), Vec2::new(w, 28.0 * s));
+            cv.rounded_rect(nr, 14.0 * s, theme::card(), Stroke::new(1.5_f32, theme::warn()));
+            let font = FontId::proportional(12.0 * s);
+            cv.text(nr.center(), Align2::CENTER_CENTER, &cv.fit_text(n, font.clone(), w - 16.0 * s), font, theme::text());
+        }
     }
 
     fn process_events(&mut self, ctx: &egui::Context, buttons: &Buttons) {
@@ -701,6 +783,13 @@ impl GamePadUi {
                 }
                 self.touch_at(pos, buttons);
             }
+            Target::Dpad => {
+                // un solo dedo lleva la cruceta; el segundo se ignora
+                if self.touches.values().any(|t| *t == Target::Dpad) {
+                    return;
+                }
+                self.dpad_at(pos, buttons);
+            }
             Target::Chip(_) => {}
         }
         self.touches.insert(key, target);
@@ -710,6 +799,8 @@ impl GamePadUi {
         match self.touches.get(&key).copied() {
             Some(Target::Stick(side)) => self.drag(side, pos, buttons),
             Some(Target::Touch) => self.touch_at(pos, buttons),
+            // deslizar por la cruceta cambia de dirección sin levantar el dedo
+            Some(Target::Dpad) => self.dpad_at(pos, buttons),
             _ => {}
         }
     }
@@ -717,6 +808,11 @@ impl GamePadUi {
     fn end(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
         match self.touches.remove(&key) {
             Some(Target::Button(bit)) => buttons.set(bit, false),
+            Some(Target::Dpad) => {
+                let mut held = self.dpad_held;
+                dpad::apply(buttons, &mut held, 0);
+                self.dpad_held = 0;
+            }
             Some(Target::Stick(side)) => {
                 // al soltar, al centro
                 self.sticks[side as usize].knob = Vec2::ZERO;
@@ -753,6 +849,14 @@ impl GamePadUi {
         let (x, y) = touch_fraction(self.touch_rect, pos);
         buttons.set_touch(x, y, true);
     }
+
+    /// Dedo en `pos` (virtual) sobre la cruceta → sus bits (suelta y pulsa lo que cambie).
+    fn dpad_at(&mut self, pos: Pos2, buttons: &Buttons) {
+        let (dc, half) = self.dpad;
+        let mut held = self.dpad_held;
+        dpad::apply(buttons, &mut held, dpad::bits(pos - dc, half));
+        self.dpad_held = held;
+    }
 }
 
 #[cfg(test)]
@@ -777,6 +881,21 @@ mod tests {
         let big = row_metrics(1050.0, 459.0, 1.5, false);
         assert!((big.pad - 145.0 * 1.5).abs() < 0.01, "{}", big.pad);
         assert!(row_metrics(100.0, 100.0, 1.0, false).pad >= 40.0, "nunca por debajo del mínimo");
+    }
+
+    #[test]
+    fn pantalla_completa_ajusta_la_imagen_y_el_tactil_va_sobre_ella() {
+        // móvil apaisado 852×393 con un fotograma 854×480: bandas a los lados
+        let r = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(852.0, 393.0));
+        let f = fit_rect(r, [854, 480]);
+        assert!((f.width() - 699.2).abs() < 0.5 && (f.height() - 393.0).abs() < 0.5, "{f:?}");
+        assert!((f.left() - 76.4).abs() < 0.5 && f.top().abs() < 0.5, "centrada: {f:?}");
+        assert_eq!(touch_fraction(f, f.center()), (0x8000, 0x8000));
+        assert!(!Shape::Rect(f).hit(Pos2::new(20.0, 100.0)), "las bandas negras no son la pantalla");
+        assert!(Shape::Rect(f).hit(Pos2::new(426.0, 196.0)));
+        // sin fotograma: 16:9
+        let g = fit_rect(r, [16, 9]);
+        assert!((g.width() - 698.7).abs() < 0.5, "{g:?}");
     }
 
     #[test]

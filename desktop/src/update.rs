@@ -124,26 +124,44 @@ pub fn spawn(
     if std::env::var_os("PEPOMOTE_NO_UPDATE_CHECK").is_some() {
         return;
     }
+    // Vigilado a mano (este archivo lo comparte el emisor Linux, que no tiene
+    // threads.rs): un pánico queda en el log inyectado y se reintenta en una
+    // hora, como un fallo de red; a la décima vez se abandona
     let _ = std::thread::Builder::new().name("pmp-update".into()).spawn(move || {
-        std::thread::sleep(FIRST_DELAY);
-        let mut failed_at: Option<Instant> = None;
+        let mut restarts = 0u32;
         loop {
-            let now = now_secs();
-            let retry_ok = failed_at.map_or(true, |t| t.elapsed() >= RETRY_AFTER);
-            if retry_ok && due(enabled(), last_check(), now) {
-                match fetch_latest(TIMEOUT) {
-                    Ok(v) => {
-                        failed_at = None;
-                        log(format!("Última versión publicada: {v} (esta es {})", Version::current()));
-                        record(now, v);
+            let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                std::thread::sleep(FIRST_DELAY);
+                let mut failed_at: Option<Instant> = None;
+                loop {
+                    let now = now_secs();
+                    let retry_ok = failed_at.map_or(true, |t| t.elapsed() >= RETRY_AFTER);
+                    if retry_ok && due(enabled(), last_check(), now) {
+                        match fetch_latest(TIMEOUT) {
+                            Ok(v) => {
+                                failed_at = None;
+                                log(format!("Última versión publicada: {v} (esta es {})", Version::current()));
+                                record(now, v);
+                            }
+                            Err(e) => {
+                                failed_at = Some(Instant::now());
+                                log(format!("Comprobación de versión: {e} (se reintenta en una hora)"));
+                            }
+                        }
                     }
-                    Err(e) => {
-                        failed_at = Some(Instant::now());
-                        log(format!("Comprobación de versión: {e} (se reintenta en una hora)"));
-                    }
+                    std::thread::sleep(TICK);
                 }
+            }));
+            if run.is_ok() {
+                return;
             }
-            std::thread::sleep(TICK);
+            restarts += 1;
+            if restarts >= 10 {
+                log("Comprobación de versión: demasiados fallos internos, se abandona".to_owned());
+                return;
+            }
+            log(format!("Comprobación de versión: fallo interno, se reintenta en una hora ({restarts}/10)"));
+            std::thread::sleep(RETRY_AFTER);
         }
     });
 }

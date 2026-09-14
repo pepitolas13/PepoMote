@@ -2,6 +2,7 @@
 //! móvil GamePad recibe la pantalla del GamePad de Cemu en tramas JPEG, con
 //! confirmación de un byte por imagen (una imagen en vuelo).
 
+use crate::state::LockTolerant;
 use super::Sessions;
 use crate::screen::ScreenHub;
 use crate::state::{Role, SharedState};
@@ -54,7 +55,7 @@ pub fn handle(
 ) {
     let session_id = req["session_id"].as_u64().map(|v| v as u32);
     let ok = session_id.is_some_and(|id| {
-        sessions.lock().unwrap().get(&id).is_some_and(|s| s.role == Role::Wiimote)
+        sessions.lock_tolerant().get(&id).is_some_and(|s| s.role == Role::Wiimote)
     });
     if !ok {
         let _ = send_json(
@@ -73,7 +74,7 @@ pub fn handle(
     let _ = reader.get_ref().set_read_timeout(Some(ACK_TIMEOUT));
     hub.client_joined(w, h, q);
     let _sub = Subscription(hub.clone());
-    let slot = session_id.and_then(|id| sessions.lock().unwrap().get(&id).map(|s| s.slot));
+    let slot = session_id.and_then(|id| sessions.lock_tolerant().get(&id).map(|s| s.slot));
     if std::env::var_os("PEPOMOTE_DEBUG").is_some() {
         eprintln!("[screen] móvil del slot {slot:?} suscrito ({w}×{h}, q{q})");
     }

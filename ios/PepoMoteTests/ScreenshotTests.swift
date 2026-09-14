@@ -40,14 +40,18 @@ final class ScreenshotTests: XCTestCase {
     override func tearDown() {
         LinkState.shared.publish(.disconnected)
         ScreenLink.shared.release()
+        AppModel.shared.nunchukSide = .unset
+        AppModel.shared.gamePadSide = .unset
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
+        UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKey)
+        UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKeyboardKey)
     }
 
     private func connected(mode: String, pad: String = LinkState.padGamepad, role: String = LinkState.roleWiimote, slot: Int = 0) -> UiLink {
         .connected(ConnectedLink(pcName: "SALON", mode: mode, rttMs: 12, sensorHz: 100, slot: slot, role: role, player: slot + 1, supportsCemu: true, pad: pad))
     }
 
-    private func shoot<V: View>(_ view: V, _ name: String, _ size: CGSize) throws {
+    private func shoot<V: View>(_ view: V, _ name: String, _ size: CGSize, minBytes: Int = 10_000) throws {
         guard let dir else { return }
         let content = view
             .environmentObject(AppModel.shared)
@@ -80,7 +84,7 @@ final class ScreenshotTests: XCTestCase {
             XCTFail("\(name): sin imagen")
             return
         }
-        XCTAssertGreaterThan(png.count, 10_000, "\(name): la captura parece vacía")
+        XCTAssertGreaterThan(png.count, minBytes, "\(name): la captura parece vacía")
         try png.write(to: dir.appendingPathComponent("\(name).png"))
     }
 
@@ -93,6 +97,9 @@ final class ScreenshotTests: XCTestCase {
             try shoot(OnboardingScreen(onDone: {}), "onboarding-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modePointer))
             try shoot(ControllerScreen(showChips: true, onDisconnect: {}), "controller-pointer-\(dev)", size)
+            // Dolphin: los tres modos y el interruptor «Nunchuk» (verde) en una fila
+            LinkState.shared.publish(connected(mode: LinkState.modeDolphin))
+            try shoot(ControllerScreen(showChips: true, onDisconnect: {}), "controller-dolphin-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modeCemu, pad: LinkState.padWiimote))
             try shoot(ControllerScreen(showChips: true, onDisconnect: {}), "controller-wiiu-wiimote-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modeDolphin, pad: "nunchuk", role: LinkState.roleNunchuk, slot: 1))
@@ -102,10 +109,15 @@ final class ScreenshotTests: XCTestCase {
 
     func testPantallasApaisadas() throws {
         for (dev, size) in Self.landscape {
+            // El lado del GamePad ya elegido en casi todas; la pregunta, en una
+            AppModel.shared.gamePadSide = .left
             LinkState.shared.publish(connected(mode: LinkState.modePointer))
             try shoot(ControllerLandscapeScreen(showChips: true, onDisconnect: {}), "landscape-pointer-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modeCemu))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-\(dev)", size)
+            AppModel.shared.gamePadSide = .unset
+            try shoot(GamePadScreen(onDisconnect: {}), "gamepad-ask-\(dev)", size)
+            AppModel.shared.gamePadSide = .left
             LinkState.shared.publish(connected(mode: LinkState.modeCemu, pad: LinkState.padPro, slot: 1))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-pro-\(dev)", size)
             // Ajuste «GamePad sin pantalla táctil»: botones más grandes
@@ -113,11 +125,21 @@ final class ScreenshotTests: XCTestCase {
             LinkState.shared.publish(connected(mode: LinkState.modeCemu))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-noscreen-\(dev)", size)
             UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
+            // Ajuste «Pantalla del GamePad a pantalla completa»: negro, ✕ y Teclado,
+            // el placeholder de la pantalla (sin canal en los tests: pesa poco)
+            UserDefaults.standard.set(true, forKey: AppPrefs.gamePadFullScreenKey)
+            LinkState.shared.publish(connected(mode: LinkState.modeCemu))
+            try shoot(GamePadScreen(onDisconnect: {}), "gamepad-fullscreen-\(dev)", size, minBytes: 2_000)
+            UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKey)
             LinkState.shared.publish(connected(mode: LinkState.modeDolphin, pad: "nunchuk", role: LinkState.roleNunchuk, slot: 1))
             try shoot(NunchukScreen(onDisconnect: {}), "nunchuk-\(dev)", size)
             // Dolphin con el Nunchuk en el mismo móvil (confirmado por el receptor)
             LinkState.shared.publish(.connected(ConnectedLink(pcName: "SALON", mode: LinkState.modeDolphin, rttMs: 12, sensorHz: 100, slot: 0, role: LinkState.roleWiimote, player: 1, supportsCemu: true, pad: LinkState.padGamepad, ownNunchuk: true)))
+            AppModel.shared.nunchukSide = .left
             try shoot(WiimoteNunchukScreen(showChips: true, onDisconnect: {}), "wii-nunchuk-\(dev)", size)
+            // La primera vez: la pregunta del lado encima del mando
+            AppModel.shared.nunchukSide = .unset
+            try shoot(WiimoteNunchukScreen(showChips: true, onDisconnect: {}), "wii-nunchuk-ask-\(dev)", size)
         }
     }
 }

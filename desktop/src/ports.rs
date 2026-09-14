@@ -7,6 +7,7 @@
 //! Windows: tablas UDP/TCP con PID (iphlpapi) + TerminateProcess.
 //! Linux: /proc/net/{udp,tcp} → inodo → /proc/*/fd → PID + `kill`.
 
+use crate::state::LockTolerant;
 use crate::state::SharedState;
 use std::net::{TcpListener, UdpSocket};
 use std::time::{Duration, Instant};
@@ -65,7 +66,7 @@ fn bind_evicting<T>(
             std::thread::sleep(Duration::from_millis(100));
             if let Ok(s) = bind() {
                 let msg = tr!("port.freed", proto_name(proto), port, owner.name, owner.pid);
-                shared.lock().unwrap().port_notice = Some(msg.clone());
+                shared.lock_tolerant().port_notice = Some(msg.clone());
                 crate::log_line!("{msg}");
                 crate::net::notify_all(&msg);
                 return Ok(s);
@@ -300,7 +301,7 @@ mod tests {
         let shared = crate::state::new_shared();
         let s = bind_udp(&shared, "127.0.0.1", 0, "prueba").expect("puerto libre");
         assert!(s.local_addr().unwrap().port() > 0);
-        assert!(shared.lock().unwrap().port_notice.is_none());
+        assert!(shared.lock_tolerant().port_notice.is_none());
     }
 
     #[test]
@@ -311,7 +312,7 @@ mod tests {
         let port = first.local_addr().unwrap().port();
         let r = bind_udp(&shared, "127.0.0.1", port, "prueba");
         assert!(r.is_err(), "no debía abrirse: {:?}", r.as_ref().map(|_| ()));
-        assert!(shared.lock().unwrap().port_notice.is_none());
+        assert!(shared.lock_tolerant().port_notice.is_none());
     }
 
     #[test]

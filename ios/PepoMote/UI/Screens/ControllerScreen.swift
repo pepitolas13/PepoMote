@@ -120,22 +120,30 @@ struct ControllerScreen: View {
             Spacer().frame(height: 10)
             header
             if let c = link.link.connected {
-                if showModeChips(c, showChips) {
+                // Chips de modo (Jugador 1 con el ajuste activo, y siempre dentro de
+                // Wii U) y, en Dolphin, el interruptor «Nunchuk» a la derecha de Wii U
+                // con otro tono: es una opción, no un modo. Todo en UNA fila, lejos
+                // de la cruceta (antes el Nunchuk iba en una fila propia justo
+                // encima y se pulsaba sin querer): en un iPhone los chips van densos
+                // para que quepan los cuatro, y si aun así no caben el texto se encoge
+                let modeChips = showModeChips(c, showChips)
+                let nunchuk = showNunchukChip(c)
+                if modeChips || nunchuk {
                     Spacer().frame(height: 6)
-                    ModeChips(current: c.mode, supportsCemu: c.supportsCemu)
-                }
-                // Dolphin: el Nunchuk en el mismo móvil (gira el móvil para usarlo)
-                if showNunchukChip(c) {
-                    Spacer().frame(height: 6)
-                    NunchukChip(link: c)
+                    let dense = m.colW < 420
+                    HStack(spacing: dense ? 8 : 10) {
+                        if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, dense: dense) }
+                        if nunchuk { NunchukChip(link: c, dense: dense).padding(.leading, 4) }
+                    }
                 }
                 if isWiiUAsWiimote(c) {
                     Spacer().frame(height: 8)
                     PadSelector(link: c, width: m.colW - 48, help: tr("wii_pad_help"))
                 }
             }
-            Gap(m.gap(10), flexible: m.flexible)
-            PadCross(size: m.cross, glyph: m.text(14))
+            // Hueco de sobra entre los chips y la cruceta: que ir a por ↑ no toque un chip
+            Gap(m.gap(18), flexible: m.flexible)
+            PadCross(size: m.cross)
             Gap(m.gap(16), flexible: m.flexible)
             HStack(spacing: m.spacing) {
                 RoundButton(label: "−", size: m.small, bit: Btn.minus, textSize: m.text(20))
