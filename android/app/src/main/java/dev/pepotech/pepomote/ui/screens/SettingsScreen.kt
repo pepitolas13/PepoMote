@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.AppPrefs
@@ -42,6 +43,8 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
     var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
     var noScreen by remember { mutableStateOf(AppPrefs.gamePadNoScreen(context)) }
+    var fullScreen by remember { mutableStateOf(AppPrefs.gamePadFullScreen(context)) }
+    var fullScreenKb by remember { mutableStateOf(AppPrefs.gamePadFullScreenKeyboard(context)) }
     var ownNunchuk by remember { mutableStateOf(AppPrefs.ownNunchuk(context)) }
     var notices by remember { mutableStateOf(AppPrefs.receiverNotices(context)) }
     var updateCheck by remember { mutableStateOf(AppPrefs.updateCheckEnabled(context)) }
@@ -218,6 +221,66 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         noScreen = it
                         AppPrefs.setGamePadNoScreen(context, it)
+                        if (it) fullScreen = false
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
+        // Pantalla del GamePad a pantalla completa (mando real en el PC), con la
+        // subopción del botón de teclado
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.fullscreen_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.fullscreen_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = fullScreen,
+                    onCheckedChange = {
+                        fullScreen = it
+                        AppPrefs.setGamePadFullScreen(context, it)
+                        if (it) noScreen = false
+                        LinkState.sendScreenOnly?.invoke(it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 30.dp, end = 18.dp, bottom = 16.dp)
+                    .alpha(if (fullScreen) 1f else 0.5f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.fullscreen_kb_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.fullscreen_kb_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = fullScreenKb,
+                    enabled = fullScreen,
+                    onCheckedChange = {
+                        fullScreenKb = it
+                        AppPrefs.setGamePadFullScreenKeyboard(context, it)
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )

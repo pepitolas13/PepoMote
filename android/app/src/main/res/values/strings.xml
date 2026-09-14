@@ -87,6 +87,11 @@
     <string name="mode_dolphin_nunchuk">Dolphin · Nunchuk</string>
     <string name="noscreen_title">GamePad sin pantalla táctil</string>
     <string name="noscreen_sub">Quita la pantalla del GamePad de Wii U (y la doble pantalla) para que los botones sean más grandes</string>
+    <string name="fullscreen_title">Pantalla del GamePad a pantalla completa</string>
+    <string name="fullscreen_sub">Para jugar con un mando de verdad conectado al PC: el móvil solo enseña la pantalla del GamePad de Cemu (y responde al tacto), sin sticks ni botones. Al entrar en Wii U como GamePad</string>
+    <string name="fullscreen_kb_title">Botón de teclado</string>
+    <string name="fullscreen_kb_sub">Un botón pequeño arriba a la derecha para escribir en el teclado en pantalla de Cemu</string>
+    <string name="fullscreen_old_receiver">El receptor no conoce la pantalla completa: actualízalo</string>
     <string name="link_other_pc">Vincular con otro PC</string>
     <string name="link_other_pc_sub">Escanear un QR nuevo</string>
     <string name="sens_note">La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.</string>

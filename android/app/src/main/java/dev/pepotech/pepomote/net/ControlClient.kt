@@ -22,7 +22,9 @@ class ControlClient(
     private val role: String,
     private val callbacks: Callbacks,
     /** Mando con su propio Nunchuk (`"nunchuk":"own"` en el hello; solo rol mando). */
-    private val ownNunchuk: Boolean = false
+    private val ownNunchuk: Boolean = false,
+    /** Modo Wii U: el móvil solo hace de pantalla táctil (`"screen_only":true` en el hello; solo rol mando). */
+    private val screenOnly: Boolean = false
 ) {
     /** Lo que confirma el receptor en el `ok`. */
     data class Ok(
@@ -41,7 +43,9 @@ class ControlClient(
         /** Nombre del PC (`ok.name`); vacío si el receptor no lo manda. */
         val name: String = "",
         /** El receptor confirma el Nunchuk propio (`"own"`); "none" si no, o receptor antiguo. */
-        val nunchuk: String = "none"
+        val nunchuk: String = "none",
+        /** El receptor conoce «solo pantalla» (`ok.screen_only`); null = receptor anterior a 1.5.53. */
+        val screenOnly: Boolean? = null
     )
 
     interface Callbacks {
@@ -60,6 +64,9 @@ class ControlClient(
 
         /** Eco del `nunchuk`: el receptor aplica (o no) el Nunchuk propio. */
         fun onNunchukChanged(own: Boolean)
+
+        /** Eco del `screen_only`: el receptor aplica (o no) el modo «solo pantalla». */
+        fun onScreenOnlyChanged(on: Boolean) {}
 
         /** Aviso transitorio del receptor (banner ~6 s). */
         fun onNotice(text: String)
@@ -103,6 +110,8 @@ class ControlClient(
                     .apply { if (role == "nunchuk") put("role", role) }
                     // Nunchuk en el mismo móvil: un receptor antiguo lo ignora (y no lo confirma)
                     .apply { if (role != "nunchuk" && ownNunchuk) put("nunchuk", "own") }
+                    // Solo pantalla (Wii U): un receptor antiguo lo ignora (y no lo confirma)
+                    .apply { if (role != "nunchuk" && screenOnly) put("screen_only", true) }
                 // Sin `pad`: en Wii U se empieza siempre como GamePad/Pro (lo dice el ok)
             )
 
@@ -127,7 +136,8 @@ class ControlClient(
                             supportsCemu = supportsCemu(msg),
                             pad = msg.optString("pad", "gamepad"),
                             name = msg.optString("name", ""),
-                            nunchuk = msg.optString("nunchuk", "none")
+                            nunchuk = msg.optString("nunchuk", "none"),
+                            screenOnly = if (msg.has("screen_only")) msg.optBoolean("screen_only") else null
                         )
                     )
 
@@ -141,6 +151,7 @@ class ControlClient(
                     "mode" -> callbacks.onModeChanged(msg.optString("mode", "pointer"), msg.optString("by") == "pc")
                     "pad" -> callbacks.onPadChanged(msg.optString("pad", "gamepad"))
                     "nunchuk" -> callbacks.onNunchukChanged(msg.optBoolean("own", false))
+                    "screen_only" -> callbacks.onScreenOnlyChanged(msg.optBoolean("on", false))
                     "notice" -> msg.optString("text").takeIf { it.isNotBlank() }?.let(callbacks::onNotice)
                     else -> Unit // mensaje desconocido: se ignora
                 }
@@ -177,6 +188,11 @@ class ControlClient(
     /** Nunchuk en el mismo móvil, encendido o apagado; el receptor lo confirma con el eco. */
     fun sendNunchuk(own: Boolean) {
         sendJson(JSONObject().put("m", "nunchuk").put("own", own))
+    }
+
+    /** Modo Wii U: el móvil solo como pantalla táctil, sí o no; el receptor lo confirma con el eco. */
+    fun sendScreenOnly(on: Boolean) {
+        sendJson(JSONObject().put("m", "screen_only").put("on", on))
     }
 
     /**
