@@ -34,7 +34,8 @@ Muchos juegos de Wii piden el Nunchuk (Super Mario Galaxy, Zelda, Metroid
 Prime, Mario Kart con stick…): «Conecta un Nunchuk al Mando de Wii del
 Jugador 1». Con un solo móvil no hace falta nada más: el ajuste **Nunchuk en
 el mismo móvil** (apagado de serie: enciéndelo en Ajustes de la app o con el
-chip **Nunchuk** de la cabecera del mando en modo Dolphin; se recuerda) hace
+chip verde **Nunchuk** de la cabecera del mando en Dolphin, a la derecha de
+los modos; se recuerda) hace
 que tu mando lleve su propio Nunchuk. La ventana del PC lo lista como «J1 · Mando + Nunchuk» y
 el Wiimote emulado de Dolphin sale con `Extension = Nunchuk` leyendo del
 mismo pad.

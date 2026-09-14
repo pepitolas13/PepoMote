@@ -234,9 +234,10 @@ private struct SideAskCard: View {
 struct NunchukChip: View {
     let link: ConnectedLink
     var compact = false
+    var dense = false
 
     var body: some View {
-        ModeChip(label: tr("nunchuk_chip"), selected: link.ownNunchuk, compact: compact) {
+        ModeChip(label: tr("nunchuk_chip"), selected: link.ownNunchuk, compact: compact, dense: dense, toggle: true) {
             let want = !link.ownNunchuk
             AppPrefs.ownNunchuk = want
             LinkState.shared.sendNunchuk?(want)

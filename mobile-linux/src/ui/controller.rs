@@ -245,10 +245,11 @@ impl ControllerUi {
         let painter = ui.painter();
         let cv = Canvas::new(painter, rect, Transform::Straight);
         let pressed = buttons.physical();
-        // Escala para que quepa en pantallas bajas (referencia: 660 pt de alto)
-        let s = (rect.height() / 660.0).clamp(0.7, 1.05);
+        // Escala para que quepa en pantallas bajas (referencia: 668 pt de alto)
+        let s = (rect.height() / 668.0).clamp(0.7, 1.05);
         let cx = rect.center().x; // tiras simétricas: scroll a la derecha, precisión a la izquierda
-        let mut y = rect.top() + 6.0 * s;
+        // Hueco de sobra entre los chips de modo y la cruceta: que ir a por ↑ no toque un chip
+        let mut y = rect.top() + 14.0 * s;
 
         // Cruceta de una pieza (como la del Mando de Wii): el cuadrado entero es su hit-test
         let arm = 56.0 * s;

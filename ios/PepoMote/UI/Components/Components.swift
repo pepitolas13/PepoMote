@@ -350,17 +350,19 @@ struct ModeChips: View {
     let current: String
     let supportsCemu: Bool
     var compact = false
+    /// Chips estrechos (iPhone): caben cuatro en una fila.
+    var dense = false
 
     var body: some View {
-        HStack(spacing: compact ? 6 : 10) {
-            ModeChip(label: tr("mode_pointer"), selected: current == LinkState.modePointer, compact: compact) {
+        HStack(spacing: compact ? 6 : dense ? 8 : 10) {
+            ModeChip(label: tr("mode_pointer"), selected: current == LinkState.modePointer, compact: compact, dense: dense) {
                 LinkState.shared.requestMode(LinkState.modePointer)
             }
-            ModeChip(label: tr("mode_dolphin"), selected: current == LinkState.modeDolphin, compact: compact) {
+            ModeChip(label: tr("mode_dolphin"), selected: current == LinkState.modeDolphin, compact: compact, dense: dense) {
                 LinkState.shared.requestMode(LinkState.modeDolphin)
             }
             if supportsCemu {
-                ModeChip(label: tr("mode_wiiu"), selected: current == LinkState.modeCemu, compact: compact) {
+                ModeChip(label: tr("mode_wiiu"), selected: current == LinkState.modeCemu, compact: compact, dense: dense) {
                     LinkState.shared.requestMode(LinkState.modeCemu)
                 }
             }
@@ -368,22 +370,33 @@ struct ModeChips: View {
     }
 }
 
+/// Chip de modo (azul cuando es el activo). `compact`: bajo y estrecho, para
+/// las cabeceras apaisadas; `dense`: solo estrecho, para que quepan cuatro en
+/// la fila de un iPhone; `toggle`: no es un modo sino un interruptor (el
+/// Nunchuk): verde encendido y con contorno verde apagado, para que se vea
+/// que es una opción activable.
 struct ModeChip: View {
     let label: String
     let selected: Bool
     var compact = false
+    var dense = false
+    var toggle = false
     let action: () -> Void
 
     var body: some View {
+        let fill = !selected ? Pepo.card : toggle ? Pepo.ok : Pepo.blue
+        let text = !selected ? Pepo.textDim : toggle ? Pepo.onAccent : Pepo.card
         Button(action: action) {
             Text(label)
                 .font(PepoFont.bodyMedium())
-                .foregroundColor(selected ? Pepo.card : Pepo.textDim)
+                .foregroundColor(text)
                 .lineLimit(1)
-                .padding(.horizontal, compact ? 12 : 18)
+                .minimumScaleFactor(0.75)
+                .padding(.horizontal, compact || dense ? 12 : 18)
                 .padding(.vertical, compact ? 6 : 8)
-                .background(selected ? Pepo.blue : Pepo.card)
+                .background(fill)
                 .clipShape(Capsule())
+                .overlay(Capsule().stroke(Pepo.ok, lineWidth: toggle && !selected ? 1.5 : 0))
         }
         .buttonStyle(.plain)
     }

@@ -96,6 +96,9 @@ final class ScreenshotTests: XCTestCase {
             try shoot(OnboardingScreen(onDone: {}), "onboarding-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modePointer))
             try shoot(ControllerScreen(showChips: true, onDisconnect: {}), "controller-pointer-\(dev)", size)
+            // Dolphin: los tres modos y el interruptor «Nunchuk» (verde) en una fila
+            LinkState.shared.publish(connected(mode: LinkState.modeDolphin))
+            try shoot(ControllerScreen(showChips: true, onDisconnect: {}), "controller-dolphin-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modeCemu, pad: LinkState.padWiimote))
             try shoot(ControllerScreen(showChips: true, onDisconnect: {}), "controller-wiiu-wiimote-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modeDolphin, pad: "nunchuk", role: LinkState.roleNunchuk, slot: 1))
