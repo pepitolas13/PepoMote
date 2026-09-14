@@ -35,6 +35,8 @@ mod threads;
 #[cfg(any(windows, target_os = "macos"))]
 mod tray;
 mod update;
+#[cfg(windows)]
+mod win_power;
 
 use crate::state::LockTolerant;
 
@@ -50,6 +52,10 @@ fn main() {
     if pointer::record::replay_from_args() || dolphin::print_dirs_from_args() || diag::run_from_args() {
         return;
     }
+    // Windows 11 estrangula los procesos sin foco (el receptor casi siempre
+    // está detrás del juego): fuera del ahorro de energía desde el principio
+    #[cfg(windows)]
+    win_power::opt_out_of_throttling();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     log_line!(

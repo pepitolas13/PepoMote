@@ -628,27 +628,41 @@ fn write_if_changed(path: &Path, original: &str, new: String) -> Result<(), Stri
 /// nada más arrancar. El resto de la sección (VID, PID, LinkKeys) y del
 /// archivo se conservan.
 pub fn ensure_emulated_adapter(cfg_dir: &Path) -> Result<(), String> {
-    let path = cfg_dir.join("Dolphin.ini");
-    let original = std::fs::read_to_string(&path).unwrap_or_default();
+    set_ini_key(&cfg_dir.join("Dolphin.ini"), "BluetoothPassthrough", "Enabled", "False")
+}
+
+/// Dolphin.ini: [Input] BackgroundInput = True. Sin él, Dolphin ignora el
+/// mando (el DSU del móvil incluido) en cuanto su ventana pierde el foco: con
+/// la ventana de PepoMote (o cualquier otra) seleccionada, «deja de
+/// funcionar». Con la ventana de Dolphin en primer plano no cambia nada.
+pub fn ensure_background_input(cfg_dir: &Path) -> Result<(), String> {
+    set_ini_key(&cfg_dir.join("Dolphin.ini"), "Input", "BackgroundInput", "True")
+}
+
+/// Pone `key = value` en la sección `section` del INI (creando la sección si
+/// no existe; una clave nueva va la primera); el resto de la sección y del
+/// archivo se conservan. Solo escribe si cambia algo.
+fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> Result<(), String> {
+    let original = std::fs::read_to_string(path).unwrap_or_default();
     let mut ini = parse_ini(&original);
     let mut body: Vec<String> = ini
         .sections
         .iter()
-        .find(|(n, _)| n == "BluetoothPassthrough")
+        .find(|(n, _)| n == section)
         .map(|(_, b)| b.clone())
         .unwrap_or_default();
     let mut found = false;
     for l in body.iter_mut() {
-        if ini_key(l) == Some("Enabled") {
-            *l = "Enabled = False".to_owned();
+        if ini_key(l) == Some(key) {
+            *l = format!("{key} = {value}");
             found = true;
         }
     }
     if !found {
-        body.insert(0, "Enabled = False".to_owned());
+        body.insert(0, format!("{key} = {value}"));
     }
-    set_section(&mut ini, "BluetoothPassthrough", body);
-    write_if_changed(&path, &original, serialize_ini(&ini))
+    set_section(&mut ini, section, body);
+    write_if_changed(path, &original, serialize_ini(&ini))
 }
 
 /// [Wiimote1..n] con nuestro mapeo (Source=1) y [Wiimote n+1..4] con
@@ -778,6 +792,7 @@ pub fn configure(cfg_dolphin_dir: &str, layout: &Layout) -> Result<String, Strin
     let nunchuks = layout.iter().filter(|(_, n)| n.is_some()).count();
     for dir in &dirs {
         ensure_emulated_adapter(&dir.config)?;
+        ensure_background_input(&dir.config)?;
         ensure_dsu_server(&dir.config)?;
         write_wiimotes(&dir.config, layout)?;
         write_profiles(&dir.config, crate::net::MAX_PLAYERS);
@@ -1223,6 +1238,32 @@ VID = 1234
 Enabled = False
 VID = 1234
 ");
+    }
+
+    #[test]
+    fn background_input_se_activa_y_lo_demas_se_conserva() {
+        let dir = tmp_dir("bg");
+        std::fs::write(
+            dir.join("Dolphin.ini"),
+            "[Core]\nWiimoteContinuousScanning = False\n[Input]\nBackgroundInput = False\nOther = 1\n",
+        )
+        .unwrap();
+        ensure_background_input(&dir).unwrap();
+        let out = std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap();
+        assert!(out.contains("[Input]\nBackgroundInput = True\nOther = 1\n"), "{out}");
+        assert!(!out.contains("BackgroundInput = False"));
+        assert!(out.contains("[Core]\nWiimoteContinuousScanning = False\n"));
+        // idempotente
+        ensure_background_input(&dir).unwrap();
+        assert_eq!(out, std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap());
+        // sin sección ni archivo: se crea con la clave
+        let dir = tmp_dir("bg-nuevo");
+        ensure_background_input(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap(), "[Input]\nBackgroundInput = True\n");
+        // las dos claves conviven en el mismo archivo
+        ensure_emulated_adapter(&dir).unwrap();
+        let out = std::fs::read_to_string(dir.join("Dolphin.ini")).unwrap();
+        assert!(out.contains("[Input]\nBackgroundInput = True\n") && out.contains("[BluetoothPassthrough]\nEnabled = False\n"), "{out}");
     }
 
     #[test]

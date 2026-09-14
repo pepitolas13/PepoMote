@@ -8,7 +8,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_ESCAPE, VK_LEFT, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK, VK_RETURN,
     VK_RIGHT, VK_SHIFT, VK_SPACE, VK_UP, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
 };
-use windows::Win32::Foundation::POINT;
+use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::System::Threading::AttachThreadInput;
@@ -18,11 +18,36 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 
-pub struct WinInjector;
+/// Cómo se lleva a primer plano la ventana sobre la que cae un clic cuando
+/// `SetForegroundWindow` a secas no lo consigue.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ActivationMode {
+    /// Un `SendInput` vacío (movimiento nulo) y otro `SetForegroundWindow`:
+    /// inyectar entrada es lo que da al proceso el derecho de activar.
+    Modern,
+    /// Vía anterior a 1.5.53: `AttachThreadInput` al hilo en primer plano y,
+    /// si tampoco, la pulsación de ALT. `PEPOMOTE_WIN_ACTIVATE=legacy`.
+    Legacy,
+}
+
+pub fn activation_mode(env: Option<&str>) -> ActivationMode {
+    match env.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+        Some("legacy") | Some("old") => ActivationMode::Legacy,
+        _ => ActivationMode::Modern,
+    }
+}
+
+pub struct WinInjector {
+    activation: ActivationMode,
+}
 
 impl WinInjector {
     pub fn new() -> Self {
-        Self
+        let activation = activation_mode(std::env::var("PEPOMOTE_WIN_ACTIVATE").ok().as_deref());
+        if activation != ActivationMode::Modern {
+            crate::log_line!("Activación de ventanas al hacer clic: {activation:?} (PEPOMOTE_WIN_ACTIVATE)");
+        }
+        Self { activation }
     }
 
     fn send_mouse(&self, dx: i32, dy: i32, data: i32, flags: MOUSE_EVENT_FLAGS) {
@@ -46,11 +71,15 @@ impl WinInjector {
 
     /// Un clic de verdad lleva a primer plano la ventana sobre la que cae.
     /// Con un clic inyectado Windows no siempre lo hace (el derecho de
-    /// primer plano es del proceso que «recibió la última entrada», y el
-    /// nuestro solo la inyecta): se activa a mano, como haría el ratón.
-    /// Primero por las buenas; si el sistema se resiste, enganchando la cola
-    /// de entrada del hilo en primer plano; y si tampoco, con la pulsación de
-    /// ALT que da el derecho (el truco estándar), soltándola ya activada.
+    /// primer plano lo tiene el proceso que «proveyó la última entrada»): se
+    /// activa a mano, como haría el ratón. Primero por las buenas; si el
+    /// sistema se resiste, tras un `SendInput` vacío (movimiento nulo), que
+    /// es justo lo que convierte a este proceso en proveedor de entrada con
+    /// derecho a activar. Ya no se usa `AttachThreadInput` (colgaba este
+    /// hilo, el de la telemetría, si el hilo en primer plano no atendía
+    /// mensajes: cursor y DSU parados) ni la pulsación de ALT (activaba
+    /// barras de menú y dejaba ALT «pegado» en juegos): las dos cosas solo
+    /// entraban con PepoMote sin foco, que es justo cuando fallaba.
     fn activate_window_under_cursor(&self) {
         unsafe {
             let mut pt = POINT::default();
@@ -72,24 +101,36 @@ impl WinInjector {
             if SetForegroundWindow(root).as_bool() {
                 return;
             }
-            // Cola de entrada compartida con el hilo que está en primer plano
-            let mut fg_thread = 0;
-            if !fg.0.is_null() {
-                fg_thread = GetWindowThreadProcessId(fg, None);
+            match self.activation {
+                ActivationMode::Modern => {
+                    self.send_mouse(0, 0, 0, MOUSEEVENTF_MOVE);
+                    let _ = SetForegroundWindow(root);
+                }
+                ActivationMode::Legacy => self.activate_legacy(root, fg),
             }
-            let me = GetCurrentThreadId();
-            let attached = fg_thread != 0 && fg_thread != me && AttachThreadInput(me, fg_thread, true).as_bool();
-            let ok = SetForegroundWindow(root).as_bool();
-            if attached {
-                let _ = AttachThreadInput(me, fg_thread, false);
-            }
-            if ok {
-                return;
-            }
-            self.send_key(VK_MENU, true);
-            let _ = SetForegroundWindow(root);
-            self.send_key(VK_MENU, false);
         }
+    }
+
+    /// Vía anterior a 1.5.53 (`PEPOMOTE_WIN_ACTIVATE=legacy`): cola de
+    /// entrada compartida con el hilo en primer plano y, si tampoco, la
+    /// pulsación de ALT que da el derecho, soltándola ya activada.
+    unsafe fn activate_legacy(&self, root: HWND, fg: HWND) {
+        let mut fg_thread = 0;
+        if !fg.0.is_null() {
+            fg_thread = GetWindowThreadProcessId(fg, None);
+        }
+        let me = GetCurrentThreadId();
+        let attached = fg_thread != 0 && fg_thread != me && AttachThreadInput(me, fg_thread, true).as_bool();
+        let ok = SetForegroundWindow(root).as_bool();
+        if attached {
+            let _ = AttachThreadInput(me, fg_thread, false);
+        }
+        if ok {
+            return;
+        }
+        self.send_key(VK_MENU, true);
+        let _ = SetForegroundWindow(root);
+        self.send_key(VK_MENU, false);
     }
 
     fn send_key(&self, vk: VIRTUAL_KEY, down: bool) {
@@ -279,5 +320,19 @@ impl Injector for WinInjector {
             }
             Some((vx / w, vy / h, (vx + vw) / w, (vy + vh) / h))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn el_modo_de_activacion_se_lee_del_entorno() {
+        assert_eq!(activation_mode(None), ActivationMode::Modern);
+        assert_eq!(activation_mode(Some("")), ActivationMode::Modern);
+        assert_eq!(activation_mode(Some("legacy")), ActivationMode::Legacy);
+        assert_eq!(activation_mode(Some(" Legacy ")), ActivationMode::Legacy);
+        assert_eq!(activation_mode(Some("modern")), ActivationMode::Modern);
     }
 }
