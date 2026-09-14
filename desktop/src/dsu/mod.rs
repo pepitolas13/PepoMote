@@ -11,12 +11,37 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Qué lee el PadData: el perfil Wii (Dolphin: Home→PS, Touch = pulso de
-/// recentrado) o el Wii U (Cemu: Home→Touch, gatillos, stick derecho, táctil).
+/// recentrado), el Wii U (Cemu: Home→Touch, gatillos, stick derecho, táctil)
+/// o el Switch (Eden: letras en el orden de su tabla, Home→PS, Capturar→Touch,
+/// giroscopio en su escala, sticks centrados en 127).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum DsuProfile {
     #[default]
     Wii,
     WiiU,
+    Switch,
+}
+
+impl DsuProfile {
+    /// Factor del giroscopio en el cable. Eden divide el valor DSU entre 312
+    /// y lo trata como vueltas/s (yuzu lo calibró contra BetterJoy): para que
+    /// una vuelta sea una vuelta hay que mandar °/s × 312/360. Dolphin y Cemu
+    /// leen °/s tal cual.
+    pub fn gyro_scale(self) -> f32 {
+        match self {
+            DsuProfile::Switch => 312.0 / 360.0,
+            _ => 1.0,
+        }
+    }
+
+    /// Centro de los sticks en el cable: 128 (DS4) para Dolphin y Cemu; Eden
+    /// calcula `(v − 127) / 127`, así que con 127 el reposo es 0 exacto.
+    pub fn stick_center(self) -> i32 {
+        match self {
+            DsuProfile::Switch => 127,
+            _ => 128,
+        }
+    }
 }
 
 /// Muestra de movimiento que la telemetría empuja al DSU.

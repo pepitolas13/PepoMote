@@ -185,13 +185,21 @@ pub fn pad_data_packet(
     touch_pressed: bool,
     counter: u32,
 ) -> Vec<u8> {
-    let (accel, gyro) = mapping::to_dsu(sample.accel_ms2, sample.gyro_rads);
+    let (accel, mut gyro) = mapping::to_dsu(sample.accel_ms2, sample.gyro_rads);
+    // La matriz de signos vive en `mapping`; aquí solo la escala del perfil
+    // (Eden espera vueltas/s × 312)
+    let k = sample.profile.gyro_scale();
+    for g in gyro.iter_mut() {
+        *g *= k;
+    }
     let b = match sample.profile {
         DsuProfile::Wii => mapping::buttons_to_dsu(sample.buttons),
         DsuProfile::WiiU => mapping::buttons_to_dsu_wiiu(sample.buttons),
+        DsuProfile::Switch => mapping::buttons_to_dsu_switch(sample.buttons),
     };
     // Botón Touch: en Wii es el pulso de recentrado (IMUPointer/Recenter);
-    // en Wii U es Home (Cemu lo lee como botón 16 e ignora el PS)
+    // en Wii U es Home (Cemu lo lee como botón 16 e ignora el PS); en Switch
+    // es Capturar (Eden: TouchHardPress). El pulso nunca llega a Cemu ni a Eden.
     let touch_btn = match sample.profile {
         DsuProfile::Wii => {
             if touch_pressed {
@@ -200,7 +208,7 @@ pub fn pad_data_packet(
                 0
             }
         }
-        DsuProfile::WiiU => b.touch,
+        DsuProfile::WiiU | DsuProfile::Switch => b.touch,
     };
 
     let mut p = Vec::with_capacity(84);
@@ -217,9 +225,11 @@ pub fn pad_data_packet(
     p.push(b.ps);
     p.push(touch_btn);
     // Sticks LX LY RX RY (0-255, neutro 128; Y: 255 = arriba, "Left Y+" en
-    // Dolphin y AxisY+ en Cemu): izquierdo = Nunchuk / stick izquierdo del
-    // GamePad, derecho = stick derecho del GamePad (neutro si no hay)
-    let axis = |v: i8| (128 + v as i32).clamp(0, 255) as u8;
+    // Dolphin y AxisY+ en Cemu; Eden lee (v − 127) / 127, neutro 127):
+    // izquierdo = Nunchuk / stick izquierdo del GamePad, derecho = stick
+    // derecho del GamePad (neutro si no hay)
+    let center = sample.profile.stick_center();
+    let axis = |v: i8| (center + v as i32).clamp(0, 255) as u8;
     p.extend_from_slice(&[axis(sample.stick_x), axis(sample.stick_y), axis(sample.stick_rx), axis(sample.stick_ry)]);
     p.extend_from_slice(&b.dpad); // analógico L D R U ("Pad W/S/E/N")
     p.extend_from_slice(&b.face); // analógico square cross circle triangle
@@ -295,6 +305,56 @@ mod tests {
         let out = pad_data_packet(0, &s, true, 2);
         assert_eq!(out[39], 0);
         assert_eq!(&out[56..62], &[0u8; 6]);
+    }
+
+    #[test]
+    fn pad_data_switch() {
+        use pmp::*;
+        let mut s = sample();
+        s.profile = DsuProfile::Switch;
+        s.buttons = BTN_A | BTN_HOME | BTN_SCREEN | BTN_ZL;
+        s.stick_x = 100;
+        s.stick_y = -50;
+        s.stick_rx = -30;
+        s.stick_ry = 120;
+        // con pulso de recentrado: a Eden no le llega (el Touch es Capturar)
+        let out = pad_data_packet(0, &s, true, 1);
+        assert_eq!(out[37] & (1 << 5), 1 << 5, "A → Circle");
+        assert_eq!(out[38], 0xFF, "Home → PS");
+        assert_eq!(out[39], 0xFF, "Capturar → Touch");
+        assert_eq!(&out[40..44], &[227, 77, 97, 247], "sticks centrados en 127");
+        assert_eq!(out[55], 0xFF, "ZL → l2 analógico");
+        assert_eq!(out[37] & 1, 1, "y el bit L2");
+        assert_eq!(&out[56..62], &[0u8; 6], "sin táctil en Switch");
+        // gyro: 1 rad/s de pitch = 57,296 °/s × 312/360 = 49,656 en el cable
+        let pitch = f32::from_le_bytes(out[88..92].try_into().unwrap());
+        assert!((pitch - 49.6563).abs() < 1e-3, "pitch = {pitch}");
+        // accel plano: DSU y = −1 g (Eden lo lee como {x, −z, y} = {0, 0, −1})
+        let ay = f32::from_le_bytes(out[80..84].try_into().unwrap());
+        assert!((ay + 1.0).abs() < 1e-6, "ay = {ay}");
+        // sin Capturar ni Home, con pulso: nada
+        s.buttons = 0;
+        let out = pad_data_packet(0, &s, true, 2);
+        assert_eq!((out[38], out[39]), (0, 0));
+        // sticks en reposo: exactamente 127 (Eden → 0,0)
+        s.stick_x = 0;
+        s.stick_y = 0;
+        s.stick_rx = 0;
+        s.stick_ry = 0;
+        let out = pad_data_packet(0, &s, false, 3);
+        assert_eq!(&out[40..44], &[127; 4]);
+        // extremos: 127 ± 127 = 0 y 254 (nunca 255)
+        s.stick_x = -127;
+        s.stick_y = 127;
+        let out = pad_data_packet(0, &s, false, 4);
+        assert_eq!(&out[40..42], &[0, 254]);
+        // en los perfiles Wii/Wii U el gyro sigue en °/s y el centro en 128
+        let mut w = sample();
+        w.profile = DsuProfile::WiiU;
+        let out = pad_data_packet(0, &w, false, 5);
+        let pitch = f32::from_le_bytes(out[88..92].try_into().unwrap());
+        assert!((pitch - 57.29578).abs() < 1e-3);
+        assert_eq!(&out[40..44], &[128; 4]);
     }
 
     #[test]

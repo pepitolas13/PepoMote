@@ -179,6 +179,84 @@ pub fn buttons_to_dsu_wiiu(pmp: u32) -> DsuButtons {
     d
 }
 
+/// Bits PMP → botones DSU, perfil Switch (Eden, engine `cemuhookudp`). Eden
+/// lee el bitmask de los bytes 36-37 (botón i = valor 1<<i de su tabla), el
+/// PS (38) como Home y el Touch (39) como TouchHardPress (= Capturar en su
+/// mapeo); los analógicos 44-55 los ignora, pero se rellenan igual.
+///
+/// A→Circle · B→Cross · X→Triangle · Y→Square · L/R→L1/R1 · ZL/ZR→L2/R2 (bit
+/// y analógico) · click sticks→L3/R3 · +/−→Options/Share · cruceta ·
+/// Home→PS · Capturar (bit 28, el de TV/Pad en Cemu)→Touch. Mic (27), C/Z
+/// (17/18), 1/2 (9/10) y multimedia no significan nada en Switch: a cero.
+pub fn buttons_to_dsu_switch(pmp: u32) -> DsuButtons {
+    let bit = |b: u32| pmp & (1 << b) != 0;
+
+    let mut b1 = 0u8;
+    if bit(7) {
+        b1 |= 1 << 0; // − → Share (1)
+    }
+    if bit(25) {
+        b1 |= 1 << 1; // click stick izquierdo → L3 (2)
+    }
+    if bit(26) {
+        b1 |= 1 << 2; // click stick derecho → R3 (4)
+    }
+    if bit(6) {
+        b1 |= 1 << 3; // + → Options (8)
+    }
+    if bit(2) {
+        b1 |= 1 << 4; // ↑ (16)
+    }
+    if bit(5) {
+        b1 |= 1 << 5; // → (32)
+    }
+    if bit(3) {
+        b1 |= 1 << 6; // ↓ (64)
+    }
+    if bit(4) {
+        b1 |= 1 << 7; // ← (128)
+    }
+
+    let mut b2 = 0u8;
+    if bit(23) {
+        b2 |= 1 << 0; // ZL → L2 (256)
+    }
+    if bit(24) {
+        b2 |= 1 << 1; // ZR → R2 (512)
+    }
+    if bit(21) {
+        b2 |= 1 << 2; // L → L1 (1024)
+    }
+    if bit(22) {
+        b2 |= 1 << 3; // R → R1 (2048)
+    }
+    if bit(19) {
+        b2 |= 1 << 4; // X → Triangle (4096)
+    }
+    if bit(0) {
+        b2 |= 1 << 5; // A → Circle (8192)
+    }
+    if bit(1) {
+        b2 |= 1 << 6; // B → Cross (16384)
+    }
+    if bit(20) {
+        b2 |= 1 << 7; // Y → Square (32768)
+    }
+
+    DsuButtons {
+        b1,
+        b2,
+        ps: on(bit(8)),     // Home → PS (262144 en Eden)
+        touch: on(bit(28)), // Capturar → Touch (TouchHardPress, 524288 en Eden)
+        // L D R U
+        dpad: [on(bit(4)), on(bit(3)), on(bit(5)), on(bit(2))],
+        // square cross circle triangle = Y B A X
+        face: [on(bit(20)), on(bit(1)), on(bit(0)), on(bit(19))],
+        // R1 L1 R2 L2 = R L ZR ZL
+        shoulders: [on(bit(22)), on(bit(21)), on(bit(24)), on(bit(23))],
+    }
+}
+
 /// % de batería → niveles DSU.
 pub fn battery_to_dsu(pct: u8) -> u8 {
     match pct {
@@ -291,6 +369,49 @@ mod tests {
         let d = buttons_to_dsu_wiiu(BTN_ONE | BTN_TWO | BTN_HOME);
         assert_eq!(d.b2, (1 << 7) | (1 << 4));
         assert_eq!(d.touch, 0xFF);
+    }
+
+    #[test]
+    fn botones_switch() {
+        use pmp::*;
+        // Todo el Pro Controller pulsado a la vez
+        let pmp = BTN_A | BTN_B | BTN_X | BTN_Y | BTN_L | BTN_R | BTN_ZL | BTN_ZR
+            | BTN_STICK_L | BTN_STICK_R | BTN_PLUS | BTN_MINUS | BTN_HOME | BTN_SCREEN
+            | BTN_DPAD_UP | BTN_DPAD_DOWN | BTN_DPAD_LEFT | BTN_DPAD_RIGHT;
+        let d = buttons_to_dsu_switch(pmp);
+        assert_eq!(d.b1, 0xFF, "Share L3 R3 Options Up Right Down Left");
+        assert_eq!(d.b2, 0xFF, "L2 R2 L1 R1 Triangle Circle Cross Square");
+        assert_eq!(d.ps, 0xFF, "Home → PS");
+        assert_eq!(d.touch, 0xFF, "Capturar → Touch");
+        assert_eq!(d.dpad, [0xFF; 4]);
+        assert_eq!(d.face, [0xFF; 4]);
+        assert_eq!(d.shoulders, [0xFF; 4]);
+        // Letras en el orden de la tabla de Eden (NO el de Wii U)
+        assert_eq!(buttons_to_dsu_switch(BTN_A).b2, 1 << 5, "A → Circle");
+        assert_eq!(buttons_to_dsu_switch(BTN_B).b2, 1 << 6, "B → Cross");
+        assert_eq!(buttons_to_dsu_switch(BTN_X).b2, 1 << 4, "X → Triangle");
+        assert_eq!(buttons_to_dsu_switch(BTN_Y).b2, 1 << 7, "Y → Square");
+        assert_eq!(buttons_to_dsu_switch(BTN_A).face, [0, 0, 0xFF, 0]);
+        // ZL: bit L2 y analógico l2; ZR: bit R2 y analógico r2
+        let d = buttons_to_dsu_switch(BTN_ZL);
+        assert_eq!(d.b2, 1);
+        assert_eq!(d.shoulders, [0, 0, 0, 0xFF]);
+        let d = buttons_to_dsu_switch(BTN_ZR);
+        assert_eq!(d.b2, 1 << 1);
+        assert_eq!(d.shoulders, [0, 0, 0xFF, 0]);
+        // L/R → L1/R1
+        assert_eq!(buttons_to_dsu_switch(BTN_L | BTN_R).b2, (1 << 2) | (1 << 3));
+        // −/+ y clicks
+        assert_eq!(buttons_to_dsu_switch(BTN_MINUS | BTN_PLUS).b1, 0b1001);
+        assert_eq!(buttons_to_dsu_switch(BTN_STICK_L | BTN_STICK_R).b1, 0b110);
+        // Lo que no existe en Switch no se cuela
+        let d = buttons_to_dsu_switch(BTN_MIC | BTN_C | BTN_Z | BTN_ONE | BTN_TWO | BTN_PRECISION);
+        assert_eq!(d, DsuButtons::default());
+        // Home solo → PS, sin Touch (Capturar aparte)
+        let d = buttons_to_dsu_switch(BTN_HOME);
+        assert_eq!((d.ps, d.touch), (0xFF, 0));
+        let d = buttons_to_dsu_switch(BTN_SCREEN);
+        assert_eq!((d.ps, d.touch), (0, 0xFF));
     }
 
     #[test]

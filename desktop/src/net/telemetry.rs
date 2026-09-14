@@ -392,20 +392,24 @@ pub fn run(
                     }
                     // Todos los jugadores al DSU, cada uno en su slot, INLINE
                     if let Some(dsu) = &dsu {
-                        let (profile, touch) = if mode == Mode::Cemu {
-                            let touch = if role == Role::Wiimote && pad_wii {
-                                // Mando Wii en Cemu: su puntero IR es el
-                                // touchpad DSU (Cemu lo lee como posición)
-                                ir_engines
-                                    .entry(p.session_id)
-                                    .or_default()
-                                    .apply(&p, sens_deg, aspect, screen_w)
-                            } else {
-                                gamepad_touch(&p)
-                            };
-                            (DsuProfile::WiiU, touch)
-                        } else {
-                            (DsuProfile::Wii, None)
+                        let (profile, touch) = match mode {
+                            Mode::Cemu => {
+                                let touch = if role == Role::Wiimote && pad_wii {
+                                    // Mando Wii en Cemu: su puntero IR es el
+                                    // touchpad DSU (Cemu lo lee como posición)
+                                    ir_engines
+                                        .entry(p.session_id)
+                                        .or_default()
+                                        .apply(&p, sens_deg, aspect, screen_w)
+                                } else {
+                                    gamepad_touch(&p)
+                                };
+                                (DsuProfile::WiiU, touch)
+                            }
+                            // Switch: el mismo paquete de 80 bytes que el
+                            // GamePad, sin táctil (Eden no lo usa)
+                            Mode::Switch => (DsuProfile::Switch, None),
+                            _ => (DsuProfile::Wii, None),
                         };
                         dsu.push(
                             slot,

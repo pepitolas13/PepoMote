@@ -7,7 +7,7 @@ use crate::state::LockTolerant;
 use super::{broadcast, free_slot, ghosts_of, send_line, Session, Sessions};
 use crate::pairing::PairingInfo;
 use crate::screen::ScreenHub;
-use crate::state::{effective_pad, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState};
+use crate::state::{effective_pad, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState, SwitchPad};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -46,19 +46,24 @@ pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo, hub: A
 /// otros hilos escriben líneas enteras bajo el mismo candado.
 type Writer = Arc<Mutex<TcpStream>>;
 
-/// Nombre del tipo de mando Wii U de la sesión del `slot` (`ok.pad` / eco `pad`).
+/// Nombre del tipo de mando (Wii U o Switch, según el modo) de la sesión del
+/// `slot` (`ok.pad` / eco `pad`).
 fn pad_str(shared: &SharedState, slot: u8) -> &'static str {
-    effective_pad(&shared.lock_tolerant().players, slot)
+    let s = shared.lock_tolerant();
+    effective_pad(s.mode, &s.players, slot)
 }
 
 /// El reparto de Cemu cambia con cada entrada, salida o elección de Mando de
 /// Wii: a cada móvil cuyo `pad` efectivo haya cambiado se le manda (J2 pasa
 /// a GamePad si J1 se va; el Nunchuk entra en uso, o deja de estarlo).
 fn push_pad_states(shared: &SharedState, sessions: &Sessions) {
-    let players = shared.lock_tolerant().players.clone();
+    let (mode, players) = {
+        let s = shared.lock_tolerant();
+        (s.mode, s.players.clone())
+    };
     let mut guard = sessions.lock_tolerant();
     for s in guard.values_mut() {
-        let pad = effective_pad(&players, s.slot);
+        let pad = effective_pad(mode, &players, s.slot);
         if s.last_pad == Some(pad) {
             continue;
         }
@@ -176,6 +181,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     let own_nunchuk = role == Role::Wiimote && hello["nunchuk"].as_str() == Some("own");
     // Modo Wii U: el móvil GamePad solo hace de pantalla táctil (ausente = no)
     let screen_only = role == Role::Wiimote && hello["screen_only"].as_bool() == Some(true);
+    // Modo Switch: qué mando de Switch quiere ser (ausente o de Wii U = Pro Controller)
+    let switch_pad = hello["pad"].as_str().and_then(SwitchPad::parse).unwrap_or_default();
 
     let session_id: u32 = rand::thread_rng().gen();
     let (slot, evicted_slots) = {
@@ -237,6 +244,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             pad_wii,
             own_nunchuk,
             screen_only,
+            switch_pad,
         });
         if !s.injection_error {
             s.last_error = None;

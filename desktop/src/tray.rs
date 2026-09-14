@@ -53,6 +53,7 @@ pub fn tooltip(snap: &TraySnapshot) -> String {
             Mode::Pointer => tr!("tray.mode_pointer"),
             Mode::Dolphin => tr!("tray.mode_dolphin"),
             Mode::Cemu => tr!("tray.mode_cemu"),
+            Mode::Switch => tr!("tray.mode_switch"),
         };
         let plural = if snap.players == 1 { tr!("tray.phone_one") } else { tr!("tray.phone_many") };
         let mut text = tr!("tray.line", snap.players, plural, mode);
@@ -289,6 +290,7 @@ mod tests {
             "PepoMote · 2 móviles · Dolphin\nPixel 8, OnePlus 6T"
         );
         assert_eq!(tooltip(&snap(3, Mode::Cemu, &[])), "PepoMote · 3 móviles · Wii U");
+        assert_eq!(tooltip(&snap(1, Mode::Switch, &["Pixel 8"])), "PepoMote · 1 móvil · Switch\nPixel 8");
     }
 
     #[test]

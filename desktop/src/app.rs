@@ -846,6 +846,7 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         Mode::Pointer => tr!("win.mode_pointer"),
         Mode::Dolphin => tr!("win.mode_dolphin"),
         Mode::Cemu => tr!("win.mode_cemu"),
+        Mode::Switch => tr!("win.mode_switch"),
     };
     let cemu = snap.mode == Mode::Cemu;
     let cemu_layout = crate::state::cemu_layout(&snap.players);
