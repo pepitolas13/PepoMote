@@ -115,6 +115,32 @@ pub fn report() -> String {
     out.extend(ports_section(crate::pairing::port(), crate::dsu::port()));
     #[cfg(target_os = "linux")]
     {
+        let ld = std::process::Command::new("ldconfig")
+            .arg("-p")
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+        out.push(match ld {
+            Some(ld) => {
+                let missing = missing_libs(&ld, RUNTIME_LIBS);
+                if missing.is_empty() {
+                    format!("Bibliotecas: todas presentes ({})", RUNTIME_LIBS.join(", "))
+                } else {
+                    format!("Bibliotecas: FALTAN {} (instálalas con el gestor de paquetes)", missing.join(", "))
+                }
+            }
+            None => "Bibliotecas: ldconfig no disponible".to_owned(),
+        });
+        let glibc = std::process::Command::new("ldd")
+            .arg("--version")
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8_lossy(&o.stdout).lines().next().map(str::to_owned))
+            .unwrap_or_else(|| "?".to_owned());
+        out.push(format!("glibc: {glibc} (el binario necesita 2.35 o superior)"));
+    }
+    #[cfg(target_os = "linux")]
+    {
         let cfg = crate::state::Config::load();
         out.push(format!(
             "Reparación: pkexec: {} · fix_attempted: {} · sonido desactivado en esta sesión: {}",
@@ -153,6 +179,30 @@ fn os_details() -> String {
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn os_details() -> String {
     String::new()
+}
+
+/// Bibliotecas que el receptor carga al abrir la ventana (dlopen: EGL/GL,
+/// xkbcommon, wayland-egl, xcb) o enlaza (asound): si falta alguna, la
+/// ventana no abre o el proceso ni arranca.
+#[cfg(any(target_os = "linux", test))]
+pub const RUNTIME_LIBS: &[&str] = &[
+    "libEGL.so.1",
+    "libGL.so.1",
+    "libxkbcommon.so.0",
+    "libxkbcommon-x11.so.0",
+    "libwayland-egl.so.1",
+    "libasound.so.2",
+    "libxcb.so.1",
+];
+
+/// Las de `wanted` que no aparecen en la salida de `ldconfig -p`.
+#[cfg(any(target_os = "linux", test))]
+pub fn missing_libs(ldconfig: &str, wanted: &[&str]) -> Vec<String> {
+    wanted
+        .iter()
+        .filter(|lib| !ldconfig.lines().any(|l| l.split_whitespace().next() == Some(**lib)))
+        .map(|s| (*s).to_owned())
+        .collect()
 }
 
 /// Abre y cierra la salida de audio por defecto igual que la campanita,
@@ -234,6 +284,14 @@ mod tests {
         for section in ["Config:", "Log:", "Sesión:", "Inyección:", "Audio:", "Puertos:", "Últimas 40 líneas del log:"] {
             assert!(r.contains(section), "{section}");
         }
+    }
+
+    #[test]
+    fn bibliotecas_que_faltan_segun_ldconfig() {
+        let ld = "\tlibEGL.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libEGL.so.1\n\tlibasound.so.2 (libc6,x86-64) => /lib/libasound.so.2\n";
+        assert!(missing_libs(ld, &["libEGL.so.1", "libasound.so.2"]).is_empty());
+        assert_eq!(missing_libs(ld, &["libGL.so.1", "libEGL.so.1"]), vec!["libGL.so.1".to_owned()]);
+        assert_eq!(missing_libs("", RUNTIME_LIBS).len(), RUNTIME_LIBS.len());
     }
 
     #[test]

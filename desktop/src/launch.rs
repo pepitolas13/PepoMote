@@ -15,6 +15,7 @@ pub const ENV_ATTEMPT: &str = "PEPOMOTE_UI_ATTEMPT";
 /// Backend de ventana forzado: `x11` | `wayland`; vacío = el que elija winit.
 pub const ENV_BACKEND: &str = "PEPOMOTE_UI_BACKEND";
 /// Desactiva los relanzamientos (para ver el error tal cual, o pruebas).
+#[cfg(target_os = "linux")]
 pub const ENV_NO_FALLBACK: &str = "PEPOMOTE_NO_UI_FALLBACK";
 /// Modo humo: salir con 0 tantos ms después del primer fotograma ("" o "1"
 /// = 1500). Si a los 30 s no hay fotograma, salir con 3.
@@ -263,7 +264,9 @@ pub fn notify_failure(title: &str, body: &str) {
     use std::io::Write;
     use std::process::{Command, Stdio};
     let _ = writeln!(std::io::stderr(), "{title}\n{body}");
-    let quiet = |c: &mut Command| c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    fn quiet(c: &mut Command) -> &mut Command {
+        c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+    }
     let notified = quiet(Command::new("notify-send").args(["-u", "critical", "-a", "PepoMote", title, body]))
         .status()
         .is_ok_and(|s| s.success());
@@ -276,7 +279,7 @@ pub fn notify_failure(title: &str, body: &str) {
 mod tests {
     use super::*;
 
-    fn env_of(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + '_ {
+    fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |k| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| (*v).to_owned())
     }
 

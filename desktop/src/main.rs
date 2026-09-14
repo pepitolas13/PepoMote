@@ -16,6 +16,7 @@ mod screens;
 mod i18n;
 mod icon;
 mod input;
+mod launch;
 mod log;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -38,7 +39,7 @@ mod update;
 
 use crate::state::LockTolerant;
 
-fn main() -> eframe::Result {
+fn main() {
     // Lo primero de todo: que ningún pánico se pierda ni cierre el receptor
     // (el perfil release desenrolla; el hook lo deja en receptor.log)
     log::install_panic_hook();
@@ -48,12 +49,12 @@ fn main() -> eframe::Result {
     // (PEPOMOTE_RECORD), CSV por stdout, y fuera. --dolphin-dirs y --diag:
     // informes por stdout, y fuera.
     if pointer::record::replay_from_args() || dolphin::print_dirs_from_args() || diag::run_from_args() {
-        return Ok(());
+        return;
     }
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     log_line!(
-        "PepoMote {} arranca · {} {} · args {:?} · XDG_SESSION_TYPE={} WAYLAND_DISPLAY={} DISPLAY={} XDG_CURRENT_DESKTOP={}",
+        "PepoMote {} arranca · {} {} · args {:?} · XDG_SESSION_TYPE={} WAYLAND_DISPLAY={} DISPLAY={} XDG_CURRENT_DESKTOP={} · ventana: {}",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
         std::env::consts::ARCH,
@@ -61,7 +62,8 @@ fn main() -> eframe::Result {
         diag::env_or("XDG_SESSION_TYPE"),
         diag::env_or("WAYLAND_DISPLAY"),
         diag::env_or("DISPLAY"),
-        diag::env_or("XDG_CURRENT_DESKTOP")
+        diag::env_or("XDG_CURRENT_DESKTOP"),
+        launch::describe(launch::attempt())
     );
 
     // Instancia única: si ya hay un PepoMote vivo (quizá solo en la
@@ -73,7 +75,7 @@ fn main() -> eframe::Result {
                 "Ya hay un PepoMote escuchando en 127.0.0.1:{}: le he pedido que se muestre y salgo",
                 singleton::port()
             );
-            return Ok(());
+            return;
         }
         singleton::Singleton::NoLock(e) => {
             log_line!(
@@ -157,6 +159,9 @@ fn main() -> eframe::Result {
         }
     }
 
+    let attempt = launch::attempt();
+    launch::start_smoke_watchdog();
+    let smoke_fail_first = attempt.n == 1 && std::env::var_os(launch::ENV_SMOKE_FAIL_FIRST).is_some();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([460.0, 640.0])
@@ -171,14 +176,29 @@ fn main() -> eframe::Result {
                 width: 64,
                 height: 64,
             }),
+        // Linux: backend forzado por el relanzamiento (PEPOMOTE_UI_BACKEND)
+        #[cfg(target_os = "linux")]
+        event_loop_builder: launch::event_loop_hook(attempt.backend),
         ..Default::default()
     };
-    eframe::run_native(
-        "PepoMote",
-        options,
-        Box::new(move |cc| {
-            singleton::set_ctx(cc.egui_ctx.clone());
-            Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing, start_hidden)))
-        }),
-    )
+    // run_native va en catch_unwind: sin una configuración GL usable eframe
+    // entra en pánico en el hilo principal (no devuelve Err), y winit no
+    // permite un segundo bucle de eventos en el mismo proceso, así que la
+    // salida es el log y, en Linux, relanzarse (launch::finish).
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
+        if smoke_fail_first {
+            return Err("fallo simulado (PEPOMOTE_SMOKE_FAIL_FIRST)".to_owned());
+        }
+        eframe::run_native(
+            "PepoMote",
+            options,
+            Box::new(move |cc| {
+                singleton::set_ctx(cc.egui_ctx.clone());
+                Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing, start_hidden)))
+            }),
+        )
+        .map_err(|e| format!("{e} ({e:?})"))
+    }));
+    let code = launch::finish(launch::classify(result, launch::first_frame_done()), attempt);
+    std::process::exit(code);
 }

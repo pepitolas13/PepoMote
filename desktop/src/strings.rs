@@ -76,6 +76,13 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("fix.exit_code", "código {0}", "code {0}"),
     ("fix.signal", "terminado por una señal", "killed by a signal"),
     ("fix.failed", "Reparación fallida: {0}", "Repair failed: {0}"),
+    // --- la ventana no abre (Linux): último recurso, por notificación de escritorio
+    ("ui.start_failed_title", "PepoMote no ha podido abrir su ventana", "PepoMote could not open its window"),
+    (
+        "ui.start_failed_body",
+        "Detalles en {0}. Ejecuta «PepoMote --diag» y pega el informe en un issue. Prueba a lanzarlo con LIBGL_ALWAYS_SOFTWARE=1 o PEPOMOTE_UI_BACKEND=x11.",
+        "Details in {0}. Run “PepoMote --diag” and paste the report in an issue. Try launching it with LIBGL_ALWAYS_SOFTWARE=1 or PEPOMOTE_UI_BACKEND=x11.",
+    ),
     ("fix.no_pkexec_launch", "No pude lanzar pkexec: {0}", "Could not launch pkexec: {0}"),
     // --- ajustes
     ("cfg.title", "Ajustes", "Settings"),
@@ -322,6 +329,7 @@ pub const SOURCES: &[&str] = &[
     include_str!("net/telemetry.rs"),
     include_str!("ports.rs"),
     include_str!("fixes.rs"),
+    include_str!("launch.rs"),
     include_str!("input/mod.rs"),
     include_str!("input/linux_wayland.rs"),
     include_str!("screen/mod.rs"),

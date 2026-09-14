@@ -18,6 +18,12 @@ pub struct PepoMoteApp {
     ip_checked: Instant,
     /// Ajustes cambiados en la UI pendientes de escribir a disco.
     config_dirty: bool,
+    /// Fotogramas pintados (el segundo marca la ventana como viva).
+    frames: u32,
+    /// Cuándo se pintó el primer fotograma útil (modo humo).
+    painted_at: Option<Instant>,
+    /// PEPOMOTE_SMOKE: salir con 0 pasado este tiempo desde ese fotograma.
+    smoke: Option<Duration>,
     /// Linux: hay pkexec para el botón "Reparar ahora" (se mira una vez).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pkexec_ok: bool,
@@ -60,6 +66,9 @@ impl PepoMoteApp {
             autostart: crate::autostart::is_enabled(),
             ip_checked: Instant::now(),
             config_dirty: false,
+            frames: 0,
+            painted_at: None,
+            smoke: crate::launch::smoke_linger(std::env::var(crate::launch::ENV_SMOKE).ok().as_deref()),
             #[cfg(target_os = "linux")]
             pkexec_ok: crate::fixes::pkexec_available(),
             #[cfg(not(target_os = "linux"))]
@@ -121,6 +130,27 @@ struct Snapshot {
 impl eframe::App for PepoMoteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         theme::sync(ctx);
+
+        // Ventana viva: egui usa el primer fotograma para medir; el segundo ya
+        // está en pantalla. Marca «pintada» (a partir de ahí un fallo no se
+        // relanza) y, en modo humo, programa la salida limpia
+        self.frames = self.frames.saturating_add(1);
+        if self.frames == 2 {
+            crate::launch::mark_first_frame();
+            self.painted_at = Some(Instant::now());
+            crate::log_line!("Ventana: primer fotograma pintado ({})", crate::launch::describe(crate::launch::attempt()));
+        }
+        if let (Some(t), Some(linger)) = (self.painted_at, self.smoke) {
+            if t.elapsed() >= linger {
+                crate::log_line!("PEPOMOTE_SMOKE: fin, salgo con 0");
+                std::process::exit(0);
+            }
+        }
+        // Linux: cerrar = salir (no hay bandeja); solo queda constancia
+        #[cfg(target_os = "linux")]
+        if ctx.input(|i| i.viewport().close_requested()) {
+            crate::log_line!("Ventana cerrada por el usuario: salgo (en Linux no hay bandeja)");
+        }
 
         // En Windows, cerrar = esconder a la bandeja ("Salir" está en el tray)
         #[cfg(windows)]
