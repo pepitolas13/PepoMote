@@ -6,15 +6,15 @@ struct RootView: View {
 
     /// Apaisado fijo mientras el GamePad o el mando + Nunchuk estén en
     /// pantalla; el resto gira solo si el bloqueo de giro del Centro de
-    /// control está quitado (lo decide iOS). En el GamePad, los dos
-    /// apaisados; el mando + Nunchuk va hacia el lado elegido (Ajustes, o el
-    /// que se confirme la primera vez: hasta entonces, los dos).
+    /// control está quitado (lo decide iOS). Cada uno de los dos va hacia su
+    /// lado elegido (Ajustes, o el que se confirme la primera vez: hasta
+    /// entonces, los dos apaisados).
     private var orientationMask: UIInterfaceOrientationMask {
         guard model.screen == .controller, Route.forcesLandscape(link.link, link.intent) else { return .all }
         if Route.wiiLandscapeNunchuk(link.link) {
             return LandscapeSide.effective(saved: model.nunchukSide, provisional: model.nunchukSideProvisional).mask
         }
-        return .landscape
+        return LandscapeSide.effective(saved: model.gamePadSide, provisional: model.gamePadSideProvisional).mask
     }
 
     var body: some View {

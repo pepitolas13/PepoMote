@@ -45,16 +45,17 @@ object AppPrefs {
     }
 
     /**
-     * Lado del mando + Nunchuk apaisado ([dev.pepotech.pepomote.service.LandscapeSide]):
-     * "" hasta que se elige la primera vez; "left", "right" o "sensor" (Ajustes).
+     * Lado de un mando apaisado fijo ([dev.pepotech.pepomote.service.LandscapeSide]):
+     * "" hasta que se elige la primera vez; "left", "right" o "sensor"
+     * (Ajustes). [key]: "nunchukSide" (mando + Nunchuk) o "gamePadSide" (GamePad).
      */
-    fun nunchukSide(context: Context): String =
+    fun landscapeSide(context: Context, key: String): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString("nunchukSide", "") ?: ""
+            .getString(key, "") ?: ""
 
-    fun setNunchukSide(context: Context, value: String) {
+    fun setLandscapeSide(context: Context, key: String, value: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString("nunchukSide", value).apply()
+            .edit().putString(key, value).apply()
     }
 
     /** GamePad de Wii U sin pantalla táctil (ni doble pantalla): los botones crecen (Ajustes). */

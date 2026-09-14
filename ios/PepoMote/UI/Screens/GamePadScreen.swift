@@ -123,6 +123,7 @@ struct GamePadScreen: View {
     let onDisconnect: () -> Void
     @ObservedObject var link = LinkState.shared
     @ObservedObject var screenLink = ScreenLink.shared
+    @EnvironmentObject var model: AppModel
     @AppStorage(AppPrefs.gamePadNoScreenKey) private var noScreenPref = false
     @AppStorage(AppPrefs.gamePadFullScreenKey) private var fullScreenPref = false
     @AppStorage(AppPrefs.gamePadFullScreenKeyboardKey) private var fullScreenKb = true
@@ -178,6 +179,7 @@ struct GamePadScreen: View {
             applyEngine()
         }
         .onDisappear {
+            model.gamePadSideProvisional = nil // la prueba del lado sin confirmar se olvida
             UIApplication.shared.isIdleTimerDisabled = false
             screenLink.release()
             if let engine = link.motion {
@@ -222,6 +224,19 @@ struct GamePadScreen: View {
         }
         .onAppear {
             if wantScreen { screenLink.request(width: request.0, height: request.1) }
+        }
+        // Primera vez: el lado del apaisado lo ha elegido iOS; se pregunta si es
+        // el bueno y se guarda para siempre (Ajustes; aparte del mando + Nunchuk)
+        .overlay(alignment: .top) {
+            if model.gamePadSide == .unset {
+                let shown = LandscapeSide.effective(saved: LandscapeSide.current(OrientationLock.current), provisional: model.gamePadSideProvisional)
+                SideAskCard(
+                    title: tr("side_ask_gamepad"),
+                    onFlip: { model.gamePadSideProvisional = shown.flipped },
+                    onKeep: { model.saveGamePadSide(shown) }
+                )
+                .padding(.top, fullScreen ? 8 : m.headerH + m.gap)
+            }
         }
     }
 

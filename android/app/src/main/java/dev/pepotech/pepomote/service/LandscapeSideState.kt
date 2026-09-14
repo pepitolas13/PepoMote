@@ -6,12 +6,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Lado elegido para el mando + Nunchuk ([LandscapeSide]), observable desde
- * la actividad (orientación), Ajustes y el propio mando: lo guardado y,
- * mientras se pregunta la primera vez, el lado provisional («Darle la
- * vuelta») que aún no se ha confirmado.
+ * Lado elegido para un mando apaisado fijo ([LandscapeSide]), observable
+ * desde la actividad (orientación), Ajustes y el propio mando: lo guardado
+ * y, mientras se pregunta la primera vez, el lado provisional («Darle la
+ * vuelta») que aún no se ha confirmado. Uno por mando: [NunchukSide] y
+ * [GamePadSide], cada uno con su preferencia.
  */
-object NunchukSide {
+open class LandscapeSideState(private val prefKey: String) {
     private val savedFlow = MutableStateFlow(LandscapeSide.Unset)
     private val provisionalFlow = MutableStateFlow<LandscapeSide?>(null)
 
@@ -20,12 +21,12 @@ object NunchukSide {
 
     /** Al arrancar: lo guardado en Ajustes. */
     fun load(context: Context) {
-        savedFlow.value = LandscapeSide.fromPref(AppPrefs.nunchukSide(context))
+        savedFlow.value = LandscapeSide.fromPref(AppPrefs.landscapeSide(context, prefKey))
     }
 
     /** «Así lo quiero» o Ajustes: se guarda para siempre y se acaba la prueba. */
     fun save(context: Context, side: LandscapeSide) {
-        AppPrefs.setNunchukSide(context, side.pref)
+        AppPrefs.setLandscapeSide(context, prefKey, side.pref)
         savedFlow.value = side
         provisionalFlow.value = null
     }
@@ -35,3 +36,9 @@ object NunchukSide {
         provisionalFlow.value = side
     }
 }
+
+/** Lado del mando + Nunchuk de Dolphin. */
+object NunchukSide : LandscapeSideState("nunchukSide")
+
+/** Lado del GamePad de Wii U (también el Pro Controller: es la misma pantalla). */
+object GamePadSide : LandscapeSideState("gamePadSide")

@@ -54,6 +54,7 @@ import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.service.LinkFailure
 import dev.pepotech.pepomote.service.LaunchAction
+import dev.pepotech.pepomote.service.GamePadSide
 import dev.pepotech.pepomote.service.LandscapeOrientation
 import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkForegroundService
@@ -239,6 +240,7 @@ class MainActivity : ComponentActivity() {
         hideSystemBars()
         UiSounds.init(this)
         NunchukSide.load(this)
+        GamePadSide.load(this)
         // Aviso de versión nueva: lo ya guardado se enseña al momento; la
         // consulta a GitHub (si toca: activada y ≥ 24 h) espera a que el
         // inicio esté en pantalla
@@ -449,17 +451,21 @@ private fun Root(activity: MainActivity) {
 
     // Orientación: el GamePad y el mando + Nunchuk de Dolphin van fijos en
     // apaisado; todo lo demás gira únicamente si el giro automático del
-    // sistema está activo (con el bloqueo de giro puesto, la app no gira). En
-    // el GamePad el sensor elige entre los dos apaisados; el mando + Nunchuk
-    // va hacia el lado elegido (Ajustes, o el que se confirme la primera vez:
-    // hasta entonces, el sensor). Al salir del mando, como estaba.
+    // sistema está activo (con el bloqueo de giro puesto, la app no gira).
+    // Cada uno de los dos va hacia su lado elegido (Ajustes, o el que se
+    // confirme la primera vez: hasta entonces, el sensor). Al salir del
+    // mando, como estaba.
     val padIntent by LinkState.intent.collectAsState()
-    val sideSaved by NunchukSide.saved.collectAsState()
-    val sideProvisional by NunchukSide.provisional.collectAsState()
+    val nunchukSaved by NunchukSide.saved.collectAsState()
+    val nunchukProvisional by NunchukSide.provisional.collectAsState()
+    val gamePadSaved by GamePadSide.saved.collectAsState()
+    val gamePadProvisional by GamePadSide.provisional.collectAsState()
     val wantLandscape = activity.currentScreen == Screen.Controller && Route.forcesLandscape(link, padIntent)
-    val landscapeSide =
-        if (wantLandscape && Route.wiiLandscapeNunchuk(link)) LandscapeSide.effective(sideSaved, sideProvisional)
-        else LandscapeSide.Sensor
+    val landscapeSide = when {
+        !wantLandscape -> LandscapeSide.Sensor
+        Route.wiiLandscapeNunchuk(link) -> LandscapeSide.effective(nunchukSaved, nunchukProvisional)
+        else -> LandscapeSide.effective(gamePadSaved, gamePadProvisional)
+    }
     LaunchedEffect(wantLandscape, landscapeSide) {
         activity.requestedOrientation = when {
             !wantLandscape -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED

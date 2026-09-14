@@ -48,6 +48,13 @@ enum AppPrefs {
         set { d.set(newValue, forKey: nunchukSideKey) }
     }
 
+    /// Lado del GamePad de Wii U apaisado (`LandscapeSide`), aparte del del mando + Nunchuk.
+    static let gamePadSideKey = "gamePadSide"
+    static var gamePadSide: String {
+        get { d.string(forKey: gamePadSideKey) ?? "" }
+        set { d.set(newValue, forKey: gamePadSideKey) }
+    }
+
     /// Avisos del receptor en pantalla («Dolphin configurado…»): unos
     /// segundos sobre el mando al cambiar de modo. Apagados, no se enseñan.
     static var receiverNotices: Bool {

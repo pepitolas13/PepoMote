@@ -30,21 +30,7 @@ struct SettingsScreen: View {
                             LinkState.shared.sendNunchuk?($0)
                         }
                     // Lado del mando + Nunchuk apaisado: se pregunta la primera vez; aquí se cambia
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tr("side_title")).pepoTitle()
-                        Text(tr("side_sub")).pepoBody()
-                        HStack(spacing: 8) {
-                            ForEach([LandscapeSide.left, .right, .sensor], id: \.self) { side in
-                                ModeChip(label: tr(sideLabel(side)), selected: model.nunchukSide == side) {
-                                    model.saveNunchukSide(side)
-                                }
-                            }
-                        }
-                        .padding(.top, 10)
-                    }
-                    .padding(18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .pepoCard()
+                    SideRow(title: tr("side_title"), subtitle: tr("side_sub"), side: model.nunchukSide) { model.saveNunchukSide($0) }
                     // GamePad de Wii U sin pantalla táctil: botones más grandes
                     SettingRow(title: tr("noscreen_title"), subtitle: tr("noscreen_sub"), on: $noScreen)
                         .onChange(of: noScreen) {
@@ -64,6 +50,8 @@ struct SettingsScreen: View {
                         LinkState.shared.sendScreenOnly?($0)
                     }
                     .onChange(of: fullScreenKb) { AppPrefs.gamePadFullScreenKeyboard = $0 }
+                    // Lado del GamePad de Wii U: el suyo, aparte del mando + Nunchuk
+                    SideRow(title: tr("side_gamepad_title"), subtitle: tr("side_gamepad_sub"), side: model.gamePadSide) { model.saveGamePadSide($0) }
                     // Avisos del receptor sobre el mando al cambiar de modo
                     SettingRow(title: tr("notices_title"), subtitle: tr("notices_sub"), on: $notices)
                         .onChange(of: notices) { AppPrefs.receiverNotices = $0 }
@@ -98,6 +86,30 @@ struct SettingsScreen: View {
         .frame(maxWidth: 620)
         .frame(maxWidth: .infinity)
         .background(Pepo.background.ignoresSafeArea())
+    }
+}
+
+/// Tarjeta del lado de un mando apaisado fijo: Izquierda / Derecha / Según el sensor.
+private struct SideRow: View {
+    let title: String
+    let subtitle: String
+    let side: LandscapeSide
+    let onPick: (LandscapeSide) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).pepoTitle()
+            Text(subtitle).pepoBody()
+            HStack(spacing: 8) {
+                ForEach([LandscapeSide.left, .right, .sensor], id: \.self) { s in
+                    ModeChip(label: tr(sideLabel(s)), selected: side == s) { onPick(s) }
+                }
+            }
+            .padding(.top, 10)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .pepoCard()
     }
 }
 

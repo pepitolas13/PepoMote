@@ -41,6 +41,7 @@ final class ScreenshotTests: XCTestCase {
         LinkState.shared.publish(.disconnected)
         ScreenLink.shared.release()
         AppModel.shared.nunchukSide = .unset
+        AppModel.shared.gamePadSide = .unset
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKey)
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKeyboardKey)
@@ -108,10 +109,15 @@ final class ScreenshotTests: XCTestCase {
 
     func testPantallasApaisadas() throws {
         for (dev, size) in Self.landscape {
+            // El lado del GamePad ya elegido en casi todas; la pregunta, en una
+            AppModel.shared.gamePadSide = .left
             LinkState.shared.publish(connected(mode: LinkState.modePointer))
             try shoot(ControllerLandscapeScreen(showChips: true, onDisconnect: {}), "landscape-pointer-\(dev)", size)
             LinkState.shared.publish(connected(mode: LinkState.modeCemu))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-\(dev)", size)
+            AppModel.shared.gamePadSide = .unset
+            try shoot(GamePadScreen(onDisconnect: {}), "gamepad-ask-\(dev)", size)
+            AppModel.shared.gamePadSide = .left
             LinkState.shared.publish(connected(mode: LinkState.modeCemu, pad: LinkState.padPro, slot: 1))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-pro-\(dev)", size)
             // Ajuste «GamePad sin pantalla táctil»: botones más grandes

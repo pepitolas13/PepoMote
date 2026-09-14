@@ -36,6 +36,9 @@ final class AppModel: ObservableObject {
     @Published var nunchukSide = LandscapeSide.fromPref(AppPrefs.nunchukSide)
     /// «Darle la vuelta» sin confirmar aún (mientras se pregunta); nil fuera de la prueba.
     @Published var nunchukSideProvisional: LandscapeSide?
+    /// Lado elegido para el GamePad de Wii U (el suyo, aparte del mando + Nunchuk).
+    @Published var gamePadSide = LandscapeSide.fromPref(AppPrefs.gamePadSide)
+    @Published var gamePadSideProvisional: LandscapeSide?
 
     private let link = LinkState.shared
     private let service = LinkService.shared
@@ -210,6 +213,13 @@ final class AppModel: ObservableObject {
         AppPrefs.nunchukSide = side.rawValue
         nunchukSide = side
         nunchukSideProvisional = nil
+    }
+
+    /// Lo mismo para el GamePad de Wii U.
+    func saveGamePadSide(_ side: LandscapeSide) {
+        AppPrefs.gamePadSide = side.rawValue
+        gamePadSide = side
+        gamePadSideProvisional = nil
     }
 
     /// Reconectar desde una cabecera «Sin conexión».

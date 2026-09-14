@@ -1,5 +1,6 @@
 package dev.pepotech.pepomote.ui.screens
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -33,12 +34,39 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.service.GamePadSide
 import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.NunchukSide
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
+
+/** Tarjeta del lado de un mando apaisado fijo: Izquierda / Derecha / Según el sensor. */
+@Composable
+private fun SideCard(@StringRes title: Int, @StringRes sub: Int, side: LandscapeSide, onPick: (LandscapeSide) -> Unit) {
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+        border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(sub), style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((label, s) in listOf(
+                    R.string.side_left to LandscapeSide.Left,
+                    R.string.side_right to LandscapeSide.Right,
+                    R.string.side_sensor to LandscapeSide.Sensor
+                )) {
+                    ModeChip(stringResource(label), selected = side == s) { onPick(s) }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
@@ -51,6 +79,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var fullScreenKb by remember { mutableStateOf(AppPrefs.gamePadFullScreenKeyboard(context)) }
     var ownNunchuk by remember { mutableStateOf(AppPrefs.ownNunchuk(context)) }
     val nunchukSide by NunchukSide.saved.collectAsState()
+    val gamePadSide by GamePadSide.saved.collectAsState()
     var notices by remember { mutableStateOf(AppPrefs.receiverNotices(context)) }
     var updateCheck by remember { mutableStateOf(AppPrefs.updateCheckEnabled(context)) }
     val versionName = remember {
@@ -202,27 +231,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
 
         // Lado del mando + Nunchuk apaisado: se pregunta la primera vez; aquí se cambia
         Spacer(Modifier.height(14.dp))
-        Card(
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
-            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                Text(stringResource(R.string.side_title), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.side_sub), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for ((label, side) in listOf(
-                        R.string.side_left to LandscapeSide.Left,
-                        R.string.side_right to LandscapeSide.Right,
-                        R.string.side_sensor to LandscapeSide.Sensor
-                    )) {
-                        ModeChip(stringResource(label), selected = nunchukSide == side) { NunchukSide.save(context, side) }
-                    }
-                }
-            }
-        }
+        SideCard(R.string.side_title, R.string.side_sub, nunchukSide) { NunchukSide.save(context, it) }
 
         // GamePad de Wii U sin pantalla táctil: botones más grandes
         Spacer(Modifier.height(14.dp))
@@ -315,6 +324,10 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                 )
             }
         }
+
+        // Lado del GamePad de Wii U: el suyo, aparte del mando + Nunchuk
+        Spacer(Modifier.height(14.dp))
+        SideCard(R.string.side_gamepad_title, R.string.side_gamepad_sub, gamePadSide) { GamePadSide.save(context, it) }
 
         // Avisos del receptor sobre el mando al cambiar de modo
         Spacer(Modifier.height(14.dp))

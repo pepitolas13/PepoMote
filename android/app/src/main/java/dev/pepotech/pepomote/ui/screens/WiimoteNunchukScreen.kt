@@ -1,7 +1,6 @@
 package dev.pepotech.pepomote.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,7 +26,6 @@ import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.R
@@ -270,6 +267,7 @@ fun WiimoteNunchukScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> U
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = (m.headerH + 4f).dp),
+                title = stringResource(R.string.side_ask),
                 onFlip = { NunchukSide.setProvisional(shown.flipped()) },
                 onKeep = { NunchukSide.save(context, shown) }
             )
@@ -280,26 +278,5 @@ fun WiimoteNunchukScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> U
                 .align(Alignment.TopCenter)
                 .padding(top = 84.dp)
         )
-    }
-}
-
-/** Pregunta de la primera vez: ¿el mando está bien así? Darle la vuelta / Así lo quiero. */
-@Composable
-private fun SideAskCard(modifier: Modifier, onFlip: () -> Unit, onKeep: () -> Unit) {
-    Column(
-        modifier = modifier
-            .widthIn(max = 340.dp)
-            .background(PepoColors.Card, RoundedCornerShape(14.dp))
-            .border(1.5.dp, PepoColors.Blue, RoundedCornerShape(14.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(stringResource(R.string.side_ask), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-        Text(stringResource(R.string.side_ask_sub), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ModeChip(stringResource(R.string.side_flip), selected = false, onClick = onFlip)
-            ModeChip(stringResource(R.string.side_keep), selected = true, onClick = onKeep)
-        }
     }
 }

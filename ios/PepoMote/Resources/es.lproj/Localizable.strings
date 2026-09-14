@@ -82,6 +82,9 @@
 "side_ask_sub" = "Se quedará siempre hacia este lado (se cambia en Ajustes)";
 "side_flip" = "Darle la vuelta";
 "side_keep" = "Así lo quiero";
+"side_gamepad_title" = "Lado del GamePad de Wii U";
+"side_gamepad_sub" = "Hacia dónde se gira el GamePad (y el Pro Controller) de Wii U, aparte del mando + Nunchuk. Se pregunta la primera vez y se queda fijo";
+"side_ask_gamepad" = "¿El GamePad está bien así?";
 "link_other_pc" = "Vincular con otro PC";
 "link_other_pc_sub" = "Escanear un QR nuevo";
 "sens_note" = "La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.";

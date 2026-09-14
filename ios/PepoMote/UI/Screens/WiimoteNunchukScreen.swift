@@ -156,6 +156,7 @@ struct WiimoteNunchukScreen: View {
                     let shown = LandscapeSide.effective(saved: LandscapeSide.current(OrientationLock.current), provisional: model.nunchukSideProvisional)
                     VStack {
                         SideAskCard(
+                            title: tr("side_ask"),
                             onFlip: { model.nunchukSideProvisional = shown.flipped },
                             onKeep: { model.saveNunchukSide(shown) }
                         )
@@ -204,14 +205,17 @@ struct WiimoteNunchukScreen: View {
     }
 }
 
-/// Pregunta de la primera vez: ¿el mando está bien así? Darle la vuelta / Así lo quiero.
-private struct SideAskCard: View {
+/// Pregunta de la primera vez de un mando apaisado fijo (mando + Nunchuk,
+/// GamePad): ¿está bien así? «Darle la vuelta» lo gira 180° y «Así lo quiero»
+/// guarda ese lado para siempre.
+struct SideAskCard: View {
+    let title: String
     let onFlip: () -> Void
     let onKeep: () -> Void
 
     var body: some View {
         VStack(spacing: 6) {
-            Text(tr("side_ask")).pepoTitle().multilineTextAlignment(.center)
+            Text(title).pepoTitle().multilineTextAlignment(.center)
             Text(tr("side_ask_sub")).pepoBody().multilineTextAlignment(.center)
             HStack(spacing: 10) {
                 ModeChip(label: tr("side_flip"), selected: false, action: onFlip)

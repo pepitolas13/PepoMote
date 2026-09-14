@@ -72,6 +72,8 @@ import androidx.compose.ui.unit.sp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.net.ScreenClient
 import dev.pepotech.pepomote.sensor.SenderKind
+import dev.pepotech.pepomote.service.GamePadSide
+import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.Route
 import dev.pepotech.pepomote.service.ScreenLink
@@ -126,6 +128,14 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val engine = LinkState.motion
     val rotation = rememberDisplayRotation()
     val screen by ScreenLink.client.collectAsState()
+    // Primera vez: el lado del apaisado lo ha elegido el sensor; se pregunta
+    // si es el bueno y se guarda para siempre (Ajustes lo cambia; aparte del
+    // lado del mando + Nunchuk). Al salir sin confirmar, la prueba se olvida
+    val sideSaved by GamePadSide.saved.collectAsState()
+    val sideProvisional by GamePadSide.provisional.collectAsState()
+    DisposableEffect(Unit) {
+        onDispose { GamePadSide.setProvisional(null) }
+    }
 
     // «Teclado»: texto para el teclado en pantalla de Cemu (GamePad y Pro)
     var keyboardOpen by remember { mutableStateOf(false) }
@@ -454,6 +464,18 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                     )
                 }
             }
+        }
+
+        if (sideSaved == LandscapeSide.Unset) {
+            val shown = LandscapeSide.effective(LandscapeSide.current(rotation), sideProvisional)
+            SideAskCard(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = if (fullScreen) 8.dp else headerH + gap),
+                title = stringResource(R.string.side_ask_gamepad),
+                onFlip = { GamePadSide.setProvisional(shown.flipped()) },
+                onKeep = { GamePadSide.save(context, shown) }
+            )
         }
 
         NoticeBanner(

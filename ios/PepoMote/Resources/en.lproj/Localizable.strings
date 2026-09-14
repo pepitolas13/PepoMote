@@ -82,6 +82,9 @@
 "side_ask_sub" = "It will always face this side (change it in Settings)";
 "side_flip" = "Flip it";
 "side_keep" = "Keep it like this";
+"side_gamepad_title" = "Wii U GamePad side";
+"side_gamepad_sub" = "Which way the Wii U GamePad (and Pro Controller) turns, separately from the Wii Remote + Nunchuk. Asked the first time and then fixed";
+"side_ask_gamepad" = "Is the GamePad the right way up?";
 "link_other_pc" = "Pair with another PC";
 "link_other_pc_sub" = "Scan a new QR";
 "sens_note" = "The pointer sensitivity is set in PepoMote's window on the PC.";

@@ -171,7 +171,8 @@ hasta iOS 16.6.1 / 17.0: no sirve en dispositivos actuales.
   **Teclado** arriba a la derecha. Ver `docs/SETUP-CEMU.md`.
 - «**Lado del mando + Nunchuk**» (1.6): la primera vez que sale el mando +
   Nunchuk apaisado se pregunta si está bien girado («Darle la vuelta» / «Así
-  lo quiero») y el lado se queda fijo; en Ajustes se cambia.
+  lo quiero») y el lado se queda fijo; en Ajustes se cambia. El GamePad de
+  Wii U tiene el suyo, aparte.
 - La cruceta es de una pieza, como la del Mando de Wii (1.6): deslizar el
   pulgar cambia de dirección sin levantarlo y las esquinas son diagonales.
 
