@@ -68,6 +68,11 @@
 "mode_dolphin_nunchuk" = "Dolphin · Nunchuk";
 "noscreen_title" = "GamePad without touch screen";
 "noscreen_sub" = "Removes the Wii U GamePad's screen (and the second screen) so the buttons get bigger";
+"fullscreen_title" = "GamePad screen full screen";
+"fullscreen_sub" = "To play with a real controller plugged into the PC: the phone only shows Cemu's GamePad screen (and takes touch), no sticks or buttons. When entering Wii U as the GamePad";
+"fullscreen_kb_title" = "Keyboard button";
+"fullscreen_kb_sub" = "A small button at the top right to type into Cemu's on-screen keyboard";
+"fullscreen_old_receiver" = "The receiver does not know about full screen: update it";
 "link_other_pc" = "Pair with another PC";
 "link_other_pc_sub" = "Scan a new QR";
 "sens_note" = "The pointer sensitivity is set in PepoMote's window on the PC.";

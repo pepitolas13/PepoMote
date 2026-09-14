@@ -5,6 +5,8 @@ struct SettingsScreen: View {
     @State private var sounds = AppPrefs.soundsEnabled
     @State private var dolphinChips = AppPrefs.showDolphinChips
     @State private var noScreen = AppPrefs.gamePadNoScreen
+    @State private var fullScreen = AppPrefs.gamePadFullScreen
+    @State private var fullScreenKb = AppPrefs.gamePadFullScreenKeyboard
     @State private var ownNunchuk = AppPrefs.ownNunchuk
     @State private var notices = AppPrefs.receiverNotices
     @State private var updateCheck = AppPrefs.updateCheckEnabled
@@ -29,7 +31,23 @@ struct SettingsScreen: View {
                         }
                     // GamePad de Wii U sin pantalla táctil: botones más grandes
                     SettingRow(title: tr("noscreen_title"), subtitle: tr("noscreen_sub"), on: $noScreen)
-                        .onChange(of: noScreen) { AppPrefs.gamePadNoScreen = $0 }
+                        .onChange(of: noScreen) {
+                            AppPrefs.gamePadNoScreen = $0
+                            if $0 { fullScreen = false }
+                        }
+                    // Pantalla del GamePad a pantalla completa (mando real en el PC),
+                    // con la subopción del botón de teclado
+                    SettingRowWithSub(
+                        title: tr("fullscreen_title"), subtitle: tr("fullscreen_sub"), on: $fullScreen,
+                        subTitle: tr("fullscreen_kb_title"), subSubtitle: tr("fullscreen_kb_sub"), subOn: $fullScreenKb
+                    )
+                    .onChange(of: fullScreen) {
+                        AppPrefs.gamePadFullScreen = $0
+                        if $0 { noScreen = false }
+                        // Con el enlace vivo se aplica ya (el receptor lo confirma con el eco)
+                        LinkState.shared.sendScreenOnly?($0)
+                    }
+                    .onChange(of: fullScreenKb) { AppPrefs.gamePadFullScreenKeyboard = $0 }
                     // Avisos del receptor sobre el mando al cambiar de modo
                     SettingRow(title: tr("notices_title"), subtitle: tr("notices_sub"), on: $notices)
                         .onChange(of: notices) { AppPrefs.receiverNotices = $0 }
@@ -64,6 +82,50 @@ struct SettingsScreen: View {
         .frame(maxWidth: 620)
         .frame(maxWidth: .infinity)
         .background(Pepo.background.ignoresSafeArea())
+    }
+}
+
+/// Fila con una subopción debajo, atenuada y bloqueada mientras la principal
+/// está apagada.
+private struct SettingRowWithSub: View {
+    let title: String
+    let subtitle: String
+    @Binding var on: Bool
+    let subTitle: String
+    let subSubtitle: String
+    @Binding var subOn: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).pepoTitle()
+                    Text(subtitle).pepoBody()
+                }
+                Spacer()
+                Toggle("", isOn: $on)
+                    .labelsHidden()
+                    .tint(Pepo.blue)
+            }
+            .padding(18)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(subTitle).pepoTitle()
+                    Text(subSubtitle).pepoBody()
+                }
+                Spacer()
+                Toggle("", isOn: $subOn)
+                    .labelsHidden()
+                    .tint(Pepo.blue)
+                    .disabled(!on)
+            }
+            .padding(.leading, 30)
+            .padding(.trailing, 18)
+            .padding(.bottom, 16)
+            .opacity(on ? 1 : 0.5)
+        }
+        .frame(maxWidth: .infinity)
+        .pepoCard()
     }
 }
 

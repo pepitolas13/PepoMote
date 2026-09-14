@@ -19,6 +19,9 @@ struct ConnectedLink: Equatable {
     /// El receptor confirmó el Nunchuk en el mismo móvil (`ok.nunchuk` o eco
     /// de `nunchuk`): en Dolphin, apaisado = mando + Nunchuk.
     var ownNunchuk: Bool = false
+    /// El receptor confirmó «solo pantalla» (`ok.screen_only` o eco de
+    /// `screen_only`); nil = receptor anterior a 1.5.53, que no lo conoce.
+    var screenOnly: Bool? = nil
 }
 
 enum UiLink: Equatable {
@@ -86,6 +89,8 @@ final class LinkState: ObservableObject {
     var sendText: ((String) -> Void)?
     /// Nunchuk en el mismo móvil (modo Dolphin): pedirlo o quitarlo; el eco lo confirma.
     var sendNunchuk: ((Bool) -> Void)?
+    /// Modo Wii U: el móvil solo como pantalla táctil (pantalla completa); el eco lo confirma.
+    var sendScreenOnly: ((Bool) -> Void)?
     /// Motor de sensores del enlace vivo (la pantalla GamePad le fija kind/rotation).
     weak var motion: MotionEngine?
 

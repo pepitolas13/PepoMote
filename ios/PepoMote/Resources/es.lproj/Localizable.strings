@@ -68,6 +68,11 @@
 "mode_dolphin_nunchuk" = "Dolphin · Nunchuk";
 "noscreen_title" = "GamePad sin pantalla táctil";
 "noscreen_sub" = "Quita la pantalla del GamePad de Wii U (y la doble pantalla) para que los botones sean más grandes";
+"fullscreen_title" = "Pantalla del GamePad a pantalla completa";
+"fullscreen_sub" = "Para jugar con un mando de verdad conectado al PC: el móvil solo enseña la pantalla del GamePad de Cemu (y responde al tacto), sin sticks ni botones. Al entrar en Wii U como GamePad";
+"fullscreen_kb_title" = "Botón de teclado";
+"fullscreen_kb_sub" = "Un botón pequeño arriba a la derecha para escribir en el teclado en pantalla de Cemu";
+"fullscreen_old_receiver" = "El receptor no conoce la pantalla completa: actualízalo";
 "link_other_pc" = "Vincular con otro PC";
 "link_other_pc_sub" = "Escanear un QR nuevo";
 "sens_note" = "La sensibilidad del puntero se ajusta en la ventana de PepoMote del PC.";

@@ -41,13 +41,15 @@ final class ScreenshotTests: XCTestCase {
         LinkState.shared.publish(.disconnected)
         ScreenLink.shared.release()
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
+        UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKey)
+        UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKeyboardKey)
     }
 
     private func connected(mode: String, pad: String = LinkState.padGamepad, role: String = LinkState.roleWiimote, slot: Int = 0) -> UiLink {
         .connected(ConnectedLink(pcName: "SALON", mode: mode, rttMs: 12, sensorHz: 100, slot: slot, role: role, player: slot + 1, supportsCemu: true, pad: pad))
     }
 
-    private func shoot<V: View>(_ view: V, _ name: String, _ size: CGSize) throws {
+    private func shoot<V: View>(_ view: V, _ name: String, _ size: CGSize, minBytes: Int = 10_000) throws {
         guard let dir else { return }
         let content = view
             .environmentObject(AppModel.shared)
@@ -80,7 +82,7 @@ final class ScreenshotTests: XCTestCase {
             XCTFail("\(name): sin imagen")
             return
         }
-        XCTAssertGreaterThan(png.count, 10_000, "\(name): la captura parece vacía")
+        XCTAssertGreaterThan(png.count, minBytes, "\(name): la captura parece vacía")
         try png.write(to: dir.appendingPathComponent("\(name).png"))
     }
 
@@ -113,6 +115,12 @@ final class ScreenshotTests: XCTestCase {
             LinkState.shared.publish(connected(mode: LinkState.modeCemu))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-noscreen-\(dev)", size)
             UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
+            // Ajuste «Pantalla del GamePad a pantalla completa»: negro, ✕ y Teclado,
+            // el placeholder de la pantalla (sin canal en los tests: pesa poco)
+            UserDefaults.standard.set(true, forKey: AppPrefs.gamePadFullScreenKey)
+            LinkState.shared.publish(connected(mode: LinkState.modeCemu))
+            try shoot(GamePadScreen(onDisconnect: {}), "gamepad-fullscreen-\(dev)", size, minBytes: 2_000)
+            UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKey)
             LinkState.shared.publish(connected(mode: LinkState.modeDolphin, pad: "nunchuk", role: LinkState.roleNunchuk, slot: 1))
             try shoot(NunchukScreen(onDisconnect: {}), "nunchuk-\(dev)", size)
             // Dolphin con el Nunchuk en el mismo móvil (confirmado por el receptor)

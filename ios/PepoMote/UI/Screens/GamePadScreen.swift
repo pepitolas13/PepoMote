@@ -127,18 +127,42 @@ struct GamePadScreen: View {
     @ObservedObject var link = LinkState.shared
     @ObservedObject var screenLink = ScreenLink.shared
     @AppStorage(AppPrefs.gamePadNoScreenKey) private var noScreenPref = false
+    @AppStorage(AppPrefs.gamePadFullScreenKey) private var fullScreenPref = false
+    @AppStorage(AppPrefs.gamePadFullScreenKeyboardKey) private var fullScreenKb = true
+    @State private var warnedOld = false
     @Environment(\.displayScale) private var displayScale
     @State private var keyboardOpen = false
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
 
     private var operative: Bool { Route.isGamePad(link.link) }
 
+    /// Doble pantalla: solo el GamePad (no un Pro Controller), con el modo
+    /// confirmado y sin el ajuste «GamePad sin pantalla».
+    private var wantScreen: Bool {
+        operative && link.link.connected?.pad == LinkState.padGamepad && !noScreenPref
+    }
+
+    /// Pantalla completa: solo la pantalla de Cemu y el táctil (mando real en
+    /// el PC). Nunca sin el modo confirmado: el estado «Activando Wii U…»
+    /// sigue con cabecera y «Salir».
+    private var fullScreen: Bool { wantScreen && fullScreenPref }
+
     var body: some View {
         GeometryReader { geo in
             content(size: geo.size)
                 .frame(width: geo.size.width, height: geo.size.height)
         }
-        .background(Pepo.background.ignoresSafeArea())
+        .background((fullScreen ? Color.black : Pepo.background).ignoresSafeArea())
+        // Receptor anterior a 1.5.53: no confirma «solo pantalla» ni en el ok
+        // ni con el eco; se avisa una vez (a los 2 s, por si el eco llega tarde)
+        .task(id: fullScreen && link.link.connected?.screenOnly == nil) {
+            guard fullScreen, link.link.connected?.screenOnly == nil, !warnedOld else { return }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if !Task.isCancelled, fullScreen, link.link.connected?.screenOnly == nil {
+                warnedOld = true
+                LinkState.shared.publishNotice(tr("fullscreen_old_receiver"))
+            }
+        }
         .sheet(isPresented: $keyboardOpen) {
             KeyboardSheet { keyboardOpen = false }
         }
@@ -172,12 +196,40 @@ struct GamePadScreen: View {
         let operative = self.operative
         let pro = connected?.pad == LinkState.padPro
         let m = PadMetrics(size: size, noScreen: noScreenPref, pro: pro)
-        // Doble pantalla: solo el GamePad (no un Pro Controller), con el modo
-        // confirmado y sin el ajuste «GamePad sin pantalla»
-        let wantScreen = operative && connected?.pad == LinkState.padGamepad && !noScreenPref
-        let request = m.screenRequest(scale: displayScale)
+        let wantScreen = self.wantScreen
+        let fullScreen = self.fullScreen
+        // Tamaño que se pide al PC: en pantalla completa, el área entera en
+        // píxeles (como mucho 854×480, estable); si no, lo de siempre
+        let request = fullScreen
+            ? FullScreenMetrics.streamRequest(
+                containerPxW: Int((size.width * displayScale).rounded()),
+                containerPxH: Int((size.height * displayScale).rounded())
+            )
+            : m.screenRequest(scale: displayScale)
         let onKeyboard: (() -> Void)? = operative ? { keyboardOpen = true } : nil
-        return ZStack(alignment: .top) {
+        return Group {
+            if fullScreen {
+                FullScreenGamePadView(
+                    size: size, client: screenLink.client, showKeyboard: fullScreenKb,
+                    onKeyboard: { keyboardOpen = true }, onDisconnect: onDisconnect
+                )
+            } else {
+                normalContent(m: m, connected: connected, operative: operative, onKeyboard: onKeyboard)
+            }
+        }
+        .onChange(of: wantScreen) { want in
+            if want { screenLink.request(width: request.0, height: request.1) } else { screenLink.release() }
+        }
+        .onChange(of: [request.0, request.1]) { px in
+            if wantScreen { screenLink.request(width: px[0], height: px[1]) }
+        }
+        .onAppear {
+            if wantScreen { screenLink.request(width: request.0, height: request.1) }
+        }
+    }
+
+    private func normalContent(m: PadMetrics, connected: ConnectedLink?, operative: Bool, onKeyboard: (() -> Void)?) -> some View {
+        ZStack(alignment: .top) {
             VStack(spacing: 0) {
                 GamePadHeader(
                     link: link.link, operative: operative, height: m.headerH, width: m.w,
@@ -201,15 +253,6 @@ struct GamePadScreen: View {
                 .allowsHitTesting(operative)
             }
             NoticeBanner().padding(.top, m.headerH + m.selectorH + m.gap * 2)
-        }
-        .onChange(of: wantScreen) { want in
-            if want { screenLink.request(width: request.0, height: request.1) } else { screenLink.release() }
-        }
-        .onChange(of: request.0) { px in
-            if wantScreen { screenLink.request(width: px, height: px * 9 / 16) }
-        }
-        .onAppear {
-            if wantScreen { screenLink.request(width: request.0, height: request.1) }
         }
     }
 
@@ -472,6 +515,107 @@ private struct FaceButtons: View {
             RoundButton(label: "B", size: btn, bit: Btn.b, textSize: text).offset(y: off)
         }
         .frame(width: size, height: size)
+    }
+}
+
+/// «Pantalla del GamePad a pantalla completa»: solo la pantalla de Cemu,
+/// ajustada a su proporción real sobre fondo negro, con el táctil sobre la
+/// imagen (un gesto que empieza en las bandas negras se ignora), una ✕
+/// pequeña arriba a la izquierda para salir y, si el ajuste lo pide, el botón
+/// de teclado arriba a la derecha. Sin sticks ni botones: el mando real va
+/// en el PC.
+private struct FullScreenGamePadView: View {
+    let size: CGSize
+    let client: ScreenClient?
+    let showKeyboard: Bool
+    let onKeyboard: () -> Void
+    let onDisconnect: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            FullScreenTouchView(size: size, client: client)
+            NoticeBanner().padding(.top, 8)
+            HStack(alignment: .top) {
+                Button(action: onDisconnect) {
+                    Text("✕")
+                        .font(PepoFont.nunito(16, .bold))
+                        .foregroundColor(Pepo.text)
+                        .frame(width: 34, height: 34)
+                        .background(Pepo.card.opacity(0.7))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("exit"))
+                Spacer()
+                if showKeyboard {
+                    KeyboardButton(compact: true, action: onKeyboard).opacity(0.7)
+                }
+            }
+            .padding(8)
+        }
+    }
+}
+
+/// La pantalla del GamePad a pantalla completa: la misma imagen (y el mismo
+/// ACK de fotograma) que `ScreenImageView`, pero el rectángulo de la imagen
+/// (16:9 mientras no hay fotograma) lo da `FullScreenMetrics` y el táctil se
+/// mapea sobre él.
+private struct FullScreenTouchView: View {
+    let size: CGSize
+    let client: ScreenClient?
+    @State private var finger: CGPoint?
+    @State private var ignoring = false
+
+    private var rect: FitRect {
+        FullScreenMetrics.fitRect(container: size, image: client?.image?.image.size)
+    }
+
+    private func report(_ p: CGPoint, _ down: Bool) {
+        let (fx, fy) = FullScreenMetrics.fraction(rect, p)
+        ButtonState.shared.setTouch(fx, fy, down)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let client {
+                ScreenImageView(client: client, width: size.width, height: size.height)
+            } else {
+                Text(tr("touch_screen")).pepoBody()
+            }
+            if let p = finger {
+                Circle()
+                    .fill(Pepo.blue)
+                    .frame(width: 14, height: 14)
+                    .position(p)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { v in
+                    if finger == nil && !ignoring {
+                        // el gesto empieza en las bandas negras: no es un toque en la pantalla
+                        if !FullScreenMetrics.contains(rect, v.startLocation) {
+                            ignoring = true
+                            return
+                        }
+                        Haptics.tick()
+                    }
+                    if ignoring { return }
+                    finger = v.location
+                    report(v.location, true)
+                }
+                .onEnded { v in
+                    if ignoring {
+                        ignoring = false
+                        return
+                    }
+                    finger = nil
+                    report(v.location, false)
+                }
+        )
     }
 }
 
