@@ -7,7 +7,6 @@ mod cemu;
 mod diag;
 mod dolphin;
 mod dsu;
-#[cfg(target_os = "linux")]
 mod firewall;
 #[cfg(any(target_os = "linux", test))]
 mod fixes;

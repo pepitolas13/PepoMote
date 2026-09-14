@@ -148,6 +148,10 @@ pub struct Config {
     /// Evita re-abrir el diálogo de contraseña en cada arranque si se canceló.
     #[serde(default)]
     pub fix_attempted: bool,
+    /// Linux: puerto del móvil que consta abierto en el firewall (reparación
+    /// con éxito, o un móvil que ya entró): con las reglas ilegibles no se avisa.
+    #[serde(default)]
+    pub firewall_opened_port: Option<u16>,
     /// Linux y macOS con varios monitores: nombre de la pantalla de apuntado
     /// ("" = todas: el escritorio entero).
     #[serde(default)]
@@ -184,6 +188,7 @@ impl Default for Config {
             cemu_dir: String::new(),
             dolphin_dir: String::new(),
             fix_attempted: false,
+            firewall_opened_port: None,
             screen: String::new(),
             theme: crate::theme::ThemePref::System,
             lang: None,
@@ -437,8 +442,12 @@ pub struct Shared {
     /// `last_error` es un error de inyección (lo limpia el inyector al
     /// recuperarse, no una conexión nueva).
     pub injection_error: bool,
-    /// Aviso de firewall Linux bloqueando el puerto (None = todo bien).
-    pub firewall_hint: Option<String>,
+    /// Linux: firewall que bloquea (o podría bloquear) el puerto del móvil.
+    pub firewall: Option<crate::firewall::FirewallIssue>,
+    /// Linux: la ventana debe ofrecer la reparación automática (cuenta atrás).
+    pub auto_fix_due: bool,
+    /// Linux: texto de la última reparación con éxito y cuándo (tarjeta «Listo»).
+    pub fix_done: Option<(String, Instant)>,
     /// Backend de inyección activo (pie de la ventana y log); None = sin
     /// inyector todavía.
     pub injector: Option<&'static str>,
@@ -483,7 +492,9 @@ impl Shared {
             text_queue: Vec::new(),
             last_error: None,
             injection_error: false,
-            firewall_hint: None,
+            firewall: None,
+            auto_fix_due: false,
+            fix_done: None,
             injector: None,
             uinput_denied: false,
             uinput_missing: false,

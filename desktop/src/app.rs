@@ -27,9 +27,13 @@ pub struct PepoMoteApp {
     /// Linux: hay pkexec para el botón "Reparar ahora" (se mira una vez).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pkexec_ok: bool,
-    /// Linux: cuándo se copió el comando manual (para el «Copiado» efímero).
+    /// Linux: qué comando manual se copió y cuándo (para el «Copiado» efímero).
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    copied_at: Option<Instant>,
+    copied_at: Option<(String, Instant)>,
+    /// Linux: desde cuándo está a la vista la tarjeta de reparación (cuenta
+    /// atrás de la reparación automática).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    repair_seen_at: Option<Instant>,
     /// macOS: permiso de Accesibilidad (sondeado una vez por segundo).
     #[cfg(target_os = "macos")]
     ax_ok: bool,
@@ -74,6 +78,7 @@ impl PepoMoteApp {
             #[cfg(not(target_os = "linux"))]
             pkexec_ok: false,
             copied_at: None,
+            repair_seen_at: None,
             #[cfg(target_os = "macos")]
             ax_ok: crate::macos::ax_trusted(),
             #[cfg(target_os = "macos")]
@@ -114,7 +119,10 @@ struct Snapshot {
     cemu_screen: Option<CfgStatus>,
     error: Option<String>,
     port_notice: Option<String>,
-    firewall_hint: Option<String>,
+    firewall: Option<crate::firewall::FirewallIssue>,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    auto_fix_due: bool,
+    fix_done: Option<(String, Instant)>,
     /// Backend de inyección activo (pie de la ventana).
     injector: Option<&'static str>,
     uinput_denied: bool,
@@ -185,7 +193,9 @@ impl eframe::App for PepoMoteApp {
                 cemu_screen: s.cemu_screen_status.clone(),
                 error: s.last_error.clone(),
                 port_notice: s.port_notice.clone(),
-                firewall_hint: s.firewall_hint.clone(),
+                firewall: s.firewall,
+                auto_fix_due: s.auto_fix_due,
+                fix_done: s.fix_done.clone(),
                 injector: s.injector,
                 uinput_denied: s.uinput_denied,
                 uinput_missing: s.uinput_missing,
@@ -233,6 +243,8 @@ impl eframe::App for PepoMoteApp {
                                     .color(theme::text_dim()),
                             );
                             ui.add_space(18.0);
+
+                            self.ui_repair(ui, &snap);
 
                             if snap.player_count == 0 {
                                 self.ui_qr(ui, 280.0, tr!("win.waiting"));
@@ -369,92 +381,156 @@ impl PepoMoteApp {
             });
     }
 
-    /// Linux: aviso de firewall/uinput con reparación de un clic (pkexec) y,
-    /// si no hay diálogo de contraseña (sin pkexec, o sesión sin agente de
-    /// polkit), el comando manual listo para copiar. Con el backend Wayland
-    /// nunca hay nada que pintar (uinput ni se intenta); en Windows tampoco
-    /// (los flags jamás se activan).
+    /// Linux: lo que el sistema necesita para que el móvil funcione (uinput
+    /// para el cursor, el puerto del firewall) va ARRIBA de la ventana, con la
+    /// explicación de lo que va a pedir el diálogo de contraseña antes de
+    /// abrirlo (cuenta atrás, o botón), «Listo» al terminar y, sin diálogo
+    /// posible (sin pkexec, sesión sin agente de polkit), los comandos para
+    /// pegar en un terminal. Con el backend Wayland nunca hay uinput que
+    /// pintar; en Windows y macOS los flags jamás se activan.
     fn ui_repair(&mut self, ui: &mut egui::Ui, snap: &Snapshot) {
+        self.ui_fix_done(ui, snap);
         let uinput_problem = snap.uinput_denied || snap.uinput_missing;
-        if snap.firewall_hint.is_none() && !uinput_problem {
+        if snap.firewall.is_none() && !uinput_problem {
+            self.repair_seen_at = None;
             return;
         }
+        let port = self.pairing.port;
+        egui::Frame::none()
+            .fill(theme::card())
+            .stroke(Stroke::new(1.5_f32, theme::warn()))
+            .rounding(theme::RADIUS)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width().min(412.0));
+                ui.label(RichText::new(tr!("fix.title")).size(15.0).strong().color(theme::text()));
+                ui.add_space(4.0);
+                if let Some(fw) = &snap.firewall {
+                    let text = if fw.certain {
+                        tr!("fw.blocked", fw.kind.name(), port)
+                    } else {
+                        tr!("fw.unknown", fw.kind.name(), port)
+                    };
+                    ui.label(RichText::new(text).size(12.0).color(theme::warn()));
+                }
+                if snap.uinput_missing {
+                    ui.label(RichText::new(tr!("fix.uinput_missing")).size(12.0).color(theme::warn()));
+                } else if snap.uinput_denied {
+                    ui.label(RichText::new(tr!("fix.uinput_denied")).size(12.0).color(theme::warn()));
+                }
+                #[cfg(target_os = "linux")]
+                self.ui_repair_actions(ui, snap, uinput_problem, port);
+            });
         ui.add_space(10.0);
-        if let Some(hint) = &snap.firewall_hint {
-            ui.label(RichText::new(hint).size(12.0).color(theme::warn()));
+    }
+
+    /// Tarjeta verde tras una reparación con éxito (30 s o hasta «Vale»).
+    fn ui_fix_done(&mut self, ui: &mut egui::Ui, snap: &Snapshot) {
+        let Some((text, when)) = &snap.fix_done else {
+            return;
+        };
+        if when.elapsed() > Duration::from_secs(30) {
+            self.shared.lock_tolerant().fix_done = None;
+            return;
         }
-        if snap.uinput_missing {
-            ui.label(
-                RichText::new(tr!("fix.uinput_missing"))
-                .size(12.0)
-                .color(theme::warn()),
-            );
-        } else if snap.uinput_denied {
-            ui.label(
-                RichText::new(tr!("fix.uinput_denied"))
-                    .size(12.0)
-                    .color(theme::warn()),
-            );
+        egui::Frame::none()
+            .fill(theme::card())
+            .stroke(Stroke::new(1.5_f32, theme::ok()))
+            .rounding(theme::RADIUS)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width().min(412.0));
+                ui.label(RichText::new(text).size(13.0).strong().color(theme::ok()));
+                if ui.button(RichText::new(tr!("fix.ok_dismiss")).size(12.0)).clicked() {
+                    self.shared.lock_tolerant().fix_done = None;
+                }
+            });
+        ui.add_space(10.0);
+    }
+
+    /// Botones y textos de la reparación: explicación del diálogo, cuenta
+    /// atrás de la automática, «Reparar ahora» / «Ahora no», y los comandos
+    /// manuales cuando no hay diálogo posible.
+    #[cfg(target_os = "linux")]
+    fn ui_repair_actions(&mut self, ui: &mut egui::Ui, snap: &Snapshot, uinput_problem: bool, port: u16) {
+        ui.add_space(6.0);
+        if snap.fixing {
+            ui.label(RichText::new(tr!("fix.applying")).size(12.0).color(theme::text_dim()));
+            return;
         }
-        #[cfg(target_os = "linux")]
-        {
+        if self.pkexec_ok {
+            ui.label(RichText::new(tr!("fix.explain_dialog", port)).size(11.0).color(theme::text_dim()));
             ui.add_space(4.0);
-            if snap.fixing {
-                ui.label(
-                    RichText::new(tr!("fix.applying"))
-                        .size(12.0)
-                        .color(theme::text_dim()),
-                );
-            } else if self.pkexec_ok {
+            let mut fire = false;
+            if snap.auto_fix_due {
+                let seen = *self.repair_seen_at.get_or_insert_with(Instant::now);
+                if crate::fixes::auto_fire_due(seen, Instant::now()) {
+                    fire = true;
+                } else {
+                    let left = crate::fixes::AUTO_FIX_DELAY.saturating_sub(seen.elapsed()).as_secs() + 1;
+                    ui.label(RichText::new(tr!("fix.auto_in", left)).size(12.0).color(theme::text()));
+                }
+            }
+            ui.horizontal(|ui| {
                 let label = if snap.fix_failed.is_some() { tr!("fix.retry") } else { tr!("fix.now") };
                 if ui.button(RichText::new(label).size(14.0)).clicked() {
-                    crate::fixes::fix_all(self.shared.clone(), self.pairing.port);
+                    fire = true;
                 }
-                match &snap.fix_failed {
-                    Some(why) => {
-                        ui.label(RichText::new(why).size(11.0).color(theme::warn()));
-                    }
-                    None => {
-                        ui.label(
-                            RichText::new(tr!("fix.dialog_once"))
-                                .size(11.0)
-                                .color(theme::text_dim()),
-                        );
-                    }
+                if snap.auto_fix_due && ui.button(RichText::new(tr!("fix.not_now")).size(12.0)).clicked() {
+                    let mut s = self.shared.lock_tolerant();
+                    s.auto_fix_due = false;
+                    s.config.fix_attempted = true;
+                    s.config.save();
+                    self.repair_seen_at = None;
                 }
+            });
+            if fire {
+                self.repair_seen_at = None;
+                crate::fixes::fix_all(self.shared.clone(), port);
             }
-            // Sin pkexec, o con el diálogo fallando (sesión sin agente de
-            // polkit): el comando manual, listo para copiar
-            if uinput_problem && (!self.pkexec_ok || snap.fix_failed.is_some()) {
-                ui.add_space(6.0);
-                let intro = if self.pkexec_ok {
-                    tr!("fix.manual_no_dialog")
-                } else {
-                    tr!("fix.manual_no_pkexec")
-                };
-                ui.label(RichText::new(intro).size(11.0).color(theme::text_dim()));
-                ui.label(
-                    RichText::new(crate::fixes::UINPUT_MANUAL_CMD)
-                        .monospace()
-                        .size(11.0)
-                        .color(theme::text()),
-                );
-                ui.horizontal(|ui| {
-                    if ui.button(RichText::new(tr!("fix.copy_cmd")).size(12.0)).clicked() {
-                        ui.output_mut(|o| o.copied_text = crate::fixes::UINPUT_MANUAL_CMD.to_owned());
-                        self.copied_at = Some(Instant::now());
-                    }
-                    if self.copied_at.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
-                        ui.label(RichText::new(tr!("fix.copied")).size(11.0).color(theme::ok()));
-                    }
-                });
-                ui.label(
-                    RichText::new(tr!("fix.relogin"))
-                    .size(11.0)
-                    .color(theme::text_dim()),
-                );
+            match &snap.fix_failed {
+                Some(why) => {
+                    ui.label(RichText::new(why).size(11.0).color(theme::warn()));
+                }
+                None => {
+                    ui.label(RichText::new(tr!("fix.dialog_once")).size(11.0).color(theme::text_dim()));
+                }
             }
         }
+        // Sin pkexec, o con el diálogo fallando (sesión sin agente de
+        // polkit): los comandos manuales, listos para copiar
+        if !self.pkexec_ok || snap.fix_failed.is_some() {
+            ui.add_space(6.0);
+            let intro = if self.pkexec_ok { tr!("fix.manual_no_dialog") } else { tr!("fix.manual_no_pkexec") };
+            ui.label(RichText::new(intro).size(11.0).color(theme::text_dim()));
+            if uinput_problem {
+                self.ui_manual_cmd(ui, "uinput", crate::fixes::UINPUT_MANUAL_CMD);
+                ui.label(RichText::new(tr!("fix.relogin")).size(11.0).color(theme::text_dim()));
+            }
+            if let Some(fw) = &snap.firewall {
+                ui.label(RichText::new(tr!("fix.manual_firewall")).size(11.0).color(theme::text_dim()));
+                self.ui_manual_cmd(ui, "firewall", &crate::fixes::firewall_manual_cmd(fw.kind, port));
+            }
+        }
+    }
+
+    /// Un comando en monoespaciada con su botón «Copiar comando».
+    #[cfg(target_os = "linux")]
+    fn ui_manual_cmd(&mut self, ui: &mut egui::Ui, id: &str, cmd: &str) {
+        ui.label(RichText::new(cmd).monospace().size(11.0).color(theme::text()));
+        ui.horizontal(|ui| {
+            if ui.button(RichText::new(tr!("fix.copy_cmd")).size(12.0)).clicked() {
+                ui.output_mut(|o| o.copied_text = cmd.to_owned());
+                self.copied_at = Some((id.to_owned(), Instant::now()));
+            }
+            if self
+                .copied_at
+                .as_ref()
+                .is_some_and(|(i, t)| i == id && t.elapsed() < Duration::from_secs(2))
+            {
+                ui.label(RichText::new(tr!("fix.copied")).size(11.0).color(theme::ok()));
+            }
+        });
     }
 
     fn ui_qr(&self, ui: &mut egui::Ui, size: f32, caption: &str) {

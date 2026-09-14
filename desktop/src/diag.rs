@@ -108,9 +108,7 @@ pub fn report() -> String {
     #[cfg(target_os = "linux")]
     out.push(format!(
         "Firewall: {}",
-        crate::firewall::check(crate::pairing::port())
-            .unwrap_or_else(|| "sin ufw/firewalld bloqueando el puerto".to_owned())
-            .replace('\n', " ")
+        crate::firewall::describe(&crate::firewall::check(crate::pairing::port()))
     ));
     out.extend(ports_section(crate::pairing::port(), crate::dsu::port()));
     #[cfg(target_os = "linux")]
@@ -143,9 +141,10 @@ pub fn report() -> String {
     {
         let cfg = crate::state::Config::load();
         out.push(format!(
-            "Reparación: pkexec: {} · fix_attempted: {} · sonido desactivado en esta sesión: {}",
+            "Reparación: pkexec: {} · fix_attempted: {} · puerto abierto según settings: {:?} · sonido desactivado en esta sesión: {}",
             if crate::fixes::pkexec_available() { "sí" } else { "no" },
             cfg.fix_attempted,
+            cfg.firewall_opened_port,
             crate::sound::disabled()
         ));
     }

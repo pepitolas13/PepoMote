@@ -76,6 +76,35 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("fix.exit_code", "código {0}", "code {0}"),
     ("fix.signal", "terminado por una señal", "killed by a signal"),
     ("fix.failed", "Reparación fallida: {0}", "Repair failed: {0}"),
+    ("fix.title", "Configuración del sistema pendiente", "System setup pending"),
+    (
+        "fix.explain_dialog",
+        "Un diálogo del sistema («Se requiere autenticación para ejecutar /bin/sh como superusuario») pedirá tu contraseña de administrador: es PepoMote aplicando esto una sola vez: la regla udev y el módulo uinput para mover el cursor, y el puerto {0} (y mDNS) en el firewall.",
+        "A system dialog (“Authentication is required to run /bin/sh as the super user”) will ask for your admin password: that is PepoMote applying this once: the udev rule and uinput module to move the cursor, and port {0} (and mDNS) in the firewall.",
+    ),
+    ("fix.auto_in", "Se abrirá solo en {0} s", "It opens by itself in {0} s"),
+    ("fix.not_now", "Ahora no", "Not now"),
+    ("fix.done_both", "Listo: cursor y firewall configurados", "Done: cursor and firewall set up"),
+    ("fix.done_uinput", "Listo: cursor configurado (no hay firewall activo)", "Done: cursor set up (no firewall active)"),
+    ("fix.done_partial", "Aplicado en parte: {0}", "Partly applied: {0}"),
+    ("fix.sec_uinput_ok", "cursor configurado", "cursor set up"),
+    ("fix.sec_uinput_no_module", "este kernel no trae el módulo uinput", "this kernel has no uinput module"),
+    ("fix.sec_firewall_ok", "firewall abierto ({0})", "firewall opened ({0})"),
+    ("fix.sec_firewall_none", "sin firewall activo", "no firewall active"),
+    ("fix.sec_error", "{0}: {1}", "{0}: {1}"),
+    ("fix.manual_firewall", "Para abrir el firewall a mano:", "To open the firewall by hand:"),
+    ("fix.ok_dismiss", "Vale", "OK"),
+    // --- firewall (Linux)
+    (
+        "fw.blocked",
+        "El firewall ({0}) está bloqueando el puerto {1} del móvil.",
+        "The firewall ({0}) is blocking the phone's port {1}.",
+    ),
+    (
+        "fw.unknown",
+        "{0} está activo y no puedo leer sus reglas: si el móvil no conecta, el puerto {1} está cerrado.",
+        "{0} is on and its rules cannot be read: if the phone cannot connect, port {1} is closed.",
+    ),
     // --- la ventana no abre (Linux): último recurso, por notificación de escritorio
     ("ui.start_failed_title", "PepoMote no ha podido abrir su ventana", "PepoMote could not open its window"),
     (
