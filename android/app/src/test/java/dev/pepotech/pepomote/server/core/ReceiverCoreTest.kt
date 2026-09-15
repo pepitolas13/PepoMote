@@ -19,6 +19,8 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class ReceiverCoreTest {
     @Test fun discoveryAndDsuVersionUseActualBoundPortsAndRestartReleasesAllSockets() {
@@ -359,16 +361,31 @@ class ReceiverCoreTest {
 
     @Test fun callbacksCanReadStateAndCloseReceiverWithoutDeadlock() {
         val states = CopyOnWriteArrayList<ReceiverSnapshot>()
+        val callbackFailures = CopyOnWriteArrayList<Throwable>()
+        val callbackClosed = CountDownLatch(1)
         lateinit var core: ReceiverCore
         core = ReceiverCore(config()) { state ->
             states += state
-            assertEquals(state.running, core.snapshot().running)
-            if (state.peers.isNotEmpty()) core.close()
+            try {
+                assertEquals(state.running, core.snapshot().running)
+                if (state.peers.isNotEmpty()) {
+                    core.close()
+                    callbackClosed.countDown()
+                }
+            } catch (failure: Throwable) {
+                // ReceiverCore isolates callback failures; report assertions on the test thread.
+                callbackFailures += failure
+                callbackClosed.countDown()
+            }
         }
         core.start()
         try {
             runCatching { Client(core).close() }
-            await { !core.snapshot().running }
+            // The running flag clears before worker joins and the final callback. Wait for
+            // close() itself to return, not an intermediate state from another thread.
+            assertTrue("Callback did not finish closing the receiver", callbackClosed.await(5, TimeUnit.SECONDS))
+            assertTrue("Callback failed: $callbackFailures", callbackFailures.isEmpty())
+            assertFalse(core.snapshot().running)
             assertTrue(states.any { it.running })
             assertTrue(states.any { !it.running })
         } finally { core.close() }
