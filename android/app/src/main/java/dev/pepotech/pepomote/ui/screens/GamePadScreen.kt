@@ -256,7 +256,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                 link, operative, headerH, screen,
                 width = screenW,
                 wantedMode = wantedMode,
-                onKeyboard = if (operative) {
+                onKeyboard = if (operative && (link as? UiLink.Connected)?.textInput != false) {
                     { keyboardOpen = true }
                 } else null,
                 onDisconnect = onDisconnect
@@ -491,7 +491,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                 .padding(top = if (fullScreen) 8.dp else headerH + selectorH + gap * 2)
         )
 
-        if (keyboardOpen) {
+        if (keyboardOpen && (link as? UiLink.Connected)?.textInput != false) {
             KeyboardDialog(
                 onSend = { LinkState.sendText?.invoke(it) },
                 onClose = { keyboardOpen = false },
@@ -690,7 +690,7 @@ internal fun GamePadHeader(
                     ModeChips(
                         current = if (operative) link.mode else wantedMode,
                         supportsCemu = link.supportsCemu,
-                        supportsSwitch = link.supportsSwitch,
+                        supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android",
                         compact = true,
                         modifier = Modifier.layoutId(HeaderSlot.Chips)
                     )

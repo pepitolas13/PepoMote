@@ -3,12 +3,13 @@ package dev.pepotech.pepomote.control
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Estado de botones compartido entre la UI (escribe) y el hilo de sensores (lee).
  * Bits según PROTOCOL.md §4.2. Las pulsaciones pasan por [PressLatch]: un
- * toque, por corto que sea, dura lo suficiente en el cable para llegar.
+ * toque corto se retiene para darle más oportunidades de llegar al receptor.
  */
 object ButtonState {
     const val A = 1 shl 0
@@ -63,7 +64,12 @@ object ButtonState {
 
     private val NO_TOUCH = Touch(0, 0, false)
 
+    /** A reset also invalidates unsent edges when leaving a screen or changing mode. */
+    internal class Change(val buttons: Int, val reset: Boolean = false)
+
+    private val stateLock = Any()
     private val mask = AtomicInteger(0)
+    private val buttonChangeListeners = CopyOnWriteArraySet<(Change) -> Unit>()
     private val recenter = AtomicInteger(0)
     private val scrollAcc = AtomicInteger(0)
 
@@ -87,13 +93,37 @@ object ButtonState {
 
         override fun cancel(task: Runnable) = handler.removeCallbacks(task)
     }) { bit, down ->
-        mask.updateAndGet { if (down) it or bit else it and bit.inv() }
+        // PressLatch already holds its lock. Mutation and notification are one
+        // ordered operation for every subscriber, including a concurrent reset.
+        synchronized(stateLock) {
+            val previous = mask.get()
+            val next = if (down) previous or bit else previous and bit.inv()
+            if (next != previous) {
+                mask.set(next)
+                val change = Change(next)
+                buttonChangeListeners.forEach { it(change) }
+            }
+        }
     }
 
-    /** Pulsación física/táctil: el flanco de bajada sale al instante. */
+    /** Aplica la pulsación al estado y avisa al emisor sin esperar al siguiente sensor. */
     fun set(bit: Int, down: Boolean) = latch.set(bit, down)
 
     fun current(): Int = mask.get()
+
+    /**
+     * Snapshot inicial y cambios posteriores forman una sola secuencia ordenada.
+     * El listener solo encola trabajo: no toma el lock del emisor ni modifica botones.
+     */
+    internal fun addButtonChangeListener(listener: (Change) -> Unit) {
+        synchronized(stateLock) {
+            if (buttonChangeListeners.add(listener)) listener(Change(mask.get()))
+        }
+    }
+
+    internal fun removeButtonChangeListener(listener: (Change) -> Unit) {
+        synchronized(stateLock) { buttonChangeListeners.remove(listener) }
+    }
 
     fun bumpRecenter() {
         recenter.incrementAndGet()
@@ -140,13 +170,21 @@ object ButtonState {
 
     /** Todo suelto: botones, scroll, ambos sticks y táctil. */
     fun reset() {
-        latch.reset()
-        mask.set(0)
-        scrollAcc.set(0)
-        stickXv.set(0)
-        stickYv.set(0)
-        stick2Xv.set(0)
-        stick2Yv.set(0)
-        touchV = NO_TOUCH
+        // Match set/onWire's lock order. A new press cannot slip between
+        // cancelling the old latch and publishing its reset notification.
+        synchronized(latch) {
+            latch.reset()
+            synchronized(stateLock) {
+                mask.set(0)
+                scrollAcc.set(0)
+                stickXv.set(0)
+                stickYv.set(0)
+                stick2Xv.set(0)
+                stick2Yv.set(0)
+                touchV = NO_TOUCH
+                val change = Change(0, reset = true)
+                buttonChangeListeners.forEach { it(change) }
+            }
+        }
     }
 }

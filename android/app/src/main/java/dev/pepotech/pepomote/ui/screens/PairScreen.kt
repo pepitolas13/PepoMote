@@ -1,9 +1,12 @@
 package dev.pepotech.pepomote.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,10 +16,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +33,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,12 +41,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.KeyboardType
 import dev.pepotech.pepomote.net.Discovery
 import dev.pepotech.pepomote.net.PairList
+import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.net.ReceiverInfo
 import dev.pepotech.pepomote.ui.theme.PepoColors
@@ -60,19 +71,52 @@ fun PairScreen(
     saved: List<Pairing> = emptyList(),
     currentToken: String? = null,
     onChoose: (Pairing) -> Unit = {},
-    onForget: (Pairing) -> Unit = {}
+    onForget: (Pairing) -> Unit = {},
+    onDiscovered: (ReceiverInfo, String) -> Unit = { _, _ -> },
+    onPairLink: (String) -> Unit = {},
 ) {
     var receivers by remember { mutableStateOf(listOf<ReceiverInfo>()) }
     var scanning by remember { mutableStateOf(true) }
     var forgetting by remember { mutableStateOf<Pairing?>(null) }
+    var pairingReceiver by remember { mutableStateOf<ReceiverInfo?>(null) }
+    var pairCode by remember { mutableStateOf("") }
+    var enteringLink by rememberSaveable { mutableStateOf(false) }
+    var pairLink by rememberSaveable { mutableStateOf("") }
+    var invalidLink by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    // A modal owns the user's next action; resume discovery after it closes.
+    LaunchedEffect(enteringLink, pairingReceiver, forgetting) {
+        if (enteringLink || pairingReceiver != null || forgetting != null) return@LaunchedEffect
         while (true) {
             scanning = true
             receivers = Discovery.scan()
             scanning = false
             delay(2500)
         }
+    }
+
+    BackHandler(enteringLink) { enteringLink = false }
+    if (enteringLink) {
+        Column(Modifier.fillMaxSize().background(PepoColors.Background).statusBarsPadding()
+            .navigationBarsPadding().displayCutoutPadding().imePadding().verticalScroll(rememberScrollState())
+            .padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.pair_enter_link), style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = { enteringLink = false }) { Text(stringResource(R.string.back)) }
+            }
+            Text(stringResource(R.string.pair_link_hint), color = PepoColors.Text)
+            OutlinedTextField(value = pairLink, onValueChange = { pairLink = it.take(4096); invalidLink = false },
+                modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.pair_link_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), singleLine = true, isError = invalidLink)
+            if (invalidLink) Text(stringResource(R.string.pair_link_invalid), color = PepoColors.Error)
+            Button(enabled = pairLink.isNotBlank(), modifier = Modifier.fillMaxWidth(), onClick = {
+                val value = pairLink.trim()
+                if (PairStore.parsePairUrl(value) == null) invalidLink = true
+                else { enteringLink = false; pairLink = ""; onPairLink(value) }
+            }) { Text(stringResource(R.string.channel_connect)) }
+        }
+        return
     }
 
     Column(
@@ -122,7 +166,12 @@ fun PairScreen(
                         p,
                         current = p.token == currentToken,
                         online = PairList.isOnline(p, receivers),
-                        onClick = { onChoose(p) },
+                        onClick = {
+                            if (PairList.isTemporaryCode(p)) {
+                                pairCode = ""
+                                pairingReceiver = ReceiverInfo(p.pcName, p.host, p.port, p.platform)
+                            } else onChoose(p)
+                        },
                         onLongClick = { forgetting = p }
                     )
                 }
@@ -144,6 +193,9 @@ fun PairScreen(
                 }
             }
             item {
+                TextButton(onClick = { enteringLink = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.pair_enter_link))
+                }
                 Spacer(Modifier.height(10.dp))
                 Text(
                     when {
@@ -157,6 +209,12 @@ fun PairScreen(
             }
             items(unknown) { r ->
                 Card(
+                    modifier = Modifier.fillMaxWidth().then(
+                        if (r.platform == "android") Modifier.clickable {
+                            pairCode = ""
+                            pairingReceiver = r
+                        } else Modifier
+                    ),
                     shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
                     border = BorderStroke(1.5.dp, PepoColors.CardBorder),
@@ -166,7 +224,7 @@ fun PairScreen(
                         Column {
                             Text(r.name, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                stringResource(R.string.receiver_hint, "${r.host}:${r.tcpPort}"),
+                                stringResource(if (r.platform == "android") R.string.android_receiver_hint else R.string.receiver_hint, "${r.host}:${r.tcpPort}"),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -200,6 +258,34 @@ fun PairScreen(
             },
             dismissButton = {
                 TextButton(onClick = { forgetting = null }) { Text(stringResource(R.string.cancel), color = PepoColors.TextDim) }
+            }
+        )
+    }
+    pairingReceiver?.let { receiver ->
+        AlertDialog(
+            onDismissRequest = { pairingReceiver = null },
+            containerColor = PepoColors.Card,
+            title = { Text(receiver.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.server_enter_code))
+                    OutlinedTextField(
+                        value = pairCode,
+                        onValueChange = { pairCode = it.filter { c -> c in '0'..'9' }.take(6) },
+                        label = { Text(stringResource(R.string.server_pair_code)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = pairCode.length == 6, onClick = {
+                    onDiscovered(receiver, pairCode)
+                    pairingReceiver = null
+                }) { Text(stringResource(R.string.channel_connect)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pairingReceiver = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }

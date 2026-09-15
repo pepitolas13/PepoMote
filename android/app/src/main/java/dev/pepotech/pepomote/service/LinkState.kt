@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.sensor.MotionEngine
+import dev.pepotech.pepomote.net.ReceiverCapabilities
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -40,7 +41,9 @@ sealed class UiLink {
          */
         val screenOnly: Boolean? = null,
         /** `ok.modes` contains "switch"; absent means an older receiver. */
-        val supportsSwitch: Boolean = false
+        val supportsSwitch: Boolean = false,
+        val platform: String = ReceiverCapabilities.DESKTOP,
+        val textInput: Boolean = true
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
@@ -134,14 +137,16 @@ object LinkState {
      * modo se aplica en cuanto llegue el `ok`.
      */
     fun requestMode(mode: String) {
+        val connected = _flow.value as? UiLink.Connected
+        val selected = connected?.let { Route.selectMode(mode, it) } ?: mode
         ButtonState.reset()
-        _intent.value = when (mode) {
+        _intent.value = when (selected) {
             MODE_CEMU -> PadIntent.WiiU
             MODE_SWITCH -> PadIntent.Switch
             else -> PadIntent.None
         }
         val send = sendMode
-        if (send != null && _flow.value is UiLink.Connected) send(mode) else pendingMode = mode
+        if (send != null && _flow.value is UiLink.Connected) send(selected) else pendingMode = selected
     }
 
     /** Salir / desconectar: no queda nada pendiente. */

@@ -53,6 +53,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
+import dev.pepotech.pepomote.net.PairList
+import dev.pepotech.pepomote.net.ReceiverCapabilities
+import dev.pepotech.pepomote.server.ServerForegroundService
+import dev.pepotech.pepomote.server.ServerScreen
+import dev.pepotech.pepomote.server.ServerState
 import dev.pepotech.pepomote.service.LinkFailure
 import dev.pepotech.pepomote.service.LaunchAction
 import dev.pepotech.pepomote.service.GamePadSide
@@ -84,7 +89,7 @@ import dev.pepotech.pepomote.ui.theme.PepoMoteTheme
  * layouts Wii o Nunchuk) la decide [Route] a partir del enlace y de la
  * intención pendiente del usuario.
  */
-internal enum class Screen { Onboarding, Home, Pair, Controller, Nunchuk, Settings }
+internal enum class Screen { Onboarding, Home, Pair, Controller, Nunchuk, Settings, Server }
 
 class MainActivity : ComponentActivity() {
 
@@ -127,7 +132,12 @@ class MainActivity : ComponentActivity() {
         LinkState.clearFailure()
         val pc = LinkFailure.pcLabel(PairStore.load(this)?.pcName, getString(R.string.your_pc))
         if (LinkFailure.needsNewQr(failure.code)) {
-            openPair(getString(R.string.re_pair_reason, pc))
+            val previous = PairStore.load(this)
+            if (previous != null && PairList.isTemporaryCode(previous)) {
+                PairStore.forget(this, previous.token)
+                pairVersion++
+                openPair(getString(R.string.server_code_failed))
+            } else openPair(getString(R.string.re_pair_reason, pc))
         } else if (LinkFailure.offerAnotherPc(failure.code, PairStore.all(this).size)) {
             // Con varios PCs guardados, un PC que no responde no es el final:
             // a Conectar a elegir otro (lo pedido se conserva)
@@ -150,18 +160,21 @@ class MainActivity : ComponentActivity() {
      * tarjeta Dolphin (pantalla solo-Dolphin, sin selector de modo).
      */
     internal fun openController(mode: String, dolphinOnly: Boolean) {
-        controllerDolphinOnly = dolphinOnly
+        val androidReceiver = PairStore.load(this)?.platform == ReceiverCapabilities.ANDROID
+        val requested = if (androidReceiver) ReceiverCapabilities.select(mode, LinkState.MODE_DOLPHIN,
+            ReceiverCapabilities.ANDROID, false, true) else mode
+        controllerDolphinOnly = dolphinOnly && !androidReceiver
         linkRole = LinkState.ROLE_WIIMOTE
         when {
             // Ya conectado como mando (por Dolphin o lo que sea): al mando en
             // ese modo — nunca al escáner
             LinkState.flow.value.alive && !linkIsNunchuk() -> {
-                LinkState.requestMode(mode)
+                LinkState.requestMode(requested)
                 currentScreen = Screen.Controller
             }
 
             PairStore.load(this) != null -> {
-                LinkState.requestMode(mode) // se aplica al llegar el ok
+                LinkState.requestMode(requested) // se aplica al llegar el ok
                 LinkForegroundService.start(this)
                 currentScreen = Screen.Controller
             }
@@ -169,7 +182,7 @@ class MainActivity : ComponentActivity() {
             // Sin emparejar: al escáner, y el modo pedido se aplica al
             // conectar tras el QR (Wii U abre el GamePad)
             else -> {
-                LinkState.requestMode(mode)
+                LinkState.requestMode(requested)
                 openPair()
             }
         }
@@ -195,11 +208,12 @@ class MainActivity : ComponentActivity() {
      * mismo papel y modo que se habían pedido.
      */
     internal fun onSavedPcChosen(p: Pairing) {
+        adaptToReceiver(p)
         PairStore.select(this, p.token)
         pairVersion++
         pairReason = null
-        if (linkRole == LinkState.ROLE_WIIMOTE) LinkState.pendingMode?.let { LinkState.requestMode(it) }
         LinkForegroundService.start(this, linkRole)
+        if (linkRole == LinkState.ROLE_WIIMOTE) LinkState.pendingMode?.let { LinkState.requestMode(it) }
         currentScreen = if (linkRole == LinkState.ROLE_NUNCHUK) Screen.Nunchuk else Screen.Controller
     }
 
@@ -210,6 +224,10 @@ class MainActivity : ComponentActivity() {
 
     /** Tarjeta «Nunchuk»: el móvil de la otra mano. */
     internal fun openNunchuk() {
+        if (PairStore.load(this)?.platform == ReceiverCapabilities.ANDROID) {
+            openController(LinkState.MODE_DOLPHIN, dolphinOnly = false)
+            return
+        }
         linkRole = LinkState.ROLE_NUNCHUK
         when {
             linkIsNunchuk() -> currentScreen = Screen.Nunchuk
@@ -273,6 +291,10 @@ class MainActivity : ComponentActivity() {
 
     /** Acceso directo del icono (xml/shortcuts.xml): directo a esa pantalla (tras el onboarding). */
     private fun handleLaunchIntent(intent: Intent?) {
+        if (intent?.action == ServerForegroundService.ACTION_OPEN) {
+            currentScreen = Screen.Server
+            return
+        }
         val action = LaunchAction.parse(intent?.action) ?: return
         if (!AppPrefs.onboarded(this)) return
         when (action) {
@@ -359,16 +381,33 @@ class MainActivity : ComponentActivity() {
             return
         }
         PairStore.save(this, pairing)
+        adaptToReceiver(pairing)
         pairVersion++
         pairReason = null
         // Lo pedido antes de tener que escanear (Wii U, Dolphin…) se vuelve a
         // pedir: la intención se restaura y el modo va en cuanto llegue el ok
-        if (linkRole == LinkState.ROLE_WIIMOTE) LinkState.pendingMode?.let { LinkState.requestMode(it) }
         // Servicio ANTES del diálogo de permiso: pedirlo primero dejaba el
         // arranque del servicio compitiendo con el diálogo del sistema y el
         // primer emparejamiento fallaba en algunos OEMs.
         LinkForegroundService.start(this, linkRole)
+        if (linkRole == LinkState.ROLE_WIIMOTE) LinkState.pendingMode?.let { LinkState.requestMode(it) }
         currentScreen = if (linkRole == LinkState.ROLE_NUNCHUK) Screen.Nunchuk else Screen.Controller
+    }
+
+    private fun adaptToReceiver(pairing: Pairing) {
+        if (pairing.platform != ReceiverCapabilities.ANDROID) return
+        linkRole = LinkState.ROLE_WIIMOTE
+        controllerDolphinOnly = false
+        // Saved PC shortcuts and pending Nunchuk requests cannot leak into an Android session.
+        LinkState.pendingMode = LinkState.pendingMode?.takeIf {
+            it == LinkState.MODE_DOLPHIN || it == LinkState.MODE_SWITCH
+        }
+        LinkState.clearIntent()
+    }
+
+    internal fun openServer() {
+        currentScreen = Screen.Server
+        if (!ServerState.flow.value.active) ServerForegroundService.start(this)
     }
 
     /** Bits pulsados por las teclas de volumen: su UP se procesa SIEMPRE. */
@@ -376,9 +415,9 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Botones físicos de volumen mientras el mando (o el GamePad) está abierto:
-     * subir = A, bajar = gatillo B. Tacto real con latencia cero. Configurable
-     * en Ajustes. La duración mínima del toque en el cable la pone ButtonState
-     * (PressLatch).
+     * subir = A, bajar = gatillo B. Configurable en Ajustes. Se activa al recibir
+     * el DOWN; Android puede retener antes las teclas para detectar sus atajos.
+     * ButtonState conserva los toques cortos y pide el siguiente envío disponible.
      */
     // Activity's public key hook is inherited through AndroidX Core's restricted override.
     @SuppressLint("RestrictedApi")
@@ -416,6 +455,7 @@ private fun Root(activity: MainActivity) {
     val context = LocalContext.current
     val link by LinkState.flow.collectAsState()
     val update by UpdateNotice.pending.collectAsState()
+    val server by ServerState.flow.collectAsState()
 
     // Error de conexión como EFECTO (no en plena composición, que lo
     // repetía), esté la pantalla que esté: al escáner si el PC ya no
@@ -497,7 +537,9 @@ private fun Root(activity: MainActivity) {
         Screen.Home -> {
             val l = link
             val pcName = PairStore.load(context)?.pcName
-            val status = when (l) {
+            val androidReceiver = (l as? UiLink.Connected)?.platform == ReceiverCapabilities.ANDROID ||
+                (l !is UiLink.Connected && PairStore.load(context)?.platform == ReceiverCapabilities.ANDROID)
+            val status = if (server.active) HomeStatus(HomeTone.On, stringResource(R.string.server_running_short)) else when (l) {
                 is UiLink.Connected -> HomeStatus(HomeTone.On, stringResource(R.string.status_connected_to, l.pcName))
                 is UiLink.Connecting -> HomeStatus(HomeTone.Busy, stringResource(R.string.status_connecting))
                 is UiLink.Reconnecting -> HomeStatus(HomeTone.Busy, stringResource(R.string.status_reconnecting, l.pcName))
@@ -512,13 +554,21 @@ private fun Root(activity: MainActivity) {
                 langLabel = LocaleHelper.activeCode(context).uppercase(),
                 langSwitchHint = stringResource(R.string.lang_switch_to, LocaleHelper.name(LocaleHelper.otherCode(context))),
                 onToggleLang = { activity.toggleLanguage() },
-                onConnect = { activity.openController(LinkState.MODE_POINTER, dolphinOnly = false) },
+                onConnect = {
+                    activity.linkRole = LinkState.ROLE_WIIMOTE
+                    activity.controllerDolphinOnly = false
+                    LinkState.pendingMode = null
+                    activity.openPair()
+                },
                 onController = { activity.openPad() },
                 onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
                 onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
                 onSwitch = { activity.openController(LinkState.MODE_SWITCH, dolphinOnly = false) },
                 onNunchuk = { activity.openNunchuk() },
                 onNewPairing = { activity.currentScreen = Screen.Settings },
+                onServer = { activity.openServer() },
+                androidReceiver = androidReceiver,
+                serverRunning = server.active,
                 update = update,
                 onOpenUpdate = { v ->
                     val url = UpdateCheck.releaseUrl(v)
@@ -545,7 +595,13 @@ private fun Root(activity: MainActivity) {
                 saved = saved,
                 currentToken = current,
                 onChoose = { activity.onSavedPcChosen(it) },
-                onForget = { activity.onForgetPc(it) }
+                onPairLink = { activity.onPairContent(it) },
+                onForget = { activity.onForgetPc(it) },
+                onDiscovered = { receiver, code ->
+                    val pairing = Pairing(receiver.host, receiver.tcpPort, code, receiver.name, receiver.platform)
+                    PairStore.save(context, pairing)
+                    activity.onSavedPcChosen(pairing)
+                }
             )
         }
 
@@ -569,6 +625,7 @@ private fun Root(activity: MainActivity) {
         }
 
         Screen.Controller -> ControllerRoute(activity, link)
+        Screen.Server -> ServerScreen(onBack = { activity.currentScreen = Screen.Home })
     }
     }
 }

@@ -1,18 +1,18 @@
 package dev.pepotech.pepomote.control
 
 /**
- * Garantiza que cada pulsación dure al menos [minPressMs] EN EL CABLE.
+ * Retiene los toques cortos en el estado del mando durante [minPressMs].
  *
  * Un toque de botón físico dura 20-40 ms: 5-10 paquetes a 250 Hz. Una ráfaga
- * de pérdida Wi-Fi de ese tamaño (habitual) se lo traga entero, y el juego
- * (60 Hz, a veces con antirrebote de 2-3 frames) también puede no verlo. Con
- * 70 ms van ~18 paquetes y el toque llega siempre. El flanco de BAJADA (el que
- * marca la latencia) sale al instante; solo se retrasa el de subida, y solo en
+ * de pérdida Wi-Fi de ese tamaño puede perderlo entero, y el juego
+ * (60 Hz, a veces con antirrebote de 2-3 frames) también puede no verlo. Los
+ * 70 ms ofrecen más oportunidades de entrega. El flanco de BAJADA se aplica
+ * al estado sin demora adicional; solo se retrasa el de subida, y solo en
  * toques más cortos que el mínimo. Mantener pulsado no cambia nada.
  *
  * Dos toques muy seguidos no se funden: si el segundo llega con el primero aún
- * retenido, se suelta al momento y se re-pulsa tras [minGapMs] (dos paquetes),
- * para que el receptor vea los dos flancos.
+ * retenido, se suelta al momento y se re-pulsa tras [minGapMs]. El emisor
+ * conserva ambos flancos aunque lleguen juntos antes de su siguiente envío.
  *
  * Sin dependencias de Android: el reloj y el temporizador se inyectan.
  */

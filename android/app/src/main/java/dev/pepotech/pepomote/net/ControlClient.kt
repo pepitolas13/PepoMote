@@ -47,7 +47,11 @@ class ControlClient(
         val nunchuk: String = "none",
         /** El receptor conoce «solo pantalla» (`ok.screen_only`); null = receptor anterior a 1.6. */
         val screenOnly: Boolean? = null,
-        val supportsSwitch: Boolean = false
+        val supportsSwitch: Boolean = false,
+        val platform: String = ReceiverCapabilities.DESKTOP,
+        val textInput: Boolean = true,
+        /** Canonical token returned after pairing with a short Android server code. */
+        val pairToken: String? = null
     )
 
     interface Callbacks {
@@ -79,6 +83,7 @@ class ControlClient(
     private var running = true
     @Volatile
     private var confirmedMode = "pointer"
+    @Volatile private var confirmedPlatform = ReceiverCapabilities.DESKTOP
     private var socket: Socket? = null
     private var writer: BufferedWriter? = null
 
@@ -130,7 +135,12 @@ class ControlClient(
                 }
                 when (msg.optString("m")) {
                     "ok" -> {
+                        confirmedPlatform = ReceiverCapabilities.platform(msg.optString("platform"))
                         confirmedMode = msg.optString("mode", "pointer")
+                        if (confirmedPlatform == ReceiverCapabilities.ANDROID) {
+                            confirmedMode = ReceiverCapabilities.select(null, confirmedMode, confirmedPlatform,
+                                false, supportsMode(msg, "switch"))
+                        }
                         callbacks.onOk(
                             Ok(
                                 sessionId = msg.getInt("session_id"),
@@ -144,7 +154,10 @@ class ControlClient(
                                 name = msg.optString("name", ""),
                                 nunchuk = msg.optString("nunchuk", "none"),
                                 screenOnly = if (msg.has("screen_only")) msg.optBoolean("screen_only") else null,
-                                supportsSwitch = supportsMode(msg, "switch")
+                                supportsSwitch = supportsMode(msg, "switch"),
+                                platform = confirmedPlatform,
+                                textInput = confirmedPlatform != ReceiverCapabilities.ANDROID && msg.optBoolean("text_input", true),
+                                pairToken = msg.optString("pair_token").takeIf { it.isNotBlank() && it.length <= 512 }
                             )
                         )
                     }
@@ -157,7 +170,10 @@ class ControlClient(
                     "ping" -> sendJson(JSONObject().put("m", "pong").put("t", msg.opt("t")))
                     "pong" -> Unit
                     "mode" -> {
-                        confirmedMode = msg.optString("mode", "pointer")
+                        val received = msg.optString("mode", "pointer")
+                        if (confirmedPlatform != ReceiverCapabilities.ANDROID || received in listOf("dolphin", "switch")) {
+                            confirmedMode = received
+                        }
                         callbacks.onModeChanged(confirmedMode, msg.optString("by") == "pc")
                     }
                     // Obsolete half/side fields are deliberately ignored.
@@ -263,6 +279,8 @@ class ControlClient(
     private companion object {
         /** `ok.modes` contiene "cemu" (un receptor antiguo no manda `modes`). */
         fun supportsMode(ok: JSONObject, mode: String): Boolean {
+            if (ReceiverCapabilities.platform(ok.optString("platform")) == ReceiverCapabilities.ANDROID &&
+                mode !in listOf("dolphin", "switch")) return false
             val modes = ok.optJSONArray("modes") ?: return false
             for (i in 0 until modes.length()) {
                 if (modes.optString(i) == mode) return true

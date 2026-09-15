@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 // Glifos propios, dibujados a mano — nada de iconografía ajena.
-enum class ChannelGlyph { Qr, Pad, Pointer, Stick, GamePad, Switch, Gear }
+enum class ChannelGlyph { Qr, Pad, Pointer, Stick, GamePad, Switch, Gear, Server }
 
 /** `wide`: tarjeta apaisada a todo el ancho (glifo a la izquierda, textos al lado). */
 @Composable
@@ -91,7 +91,21 @@ private fun DrawScope.drawGlyph(glyph: ChannelGlyph, accent: Color) {
         ChannelGlyph.GamePad -> drawGamePadGlyph(accent)
         ChannelGlyph.Switch -> drawSwitchGlyph(accent)
         ChannelGlyph.Gear -> drawGearGlyph(accent)
+        ChannelGlyph.Server -> drawServerGlyph(accent)
     }
+}
+
+private fun DrawScope.drawServerGlyph(accent: Color) {
+    val w = size.width
+    val h = size.height
+    drawRoundRect(accent, androidx.compose.ui.geometry.Offset(w * .25f, h * .04f),
+        androidx.compose.ui.geometry.Size(w * .5f, h * .92f),
+        androidx.compose.ui.geometry.CornerRadius(w * .08f), style = Stroke(w * .045f))
+    for (y in listOf(.30f, .46f, .62f)) {
+        drawLine(accent, androidx.compose.ui.geometry.Offset(w * .38f, h * y),
+            androidx.compose.ui.geometry.Offset(w * .62f, h * y), w * .045f, StrokeCap.Round)
+    }
+    drawCircle(accent, w * .03f, androidx.compose.ui.geometry.Offset(w * .5f, h * .84f))
 }
 
 private fun DrawScope.drawSwitchGlyph(accent: Color) {

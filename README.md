@@ -1,11 +1,11 @@
 <p align="center"><img src="assets/brand/logo.png" width="96" alt="PepoMote"></p>
 
 <h1 align="center">PepoMote</h1>
-<p align="center"><b>Point. Click. Play.</b> — Turn your Android phone into a Wii-style motion pointer and controller for your PC.</p>
+<p align="center"><b>Point. Click. Play.</b> — Turn your phone into a motion pointer and controller for your PC, or connect two Android devices to play.</p>
 
 **[Español](README.es.md)**
 
-**PepoMote 1.7:** Switch Pro Controller for Eden, controls that work without a gyroscope, and optional automatic return to pointer mode. [Downloads and release notes](https://github.com/pepitolas13/PepoMote/releases/tag/v1.7.0). Update both the PC receiver and the phone app.
+**PepoMote 1.8:** your Android can now host Dolphin and Eden controls. Use the same app on both phones, with guided setup, automatic local connection and more reliable button presses. For different networks, WireGuard is recommended and Tailscale is also available. [Downloads and release notes](https://github.com/pepitolas13/PepoMote/releases/tag/v1.8.0).
 
 - **Pointer mode** — aim your phone at the screen and the cursor goes exactly there (world-anchored absolute pointing, roll-invariant, 250 Hz). Buttons, drag, scroll, media keys. Your real mouse keeps working whenever the phone is still.
 - **Dolphin mode** — PepoMote becomes a full-motion virtual Wiimote (DSU/cemuhook server on `127.0.0.1:26760`). Play real Wii games — Wii Sports bowling included — in the [Dolphin emulator](https://dolphin-emu.org/).
@@ -15,7 +15,7 @@
 
 | Piece | Platform | File |
 |---|---|---|
-| Sender | Android 8.0+ | `PepoMote.apk` |
+| Sender and Dolphin/Eden server | Android 8.0+ (the server must also meet the emulator requirements) | `PepoMote.apk` |
 | Sender | iPhone / iPad, iOS 15+ (up to iPadOS 26) | `PepoMote.ipa` — installed with SideStore (my recommendation), AltStore or Sideloadly, see [docs/IOS.md](docs/IOS.md) |
 | Sender | Linux phones: Mobian, postmarketOS… (aarch64) | `pepomote-mobile_*_arm64.deb` (Mobian: tap to install) · `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receiver | Windows 10/11 | `PepoMote.exe` — single portable file |
@@ -31,6 +31,8 @@
 **PC (macOS, beta)** — download `PepoMote-macOS.dmg`, open it and drag PepoMote to Applications. It is not notarized by Apple (that needs a paid developer account), so the first launch of each version takes one extra step: on macOS 15/26, System Settings → Privacy & Security → **Open Anyway** (on 13/14: Control-click → Open). Then allow **Local Network** and, from the card the window shows, **Accessibility** (moves the cursor; no restart needed) and, only for Cemu's second screen, **Screen Recording**. Apple Silicon only, macOS 13 or later. It is built and tested by the CI on a Mac, but I could not try it on a real one yet: details, permissions and troubleshooting in [docs/MACOS.md](docs/MACOS.md).
 
 **Phone** — install `PepoMote.apk` (enable "install from unknown sources"). Open it, tap **Conectar**, scan the QR shown on your PC. Paired forever.
+
+**Two Android phones** — install the same APK on both. On the phone running the games, open **Server**; on the other, tap **Connect** and scan its QR. The controller recognizes the Android server and offers Dolphin and Eden. Guided controller setup explains each tap and remembers the permission for next time. See the [Android server and VPN guide (Spanish)](docs/ANDROID-SERVER.md).
 
 **iPhone / iPad** — not on the App Store. My personal recommendation is [SideStore](https://sidestore.io) (it re-signs itself on the device every 7 days, no PC running; it is what I use), but [AltStore](https://altstore.io) (needs AltServer on your PC to renew; its authors are working on removing that) and Sideloadly (by hand from the PC with `PepoMote.ipa`) work too. In SideStore or AltStore: Sources → **+** → add `https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` → Browse → PepoMote → Install; updates show up right there. One-tap links for a web page or a chat: `sidestore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` and `altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json`. Step by step, permissions and what differs from Android in [docs/IOS.md](docs/IOS.md).
 
@@ -53,7 +55,7 @@ Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden 
 - **Local multiplayer**: up to 4 phones on one PC — scan the same QR and each phone becomes its own Wiimote in Dolphin, with Dolphin's controller config written for you automatically
 - **Nunchuk on the same phone** (1.5.5): games that ask for a Nunchuk (Super Mario Galaxy, Zelda, Metroid Prime…) just work with one phone: the controller turns sideways by itself and you get the Nunchuk under your left hand (stick, C, Z) and the Wii Remote under your right (A, B, D-pad, −/+/Home, 1/2), still pointing with the phone. Off by default: turn it on with the **Nunchuk** chip or in Settings (remembered); off, sideways is the NES pad. Details in [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md)
 - **Nunchuk on a second phone**: tap **Nunchuk** on the other phone: stick, C, Z and its own accelerometer feed the emulated Nunchuk of your Wiimote, configured in Dolphin for you
-- Physical volume keys = A / B triggers (zero touch latency)
+- Physical volume keys = A / B triggers. On Android, quick presses are preserved even when several events arrive together
 - Turn the phone sideways for a NES-style pad (2D games) — or a full Wii U GamePad in Wii U mode
 - Optional start-with-the-system (tray only, no window)
 - One QR pairing; reconnects with one tap; auto-discovery on your LAN
@@ -64,7 +66,7 @@ Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden 
 - **iPhone and iPad** (1.5): the same sender in Swift, with the Wii U GamePad's second screen and everything else; installed with SideStore or AltStore from a one-tap source, built and tested by the CI on macOS
 - **Several PCs and automatic reconnection**: the app keeps all your PCs and, if the Wi-Fi drops or the receiver restarts, it comes back by itself without losing the screen or the mode
 - **macOS** (1.5.5, beta): the same receiver on Apple Silicon — cursor and keys through Accessibility, Cemu's second screen, an icon in the menu bar, start with the system, a signed `.app` in a DMG
-- **New-version notice** (1.5.5): every app tells you when a new release is out, with the link to it. The check is one request to GitHub once a day (only the latest-release page; nothing about you is sent) and it can be switched off in Settings. PepoMote never talks to anything else outside your network.
+- **New-version notice** (1.5.5): every app tells you when a new release is out, with the link to it. The check is one request to GitHub once a day (only the latest-release page; nothing about you is sent) and it can be switched off in Settings. Controls travel directly between your devices over your local network or configured VPN; PepoMote does not run its own relay service.
 - **iPad and tablets** (1.5.5): the remote, the NES pad, the Nunchuk and the Wii U GamePad grow to fill the screen (same rule on iOS and Android; phones stay exactly as they were). And Settings gains **GamePad without touch screen**: it removes the Wii U GamePad's screen (and the second screen) so the sticks, the D-pad and A/B/X/Y get much bigger — on a phone they go side by side, like a Pro Controller
 - **GamePad screen full screen** (1.6): with a real controller plugged into the PC, the phone shows only Cemu's GamePad screen (touch included), like the Wii U's own; the receiver merges the phone into your Cemu profile without replacing your controller. Optional keyboard button at the top right
 - **Wii Remote + Nunchuk side** (1.6): the first time the sideways Wii Remote + Nunchuk appears, the app asks whether it is the right way up ("Flip it" / "Keep it like this") and the side stays fixed for good (some phones' sensors flipped it on their own); changeable in Settings. The Wii U GamePad has its own side, separately

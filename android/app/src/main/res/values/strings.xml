@@ -4,9 +4,9 @@
     <string name="app_name">PepoMote</string>
 
     <!-- inicio -->
-    <string name="home_subtitle">Tu móvil, mando de tu PC</string>
+    <string name="home_subtitle">Tu móvil, mando de tu PC u otro Android</string>
     <string name="channel_connect">Conectar</string>
-    <string name="channel_connect_sub">Escanea el QR del PC</string>
+    <string name="channel_connect_sub">QR y dispositivos cercanos</string>
     <string name="channel_controller">Mando</string>
     <string name="channel_controller_sub">Puntero y botones</string>
     <string name="channel_dolphin">Dolphin</string>
@@ -37,7 +37,7 @@
     <!-- actividad y servicio -->
     <string name="error_prefix">Error: %1$s</string>
     <string name="qr_not_pepomote">Ese QR no es de PepoMote</string>
-    <string name="scan_prompt">Apunta al QR de PepoMote en tu PC</string>
+    <string name="scan_prompt">Apunta al QR del receptor de PepoMote</string>
     <string name="your_pc">Tu PC</string>
     <string name="re_pair_reason">%1$s ya no reconoce este móvil: su QR ha cambiado (PepoMote reinstalado o restablecido en el PC). Escanéalo otra vez y sigues donde estabas.</string>
     <string name="pc_not_responding">%1$s no responde. Elige otro PC o escanea un QR.</string>
@@ -54,14 +54,14 @@
 
     <!-- conectar -->
     <string name="pair_title_other">Conectar con otro PC</string>
-    <string name="pair_sub_scan">Abre PepoMote en tu PC y escanea su QR</string>
-    <string name="pair_sub_saved">Toca uno de tus PCs, o escanea el QR de otro</string>
-    <string name="your_pcs">Tus PCs</string>
+    <string name="pair_sub_scan">Abre PepoMote en tu PC o pulsa Servidor en otro Android</string>
+    <string name="pair_sub_saved">Elige un dispositivo guardado o conecta uno nuevo</string>
+    <string name="your_pcs">Tus dispositivos</string>
     <string name="scan_qr">Escanear QR del PC</string>
     <string name="scan_qr_other">Escanear el QR de otro PC</string>
     <string name="searching">Buscando receptores en tu red…</string>
     <string name="no_receivers">Ningún receptor a la vista (el QR funciona igualmente)</string>
-    <string name="no_new_pcs">Ningún PC nuevo a la vista</string>
+    <string name="no_new_pcs">Ningún dispositivo nuevo a la vista</string>
     <string name="on_your_network">En tu red:</string>
     <string name="receiver_hint">%1$s — escanea su QR para emparejar</string>
     <string name="back">Volver</string>
@@ -74,7 +74,7 @@
 
     <!-- ajustes -->
     <string name="vol_title">Botones de volumen = A / B</string>
-    <string name="vol_sub">Con el mando abierto: subir volumen = A, bajar = gatillo B. Botones físicos, latencia cero</string>
+    <string name="vol_sub">Con el mando abierto: subir volumen = A, bajar = gatillo B. Juega con los botones físicos del móvil</string>
     <string name="sounds_title">Sonidos</string>
     <string name="sounds_sub">Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)</string>
     <string name="chips_title">Modo Dolphin en el mando</string>
@@ -115,11 +115,11 @@
     <string name="about">PepoMote %1$s · GPL-3.0 · hecho por PepoTech</string>
 
     <!-- primer arranque -->
-    <string name="onboarding_sub">Tu móvil, mando de tu PC en 3 pasos</string>
-    <string name="ob1_title">Abre PepoMote en tu PC</string>
-    <string name="ob1_body">Un solo archivo, sin instalar nada. En PepoMote verás un QR.</string>
+    <string name="onboarding_sub">Tu móvil, mando de tu PC u otro Android en 3 pasos</string>
+    <string name="ob1_title">Elige dónde vas a jugar</string>
+    <string name="ob1_body">Abre PepoMote en el PC, o pulsa Servidor en el Android donde usarás Dolphin o Eden.</string>
     <string name="ob2_title">Escanea el QR</string>
-    <string name="ob2_body">Conectar → apunta con la cámara. Emparejado para siempre.</string>
+    <string name="ob2_body">En el móvil que usarás como mando: Conectar → escanea el QR del receptor. Ambos en la misma Wi-Fi.</string>
     <string name="ob3_title">Apunta. Haz clic. Juega.</string>
     <string name="ob3_body">Con giroscopio, apunta como un mando de Wii. Sin él, puedes jugar con los botones, sticks y controles táctiles.</string>
     <string name="lets_go">¡Vamos!</string>
@@ -177,4 +177,129 @@
     <string name="shortcut_switch_long">Mando de Switch</string>
     <string name="kb_switch_title">Teclado de Switch</string>
     <string name="kb_switch_help">Para el teclado en pantalla del juego. Borrar quita un carácter, Escribir manda el texto y sigue, Aceptar manda el texto e Intro.</string>
+
+    <!-- Local Android receiver -->
+    <string name="channel_server">Servidor</string>
+    <string name="channel_server_sub">Juega en este Android</string>
+    <string name="mode_eden">Eden</string>
+    <string name="android_receiver_hint">Android · %1$s · Toca para conectar</string>
+    <string name="server_enter_code">Escribe el código que aparece en la pantalla Servidor del otro móvil. También puedes escanear su QR.</string>
+    <string name="server_pair_code">Código de conexión</string>
+    <string name="server_running_short">Servidor Android activo</string>
+    <string name="server_intro">Este móvil ejecuta Dolphin o Eden. Otro móvil con PepoMote se convierte en tu mando.</string>
+    <string name="server_background_hint">Permanece activo mientras juegas. Detén el servidor al terminar.</string>
+    <string name="server_starting">Iniciando servidor…</string>
+    <string name="server_stopped">Servidor detenido</string>
+    <string name="server_start">Iniciar servidor</string>
+    <string name="server_stop">Detener servidor</string>
+    <string name="server_error_port">No se puede iniciar: otra aplicación está usando el puerto de conexión. Ciérrala o cambia su puerto y vuelve a intentarlo.</string>
+    <string name="server_error_start">No se ha podido iniciar el servidor. Comprueba la conexión de red y vuelve a intentarlo.</string>
+    <string name="server_notification_title">PepoMote · Servidor Android</string>
+    <string name="server_notification_body">Listo para recibir mandos mientras juegas en Dolphin o Eden.</string>
+    <string name="server_pair_step">1. Conecta tu mando</string>
+    <string name="server_pair_hint">Usa la misma Wi-Fi o el punto de acceso de este móvil. En el mando: Conectar → escanea el QR, o elige este servidor y escribe el código.</string>
+    <string name="server_qr_description">QR para conectar otro móvil a este servidor Android</string>
+    <string name="server_no_network">Conecta este móvil a una Wi-Fi o activa su punto de acceso para mostrar el QR de conexión.</string>
+    <string name="server_players">Mandos conectados</string>
+    <string name="server_waiting_player">Esperando al primer mando… Hasta 4 jugadores.</string>
+    <string name="server_player">Jugador %1$d · %2$s</string>
+    <string name="server_receiving">Recibiendo controles · %1$d Hz</string>
+    <string name="server_waiting_input">Esperando datos del mando…</string>
+    <string name="server_emulator_connected">Un emulador está solicitando los controles.</string>
+    <string name="server_emulator_waiting">El emulador todavía no ha solicitado los controles.</string>
+    <string name="server_setup_step">2. Prepara el emulador</string>
+    <string name="server_setup_hint">PepoMote asigna los botones y guarda una copia de tus controles anteriores. Solo hay que configurarlo la primera vez o al cambiar los mandos.</string>
+    <string name="server_dolphin_details">Dolphin oficial · Mando de Wii, botones, movimiento y Nunchuk en el mismo móvil.</string>
+    <string name="server_eden_details">Eden · Mando Pro con botones y los dos sticks.</string>
+    <string name="server_eden_motion_limit">Movimiento en Eden: las versiones actuales mezclan el giroscopio del mando con los sensores del móvil servidor. Por eso el movimiento remoto puede interferirse. Los botones y sticks no dependen de esos sensores.</string>
+    <string name="server_select">Usar</string>
+    <string name="server_selected">Activo</string>
+    <string name="server_prepare">Preparar controles</string>
+    <string name="server_preparing">Guardando la copia y comprobando los ajustes…</string>
+    <string name="server_open_emulator">Abrir %1$s</string>
+    <string name="server_install_first">Instala la versión oficial actual de %1$s y ábrela una vez antes de preparar sus controles.</string>
+    <string name="server_emulator_missing">No se encuentra el emulador. Instálalo y ábrelo una vez antes de continuar.</string>
+    <string name="server_restore">Restaurar controles anteriores</string>
+    <string name="server_restore_hint">Se restaurarán los ajustes que PepoMote cambió en %1$s. Los cambios que hayas hecho después se conservarán. Después deberás cerrar completamente el emulador y abrirlo de nuevo.</string>
+    <string name="server_setup_done">Controles de %1$s guardados y comprobados. Termina el último paso para empezar a jugar.</string>
+    <string name="server_setup_error">No se han podido completar los ajustes. %1$s</string>
+    <string name="server_no_picker">No se encuentra el selector de archivos de Android. Habilita la aplicación Archivos del sistema y vuelve a intentarlo.</string>
+    <string name="server_restart_step">3. Reinicia el emulador</string>
+    <string name="server_restart_hint">Para que %1$s lea los nuevos controles, abre su información de aplicación y pulsa Forzar detención. Luego vuelve aquí y ábrelo. Deslizarlo de recientes puede no ser suficiente. Hazlo sin una partida abierta.</string>
+    <string name="server_app_info">Abrir información de la aplicación</string>
+    <string name="server_app_info_missing">Abre Ajustes de Android → Aplicaciones → el emulador → Forzar detención. Después vuelve a PepoMote.</string>
+    <string name="server_change_players_hint">Si añades jugadores o cambias el Nunchuk, vuelve a preparar los controles con esos mandos conectados y reinicia el emulador. El jugador 1 puede cambiar entre Dolphin y Eden desde su mando.</string>
+    <string name="server_preserved_changes">Se han conservado %1$d cambios que hiciste después de la copia.</string>
+    <string name="server_done">Entendido</string>
+    <string name="server_code_failed">El código no es correcto o ha cambiado. Toca el servidor e introduce el código que muestra ahora, o escanea su QR.</string>
+    <string name="server_restart_confirmed_open">Ya he forzado la detención: abrir</string>
+    <string name="setup_error_access">No se puede acceder a la carpeta del emulador. Cierra el emulador y selecciona de nuevo su carpeta. Las copias guardadas se conservan.</string>
+    <string name="setup_error_selection">Elige la carpeta del propio emulador. En el menú lateral del selector de Android, toca Dolphin o Eden y pulsa Usar esta carpeta. No selecciones Android/data ni otra carpeta.</string>
+    <string name="setup_error_permission">Falta permiso para leer y escribir. Selecciona de nuevo la carpeta del emulador y permite el acceso para poder guardar y restaurar los controles.</string>
+    <string name="setup_error_initialize">Abre el emulador una vez para que cree sus ajustes. Cierra cualquier partida y vuelve a preparar los controles.</string>
+    <string name="setup_error_conflict">Los ajustes han cambiado o pertenecen a otra instalación del emulador. Cierra el emulador y revisa la carpeta elegida antes de continuar.</string>
+    <string name="setup_error_backup">No se puede guardar o leer la copia de los controles. Comprueba el espacio libre del móvil. Conserva esta instalación de PepoMote para mantener las copias existentes.</string>
+    <string name="setup_error_rolled_back">No se pudieron aplicar los controles. Se han deshecho los cambios de este intento. Cierra completamente el emulador antes de volver a intentarlo.</string>
+    <string name="setup_error_recovery">La preparación se interrumpió o detectó cambios externos. Se han conservado la copia y los archivos que requieren revisión. Cierra el emulador e intenta restaurar los controles. Si continúa el error, conserva esta instalación y consulta los detalles.</string>
+    <string name="setup_error_no_backup">No hay una copia de controles disponible para restaurar.</string>
+    <string name="server_error_details">Ver detalles del error</string>
+    <string name="server_start_before_open">Inicia el servidor antes de abrir el emulador desde PepoMote.</string>
+    <string name="server_choose_game">2. Elige dónde jugar</string>
+    <string name="server_configure_target">Configurar %1$s</string>
+    <string name="server_controls_ready">Controles listos</string>
+    <string name="server_controls_pending">Falta reiniciar el emulador</string>
+    <string name="server_play_target">Jugar con %1$s</string>
+    <string name="server_finish_setup">Terminar configuración</string>
+    <string name="server_update_controls">Actualizar mandos</string>
+    <string name="server_update_needed">Han cambiado los jugadores o el Nunchuk. Actualiza los controles antes de abrir el juego.</string>
+    <string name="server_control_options">Opciones de controles</string>
+    <string name="server_checking_target">Comprobando %1$s…</string>
+    <string name="server_install_target">Instalar %1$s</string>
+    <string name="server_saved_variant_missing">Falta la variante de %1$s que configuraste. Vuelve a instalarla o habilitarla para conservar y recuperar sus controles.</string>
+    <string name="server_saved_variant_details">Ver instalación guardada</string>
+    <string name="server_permission_title">Conecta PepoMote con %1$s</string>
+    <string name="server_permission_hint">Sal de cualquier partida antes de continuar. Se abrirá el acceso de %1$s en una pantalla de Android.</string>
+    <string name="server_permission_steps">1. Toca «Usar esta carpeta».\n2. Toca «Permitir».\n3. Vuelve aquí: PepoMote configura los controles.</string>
+    <string name="server_permission_fallback">Si Android muestra otra ubicación, abre el menú lateral y toca %1$s. No entres en sus subcarpetas.</string>
+    <string name="server_permission_action">Ir al permiso</string>
+    <string name="server_permission_saved">El permiso ya está guardado; no tendrás que elegir una carpeta de nuevo.</string>
+    <string name="server_ready_hint">La próxima vez, conecta el mando y toca Jugar.</string>
+    <string name="server_restart_title">Un último paso para %1$s</string>
+    <string name="server_restart_simple">Android necesita que cierres %1$s para cargar los controles nuevos. Hazlo sin una partida abierta.</string>
+    <string name="server_restart_taps">1. En su ficha, toca «Forzar detención» y confirma.\n2. Vuelve a PepoMote con Atrás.\n3. Toca «Ya lo he cerrado: jugar».</string>
+    <string name="server_restart_action">Ir a la ficha de %1$s</string>
+    <string name="server_restart_finish">Ya lo he cerrado: jugar</string>
+    <string name="server_initialize_hint">Abre %1$s y termina su bienvenida. Después vuelve aquí y toca Continuar. No necesitas abrir ningún juego.</string>
+    <string name="server_initial_open">Abrir %1$s por primera vez</string>
+    <string name="server_initialize_continue">Ya está abierto: continuar</string>
+    <string name="server_add_controller">Añadir otro mando</string>
+    <string name="server_hide_qr">Ocultar QR</string>
+    <string name="server_local_network">Misma Wi-Fi o punto de acceso</string>
+    <string name="server_network_automatic">Conexión elegida automáticamente</string>
+    <string name="server_network_details">Ver dirección de conexión</string>
+    <string name="server_other_network">¿Estáis en redes distintas?</string>
+    <string name="server_remote_title">Jugar desde otra red</string>
+    <string name="server_remote_intro">Elige una red privada que permita comunicar los dos móviles. Una VPN comercial para navegar no suele permitirlo.</string>
+    <string name="server_remote_wireguard">WireGuard · Recomendada</string>
+    <string name="server_remote_wireguard_steps">Necesitas una red WireGuard ya configurada para conectar ambos móviles. Importa en cada móvil su configuración y activa el túnel. Instalar la app por sí solo no crea esa red.</string>
+    <string name="server_remote_wireguard_guide">Instalar WireGuard</string>
+    <string name="server_remote_tailscale">Tailscale · Alternativa</string>
+    <string name="server_remote_tailscale_steps">Instala Tailscale en ambos móviles, añádelos a la misma red privada y activa la conexión en los dos.</string>
+    <string name="server_remote_steps">Después, vuelve aquí, toca «Usar conexión VPN» y comparte el enlace. En el móvil mando: Conectar → Introducir enlace.</string>
+    <string name="server_remote_limits">La respuesta depende de la distancia y de la conexión. Se envían los controles; la imagen del juego sigue en el servidor. El descubrimiento automático solo busca en la red local.</string>
+    <string name="server_remote_guide">Cómo conectar con Tailscale</string>
+    <string name="server_remote_available">Usar conexión VPN</string>
+    <string name="server_remote_missing">Todavía no se detecta una conexión VPN compatible en este móvil.</string>
+    <string name="server_remote_active">Conexión por VPN · otra red</string>
+    <string name="server_remote_lost">La VPN se ha desconectado. Actívala para volver a mostrar el enlace de esa red.</string>
+    <string name="server_back_local">Volver a la conexión local</string>
+    <string name="server_share_link">Compartir enlace del mando</string>
+    <string name="server_share_hint">En el otro móvil: Conectar → Introducir enlace.</string>
+    <string name="server_no_share">No se ha podido abrir el menú para compartir. Puedes escanear el QR desde el otro móvil.</string>
+    <string name="server_connection_address">Dirección: %1$s</string>
+    <string name="server_alternate_network">Otra conexión local</string>
+    <string name="pair_enter_link">Introducir enlace</string>
+    <string name="pair_link_hint">Pega el enlace que has compartido desde el servidor. Para otra Wi-Fi, activa primero la misma red privada en ambos móviles.</string>
+    <string name="pair_link_label">Enlace de PepoMote</string>
+    <string name="pair_link_invalid">Este enlace no es válido. Copia el enlace completo desde el servidor.</string>
 </resources>

@@ -55,6 +55,9 @@ fun HomeScreen(
     onSwitch: () -> Unit,
     onNunchuk: () -> Unit,
     onNewPairing: () -> Unit,
+    onServer: () -> Unit = {},
+    androidReceiver: Boolean = false,
+    serverRunning: Boolean = false,
     /** Versión nueva publicada que anunciar (null = ninguna). */
     update: UpdateCheck.Version? = null,
     onOpenUpdate: (UpdateCheck.Version) -> Unit = {},
@@ -118,16 +121,26 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
+            item(span = { GridItemSpan(if (androidReceiver) maxLineSpan else 1) }) {
                 ChannelCard(
                     title = stringResource(R.string.channel_connect),
                     subtitle = stringResource(R.string.channel_connect_sub),
                     glyph = ChannelGlyph.Qr,
                     accent = PepoColors.Blue,
+                    wide = androidReceiver,
                     onClick = onConnect
                 )
             }
-            item {
+            if (!androidReceiver) item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_server),
+                    subtitle = stringResource(if (serverRunning) R.string.server_running_short else R.string.channel_server_sub),
+                    glyph = ChannelGlyph.Server,
+                    accent = PepoColors.Blue,
+                    onClick = onServer
+                )
+            }
+            if (!androidReceiver) item {
                 ChannelCard(
                     title = stringResource(R.string.channel_controller),
                     subtitle = stringResource(R.string.channel_controller_sub),
@@ -146,7 +159,7 @@ fun HomeScreen(
                 )
             }
             // Wii U: el móvil como GamePad (o Pro Controller) para Cemu
-            item {
+            if (!androidReceiver) item {
                 ChannelCard(
                     title = stringResource(R.string.channel_wiiu),
                     subtitle = stringResource(R.string.channel_wiiu_sub),
@@ -157,7 +170,7 @@ fun HomeScreen(
             }
             item {
                 ChannelCard(
-                    title = stringResource(R.string.channel_switch),
+                    title = stringResource(if (androidReceiver) R.string.mode_eden else R.string.channel_switch),
                     subtitle = stringResource(R.string.channel_switch_sub),
                     glyph = ChannelGlyph.Switch,
                     accent = PepoColors.Error,
@@ -165,7 +178,7 @@ fun HomeScreen(
                 )
             }
             // Con Dolphin: el segundo móvil, en la otra mano
-            item {
+            if (!androidReceiver) item {
                 ChannelCard(
                     title = stringResource(R.string.channel_nunchuk),
                     subtitle = stringResource(R.string.channel_nunchuk_sub),
@@ -174,13 +187,21 @@ fun HomeScreen(
                     onClick = onNunchuk
                 )
             }
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            if (androidReceiver) item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_server),
+                    subtitle = stringResource(if (serverRunning) R.string.server_running_short else R.string.channel_server_sub),
+                    glyph = ChannelGlyph.Server,
+                    accent = PepoColors.Blue,
+                    onClick = onServer
+                )
+            }
+            item {
                 ChannelCard(
                     title = stringResource(R.string.channel_settings),
                     subtitle = stringResource(R.string.channel_settings_sub),
                     glyph = ChannelGlyph.Gear,
                     accent = PepoColors.TextDim,
-                    wide = true,
                     onClick = onNewPairing
                 )
             }

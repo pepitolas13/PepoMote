@@ -9,12 +9,15 @@ import java.net.URLEncoder
  * cambiar (renombrado, DHCP) y se actualizan sin perder el token.
  */
 object PairList {
+    fun isTemporaryCode(p: Pairing): Boolean = p.platform == ReceiverCapabilities.ANDROID &&
+        p.token.length == 6 && p.token.all { it in '0'..'9' }
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
     private fun dec(s: String): String = URLDecoder.decode(s, "UTF-8")
 
     /** Una línea por PC: `t=…&host=…&port=…&name=…`, valores URL-encoded. */
     fun encode(list: List<Pairing>): String =
-        list.joinToString("\n") { p -> "t=${enc(p.token)}&host=${enc(p.host)}&port=${p.port}&name=${enc(p.pcName)}" }
+        list.joinToString("\n") { p -> "t=${enc(p.token)}&host=${enc(p.host)}&port=${p.port}&name=${enc(p.pcName)}" +
+            if (p.platform == ReceiverCapabilities.ANDROID) "&platform=android" else "" }
 
     fun decode(text: String?): List<Pairing> =
         text.orEmpty().lines().filter { it.isNotBlank() }.mapNotNull { line ->
@@ -24,7 +27,7 @@ object PairList {
             }.toMap()
             val token = f["t"] ?: return@mapNotNull null
             val host = f["host"] ?: return@mapNotNull null
-            Pairing(host, f["port"]?.toIntOrNull() ?: 26761, token, f["name"] ?: "PC")
+            Pairing(host, f["port"]?.toIntOrNull() ?: 26761, token, f["name"] ?: "PC", ReceiverCapabilities.platform(f["platform"]))
         }
 
     /** Añade o actualiza (por token) conservando el orden. */

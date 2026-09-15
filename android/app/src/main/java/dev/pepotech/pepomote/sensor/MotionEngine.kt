@@ -10,8 +10,10 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import android.view.Surface
+import dev.pepotech.pepomote.control.ButtonDelivery
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.net.PmpCodec
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /** Qué emula este móvil: decide qué lleva cada paquete INPUT. */
 enum class SenderKind {
@@ -43,7 +45,8 @@ enum class SenderKind {
 /**
  * INPUT sigue al giroscopio hasta 250 Hz. Un reloj de 100 Hz mantiene los
  * controles activos cuando faltan sensores, fallan o dejan de dar muestras.
- * El reloj y los sensores comparten hilo; stop espera cualquier envío en curso.
+ * Los cambios de botón piden el siguiente envío disponible sin esperar al reloj.
+ * Todo comparte hilo y límite de frecuencia; stop espera cualquier envío en curso.
  */
 class MotionEngine(
     context: Context,
@@ -96,6 +99,8 @@ class MotionEngine(
     private var hasRotationVector = false
     /** Reloj real compartido por muestras y respaldo: una ráfaga de callbacks no acelera INPUT. */
     private var lastSendNs = 0L
+    private val buttonChanges = ConcurrentLinkedQueue<ButtonState.Change>()
+    private val buttonDelivery = ButtonDelivery()
     /** Media ponderada por tiempo del gyro entre envíos (∑ω·Δt y ∑Δt). */
     private val gyroSum = FloatArray(3)
     private var gyroSumNs = 0L
@@ -112,26 +117,39 @@ class MotionEngine(
 
     private val scratch = FloatArray(4)
 
+    private val buttonUpdate = object : Runnable {
+        override fun run() = synchronized(this@MotionEngine) {
+            // Coalesce wake-ups, retaining each bit's pending presses/releases.
+            handler.removeCallbacks(this)
+            if (!running) return@synchronized
+            acceptButtonChanges()
+            val nextChange = buttonDelivery.nextChangeAtNs() ?: return@synchronized
+            val now = SystemClock.elapsedRealtimeNanos()
+            val remaining = maxOf(lastSendNs + GYRO_INTERVAL_NS, nextChange) - now
+            if (remaining > 0) {
+                handler.postDelayed(this, (remaining + 999_999L) / 1_000_000L)
+                return@synchronized
+            }
+            prepareGyro(now)
+            lastSendNs = now
+            sendPacket(now)
+        }
+    }
+
+    private val onButtonChange: (ButtonState.Change) -> Unit = { change ->
+        // Notifications may hold the input-state/latch locks: enqueue only,
+        // without taking the engine lock or doing network work on the UI thread.
+        if (change.reset) buttonChanges.clear()
+        buttonChanges.add(change)
+        handler.post(buttonUpdate)
+    }
+
     private val fallback = object : Runnable {
         override fun run() = synchronized(this@MotionEngine) {
             if (!running) return@synchronized
             val now = SystemClock.elapsedRealtimeNanos()
             if (now - lastSendNs >= FALLBACK_INTERVAL_NS) {
-                if (lastGyroNs != 0L && now - lastGyroNs < GYRO_STALE_NS) {
-                    // Un gyro de 50 Hz sigue vivo entre los envíos de 100 Hz.
-                    // También conservar muestras que llegaron tras un envío.
-                    consumeGyro()
-                } else {
-                    // No integrar indefinidamente una velocidad de un sensor
-                    // parado. La frescura es independiente del reloj de INPUT.
-                    gyro.fill(0f)
-                    gyroSum.fill(0f)
-                    gyroSumNs = 0L
-                    lastGyroNs = 0L
-                    lastSensorHz = 0f
-                    hzWindowStartNs = 0L
-                    hzCount = 0
-                }
+                prepareGyro(now)
                 lastSendNs = now
                 sendPacket(now)
             }
@@ -143,6 +161,7 @@ class MotionEngine(
     fun start() {
         if (running || closed) return
         running = true
+        ButtonState.addButtonChangeListener(onButtonChange)
         gyroRegistered = register(Sensor.TYPE_GYROSCOPE)
         accelRegistered = register(Sensor.TYPE_ACCELEROMETER)
         rotationRegistered = register(Sensor.TYPE_GAME_ROTATION_VECTOR)
@@ -162,7 +181,9 @@ class MotionEngine(
         if (closed) return
         running = false
         closed = true
+        ButtonState.removeButtonChangeListener(onButtonChange)
         handler.removeCallbacksAndMessages(null)
+        buttonChanges.clear()
         sensorManager.unregisterListener(this)
         thread.quitSafely()
     }
@@ -223,7 +244,45 @@ class MotionEngine(
         gyroSumNs = 0L
     }
 
+    private fun prepareGyro(now: Long) {
+        if (lastGyroNs != 0L && now - lastGyroNs < GYRO_STALE_NS) {
+            // Un gyro de 50 Hz sigue vivo entre envíos; conservar también
+            // muestras que llegaron después del anterior INPUT.
+            consumeGyro()
+        } else {
+            // Una pulsación no debe reactivar el movimiento de un sensor parado.
+            gyro.fill(0f)
+            gyroSum.fill(0f)
+            gyroSumNs = 0L
+            lastGyroNs = 0L
+            lastSensorHz = 0f
+            hzWindowStartNs = 0L
+            hzCount = 0
+        }
+    }
+
+    private fun acceptButtonChanges() {
+        while (true) {
+            val change = buttonChanges.poll() ?: return
+            if (change.reset) buttonDelivery.reset() else buttonDelivery.accept(change.buttons)
+        }
+    }
+
+    private fun scheduleButtonUpdate() {
+        handler.removeCallbacks(buttonUpdate)
+        if (!running) return
+        // Remove wake-ups before draining. A concurrent new event either gets
+        // drained here or leaves its own wake-up queued after this one.
+        acceptButtonChanges()
+        val nextChange = buttonDelivery.nextChangeAtNs() ?: return
+        val now = SystemClock.elapsedRealtimeNanos()
+        val remaining = (maxOf(lastSendNs + GYRO_INTERVAL_NS, nextChange) - now).coerceAtLeast(0)
+        handler.postDelayed(buttonUpdate, (remaining + 999_999L) / 1_000_000L)
+    }
+
     private fun sendPacket(tSensorNs: Long) {
+        acceptButtonChanges()
+        val buttons = buttonDelivery.buttonsForPacket(tSensorNs)
         seq++
         val quatFlag = if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0
         val packet = when (val senderKind = kind) {
@@ -241,7 +300,7 @@ class MotionEngine(
                     quat = quatOut,
                     gyro = gyroOut,
                     accel = accelOut,
-                    buttons = ButtonState.current(),
+                    buttons = buttons,
                     recenterCount = ButtonState.recenterCount(),
                     batteryPct = battery(),
                     touchScrollDy = ButtonState.drainScroll(),
@@ -264,7 +323,7 @@ class MotionEngine(
                 quat = quat,
                 gyro = gyro,
                 accel = accel,
-                buttons = ButtonState.current(),
+                buttons = buttons,
                 recenterCount = ButtonState.recenterCount(),
                 batteryPct = battery(),
                 touchScrollDy = ButtonState.drainScroll(),
@@ -287,7 +346,7 @@ class MotionEngine(
                     quat = quatOut,
                     gyro = gyroOut,
                     accel = accelOut,
-                    buttons = ButtonState.current(),
+                    buttons = buttons,
                     recenterCount = ButtonState.recenterCount(),
                     batteryPct = battery(),
                     touchScrollDy = ButtonState.drainScroll(),
@@ -311,7 +370,7 @@ class MotionEngine(
                     quat = quatOut,
                     gyro = gyroOut,
                     accel = accelOut,
-                    buttons = ButtonState.current(),
+                    buttons = buttons,
                     recenterCount = ButtonState.recenterCount(),
                     batteryPct = battery(),
                     touchScrollDy = ButtonState.drainScroll(),
@@ -320,6 +379,11 @@ class MotionEngine(
             }
         }
         onPacket(packet)
+        // Sending/encoding can itself be delayed. Neither another packet nor
+        // a queued release may shorten a pulse by using the earlier enqueue time.
+        lastSendNs = SystemClock.elapsedRealtimeNanos()
+        buttonDelivery.packetSent(buttons, lastSendNs)
+        scheduleButtonUpdate()
     }
 
     private fun trackHz(tNs: Long) {

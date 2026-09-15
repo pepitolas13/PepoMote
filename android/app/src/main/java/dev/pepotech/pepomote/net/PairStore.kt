@@ -8,7 +8,8 @@ data class Pairing(
     val host: String,
     val port: Int,
     val token: String,
-    val pcName: String
+    val pcName: String,
+    val platform: String = ReceiverCapabilities.DESKTOP
 )
 
 /**
@@ -47,6 +48,16 @@ object PairStore {
 
     fun upsert(context: Context, p: Pairing) {
         write(context, PairList.upsert(all(context), p), p.token)
+    }
+
+    /** Replace the temporary pairing code atomically, retaining other saved receivers. */
+    fun confirm(context: Context, previous: Pairing, confirmed: Pairing) {
+        if (previous.token == confirmed.token) {
+            upsert(context, confirmed)
+            return
+        }
+        val list = all(context).filterNot { it.token == previous.token && it.host == previous.host && it.port == previous.port }
+        write(context, PairList.upsert(list, confirmed), confirmed.token)
     }
 
     /** Otro de los guardados pasa a ser el actual. */
@@ -90,7 +101,8 @@ object PairStore {
             val token = uri.getQueryParameter("t") ?: return null
             val port = uri.getQueryParameter("port")?.toIntOrNull() ?: 26761
             val name = uri.getQueryParameter("name") ?: "PC"
-            Pairing(host, port, token, name)
+            if (host.isBlank() || token.isBlank() || token.length > 512 || port !in 1..65535) return null
+            Pairing(host, port, token, name, ReceiverCapabilities.platform(uri.getQueryParameter("platform")))
         } catch (_: Exception) {
             null
         }

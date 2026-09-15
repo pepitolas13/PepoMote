@@ -8,7 +8,8 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.NetworkInterface
 
-data class ReceiverInfo(val name: String, val host: String, val tcpPort: Int)
+data class ReceiverInfo(val name: String, val host: String, val tcpPort: Int,
+    val platform: String = ReceiverCapabilities.DESKTOP)
 
 /** Descubrimiento por broadcast UDP (fallback sin mDNS): PMPDISCOVER1 → PMPHERE1. */
 object Discovery {
@@ -62,7 +63,8 @@ object Discovery {
                         found[host] = ReceiverInfo(
                             name = json.optString("name", host),
                             host = host,
-                            tcpPort = json.optInt("tcp", 26761)
+                            tcpPort = json.optInt("tcp", 26761),
+                            platform = ReceiverCapabilities.platform(json.optString("platform"))
                         )
                     } catch (_: Exception) {
                     }

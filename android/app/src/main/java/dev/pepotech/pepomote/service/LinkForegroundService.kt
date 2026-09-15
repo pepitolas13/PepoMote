@@ -74,6 +74,7 @@ class LinkForegroundService : Service() {
          * plano con su notificación.
          */
         fun start(context: Context, role: String = LinkState.ROLE_WIIMOTE, background: Boolean = false) {
+            dev.pepotech.pepomote.server.ServerForegroundService.stop(context)
             // "Conectando" YA, antes de que el servicio llegue a arrancar: si
             // el intento anterior acabó en Failed, la pantalla del mando aún
             // lo veía y rebotaba al inicio repitiendo el error viejo.
@@ -224,6 +225,7 @@ class LinkForegroundService : Service() {
     }
 
     private fun connect(pairing: Pairing) {
+        var confirmedPairing = pairing
         attempt++
         val gen = ++generation
         control = ControlClient(
@@ -244,10 +246,10 @@ class LinkForegroundService : Service() {
                     phase = Phase.Live
                     reconnectAttempt = 0
                     val nunchuk = ok.role == LinkState.ROLE_NUNCHUK
-                    // El PC se ha renombrado: el emparejamiento se actualiza solo
-                    val pcName = ok.name.takeIf { it.isNotBlank() && it != pairing.pcName }?.also {
-                        PairStore.save(this@LinkForegroundService, pairing.copy(pcName = it))
-                    } ?: pairing.pcName
+                    val pcName = ok.name.takeIf { it.isNotBlank() } ?: pairing.pcName
+                    confirmedPairing = pairing.copy(pcName = pcName, platform = ok.platform,
+                        token = ok.pairToken ?: pairing.token)
+                    if (confirmedPairing != pairing) PairStore.confirm(this@LinkForegroundService, pairing, confirmedPairing)
                     val sender = UdpSender(pairing.host, ok.udpPort, ok.sessionId) { rtt ->
                         LinkState.updateConnected { it.copy(rttMs = rtt) }
                     }
@@ -264,8 +266,9 @@ class LinkForegroundService : Service() {
                     engine.start()
                     LinkState.sendMode = { m ->
                         ButtonState.reset()
-                        lastMode = m
-                        control?.sendMode(m, cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
+                        val selected = (LinkState.flow.value as? UiLink.Connected)?.let { Route.selectMode(m, it) } ?: m
+                        lastMode = selected
+                        control?.sendMode(selected, cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
                     }
                     // Guardar la elección de Wii U; Switch siempre usa Pro Controller.
                     LinkState.sendPad = { p ->
@@ -276,7 +279,7 @@ class LinkForegroundService : Service() {
                             control?.sendPad(pad)
                         }
                     }
-                    LinkState.sendText = { t -> control?.sendText(t) }
+                    LinkState.sendText = { t -> if (ok.textInput) control?.sendText(t) }
                     LinkState.sendNunchuk = { own -> control?.sendNunchuk(own) }
                     LinkState.sendScreenOnly = { on ->
                         if ((LinkState.flow.value as? UiLink.Connected)?.mode == LinkState.MODE_CEMU) control?.sendScreenOnly(on)
@@ -291,14 +294,18 @@ class LinkForegroundService : Service() {
                             pad = ok.pad,
                             ownNunchuk = ok.nunchuk == "own",
                             screenOnly = ok.screenOnly,
-                            supportsSwitch = ok.supportsSwitch
+                            supportsSwitch = ok.supportsSwitch,
+                            platform = ok.platform,
+                            textInput = ok.textInput
                         )
                     )
                     val requestedMode = LinkState.pendingMode
                     requestedMode?.let { m ->
                         LinkState.pendingMode = null
-                        lastMode = m
-                        control?.sendMode(m, cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
+                        val selected = Route.selectMode(m, LinkState.flow.value as UiLink.Connected)
+                        if (selected != m) LinkState.clearIntent()
+                        lastMode = selected
+                        control?.sendMode(selected, cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
                     }
                     // Reponer solo la elección del modo confirmado, después de su eco si estaba pendiente.
                     if (!nunchuk && requestedMode == null && (ok.mode == LinkState.MODE_CEMU && ok.supportsCemu || ok.mode == LinkState.MODE_SWITCH && ok.supportsSwitch)) {
@@ -331,7 +338,7 @@ class LinkForegroundService : Service() {
                     if (phase != Phase.Initial) {
                         // La sesión estaba viva (o se estaba rehaciendo): se
                         // sigue intentando solo
-                        dropped(pairing)
+                        dropped(confirmedPairing)
                         return
                     }
                     // Fallos de red transitorios (el primer intento tras el
@@ -343,7 +350,7 @@ class LinkForegroundService : Service() {
                         val retryGen = ++generation
                         updateNotification(getString(R.string.notif_retrying, attempt, MAX_ATTEMPTS))
                         Thread({
-                            val next = relocate(pairing)
+                            val next = relocate(confirmedPairing)
                             mainHandler.post { if (retryGen == generation) connect(next) }
                         }, "pepomote-retry").start()
                     } else {
@@ -361,6 +368,7 @@ class LinkForegroundService : Service() {
                 override fun onModeChanged(mode: String, byPc: Boolean) {
                     if (gen != generation) return
                     val before = LinkState.flow.value as? UiLink.Connected
+                    if (before?.platform == "android") lastMode = mode
                     if (before?.mode != mode) ButtonState.reset()
                     LinkState.updateConnected {
                         it.copy(mode = mode, pad = PadPreference.effective(mode, it.pad))
@@ -404,7 +412,7 @@ class LinkForegroundService : Service() {
                     if (gen != generation) return
                     if (phase != Phase.Initial && LinkState.flow.value !is UiLink.Failed) {
                         // El PC cerró (reinicio, red caída): se rehace sola
-                        dropped(pairing)
+                        dropped(confirmedPairing)
                         return
                     }
                     if (LinkState.flow.value !is UiLink.Failed) {

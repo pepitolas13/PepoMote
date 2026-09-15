@@ -282,6 +282,196 @@ class MotionEngineTest {
         assertArrayEquals(FloatArray(3), packets.last().floats(40, 3), 0f)
     }
 
+    @Test fun firstButtonAfterLongStationaryIdleUsesTheNextAvailableSendSlot() {
+        val packets = mutableListOf<ByteArray>()
+        val sentAt = mutableListOf<Long>()
+        engine(packets = packets, sentAt = sentAt).start()
+        // Thirty seconds of neutral input, including battery refreshes, without any sensor.
+        repeat(3000) {
+            ShadowSystemClock.advanceBy(Duration.ofMillis(10))
+            loopers.values.forEach { it.idle() }
+        }
+        advance(1)
+        val beforePress = packets.size
+        ButtonState.set(ButtonState.A, true)
+        loopers.values.forEach { it.idle() }
+        assertEquals("Button input must respect the same 250 Hz limit", beforePress, packets.size)
+        advance(3)
+        assertEquals("The first press must not wait for the 10 ms fallback tick", beforePress + 1, packets.size)
+        assertEquals(ButtonState.A, packets.last().int(64))
+        assertEquals(4_000_000L, sentAt.last() - sentAt[sentAt.lastIndex - 1])
+        assertArrayEquals(FloatArray(3), packets.last().floats(40, 3), 0f)
+    }
+
+    @Test fun batchedDownAndUpStillEmitAPressAndAReleaseBeforeFallbackTicks() {
+        val packets = mutableListOf<ByteArray>()
+        engine(packets = packets).start()
+        advance(101)
+        // Android can deliver a delayed DOWN and UP together. The latch starts
+        // from delivery time, so the physical tap remains visible in INPUT.
+        ButtonState.set(ButtonState.B, true)
+        ButtonState.set(ButtonState.B, false)
+        advance(3)
+        assertEquals(ButtonState.B, packets.last().int(64))
+        advance(66)
+        assertEquals(ButtonState.B, packets.last().int(64))
+        advance(4)
+        assertEquals("The minimum hold is not extended to the next heartbeat", 0, packets.last().int(64))
+        assertEquals(listOf(0, ButtonState.B, 0), packets.map { it.int(64) }.distinctUntilChanged())
+    }
+
+    @Test fun twoQuickTapsKeepBothEdgesAndTheSharedRateLimit() {
+        val packets = mutableListOf<ByteArray>()
+        val sentAt = mutableListOf<Long>()
+        engine(packets = packets, sentAt = sentAt).start()
+        advance(101)
+        ButtonState.set(ButtonState.A, true)
+        advance(20)
+        ButtonState.set(ButtonState.A, false)
+        advance(20)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        advance(200)
+        assertEquals(listOf(0, ButtonState.A, 0, ButtonState.A, 0), packets.map { it.int(64) }.distinctUntilChanged())
+        sentAt.zipWithNext().forEach { (a, b) -> assertTrue("Buttons share the sensor rate limit", b - a >= 4_000_000L) }
+        packets.zipWithNext().forEach { (a, b) -> assertEquals(a.int(12) + 1, b.int(12)) }
+    }
+
+    @Test fun twoTapsDeliveredTogetherCannotEraseTheFirstPressBeforeTheSenderRuns() {
+        val packets = mutableListOf<ByteArray>()
+        engine(packets = packets).start()
+        advance(101)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        advance(220)
+        assertEquals("Each delivered tap needs its own press and release on the wire",
+            listOf(0, ButtonState.A, 0, ButtonState.A, 0), packets.map { it.int(64) }.distinctUntilChanged())
+    }
+
+    @Test fun compressedTapsRemainVisibleAtEverySixtyHzPollingPhase() {
+        val packets = mutableListOf<ByteArray>()
+        val sentAt = mutableListOf<Long>()
+        engine(packets = packets, sentAt = sentAt).start()
+        advance(101)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        advance(220)
+        val edges = packets.indices.filter { it == 0 || packets[it].int(64) != packets[it - 1].int(64) }
+        assertEquals(listOf(0, ButtonState.A, 0, ButtonState.A, 0), edges.map { packets[it].int(64) })
+        val times = edges.map { sentAt[it] }
+        assertTrue("First tap must remain on the wire for at least 70 ms", times[2] - times[1] >= 70_000_000L)
+        assertTrue("The release between taps must span a 60 Hz frame", times[3] - times[2] >= 20_000_000L)
+        assertTrue("Second tap must also remain on the wire for at least 70 ms", times[4] - times[3] >= 70_000_000L)
+        // Model an emulator that only keeps the latest packet and polls once
+        // per video frame. Vary its phase independently of the sender clock.
+        for (phase in 0L until 16_666_667L step 1_000_000L) {
+            val observed = mutableListOf<Int>()
+            var at = sentAt.first() + phase
+            while (at <= sentAt.last()) {
+                val latest = sentAt.indexOfLast { it <= at }
+                observed += packets[latest].int(64)
+                at += 16_666_667L
+            }
+            assertEquals("A 60 Hz consumer must see both taps at phase $phase ns",
+                listOf(0, ButtonState.A, 0, ButtonState.A, 0), observed.distinctUntilChanged())
+        }
+    }
+
+    @Test fun aPendingAReleaseCannotDelayANewBPress() {
+        val packets = mutableListOf<ByteArray>()
+        engine(packets = packets).start()
+        advance(101)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        advance(4)
+        ButtonState.set(ButtonState.B, true)
+        advance(3)
+        assertEquals("B starts at the next send slot while A finishes its minimum hold",
+            ButtonState.A or ButtonState.B, packets.last().int(64))
+    }
+
+    @Test fun aStalledSenderMeasuresTheHoldFromTheFirstPacketItActuallySends() {
+        val packets = mutableListOf<ByteArray>()
+        val sentAt = mutableListOf<Long>()
+        engine(packets = packets, sentAt = sentAt).start()
+        advance(101)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        // The UI release happens while the network/sensor handler is delayed.
+        ShadowSystemClock.advanceBy(Duration.ofMillis(100))
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        loopers.values.forEach { it.idle() }
+        advance(80)
+        val pressed = packets.indexOfFirst { it.int(64) == ButtonState.A }
+        val released = packets.indices.first { it > pressed && packets[it].int(64) == 0 }
+        assertTrue("A late handler must not collapse an already queued tap into a 4 ms pulse",
+            sentAt[released] - sentAt[pressed] >= 70_000_000L)
+    }
+
+    @Test fun aSensorPacketCanSatisfyThePendingButtonSend() {
+        val gyro = sensor(Sensor.TYPE_GYROSCOPE)
+        val packets = mutableListOf<ByteArray>()
+        engine(packets = packets).start()
+        advance(4)
+        emit(gyro, 1f, 2f, 3f)
+        ButtonState.set(ButtonState.A, true)
+        loopers.values.forEach { it.idle() }
+        advance(3)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(1))
+        emit(gyro, 4f, 5f, 6f)
+        loopers.values.forEach { it.idle() }
+        assertEquals(2, packets.size)
+        assertEquals(ButtonState.A, packets.last().int(64))
+        advance(4)
+        assertEquals("An already delivered button change must not cause a duplicate INPUT", 2, packets.size)
+    }
+
+    @Test fun resetReleasesButtonsPromptlyAndStoppedEnginesCannotObserveNewInput() {
+        val oldPackets = mutableListOf<ByteArray>()
+        val old = engine(packets = oldPackets)
+        old.start()
+        advance(101)
+        ButtonState.set(ButtonState.A, true)
+        advance(3)
+        assertEquals(ButtonState.A, oldPackets.last().int(64))
+        ButtonState.reset()
+        advance(4)
+        assertEquals(0, oldPackets.last().int(64))
+        stop(old)
+        val stoppedCount = oldPackets.size
+        val newPackets = mutableListOf<ByteArray>()
+        engine(packets = newPackets).start()
+        ButtonState.set(ButtonState.B, true)
+        loopers.values.forEach { it.idle() }
+        assertEquals("A replacement engine receives input without an extra heartbeat", ButtonState.B, newPackets.single().int(64))
+        advance(20)
+        assertEquals(stoppedCount, oldPackets.size)
+    }
+
+    @Test fun leavingTheControllerCancelsUnsentButtonEdges() {
+        val packets = mutableListOf<ByteArray>()
+        engine(packets = packets).start()
+        advance(101)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        // A controller screen or mode closes before the sender gets its turn.
+        ButtonState.reset()
+        advance(100)
+        assertTrue("No queued button press may leak into the next screen or mode",
+            packets.all { it.int(64) == 0 })
+    }
+
+    private fun <T> List<T>.distinctUntilChanged(): List<T> =
+        filterIndexed { index, item -> index == 0 || item != this[index - 1] }
+
     @Test fun stopCancelsAllSendsAndReplacementEngineHasOneLoop() {
         val gyro = sensor(Sensor.TYPE_GYROSCOPE)
         val oldPackets = mutableListOf<ByteArray>()

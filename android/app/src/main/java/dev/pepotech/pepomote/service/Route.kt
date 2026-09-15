@@ -3,6 +3,7 @@ package dev.pepotech.pepomote.service
 import androidx.annotation.StringRes
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.sensor.Frame
+import dev.pepotech.pepomote.net.ReceiverCapabilities
 
 /** Pantalla del mando que toca enseñar. */
 enum class PadScreen { GamePad, Wii, Nunchuk }
@@ -22,13 +23,16 @@ object Route {
     /** Modes the owner can select from a compact controller menu. */
     fun availableModes(link: UiLink.Connected): List<String> {
         if (link.slot != 0 || link.role != LinkState.ROLE_WIIMOTE) return emptyList()
-        return buildList {
-            add(LinkState.MODE_POINTER)
-            add(LinkState.MODE_DOLPHIN)
-            if (link.supportsCemu) add(LinkState.MODE_CEMU)
-            if (link.supportsSwitch) add(LinkState.MODE_SWITCH)
-        }
+        return ReceiverCapabilities.modes(link.platform, link.supportsCemu, link.supportsSwitch)
     }
+
+    fun isAndroidReceiver(link: UiLink): Boolean =
+        (link as? UiLink.Connected)?.platform == ReceiverCapabilities.ANDROID
+
+    fun selectMode(requested: String?, link: UiLink.Connected): String =
+        if (link.platform == ReceiverCapabilities.ANDROID)
+            ReceiverCapabilities.select(requested, link.mode, link.platform, link.supportsCemu, link.supportsSwitch)
+        else requested ?: link.mode
 
     @StringRes
     val WARN_NEEDS_13: Int = R.string.warn_needs_13

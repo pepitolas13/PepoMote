@@ -3,6 +3,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -15,6 +16,16 @@
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <queries>
+        <package android:name="org.dolphinemu.dolphinemu" />
+        <package android:name="dev.eden.eden_emulator" />
+        <package android:name="dev.eden.eden_emulator.nightly" />
+        <package android:name="dev.legacy.eden_emulator" />
+        <package android:name="dev.legacy.eden_emulator.nightly" />
+        <package android:name="com.miHoYo.Yuanshen" />
+        <package android:name="com.miHoYo.Yuanshen.nightly" />
+    </queries>
 
     <application
         android:label="@string/app_name"
@@ -54,6 +65,11 @@
             android:stateNotNeeded="true"
             android:theme="@style/zxing_CaptureTheme"
             android:windowSoftInputMode="stateAlwaysHidden" />
+
+        <service
+            android:name=".server.ServerForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
         <service
             android:name=".service.LinkForegroundService"

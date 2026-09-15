@@ -198,7 +198,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                         horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 10.dp, Alignment.CenterHorizontally),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, dense = dense)
+                        if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android", dense = dense)
                         if (nunchuk) NunchukChip(link, dense = dense, modifier = Modifier.padding(start = 4.dp))
                     }
                 }
@@ -287,7 +287,7 @@ internal fun isWiiUAsWiimote(link: UiLink.Connected): Boolean =
 
 /** Chips de modo: solo el Jugador 1; con el ajuste activo o, siempre, dentro de Wii U. */
 internal fun showModeChips(link: UiLink.Connected, showChips: Boolean): Boolean =
-    link.slot == 0 && (showChips || link.mode == LinkState.MODE_CEMU)
+    link.slot == 0 && (showChips || link.mode == LinkState.MODE_CEMU || link.platform == "android")
 
 /** Chip «Nunchuk»: en Dolphin, cualquier jugador que sea mando (no un Nunchuk). */
 internal fun showNunchukChip(link: UiLink.Connected): Boolean =
@@ -326,21 +326,21 @@ internal fun modeLabel(mode: String): String = when (mode) {
  */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: Boolean = false, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier) {
+internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: Boolean = false, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier, androidReceiver: Boolean = false) {
     val chips: @Composable () -> Unit = {
-        ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact, dense = dense) {
+        if (!androidReceiver) ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact, dense = dense) {
             LinkState.requestMode(LinkState.MODE_POINTER)
         }
         ModeChip(stringResource(R.string.mode_dolphin), selected = current == LinkState.MODE_DOLPHIN, compact = compact, dense = dense) {
             LinkState.requestMode(LinkState.MODE_DOLPHIN)
         }
-        if (supportsCemu) {
+        if (supportsCemu && !androidReceiver) {
             ModeChip(stringResource(R.string.mode_wiiu), selected = current == LinkState.MODE_CEMU, compact = compact, dense = dense) {
                 LinkState.requestMode(LinkState.MODE_CEMU)
             }
         }
         if (supportsSwitch) {
-            ModeChip(stringResource(R.string.mode_switch), selected = current == LinkState.MODE_SWITCH, compact = compact, dense = dense) {
+            ModeChip(stringResource(if (androidReceiver) R.string.mode_eden else R.string.mode_switch), selected = current == LinkState.MODE_SWITCH, compact = compact, dense = dense) {
                 LinkState.requestMode(LinkState.MODE_SWITCH)
             }
         }

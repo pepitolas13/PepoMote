@@ -1,11 +1,11 @@
 <p align="center"><img src="assets/brand/logo.png" width="96" alt="PepoMote"></p>
 
 <h1 align="center">PepoMote</h1>
-<p align="center"><b>Apunta. Haz clic. Juega.</b> — Convierte tu móvil Android en un puntero y mando con movimiento estilo Wii para tu PC.</p>
+<p align="center"><b>Apunta. Haz clic. Juega.</b> — Convierte tu móvil en un puntero y mando con movimiento para tu PC, o conecta dos Android para jugar.</p>
 
 **[English](README.md)**
 
-**PepoMote 1.7:** llega Switch con Pro Controller para Eden, controles que funcionan sin giroscopio y retorno al puntero opcional. [Descargas y novedades](https://github.com/pepitolas13/PepoMote/releases/tag/v1.7.0). Actualiza tanto el receptor del PC como la app del móvil.
+**PepoMote 1.8:** tu Android también puede ser el servidor de Dolphin y Eden. Misma app en los dos móviles, configuración guiada, conexión local automática y pulsaciones más fiables. Para redes distintas, WireGuard es la opción recomendada y Tailscale una alternativa. [Descargas y novedades](https://github.com/pepitolas13/PepoMote/releases/tag/v1.8.0).
 
 - **Modo puntero** — apuntas con el móvil y el cursor va exactamente ahí (apuntado absoluto anclado al mundo, inmune al roll, 250 Hz). Botones, arrastre, scroll, teclas multimedia. Tu ratón de verdad sigue funcionando siempre que el móvil esté quieto.
 - **Modo Dolphin** — PepoMote se convierte en un Wiimote virtual con movimiento completo (servidor DSU/cemuhook en `127.0.0.1:26760`). Juega juegos de Wii reales — bolos de Wii Sports incluidos — en el [emulador Dolphin](https://es.dolphin-emu.org/).
@@ -15,7 +15,7 @@
 
 | Pieza | Plataforma | Archivo |
 |---|---|---|
-| Emisor | Android 8.0+ | `PepoMote.apk` |
+| Emisor y servidor para Dolphin/Eden | Android 8.0+ (el servidor también debe cumplir los requisitos del emulador) | `PepoMote.apk` |
 | Emisor | iPhone / iPad, iOS 15+ (hasta iPadOS 26) | `PepoMote.ipa` — se instala con SideStore (mi recomendación), AltStore o Sideloadly, ver [docs/IOS.md](docs/IOS.md) |
 | Emisor | Linux móvil: Mobian, postmarketOS… (aarch64) | `pepomote-mobile_*_arm64.deb` (Mobian: tocar e Instalar) · `PepoMote-Mobile-aarch64.AppImage` (glibc) · `PepoMote-Mobile-aarch64-musl.tar.gz` (postmarketOS) |
 | Receptor | Windows 10/11 | `PepoMote.exe` — un solo archivo portable |
@@ -31,6 +31,8 @@
 **PC (macOS, beta)** — descarga `PepoMote-macOS.dmg`, ábrelo y arrastra PepoMote a Aplicaciones. No está notarizado por Apple (eso exige una cuenta de desarrollador de pago), así que la primera apertura de cada versión lleva un paso más: en macOS 15/26, Ajustes del Sistema → Privacidad y seguridad → **Abrir igualmente** (en 13/14: Control-clic → Abrir). Después permite **Red local** y, desde la tarjeta que enseña la ventana, **Accesibilidad** (mueve el cursor; sin reiniciar) y, solo para la doble pantalla de Cemu, **Grabación de pantalla**. Solo Mac con chip Apple y macOS 13 o superior. Lo compila y prueba la CI en un Mac, pero aún no lo he podido probar en uno de verdad: detalles, permisos y problemas en [docs/MACOS.md](docs/MACOS.md).
 
 **Móvil** — instala `PepoMote.apk` (permite "orígenes desconocidos"). Ábrela, toca **Conectar** y escanea el QR del PC. Emparejado para siempre.
+
+**Dos móviles Android** — instala la misma APK en ambos. En el que ejecutará los juegos, abre **Servidor**; en el otro, **Conectar** y escanea su QR. El mando reconoce el servidor Android y ofrece Dolphin y Eden. La configuración de controles te guía paso a paso y guarda el permiso para las siguientes veces. [Guía del servidor Android y conexión entre redes](docs/ANDROID-SERVER.md).
 
 **iPhone / iPad** — no está en la App Store. Yo recomiendo personalmente [SideStore](https://sidestore.io) (se renueva sola en el propio iPad cada 7 días, sin PC encendido; es la que uso), aunque también se puede con [AltStore](https://altstore.io) (necesita AltServer en tu PC para renovar; sus autores trabajan en quitar ese requisito) y con Sideloadly (a mano desde el PC con `PepoMote.ipa`). En SideStore o AltStore: Sources → **+** → añade `https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` → Browse → PepoMote → Instalar; las actualizaciones te salen ahí mismo. Enlaces de un toque para una web o un chat: `sidestore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json` y `altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json`. Paso a paso, permisos y diferencias con Android en [docs/IOS.md](docs/IOS.md).
 
@@ -53,7 +55,7 @@ Cierra Eden, toca **Switch** en el móvil, espera el aviso de configuración. Ab
 - **Multijugador local**: hasta 4 móviles en el mismo PC — escanean el mismo QR y cada uno es su propio Wiimote en Dolphin, con la configuración de mandos de Dolphin escrita sola
 - **Nunchuk en el mismo móvil** (1.5.5): los juegos que piden Nunchuk (Super Mario Galaxy, Zelda, Metroid Prime…) funcionan con un solo móvil: el mando se pone solo de lado y tienes el Nunchuk en la mano izquierda (stick, C, Z) y el Mando de Wii en la derecha (A, B, cruceta, −/+/Home, 1/2), apuntando con el móvil como siempre. Viene apagado: enciéndelo con el chip **Nunchuk** o en Ajustes (se recuerda); apagado, de lado es el mando NES. Detalles en [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md)
 - **Nunchuk en un segundo móvil**: toca **Nunchuk** en el otro móvil: stick, C, Z y su propio acelerómetro alimentan el Nunchuk emulado de tu Wiimote, configurado solo en Dolphin
-- Botones físicos de volumen = A / B (latencia táctil cero)
+- Botones físicos de volumen = A / B. En Android se conservan las pulsaciones rápidas aunque varios eventos lleguen juntos
 - Gira el móvil y tienes un mando estilo NES (juegos 2D) — o un Wii U GamePad completo en modo Wii U
 - Arranque con el sistema opcional (solo bandeja, sin ventana)
 - Emparejado por QR una vez; reconexión de un toque; autodescubrimiento en tu red
@@ -64,7 +66,7 @@ Cierra Eden, toca **Switch** en el móvil, espera el aviso de configuración. Ab
 - **iPhone y iPad** (1.5): el mismo emisor en Swift, con la doble pantalla del GamePad de Wii U y todo lo demás; se instala con SideStore o AltStore desde una fuente de un toque, y lo compila y prueba la CI en macOS
 - **Varios PCs y reconexión automática**: la app guarda todos tus PCs y, si se cae la Wi-Fi o reinicias el receptor, vuelve sola sin perder la pantalla ni el modo
 - **macOS** (1.5.5, beta): el mismo receptor en Mac con chip Apple — cursor y teclas por Accesibilidad, doble pantalla de Cemu, icono en la barra de menús, arranque con el sistema, `.app` firmado en un DMG
-- **Aviso de versión nueva** (1.5.5): todas las apps avisan cuando sale una versión, con el enlace a la release. La comprobación es una consulta a GitHub una vez al día (solo la página de la última versión; no se envía nada tuyo) y se apaga en Ajustes. PepoMote no habla con nada más fuera de tu red.
+- **Aviso de versión nueva** (1.5.5): todas las apps avisan cuando sale una versión, con el enlace a la release. La comprobación es una consulta a GitHub una vez al día (solo la página de la última versión; no se envía nada tuyo) y se apaga en Ajustes. Los controles viajan directamente entre tus dispositivos, por la red local o por la VPN que hayas configurado; PepoMote no tiene un servidor de retransmisión propio.
 - **iPad y tablets** (1.5.5): el mando, el pad NES, el Nunchuk y el GamePad de Wii U crecen hasta llenar la pantalla (misma regla en iOS y Android; los móviles quedan exactamente como estaban). Y en Ajustes está **GamePad sin pantalla táctil**: quita la pantalla del GamePad de Wii U (y la doble pantalla) para que sticks, cruceta y A/B/X/Y sean mucho más grandes; en un móvil pasan a ir uno al lado del otro, como en un Pro Controller
 - **Pantalla del GamePad a pantalla completa** (1.6): con un mando de verdad conectado al PC, el móvil enseña solo la pantalla del GamePad de Cemu (táctil incluido), como la de la Wii U; el receptor añade el móvil a tu perfil de Cemu sin pisar tu mando. Botón de teclado opcional arriba a la derecha
 - **Lado del mando + Nunchuk** (1.6): la primera vez que sale el mando + Nunchuk apaisado, la app pregunta si está bien girado («Darle la vuelta» / «Así lo quiero») y el lado se queda fijo para siempre (el sensor de algunos móviles le daba la vuelta solo); en Ajustes se cambia. El GamePad de Wii U tiene su propio lado, aparte

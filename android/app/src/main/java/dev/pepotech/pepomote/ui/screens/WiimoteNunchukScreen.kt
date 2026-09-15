@@ -188,7 +188,7 @@ fun WiimoteNunchukScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> U
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (showModeChips(link, showChips)) {
-                            ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, compact = true)
+                            ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android", compact = true)
                         }
                         NunchukChip(link, compact = true)
                     }
