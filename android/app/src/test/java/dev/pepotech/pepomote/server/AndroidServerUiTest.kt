@@ -3,6 +3,7 @@ package dev.pepotech.pepomote.server
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.content.Context
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.ProviderInfo
 import android.net.Uri
@@ -10,6 +11,7 @@ import android.provider.DocumentsContract
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import dev.pepotech.pepomote.server.core.ReceiverConfig
 import dev.pepotech.pepomote.server.core.ReceiverMode
 import dev.pepotech.pepomote.server.core.ReceiverSnapshot
@@ -19,6 +21,7 @@ import dev.pepotech.pepomote.server.setup.EmulatorTarget
 import dev.pepotech.pepomote.server.setup.SetupJournal
 import dev.pepotech.pepomote.server.setup.PendingTransaction
 import dev.pepotech.pepomote.net.PairStore
+import dev.pepotech.pepomote.net.ReceiverInfo
 import dev.pepotech.pepomote.ui.screens.PairScreen
 import dev.pepotech.pepomote.ui.screens.HomeScreen
 import dev.pepotech.pepomote.ui.screens.HomeStatus
@@ -95,13 +98,18 @@ class AndroidServerUiTest {
 
     @Test fun serverDashboardShowsPairingAndHonestEmulatorSetup() {
         ServerState.mutable.value = ServerUiState(
-            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "123456"),
+            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "1234"),
             hosts = listOf("192.168.1.20"),
             receiver = ReceiverSnapshot(true, ReceiverMode.Dolphin, 26761, 26760, emptyList(), 0))
         compose.setContent { PepoMoteTheme { ServerScreen {} } }
-        compose.onNodeWithText("123 456").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("1234").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("QR para conectar otro móvil a este servidor Android").assertExists()
         capture("server-pairing-ui-test.png")
+        compose.onNodeWithText("Copiar enlace").performScrollTo().performClick()
+        compose.onNodeWithText("Enlace copiado").assertIsDisplayed()
+        val clipboard = compose.activity.getSystemService(ClipboardManager::class.java)
+        assertEquals("192.168.1.20", PairStore.parsePairUrl(clipboard.primaryClip!!.getItemAt(0).text.toString())!!.host)
+        assertTrue(clipboard.primaryClip!!.description.extras!!.getBoolean("android.content.extra.IS_SENSITIVE"))
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Eden", substring = false))
         compose.onNodeWithText("Eden", substring = false).assertIsDisplayed().performClick()
         compose.onNodeWithText("Movimiento en Eden:", substring = true).performScrollTo().assertIsDisplayed()
@@ -110,7 +118,7 @@ class AndroidServerUiTest {
 
     @Test fun addressChoiceIsHiddenAndVpnLossNeverSubstitutesTheLocalQr() {
         ServerState.mutable.value = ServerUiState(
-            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "123456"),
+            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "1234"),
             hosts = listOf("192.168.1.20", "192.168.43.1"), vpnHosts = listOf("100.100.10.2"),
             receiver = ReceiverSnapshot(true, ReceiverMode.Dolphin, 26761, 26760, emptyList(), 0))
         compose.setContent { PepoMoteTheme { ServerScreen {} } }
@@ -124,12 +132,17 @@ class AndroidServerUiTest {
         assertEquals("https://tailscale.com/docs/install/android", shadowOf(compose.activity).nextStartedActivity.dataString)
         compose.onNodeWithText("Usar conexión VPN").assertIsEnabled().performClick()
         compose.onNodeWithText("Compartir enlace del mando").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Copiar enlace").performScrollTo().performClick()
+        val clipboard = compose.activity.getSystemService(ClipboardManager::class.java)
+        assertEquals("100.100.10.2", PairStore.parsePairUrl(clipboard.primaryClip!!.getItemAt(0).text.toString())!!.host)
         capture("server-vpn-ui-test.png")
         compose.runOnIdle { ServerState.mutable.value = ServerState.flow.value.copy(vpnHosts = emptyList()) }
         compose.onNodeWithContentDescription("QR para conectar otro móvil a este servidor Android").assertDoesNotExist()
+        compose.onNodeWithText("Copiar enlace").assertDoesNotExist()
+        compose.onNodeWithText("Enlace copiado").assertDoesNotExist()
         compose.onNodeWithText("La VPN se ha desconectado.", substring = true).assertExists()
         compose.onNodeWithText("Volver a la conexión local").performScrollTo().performClick()
-        compose.onNodeWithText("123 456").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("1234").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun firstSetupExplainsTwoTapsAndTargetsTheEmulatorRootDirectly() {
@@ -139,7 +152,7 @@ class AndroidServerUiTest {
             name = "OfficialDocumentsProvider"; exported = true; grantUriPermissions = true
         })
         ServerState.mutable.value = ServerUiState(
-            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "123456"),
+            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "1234"),
             hosts = listOf("192.168.1.20"),
             receiver = ReceiverSnapshot(true, ReceiverMode.Dolphin, 26761, 26760, emptyList(), 0))
         compose.setContent { PepoMoteTheme { ServerScreen {} } }
@@ -183,19 +196,68 @@ class AndroidServerUiTest {
 
     @Test fun sharedVpnLinkCanBePastedWithoutTouchingSavedPcPairings() {
         var connected: String? = null
-        val link = ServerIdentity.pairUrl(ReceiverConfig("Android remoto", "test-only-qr-credential", "123456"), "100.100.10.2")
-        compose.setContent { PepoMoteTheme { PairScreen({}, {}, onPairLink = { connected = it }) } }
-        compose.onNodeWithText("Introducir enlace").performClick()
-        compose.onNodeWithText("Enlace de PepoMote").performTextInput("enlace incorrecto")
-        compose.onNodeWithText("Conectar", substring = false).performClick()
+        val link = ServerIdentity.pairUrl(ReceiverConfig("Android remoto", "test-only-qr-credential", "1234"), "100.100.10.2")
+        compose.setContent { PepoMoteTheme { PairScreen({}, {}, onPairLink = { connected = it }, discoverReceivers = { emptyList() }) } }
+        compose.onNodeWithText("Introducir enlace").performScrollTo().performClick()
+        compose.onNodeWithText("2. Pulsa Copiar enlace", substring = true).assertExists()
+        compose.onNodeWithText("Enlace copiado del servidor").performTextInput("enlace incorrecto")
+        compose.onNodeWithText("Conectar", substring = false).performScrollTo().performClick()
         assertNull(connected)
-        compose.onNodeWithText("Este enlace no es válido.", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Enlace de PepoMote").performTextReplacement(link)
+        compose.onNodeWithText("Este enlace no es válido.", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Enlace copiado del servidor").performTextReplacement(link)
         capture("server-enter-link-ui-test.png")
-        compose.onNodeWithText("Conectar", substring = false).performClick()
+        compose.onNodeWithText("Conectar", substring = false).performScrollTo().performClick()
         assertEquals(link, connected)
         assertEquals("android", PairStore.parsePairUrl(connected!!)!!.platform)
         assertEquals("100.100.10.2", PairStore.parsePairUrl(connected!!)!!.host)
+    }
+
+    @Test fun codeEntryPreservesLeadingZeroesAcrossComposableStateRestoration() {
+        val pc = ReceiverInfo("Mi PC", "192.168.1.8", 26761)
+        var connected: Pair<ReceiverInfo, String>? = null
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { PepoMoteTheme {
+            PairScreen({}, {}, onDiscovered = { receiver, code -> connected = receiver to code },
+                discoverReceivers = { listOf(pc) })
+        } }
+        compose.onNodeWithText("Escanear QR").assertIsDisplayed()
+        compose.onNodeWithText("Conectar con código").assertIsDisplayed()
+        capture("pair-options-ui-test.png")
+        compose.onNodeWithText("Conectar con código").performClick()
+        compose.onNodeWithText("Mi PC").performClick()
+        compose.onNodeWithText("Código de conexión").performTextInput("004")
+        compose.onNodeWithText("Conectar", substring = false).assertIsNotEnabled()
+        compose.onNodeWithText("Código de conexión").performTextReplacement("00a42")
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Código de conexión").assertTextContains("0042")
+        compose.onNodeWithText("Mi PC").assertIsDisplayed()
+        capture("pair-four-digit-code-ui-test.png")
+        compose.onNodeWithText("Conectar", substring = false).assertIsEnabled().performClick()
+        assertEquals(pc to "0042", connected)
+    }
+
+    @Test fun nearbyDesktopCardAlsoOpensCodeEntryDirectly() {
+        val pc = ReceiverInfo("PC cercano", "192.168.1.8", 26761)
+        compose.setContent { PepoMoteTheme { PairScreen({}, {}, discoverReceivers = { listOf(pc) }) } }
+        compose.onNodeWithText("PC cercano").performScrollTo().performClick()
+        compose.onNodeWithText("Código de conexión").assertIsDisplayed()
+        compose.onNodeWithText("Escribe el código de 4 dígitos", substring = true).assertIsDisplayed()
+    }
+
+    @Test fun olderAndroidSixDigitCodeStillConnectsWithoutSubmittingEarly() {
+        val android = ReceiverInfo("Android anterior", "192.168.1.9", 26761, "android")
+        var connected: String? = null
+        compose.setContent { PepoMoteTheme {
+            PairScreen({}, {}, onDiscovered = { _, code -> connected = code }, discoverReceivers = { listOf(android) })
+        } }
+        compose.onNodeWithText("Android anterior").performScrollTo().performClick()
+        compose.onNodeWithText("Código de conexión").performTextInput("1234")
+        assertNull(connected)
+        compose.onNodeWithText("Código de conexión").performTextInput("5")
+        compose.onNodeWithText("Conectar", substring = false).assertIsNotEnabled()
+        compose.onNodeWithText("Código de conexión").performTextInput("6")
+        compose.onNodeWithText("Conectar", substring = false).assertIsEnabled().performClick()
+        assertEquals("123456", connected)
     }
 
     @Test fun interruptedSetupOffersRecoveryInsteadOfOpeningTheEmulator() {
@@ -225,7 +287,7 @@ class AndroidServerUiTest {
     @Test @Config(qualifiers = "es-rES-w360dp-h640dp-night-xxhdpi")
     fun connectedControllerCollapsesQrAndNarrowDarkScreenKeepsSetupAccessible() {
         ServerState.mutable.value = ServerUiState(
-            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "123456"),
+            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "1234"),
             hosts = listOf("192.168.1.20"), receiver = ReceiverSnapshot(true, ReceiverMode.Eden, 26761, 26760,
                 listOf(ReceiverPeerSnapshot("test-player", 0, "Mi mando", false, 80, 100.0, 5, 100)), 1))
         compose.setContent { PepoMoteTheme(dark = true) { ServerScreen {} } }

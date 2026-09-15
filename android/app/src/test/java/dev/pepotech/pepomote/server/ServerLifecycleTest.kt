@@ -80,7 +80,7 @@ class ServerLifecycleTest {
         val second = ServerIdentity.config(context)
         assertEquals(first.token, second.token)
         assertEquals(43, first.token.length)
-        assertTrue(first.pairCode.matches(Regex("[0-9]{6}")))
+        assertTrue(first.pairCode.matches(Regex("[0-9]{4}")))
         val parsed = PairStore.parsePairUrl(ServerIdentity.pairUrl(first, "192.168.10.3"))!!
         assertEquals(ReceiverCapabilities.ANDROID, parsed.platform)
         assertEquals(first.token, parsed.token)

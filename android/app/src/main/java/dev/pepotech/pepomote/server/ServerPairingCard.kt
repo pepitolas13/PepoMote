@@ -1,9 +1,12 @@
 package dev.pepotech.pepomote.server
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.PersistableBundle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -34,11 +37,13 @@ internal fun ServerPairingCard(state: ServerUiState) {
     var showVpnHelp by rememberSaveable { mutableStateOf(false) }
     var showQr by rememberSaveable { mutableStateOf(true) }
     var shareError by remember { mutableStateOf(false) }
+    var linkCopied by remember { mutableStateOf(false) }
     val peers = state.receiver?.peers.orEmpty()
     LaunchedEffect(peers.size) { showQr = peers.isEmpty() }
     val host = if (useVpn) state.vpnHosts.firstOrNull()
         else chosenLocal?.takeIf { it in state.hosts } ?: state.hosts.firstOrNull()
     val pairUrl = state.config?.let { config -> host?.let { ServerIdentity.pairUrl(config, it) } }
+    LaunchedEffect(pairUrl) { linkCopied = false }
 
     ServerCard {
         Text(stringResource(R.string.server_pair_step), style = MaterialTheme.typography.titleLarge)
@@ -85,7 +90,7 @@ internal fun ServerPairingCard(state: ServerUiState) {
                     }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.server_share_link)) }
                 } else {
                     Text(stringResource(R.string.server_pair_code), style = MaterialTheme.typography.bodyMedium)
-                    Text(state.config.pairCode.chunked(3).joinToString(" "),
+                    Text(state.config.pairCode,
                         style = MaterialTheme.typography.headlineLarge.copy(fontFamily = FontFamily.Monospace),
                         color = PepoColors.Blue)
                     Text(stringResource(R.string.server_network_automatic),
@@ -105,6 +110,18 @@ internal fun ServerPairingCard(state: ServerUiState) {
                     }
                 }
             } else Text(stringResource(if (useVpn) R.string.server_remote_lost else R.string.server_no_network))
+        }
+        if (pairUrl != null) {
+            OutlinedButton(onClick = {
+                val clip = ClipData.newPlainText("PepoMote", pairUrl).apply {
+                    // The link contains a pairing credential; hide it from clipboard previews.
+                    description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+                }
+                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+                linkCopied = true
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (linkCopied) R.string.server_link_copied else R.string.server_copy_link))
+            }
         }
         TextButton(onClick = {
             if (useVpn) { useVpn = false; showDetails = false; showQr = true }

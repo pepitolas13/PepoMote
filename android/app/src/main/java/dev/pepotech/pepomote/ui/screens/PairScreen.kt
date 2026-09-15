@@ -34,6 +34,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,9 +59,9 @@ import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
 
 /**
- * Conectar: tus PCs guardados (toca uno para conectar; mantén pulsado para
- * olvidarlo), el escáner del QR del PC y los receptores nuevos vistos en la
- * red. `reason` (no null) = se llega aquí porque el PC no responde o ya no
+ * Conectar: dispositivos guardados, QR, código de PC/Android y enlace compartido.
+ * Los receptores descubiertos abren la entrada de código al tocarlos.
+ * `reason` (no null) = se llega aquí porque el receptor no responde o ya no
  * reconoce el emparejamiento: se explica arriba, en rojo.
  */
 @Composable
@@ -74,12 +75,14 @@ fun PairScreen(
     onForget: (Pairing) -> Unit = {},
     onDiscovered: (ReceiverInfo, String) -> Unit = { _, _ -> },
     onPairLink: (String) -> Unit = {},
+    discoverReceivers: suspend () -> List<ReceiverInfo> = { Discovery.scan() },
 ) {
     var receivers by remember { mutableStateOf(listOf<ReceiverInfo>()) }
     var scanning by remember { mutableStateOf(true) }
     var forgetting by remember { mutableStateOf<Pairing?>(null) }
-    var pairingReceiver by remember { mutableStateOf<ReceiverInfo?>(null) }
-    var pairCode by remember { mutableStateOf("") }
+    var pairingReceiver by rememberSaveable(stateSaver = ReceiverInfoSaver) { mutableStateOf<ReceiverInfo?>(null) }
+    var pairCode by rememberSaveable { mutableStateOf("") }
+    var enteringCode by rememberSaveable { mutableStateOf(false) }
     var enteringLink by rememberSaveable { mutableStateOf(false) }
     var pairLink by rememberSaveable { mutableStateOf("") }
     var invalidLink by rememberSaveable { mutableStateOf(false) }
@@ -89,13 +92,32 @@ fun PairScreen(
         if (enteringLink || pairingReceiver != null || forgetting != null) return@LaunchedEffect
         while (true) {
             scanning = true
-            receivers = Discovery.scan()
+            receivers = discoverReceivers()
             scanning = false
             delay(2500)
         }
     }
 
-    BackHandler(enteringLink) { enteringLink = false }
+    fun backFromCode() {
+        if (pairingReceiver != null) { pairingReceiver = null; pairCode = "" }
+        else enteringCode = false
+    }
+    BackHandler(enteringLink || enteringCode) {
+        if (enteringLink) enteringLink = false else backFromCode()
+    }
+    if (enteringCode) {
+        PairCodeScreen(
+            receivers = receivers, scanning = scanning, selected = pairingReceiver, code = pairCode,
+            onSelect = { pairingReceiver = it; pairCode = "" },
+            onCodeChange = { pairCode = it.filter { c -> c in '0'..'9' }.take(6) },
+            onBack = { backFromCode() }, onScanQr = onScanQr,
+            onConnect = {
+                pairingReceiver?.let { onDiscovered(it, pairCode) }
+                pairingReceiver = null; enteringCode = false; pairCode = ""
+            }
+        )
+        return
+    }
     if (enteringLink) {
         Column(Modifier.fillMaxSize().background(PepoColors.Background).statusBarsPadding()
             .navigationBarsPadding().displayCutoutPadding().imePadding().verticalScroll(rememberScrollState())
@@ -170,6 +192,7 @@ fun PairScreen(
                             if (PairList.isTemporaryCode(p)) {
                                 pairCode = ""
                                 pairingReceiver = ReceiverInfo(p.pcName, p.host, p.port, p.platform)
+                                enteringCode = true
                             } else onChoose(p)
                         },
                         onLongClick = { forgetting = p }
@@ -193,8 +216,9 @@ fun PairScreen(
                 }
             }
             item {
-                TextButton(onClick = { enteringLink = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.pair_enter_link))
+                OutlinedButton(onClick = { enteringCode = true }, modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = MaterialTheme.shapes.medium) {
+                    Text(stringResource(R.string.pair_with_code), style = MaterialTheme.typography.titleMedium)
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -209,12 +233,11 @@ fun PairScreen(
             }
             items(unknown) { r ->
                 Card(
-                    modifier = Modifier.fillMaxWidth().then(
-                        if (r.platform == "android") Modifier.clickable {
-                            pairCode = ""
-                            pairingReceiver = r
-                        } else Modifier
-                    ),
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        pairCode = ""
+                        pairingReceiver = r
+                        enteringCode = true
+                    },
                     shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
                     border = BorderStroke(1.5.dp, PepoColors.CardBorder),
@@ -229,6 +252,14 @@ fun PairScreen(
                             )
                         }
                     }
+                }
+            }
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.pair_link_optional), style = MaterialTheme.typography.bodySmall,
+                    color = PepoColors.TextDim)
+                TextButton(onClick = { enteringLink = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.pair_enter_link))
                 }
             }
         }
@@ -258,34 +289,6 @@ fun PairScreen(
             },
             dismissButton = {
                 TextButton(onClick = { forgetting = null }) { Text(stringResource(R.string.cancel), color = PepoColors.TextDim) }
-            }
-        )
-    }
-    pairingReceiver?.let { receiver ->
-        AlertDialog(
-            onDismissRequest = { pairingReceiver = null },
-            containerColor = PepoColors.Card,
-            title = { Text(receiver.name) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.server_enter_code))
-                    OutlinedTextField(
-                        value = pairCode,
-                        onValueChange = { pairCode = it.filter { c -> c in '0'..'9' }.take(6) },
-                        label = { Text(stringResource(R.string.server_pair_code)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(enabled = pairCode.length == 6, onClick = {
-                    onDiscovered(receiver, pairCode)
-                    pairingReceiver = null
-                }) { Text(stringResource(R.string.channel_connect)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { pairingReceiver = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }

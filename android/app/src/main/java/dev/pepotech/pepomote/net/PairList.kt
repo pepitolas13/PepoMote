@@ -9,8 +9,10 @@ import java.net.URLEncoder
  * cambiar (renombrado, DHCP) y se actualizan sin perder el token.
  */
 object PairList {
-    fun isTemporaryCode(p: Pairing): Boolean = p.platform == ReceiverCapabilities.ANDROID &&
-        p.token.length == 6 && p.token.all { it in '0'..'9' }
+    /** Four digits on PC/current Android; six on Android 1.8.0. Keep leading zeroes. */
+    fun isPairingCode(value: String): Boolean = value.length in listOf(4, 6) && value.all { it in '0'..'9' }
+
+    fun isTemporaryCode(p: Pairing): Boolean = isPairingCode(p.token)
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
     private fun dec(s: String): String = URLDecoder.decode(s, "UTF-8")
 

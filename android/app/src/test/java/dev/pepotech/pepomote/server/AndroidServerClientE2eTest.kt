@@ -89,9 +89,9 @@ class AndroidServerClientE2eTest {
     }
 
     @Test fun temporaryCodePairsSensorlessWiiAndAuthoritativeEdenControlsReachDsu() {
-        ReceiverCore(config("123456")).use { receiver ->
+        ReceiverCore(config("0042")).use { receiver ->
             receiver.start()
-            PairStore.save(context, temporaryPair(receiver, "123456"))
+            PairStore.save(context, temporaryPair(receiver, "0042"))
             // A pending desktop request cannot restore Cemu on the Android server.
             LinkState.requestMode(LinkState.MODE_CEMU)
             val client = startClient()
@@ -107,7 +107,7 @@ class AndroidServerClientE2eTest {
             await("Pending desktop mode is discarded") { LinkState.pendingMode == null && LinkState.intent.value == PadIntent.None }
             assertEquals(TOKEN, PairStore.load(context)?.token)
             assertEquals(ReceiverCapabilities.ANDROID, PairStore.load(context)?.platform)
-            assertFalse(PairStore.all(context).any { it.token == "123456" })
+            assertFalse(PairStore.all(context).any { it.token == "0042" })
             assertNull(ScreenLink.client.value)
 
             DatagramSocket().use { dsu ->

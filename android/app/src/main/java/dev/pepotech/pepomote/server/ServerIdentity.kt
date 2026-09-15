@@ -19,7 +19,7 @@ internal object ServerIdentity {
             .encodeToString(ByteArray(32).also(random::nextBytes)).also {
                 check(prefs.edit().putString("token", it).commit()) { "Could not save receiver identity" }
             }
-        val code = random.nextInt(1_000_000).toString().padStart(6, '0')
+        val code = random.nextInt(10_000).toString().padStart(4, '0')
         val suffix = MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
             .take(2).joinToString("") { "%02X".format(it.toInt() and 255) }
         return ReceiverConfig("PepoMote · ${Build.MODEL.take(48)} · $suffix", token, code)

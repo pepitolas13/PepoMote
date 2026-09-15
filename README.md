@@ -5,7 +5,7 @@
 
 **[Español](README.es.md)**
 
-**PepoMote 1.8:** your Android can now host Dolphin and Eden controls. Use the same app on both phones, with guided setup, automatic local connection and more reliable button presses. For different networks, WireGuard is recommended and Tailscale is also available. [Downloads and release notes](https://github.com/pepitolas13/PepoMote/releases/tag/v1.8.0).
+**PepoMote 1.8.1:** four-digit code pairing is back on Android, with clearer instructions for copying the server link. Includes the 1.8 features: an Android server for Dolphin and Eden, guided setup, and connections across networks with WireGuard or Tailscale. [Downloads and release notes](https://github.com/pepitolas13/PepoMote/releases/tag/v1.8.1).
 
 - **Pointer mode** — aim your phone at the screen and the cursor goes exactly there (world-anchored absolute pointing, roll-invariant, 250 Hz). Buttons, drag, scroll, media keys. Your real mouse keeps working whenever the phone is still.
 - **Dolphin mode** — PepoMote becomes a full-motion virtual Wiimote (DSU/cemuhook server on `127.0.0.1:26760`). Play real Wii games — Wii Sports bowling included — in the [Dolphin emulator](https://dolphin-emu.org/).

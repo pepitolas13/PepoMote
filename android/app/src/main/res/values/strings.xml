@@ -57,16 +57,16 @@
     <string name="pair_sub_scan">Abre PepoMote en tu PC o pulsa Servidor en otro Android</string>
     <string name="pair_sub_saved">Elige un dispositivo guardado o conecta uno nuevo</string>
     <string name="your_pcs">Tus dispositivos</string>
-    <string name="scan_qr">Escanear QR del PC</string>
-    <string name="scan_qr_other">Escanear el QR de otro PC</string>
+    <string name="scan_qr">Escanear QR</string>
+    <string name="scan_qr_other">Escanear otro QR</string>
     <string name="searching">Buscando receptores en tu red…</string>
     <string name="no_receivers">Ningún receptor a la vista (el QR funciona igualmente)</string>
     <string name="no_new_pcs">Ningún dispositivo nuevo a la vista</string>
     <string name="on_your_network">En tu red:</string>
-    <string name="receiver_hint">%1$s — escanea su QR para emparejar</string>
+    <string name="receiver_hint">PC · %1$s · Toca para conectar con código</string>
     <string name="back">Volver</string>
     <string name="forget_title">¿Olvidar %1$s?</string>
-    <string name="forget_body">Para volver a usarlo tendrás que escanear su QR otra vez.</string>
+    <string name="forget_body">Para volver a usarlo tendrás que escanear su QR o introducir su código otra vez.</string>
     <string name="forget">Olvidar</string>
     <string name="cancel">Cancelar</string>
     <string name="pc_online">%1$s · en la red</string>
@@ -197,7 +197,7 @@
     <string name="server_notification_title">PepoMote · Servidor Android</string>
     <string name="server_notification_body">Listo para recibir mandos mientras juegas en Dolphin o Eden.</string>
     <string name="server_pair_step">1. Conecta tu mando</string>
-    <string name="server_pair_hint">Usa la misma Wi-Fi o el punto de acceso de este móvil. En el mando: Conectar → escanea el QR, o elige este servidor y escribe el código.</string>
+    <string name="server_pair_hint">Usa la misma Wi-Fi o el punto de acceso de este móvil. En el mando: Conectar → Escanear QR, o Conectar con código → elige este servidor y escribe los 4 dígitos.</string>
     <string name="server_qr_description">QR para conectar otro móvil a este servidor Android</string>
     <string name="server_no_network">Conecta este móvil a una Wi-Fi o activa su punto de acceso para mostrar el QR de conexión.</string>
     <string name="server_players">Mandos conectados</string>
@@ -231,7 +231,7 @@
     <string name="server_change_players_hint">Si añades jugadores o cambias el Nunchuk, vuelve a preparar los controles con esos mandos conectados y reinicia el emulador. El jugador 1 puede cambiar entre Dolphin y Eden desde su mando.</string>
     <string name="server_preserved_changes">Se han conservado %1$d cambios que hiciste después de la copia.</string>
     <string name="server_done">Entendido</string>
-    <string name="server_code_failed">El código no es correcto o ha cambiado. Toca el servidor e introduce el código que muestra ahora, o escanea su QR.</string>
+    <string name="server_code_failed">El código no es correcto o ha cambiado. Pulsa Conectar con código, elige el PC o móvil e introduce el código que muestra ahora. También puedes escanear su QR.</string>
     <string name="server_restart_confirmed_open">Ya he forzado la detención: abrir</string>
     <string name="setup_error_access">No se puede acceder a la carpeta del emulador. Cierra el emulador y selecciona de nuevo su carpeta. Las copias guardadas se conservan.</string>
     <string name="setup_error_selection">Elige la carpeta del propio emulador. En el menú lateral del selector de Android, toca Dolphin o Eden y pulsa Usar esta carpeta. No selecciones Android/data ni otra carpeta.</string>
@@ -299,7 +299,15 @@
     <string name="server_connection_address">Dirección: %1$s</string>
     <string name="server_alternate_network">Otra conexión local</string>
     <string name="pair_enter_link">Introducir enlace</string>
-    <string name="pair_link_hint">Pega el enlace que has compartido desde el servidor. Para otra Wi-Fi, activa primero la misma red privada en ambos móviles.</string>
-    <string name="pair_link_label">Enlace de PepoMote</string>
+    <string name="pair_with_code">Conectar con código</string>
+    <string name="pair_code_choose">Conecta ambos dispositivos a la misma Wi-Fi y abre PepoMote en el PC o pulsa Servidor en el otro Android. Después, elígelo aquí.</string>
+    <string name="pair_code_not_found">Todavía no aparece ningún dispositivo. Comprueba que PepoMote esté abierto y el servidor encendido. También puedes escanear su QR.</string>
+    <string name="pair_code_pc_hint">Escribe el código de 4 dígitos que aparece junto al QR en PepoMote, en tu PC.</string>
+    <string name="pair_code_android_hint">Escribe el código de 4 dígitos que aparece en Servidor, en el otro Android. Si ese móvil tiene una versión anterior, también puedes usar su código de 6 dígitos.</string>
+    <string name="pair_link_optional">¿Te han enviado un enlace desde otro Android? Puedes pegarlo aquí. Para jugar en la misma Wi-Fi, basta con el QR o el código.</string>
+    <string name="pair_link_hint">El enlace lo crea el Android que hace de servidor. Contiene los datos para conectar el mando; no tienes que buscarlo en una web.\n\n1. En el otro Android, abre PepoMote y pulsa Servidor.\n2. Pulsa Copiar enlace y envíalo a este móvil.\n3. Pégalo aquí y pulsa Conectar.\n\nSi estáis en redes distintas, activa primero la VPN en ambos móviles. En el servidor, entra en «¿Estáis en redes distintas?» y pulsa «Usar conexión VPN» antes de copiar el enlace.</string>
+    <string name="pair_link_label">Enlace copiado del servidor</string>
+    <string name="server_copy_link">Copiar enlace</string>
+    <string name="server_link_copied">Enlace copiado</string>
     <string name="pair_link_invalid">Este enlace no es válido. Copia el enlace completo desde el servidor.</string>
 </resources>

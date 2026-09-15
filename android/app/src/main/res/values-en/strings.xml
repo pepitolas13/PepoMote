@@ -57,16 +57,16 @@
     <string name="pair_sub_scan">Open PepoMote on your PC, or tap Server on another Android</string>
     <string name="pair_sub_saved">Choose a saved device or connect a new one</string>
     <string name="your_pcs">Your devices</string>
-    <string name="scan_qr">Scan the PC\'s QR</string>
-    <string name="scan_qr_other">Scan another PC\'s QR</string>
+    <string name="scan_qr">Scan QR</string>
+    <string name="scan_qr_other">Scan another QR</string>
     <string name="searching">Looking for receivers on your network…</string>
     <string name="no_receivers">No receiver in sight (the QR works anyway)</string>
     <string name="no_new_pcs">No new devices found</string>
     <string name="on_your_network">On your network:</string>
-    <string name="receiver_hint">%1$s — scan its QR to pair</string>
+    <string name="receiver_hint">PC · %1$s · Tap to connect with a code</string>
     <string name="back">Back</string>
     <string name="forget_title">Forget %1$s?</string>
-    <string name="forget_body">To use it again you will have to scan its QR again.</string>
+    <string name="forget_body">To use it again, scan its QR or enter its code again.</string>
     <string name="forget">Forget</string>
     <string name="cancel">Cancel</string>
     <string name="pc_online">%1$s · on the network</string>
@@ -197,7 +197,7 @@
     <string name="server_notification_title">PepoMote · Android server</string>
     <string name="server_notification_body">Ready for controllers while you play in Dolphin or Eden.</string>
     <string name="server_pair_step">1. Connect your controller</string>
-    <string name="server_pair_hint">Use the same Wi-Fi or this phone’s hotspot. On the controller: Connect → scan the QR code, or choose this server and enter its code.</string>
+    <string name="server_pair_hint">Use the same Wi-Fi or this phone’s hotspot. On the controller: Connect → Scan QR, or Connect with code → choose this server and enter the 4 digits.</string>
     <string name="server_qr_description">QR code to connect another phone to this Android server</string>
     <string name="server_no_network">Connect this phone to Wi-Fi or enable its hotspot to show the pairing QR code.</string>
     <string name="server_players">Connected controllers</string>
@@ -231,7 +231,7 @@
     <string name="server_change_players_hint">If you add players or change the Nunchuk, set up controls again with those controllers connected and restart the emulator. Player 1 can switch between Dolphin and Eden from their controller.</string>
     <string name="server_preserved_changes">%1$d changes you made after the backup were preserved.</string>
     <string name="server_done">Got it</string>
-    <string name="server_code_failed">The code is incorrect or has changed. Tap the server and enter the code it shows now, or scan its QR code.</string>
+    <string name="server_code_failed">The code is incorrect or has changed. Tap Connect with code, choose the PC or phone and enter its current code. You can also scan its QR.</string>
     <string name="server_restart_confirmed_open">I have force stopped it: open</string>
     <string name="setup_error_access">Cannot access the emulator folder. Close the emulator and select its folder again. Saved backups are retained.</string>
     <string name="setup_error_selection">Choose the emulator’s own folder. In the Android picker sidebar, tap Dolphin or Eden, then Use this folder. Do not select Android/data or another folder.</string>
@@ -299,7 +299,15 @@
     <string name="server_connection_address">Address: %1$s</string>
     <string name="server_alternate_network">Another local connection</string>
     <string name="pair_enter_link">Enter link</string>
-    <string name="pair_link_hint">Paste the link shared from the server. For another Wi-Fi, first activate the same private network on both phones.</string>
-    <string name="pair_link_label">PepoMote link</string>
+    <string name="pair_with_code">Connect with code</string>
+    <string name="pair_code_choose">Connect both devices to the same Wi-Fi and open PepoMote on the PC, or tap Server on the other Android. Then choose it here.</string>
+    <string name="pair_code_not_found">No devices found yet. Check that PepoMote is open and the server is running. You can also scan its QR.</string>
+    <string name="pair_code_pc_hint">Enter the 4-digit code shown next to the QR in PepoMote on your PC.</string>
+    <string name="pair_code_android_hint">Enter the 4-digit code shown in Server on the other Android. If that phone has an older version, its 6-digit code also works.</string>
+    <string name="pair_link_optional">Received a link from another Android? Paste it here. On the same Wi-Fi, you can simply use the QR or code.</string>
+    <string name="pair_link_hint">The Android server creates this link. It contains the connection details for your controller; you do not need to find it on a website.\n\n1. On the other Android, open PepoMote and tap Server.\n2. Tap Copy link and send it to this phone.\n3. Paste it here and tap Connect.\n\nFor different networks, first activate the VPN on both phones. On the server, open “On different networks?” and tap “Use VPN connection” before copying the link.</string>
+    <string name="pair_link_label">Link copied from the server</string>
+    <string name="server_copy_link">Copy link</string>
+    <string name="server_link_copied">Link copied</string>
     <string name="pair_link_invalid">This link is invalid. Copy the complete link from the server.</string>
 </resources>

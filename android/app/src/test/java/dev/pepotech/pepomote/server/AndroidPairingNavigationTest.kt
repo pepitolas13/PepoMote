@@ -73,4 +73,15 @@ class AndroidPairingNavigationTest {
         assertEquals(PadIntent.None, LinkState.intent.value)
         assertEquals(app.getString(R.string.warn_needs_13), LinkState.notice.value?.text)
     }
+
+    @Test fun badFourDigitDesktopCodeOffersRetryAndKeepsOtherPairings() = activity { app ->
+        val saved = Pairing("192.168.1.10", 26761, "saved-pc-token", "Saved PC")
+        val temporary = Pairing("192.168.1.30", 26761, "0042", "New PC")
+        PairStore.save(app, saved)
+        PairStore.save(app, temporary)
+        app.onLinkFailed(UiLink.Failed("bad_code", "wrong code"))
+        assertEquals(Screen.Pair, app.currentScreen)
+        assertEquals(listOf(saved), PairStore.all(app))
+        assertEquals(app.getString(R.string.server_code_failed), app.pairReason)
+    }
 }

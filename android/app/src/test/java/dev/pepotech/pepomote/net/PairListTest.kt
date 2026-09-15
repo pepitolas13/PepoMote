@@ -11,6 +11,14 @@ class PairListTest {
     private val salon = Pairing("192.168.1.5", 26761, "tok-salon", "SALÓN-PC")
     private val cuarto = Pairing("192.168.1.9", 26800, "tok-cuarto", "Cuarto & Co = raro")
 
+    @Test fun shortCodesAreTemporaryForBothKindsOfReceiver() {
+        assertTrue(PairList.isTemporaryCode(salon.copy(token = "0042")))
+        assertTrue(PairList.isTemporaryCode(salon.copy(token = "0042", platform = "android")))
+        assertTrue(PairList.isTemporaryCode(salon.copy(token = "123456", platform = "android")))
+        assertFalse(PairList.isTemporaryCode(salon))
+        assertFalse(PairList.isTemporaryCode(salon.copy(token = "12345")))
+    }
+
     @Test
     fun idaYVueltaConCaracteresRaros() {
         val list = listOf(salon, cuarto, Pairing("10.0.0.2", 26761, "a=b&c", "ñandú"))

@@ -9,9 +9,19 @@ PepoMote requiere Android 8 o posterior. El móvil donde se ejecutan los juegos 
 1. Instala y abre una vez Dolphin oficial o Eden oficial en el móvil donde vas a jugar. Termina su bienvenida y cierra cualquier partida abierta.
 2. Conecta los móviles a la misma Wi-Fi. También puedes conectar el mando al punto de acceso del móvil servidor.
 3. En el móvil de los juegos, abre PepoMote y toca **Servidor**.
-4. En el móvil mando, toca **Conectar** y escanea el QR. También puedes elegir el servidor entre los dispositivos cercanos e introducir su código.
+4. En el móvil mando, toca **Conectar → Escanear QR**. Si prefieres escribir el código, toca **Conectar con código**, elige el otro Android y escribe los **4 dígitos** que aparecen en su pantalla Servidor.
 
 La dirección local se elige automáticamente. El mando reconoce que está conectado a un Android y ofrece **Dolphin y Eden**. La conexión queda guardada para la próxima vez. Las conexiones que ya tengas con un PC siguen disponibles.
+
+**Desde Android 1.8.1**, el botón **Conectar con código** sirve también para un PC: elígelo y escribe los cuatro dígitos que muestra PepoMote junto a su QR. Puedes tocar directamente cualquier dispositivo cercano para introducir el código. La app también acepta los códigos de seis dígitos de los servidores Android 1.8.0.
+
+## Qué es el enlace y dónde copiarlo
+
+Es una alternativa al QR: contiene los datos que necesita el mando para conectarse al servidor. No es una página web ni un enlace para descargar PepoMote.
+
+En el Android que ejecuta los juegos, abre **PepoMote → Servidor → Copiar enlace**. Envíalo al móvil mando y, en este, abre **Conectar → Introducir enlace**, pégalo y toca **Conectar**. El enlace se copia desde la pantalla Servidor a partir de Android 1.8.1; en 1.8.0 se comparte desde **¿Estáis en redes distintas? → Usar conexión VPN → Compartir enlace del mando**.
+
+En la misma Wi-Fi, el QR y el código bastan. Para conectar desde otra red, prepara la VPN y selecciona **Usar conexión VPN** antes de copiar o compartir el enlace, como se explica más abajo. Copiar un enlace local no lo convierte en una conexión por Internet.
 
 ## Configurar los controles
 
@@ -59,7 +69,7 @@ Usa esta opción si tienes una red WireGuard preparada, por ejemplo en un router
 ### Con la VPN activa
 
 1. En PepoMote Servidor, toca **¿Estáis en redes distintas? → Usar conexión VPN**.
-2. Toca **Compartir enlace del mando**.
+2. Toca **Copiar enlace** o **Compartir enlace del mando** y envíalo al móvil mando.
 3. En el móvil mando, abre ese enlace o entra en **Conectar → Introducir enlace** y pégalo.
 
 Si se pierde la VPN, PepoMote deja de mostrar su QR y te pide activarla. No cambia ese enlace por uno de la red local. El descubrimiento automático de dispositivos sigue limitado a la LAN.

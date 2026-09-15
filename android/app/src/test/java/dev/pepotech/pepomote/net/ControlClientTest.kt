@@ -10,6 +10,36 @@ import java.util.concurrent.TimeUnit
 class ControlClientTest {
     private data class Pad(val pad: String, val player: Int?)
 
+    @Test fun fourDigitDesktopCodeUsesCodeFieldAndRemembersThePermanentToken() {
+        val replies = LinkedBlockingQueue<ControlClient.Ok>()
+        ServerSocket(0).use { listener ->
+            listener.soTimeout = 4000
+            val client = ControlClient("127.0.0.1", listener.localPort, "0042", "Phone", "Phone", "wiimote",
+                callbacks = object : ControlClient.Callbacks {
+                    override fun onOk(ok: ControlClient.Ok) { replies.add(ok) }
+                    override fun onError(code: String, msg: String) = Unit
+                    override fun onModeChanged(mode: String, byPc: Boolean) = Unit
+                    override fun onPadChanged(pad: String, player: Int?) = Unit
+                    override fun onNunchukChanged(own: Boolean) = Unit
+                    override fun onNotice(text: String) = Unit
+                    override fun onClosed() = Unit
+                })
+            try {
+                listener.accept().use { socket ->
+                    socket.soTimeout = 4000
+                    val hello = org.json.JSONObject(socket.getInputStream().bufferedReader().readLine())
+                    assertEquals("0042", hello.optString("code"))
+                    // Android 1.8 accepted its short code through token; retain that compatibility.
+                    assertEquals("0042", hello.optString("token"))
+                    socket.getOutputStream().write(("""{"m":"ok","session_id":17,"mode":"pointer","token":"permanent-desktop-token"}""" + "\n").toByteArray())
+                    val ok = replies.poll(3, TimeUnit.SECONDS) ?: error("No desktop confirmation")
+                    assertEquals("permanent-desktop-token", ok.pairToken)
+                    assertEquals(ReceiverCapabilities.DESKTOP, ok.platform)
+                }
+            } finally { client.close() }
+        }
+    }
+
     @Test fun staleSwitchAssignmentsAreNormalizedToProAndIgnored() {
         val ok = LinkedBlockingQueue<ControlClient.Ok>()
         val pads = LinkedBlockingQueue<Pad>()

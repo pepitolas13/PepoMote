@@ -50,7 +50,7 @@ class ControlClient(
         val supportsSwitch: Boolean = false,
         val platform: String = ReceiverCapabilities.DESKTOP,
         val textInput: Boolean = true,
-        /** Canonical token returned after pairing with a short Android server code. */
+        /** Permanent credential returned after pairing with a short PC or Android code. */
         val pairToken: String? = null
     )
 
@@ -113,6 +113,8 @@ class ControlClient(
                     .put("m", "hello")
                     .put("pv", 1)
                     .put("token", token)
+                    // PC receivers read `code`; Android 1.8.0 reads the same short code in `token`.
+                    .apply { if (PairList.isPairingCode(token)) put("code", token) }
                     .put("name", deviceName)
                     .put("model", deviceModel)
                     // Ausente = wiimote (receptores anteriores no lo conocen)
@@ -157,7 +159,8 @@ class ControlClient(
                                 supportsSwitch = supportsMode(msg, "switch"),
                                 platform = confirmedPlatform,
                                 textInput = confirmedPlatform != ReceiverCapabilities.ANDROID && msg.optBoolean("text_input", true),
-                                pairToken = msg.optString("pair_token").takeIf { it.isNotBlank() && it.length <= 512 }
+                                pairToken = sequenceOf(msg.optString("pair_token"), msg.optString("token"))
+                                    .firstOrNull { it.isNotBlank() && it.length <= 512 }
                             )
                         )
                     }
