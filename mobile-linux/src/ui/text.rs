@@ -94,14 +94,14 @@ impl TextDialog {
 
     /// Dibuja el diálogo entero y devuelve el botón pulsado (la app aplica
     /// `effect` y manda lo que toque).
-    pub fn show(&mut self, ui: &mut egui::Ui) -> Option<Button> {
+    pub fn show(&mut self, ui: &mut egui::Ui, switch: bool) -> Option<Button> {
         let mut out = None;
         // alto de tecla según el sitio (cabecera, campo y botones aparte); en
         // ventanas bajas el conjunto hace scroll
         let key_h = ((ui.available_height() - 250.0) / 5.0 - 4.0).clamp(34.0, 48.0);
         egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
             ui.add_space(4.0);
-            ui.label(RichText::new(tr!("kb.title")).size(22.0).strong().color(theme::text()));
+            ui.label(RichText::new(if switch { tr!("kb.title_switch") } else { tr!("kb.title") }).size(22.0).strong().color(theme::text()));
             ui.label(
                 RichText::new(tr!("kb.subtitle"))
                     .size(12.0)

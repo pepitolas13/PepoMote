@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {
     pub t_us: u64,
+    pub gyro_valid: bool, // false when the real gyroscope is unavailable
     pub gyro: [f32; 3],  // rad/s, ejes del dispositivo
     pub accel: [f32; 3], // m/s², con gravedad
 }
@@ -25,6 +26,15 @@ pub trait Source: Send {
     /// receptor del canal desaparezca.
     fn run(self: Box<Self>, tx: Sender<Sample>, stop: Arc<AtomicBool>);
     fn describe(&self) -> String;
+}
+
+/// An unavailable source emits no synthetic motion. The input worker keeps
+/// button, stick and release packets flowing on its independent clock.
+pub struct Unavailable;
+
+impl Source for Unavailable {
+    fn run(self: Box<Self>, _tx: Sender<Sample>, _stop: Arc<AtomicBool>) {}
+    fn describe(&self) -> String { crate::tr!("home.controls_only").to_owned() }
 }
 
 pub fn open(fake: bool) -> Result<Box<dyn Source>, String> {

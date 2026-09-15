@@ -35,6 +35,17 @@
             android:targetClass="dev.pepotech.pepomote.MainActivity" />
     </shortcut>
     <shortcut
+        android:shortcutId="switch"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_switch"
+        android:shortcutShortLabel="@string/shortcut_switch"
+        android:shortcutLongLabel="@string/shortcut_switch_long">
+        <intent
+            android:action="dev.pepotech.pepomote.action.SWITCH"
+            android:targetPackage="dev.pepotech.pepomote"
+            android:targetClass="dev.pepotech.pepomote.MainActivity" />
+    </shortcut>
+    <shortcut
         android:shortcutId="nunchuk"
         android:enabled="true"
         android:icon="@drawable/ic_shortcut_nunchuk"

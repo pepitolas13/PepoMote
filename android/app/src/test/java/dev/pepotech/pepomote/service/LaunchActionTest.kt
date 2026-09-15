@@ -7,6 +7,11 @@ import org.junit.Test
 class LaunchActionTest {
 
     @Test
+    fun switchShortcutLaunchesSwitch() {
+        assertEquals("Switch", LaunchAction.parse("dev.pepotech.pepomote.action.SWITCH")?.name)
+    }
+
+    @Test
     fun cadaAccesoDirectoTieneSuAccion() {
         assertEquals(LaunchAction.Pointer, LaunchAction.parse("dev.pepotech.pepomote.action.POINTER"))
         assertEquals(LaunchAction.Dolphin, LaunchAction.parse("dev.pepotech.pepomote.action.DOLPHIN"))

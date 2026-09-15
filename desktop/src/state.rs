@@ -84,7 +84,7 @@ pub enum Mode {
     /// Wii U: el móvil es un GamePad / Pro Controller / Mando Wii para Cemu.
     /// Como Dolphin (todo al DSU, nada al SO) pero se configura Cemu.
     Cemu,
-    /// Switch: el móvil es un Pro Controller (o un par de Joy-Con) con
+    /// Switch: el móvil es un Pro Controller con
     /// giroscopio para Eden, que lee el DSU con su engine `cemuhookudp`.
     /// Como Cemu pero se configura Eden (`qt-config.ini`).
     Switch,
@@ -142,9 +142,16 @@ pub struct Config {
     /// Configurar Eden solo (mandos en qt-config.ini) en modo Switch.
     #[serde(default = "default_true")]
     pub auto_eden: bool,
+    /// Restauración explícita pendiente, conservada aunque se reinicie el receptor.
+    #[serde(default)]
+    pub eden_restore_pending: bool,
     /// Cambiar de modo solo al abrir o cerrar Dolphin, Cemu o Eden.
     #[serde(default = "default_true")]
     pub auto_mode: bool,
+    /// Al cerrar el emulador activo, volver al puntero (o al otro abierto).
+    /// Desactivado por defecto: cerrar no cambia el modo que se ha elegido.
+    #[serde(default)]
+    pub return_to_pointer: bool,
     /// Carpeta de Cemu (la del Cemu.exe / AppImage). "" = detectar sola. Se
     /// aprende al ver a Cemu abierto y se guarda para configurarlo cerrado.
     #[serde(default)]
@@ -198,7 +205,9 @@ impl Default for Config {
             auto_dolphin: true,
             auto_cemu: true,
             auto_eden: true,
+            eden_restore_pending: false,
             auto_mode: true,
+            return_to_pointer: false,
             cemu_dir: String::new(),
             dolphin_dir: String::new(),
             eden_dir: String::new(),
@@ -279,8 +288,7 @@ pub struct PlayerInfo {
     /// Cemu y el receptor fusiona el DSU del móvil en su perfil. Se anuncia en
     /// el `hello` (`"screen_only":true`) o con el mensaje `screen_only`.
     pub screen_only: bool,
-    /// Modo Switch: qué mando de Switch pide ser este móvil (`hello` `pad` o
-    /// mensaje `pad` con `pro`, `joycons`, `joycon_side`, `joycon_r`).
+    /// Modo Switch: Pro Controller. Los nombres antiguos se normalizan al leerlos.
     pub switch_pad: SwitchPad,
 }
 
@@ -288,53 +296,25 @@ pub struct PlayerInfo {
 /// mensaje `pad` en ese modo (PROTOCOL.md §3).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum SwitchPad {
-    /// Pro Controller con giroscopio (por defecto).
+    /// Pro Controller, con movimiento si el móvil dispone del sensor.
     #[default]
     Pro,
-    /// Par de Joy-Con en un solo móvil (los dos sensores de movimiento).
-    Joycons,
-    /// Un Joy-Con de lado (un móvil por jugador; el lado lo reparte el receptor).
-    JoyconSide,
-    /// El Joy-Con derecho de otro móvil: se empareja con un par (`Joycons`)
-    /// sin pareja; sin nadie con quien emparejarse, es un par entero.
-    JoyconR,
 }
 
 impl SwitchPad {
     pub fn as_str(self) -> &'static str {
         match self {
             SwitchPad::Pro => "pro",
-            SwitchPad::Joycons => "joycons",
-            SwitchPad::JoyconSide => "joycon_side",
-            SwitchPad::JoyconR => "joycon_r",
         }
     }
 
     /// Nombre del protocolo → tipo; None si no es vocabulario de Switch.
     pub fn parse(s: &str) -> Option<SwitchPad> {
         match s {
-            "pro" => Some(SwitchPad::Pro),
-            "joycons" => Some(SwitchPad::Joycons),
-            "joycon_side" => Some(SwitchPad::JoyconSide),
-            "joycon_r" => Some(SwitchPad::JoyconR),
+            // Migración de las primeras versiones de prueba: nunca se vuelve
+            // a configurar un Joy-Con ni a compartir jugador entre móviles.
+            "pro" | "joycons" | "joycon_side" | "joycon_r" => Some(SwitchPad::Pro),
             _ => None,
-        }
-    }
-}
-
-/// Mitad de un par de Joy-Con (izquierdo o derecho): la que lleva un móvil
-/// cuando el par va en dos móviles, o el lado de un Joy-Con de lado.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Half {
-    Left,
-    Right,
-}
-
-impl Half {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Half::Left => "left",
-            Half::Right => "right",
         }
     }
 }
@@ -345,72 +325,37 @@ pub struct SwitchPlayer {
     /// Índice del jugador en Eden (jugador − 1).
     pub index: u8,
     pub kind: SwitchPad,
-    /// Pad DSU del móvil principal (su slot): el mando entero, o la mitad
-    /// izquierda de un par en dos móviles.
+    /// Pad DSU del móvil: todos los botones, sticks y movimiento del jugador.
     pub dsu_slot: u8,
-    /// Pad DSU del segundo móvil (el Joy-Con derecho) si el par va en dos móviles.
-    pub right_slot: Option<u8>,
-    /// Joy-Con de lado: cuál es (izquierdo para J1, J3…; derecho para J2, J4…).
-    pub side: Option<Half>,
 }
 
-/// Reparto para Eden: cada móvil mando es un jugador (J1.. por slot), salvo
-/// los Joy-Con derechos (`joycon_r`), que se emparejan por orden con el
-/// primer par (`joycons`) sin pareja; un Joy-Con derecho sin pareja juega
-/// como un par entero. Los Nunchuk no tienen papel en Switch.
+/// Reparto para Eden: cada móvil mando es un Pro Controller independiente
+/// (J1.. por slot). Los Nunchuk no tienen papel en Switch.
 pub fn switch_layout(players: &[Option<PlayerInfo>]) -> Vec<SwitchPlayer> {
-    let mains: Vec<(u8, SwitchPad)> = (0..players.len())
+    (0..players.len())
         .filter_map(|i| players[i].as_ref().map(|p| (i as u8, p)))
         .filter(|(_, p)| p.role == Role::Wiimote)
-        .map(|(slot, p)| (slot, p.switch_pad))
-        .collect();
-    // emparejar: cada derecho con el primer par libre que lo precede o sigue
-    let mut paired_right: Vec<Option<u8>> = vec![None; mains.len()]; // por índice de `mains`
-    let mut taken: Vec<bool> = vec![false; mains.len()];
-    for (ri, (rslot, rpad)) in mains.iter().enumerate() {
-        if *rpad != SwitchPad::JoyconR {
-            continue;
-        }
-        if let Some(mi) = mains
-            .iter()
-            .enumerate()
-            .position(|(mi, (_, pad))| *pad == SwitchPad::Joycons && paired_right[mi].is_none() && !taken[mi])
-        {
-            paired_right[mi] = Some(*rslot);
-            taken[ri] = true;
-        }
-    }
-    let mut out = Vec::new();
-    let mut sides = 0u8;
-    for (mi, (slot, pad)) in mains.iter().enumerate() {
-        if taken[mi] {
-            continue; // va dentro de su par
-        }
-        let index = out.len() as u8;
-        let kind = if *pad == SwitchPad::JoyconR { SwitchPad::Joycons } else { *pad };
-        let side = if kind == SwitchPad::JoyconSide {
-            let s = if sides % 2 == 0 { Half::Left } else { Half::Right };
-            sides += 1;
-            Some(s)
-        } else {
-            None
-        };
-        out.push(SwitchPlayer { index, kind, dsu_slot: *slot, right_slot: paired_right[mi], side });
-    }
-    out
+        .enumerate()
+        .map(|(index, (slot, _))| SwitchPlayer {
+            index: index as u8,
+            kind: SwitchPad::Pro,
+            dsu_slot: slot,
+        })
+        .collect()
 }
 
-/// Mitad que lleva el móvil del `slot` en modo Switch: la izquierda si su par
-/// tiene un Joy-Con derecho de otro móvil, la derecha si es ese Joy-Con
-/// derecho ya emparejado; None si lleva el mando entero.
-pub fn switch_half(players: &[Option<PlayerInfo>], slot: u8) -> Option<Half> {
-    let layout = switch_layout(players);
-    if layout.iter().any(|p| p.dsu_slot == slot && p.right_slot.is_some()) {
-        Some(Half::Left)
-    } else if layout.iter().any(|p| p.right_slot == Some(slot)) {
-        Some(Half::Right)
-    } else {
-        None
+/// Estado del mando que confirma el receptor al móvil.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct PadState {
+    pub mode: Mode,
+    pub pad: &'static str,
+    pub player: u8,
+}
+
+pub fn pad_state(mode: Mode, players: &[Option<PlayerInfo>], slot: u8) -> PadState {
+    PadState {
+        mode, pad: effective_pad(mode,players,slot),
+        player: player_number(players,slot),
     }
 }
 
@@ -476,7 +421,7 @@ pub fn cemu_layout(players: &[Option<PlayerInfo>]) -> Vec<CemuPlayer> {
 }
 
 /// Lo que se le dice a cada móvil en `ok.pad` / eco `pad`, según el modo: en
-/// Switch su tipo de mando de Switch (`pro`, `joycons`…; a un Nunchuk,
+/// Switch `pro` (a un Nunchuk,
 /// `nunchuk`: no tiene papel); en los demás modos el vocabulario de Cemu
 /// ([`effective_pad_cemu`]), también en puntero y Dolphin (como siempre).
 pub fn effective_pad(mode: Mode, players: &[Option<PlayerInfo>], slot: u8) -> &'static str {
@@ -604,6 +549,8 @@ pub struct Shared {
     pub cemu_pending: bool,
     /// Eden estaba abierto: su qt-config.ini se escribe en cuanto se cierre.
     pub eden_pending: bool,
+    pub eden_manual_pending: bool,
+    pub eden_restore_pending: bool,
     /// Cemu estaba abierto cuando se fue el último móvil «solo pantalla»: su
     /// nodo DSU se quita del perfil del usuario en cuanto Cemu se cierre.
     pub cemu_cleanup_pending: bool,
@@ -617,7 +564,7 @@ pub struct Shared {
     pub eden_cfg_status: Option<CfgStatus>,
     /// Texto que un móvil quiere teclear en el PC (teclado en pantalla de
     /// Cemu) y que el inyector del SO aún no ha escrito.
-    pub text_queue: Vec<String>,
+    pub text_queue: Vec<(Mode, String)>,
     pub last_error: Option<String>,
     /// `last_error` es un error de inyección (lo limpia el inyector al
     /// recuperarse, no una conexión nueva).
@@ -654,10 +601,12 @@ pub struct Shared {
 
 impl Shared {
     pub fn new() -> Self {
+        let config = Config::load();
+        let restore = config.eden_restore_pending;
         Self {
             status: LinkStatus::Waiting,
             mode: Mode::Pointer,
-            config: Config::load(),
+            config,
             players: [None, None, None, None],
             pps: 0.0,
             sensor_hz: 0.0,
@@ -666,7 +615,9 @@ impl Shared {
             dolphin_cfg_status: None,
             dolphin_pending: false,
             cemu_pending: false,
-            eden_pending: false,
+            eden_pending: restore,
+            eden_manual_pending: false,
+            eden_restore_pending: restore,
             cemu_cleanup_pending: false,
             port_notice: None,
             cemu_cfg_status: None,
@@ -752,6 +703,22 @@ mod tests {
         assert!(back == c2, "ida y vuelta por JSON");
     }
 
+    #[test]
+    fn requested_return_to_pointer_is_opt_in_and_persisted() {
+        let old: Config = serde_json::from_str(r#"{"sens_deg":40.0,"abs_mode":true}"#).unwrap();
+        assert_eq!(serde_json::to_value(Config::default()).unwrap()["return_to_pointer"], false);
+        assert_eq!(serde_json::to_value(old).unwrap()["return_to_pointer"], false);
+        let opted_in: Config = serde_json::from_str(r#"{"sens_deg":40.0,"abs_mode":true,"return_to_pointer":true}"#).unwrap();
+        assert_eq!(serde_json::to_value(opted_in).unwrap()["return_to_pointer"], true);
+    }
+
+    #[test]
+    fn requested_retired_switch_choices_migrate_to_pro() {
+        for old in ["joycons", "joycon_side", "joycon_r"] {
+            assert_eq!(SwitchPad::parse(old), Some(SwitchPad::Pro), "legacy choice {old}");
+        }
+    }
+
     fn player(role: Role) -> Option<PlayerInfo> {
         Some(PlayerInfo {
             name: "m".into(),
@@ -799,7 +766,7 @@ mod tests {
 
     #[test]
     fn tipos_de_mando_de_switch_por_nombre() {
-        for p in [SwitchPad::Pro, SwitchPad::Joycons, SwitchPad::JoyconSide, SwitchPad::JoyconR] {
+        for p in [SwitchPad::Pro] {
             assert_eq!(SwitchPad::parse(p.as_str()), Some(p));
         }
         assert_eq!(SwitchPad::parse("gamepad"), None, "vocabulario de Cemu, no de Switch");
@@ -809,74 +776,43 @@ mod tests {
 
     #[test]
     fn reparto_para_switch() {
-        // J1 Pro, J2 par en un móvil; el Nunchuk no cuenta
-        let p = [switch_player(SwitchPad::Pro), switch_player(SwitchPad::Joycons), None, player(Role::Nunchuk)];
-        assert_eq!(
-            switch_layout(&p),
-            vec![
-                SwitchPlayer { index: 0, kind: SwitchPad::Pro, dsu_slot: 0, right_slot: None, side: None },
-                SwitchPlayer { index: 1, kind: SwitchPad::Joycons, dsu_slot: 1, right_slot: None, side: None },
-            ]
-        );
+        // Dos Pro; el Nunchuk y los slots vacíos no cuentan como jugadores.
+        let p = [switch_player(SwitchPad::Pro), None, switch_player(SwitchPad::Pro), player(Role::Nunchuk)];
+        assert_eq!(switch_layout(&p), vec![
+            SwitchPlayer { index: 0, kind: SwitchPad::Pro, dsu_slot: 0 },
+            SwitchPlayer { index: 1, kind: SwitchPad::Pro, dsu_slot: 2 },
+        ]);
         assert_eq!(effective_pad(Mode::Switch, &p, 0), "pro");
-        assert_eq!(effective_pad(Mode::Switch, &p, 1), "joycons");
+        assert_eq!(effective_pad(Mode::Switch, &p, 2), "pro");
         assert_eq!(effective_pad(Mode::Switch, &p, 3), "nunchuk", "sin papel en Switch");
-        assert_eq!(effective_pad(Mode::Switch, &p, 2), "pro", "slot vacío: valor por defecto");
-        assert_eq!(switch_half(&p, 1), None, "par entero en un móvil");
-        // en los otros modos sigue el vocabulario de Cemu
+        assert_eq!(effective_pad(Mode::Switch, &p, 1), "pro", "slot vacío: valor por defecto");
         assert_eq!(effective_pad(Mode::Cemu, &p, 0), "gamepad");
-        assert_eq!(effective_pad(Mode::Pointer, &p, 1), "pro");
+        assert_eq!(effective_pad(Mode::Pointer, &p, 2), "pro");
         assert_eq!(effective_pad(Mode::Dolphin, &p, 3), "nunchuk");
     }
 
     #[test]
-    fn joycon_derecho_se_empareja_con_el_primer_par_libre() {
-        // slot 0 Pro, slot 1 par, slot 2 Joy-Con derecho → J2 = par en dos móviles (1 + 2)
-        let p = [switch_player(SwitchPad::Pro), switch_player(SwitchPad::Joycons), switch_player(SwitchPad::JoyconR), None];
-        let l = switch_layout(&p);
-        assert_eq!(l.len(), 2, "el derecho no es un jugador aparte");
-        assert_eq!(l[1], SwitchPlayer { index: 1, kind: SwitchPad::Joycons, dsu_slot: 1, right_slot: Some(2), side: None });
-        assert_eq!(switch_half(&p, 1), Some(Half::Left));
-        assert_eq!(switch_half(&p, 2), Some(Half::Right));
-        assert_eq!(switch_half(&p, 0), None);
-        assert_eq!(effective_pad(Mode::Switch, &p, 2), "joycon_r", "el eco lleva lo pedido; la mitad va aparte");
-        // el derecho antes que el par (por slot) también se empareja
-        let p = [switch_player(SwitchPad::JoyconR), switch_player(SwitchPad::Joycons), None, None];
-        let l = switch_layout(&p);
-        assert_eq!(l, vec![SwitchPlayer { index: 0, kind: SwitchPad::Joycons, dsu_slot: 1, right_slot: Some(0), side: None }]);
-        assert_eq!(switch_half(&p, 0), Some(Half::Right));
-        // sin par libre: el derecho juega como par entero (y con trazado entero en el móvil)
-        let p = [switch_player(SwitchPad::Pro), switch_player(SwitchPad::JoyconR), None, None];
-        let l = switch_layout(&p);
-        assert_eq!(l[1], SwitchPlayer { index: 1, kind: SwitchPad::Joycons, dsu_slot: 1, right_slot: None, side: None });
-        assert_eq!(switch_half(&p, 1), None);
-        // dos pares y dos derechos: cada derecho con un par, por orden
-        let p = [
-            switch_player(SwitchPad::Joycons),
-            switch_player(SwitchPad::Joycons),
-            switch_player(SwitchPad::JoyconR),
-            switch_player(SwitchPad::JoyconR),
-        ];
-        let l = switch_layout(&p);
-        assert_eq!(l.iter().map(|q| (q.dsu_slot, q.right_slot)).collect::<Vec<_>>(), vec![(0, Some(2)), (1, Some(3))]);
+    fn preferencias_antiguas_dan_jugadores_pro_independientes() {
+        let p = ["pro", "joycons", "joycon_r", "joycon_side"]
+            .map(|name| switch_player(SwitchPad::parse(name).unwrap()));
+        let layout = switch_layout(&p);
+        assert_eq!(layout.len(), 4, "ningún móvil comparte jugador");
+        for (slot, pl) in layout.iter().enumerate() {
+            assert_eq!(*pl, SwitchPlayer { index: slot as u8, kind: SwitchPad::Pro, dsu_slot: slot as u8 });
+            assert_eq!(pad_state(Mode::Switch, &p, slot as u8), PadState {
+                mode: Mode::Switch, pad: "pro", player: slot as u8 + 1,
+            });
+        }
     }
 
     #[test]
-    fn joycon_de_lado_alterna_izquierdo_y_derecho() {
-        let p = [
-            switch_player(SwitchPad::JoyconSide),
-            switch_player(SwitchPad::Pro),
-            switch_player(SwitchPad::JoyconSide),
-            switch_player(SwitchPad::JoyconSide),
-        ];
-        let l = switch_layout(&p);
-        assert_eq!(l.iter().map(|q| (q.index, q.kind, q.side)).collect::<Vec<_>>(), vec![
-            (0, SwitchPad::JoyconSide, Some(Half::Left)),
-            (1, SwitchPad::Pro, None),
-            (2, SwitchPad::JoyconSide, Some(Half::Right)),
-            (3, SwitchPad::JoyconSide, Some(Half::Left)),
-        ]);
-        assert_eq!(switch_half(&p, 0), None, "el lado va en el reparto, no como mitad de un par");
+    fn jugadores_pro_se_renumeran_al_desconectar() {
+        let mut p = [switch_player(SwitchPad::Pro), None, switch_player(SwitchPad::Pro), player(Role::Nunchuk)];
+        assert_eq!(pad_state(Mode::Switch, &p, 2).player, 2);
+        p[0] = None;
+        assert_eq!(switch_layout(&p), vec![SwitchPlayer { index: 0, kind: SwitchPad::Pro, dsu_slot: 2 }]);
+        assert_eq!(pad_state(Mode::Switch, &p, 2).player, 1);
+        assert_eq!(pad_state(Mode::Switch, &p, 2).pad, "pro");
     }
 
     #[test]

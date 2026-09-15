@@ -1,6 +1,6 @@
 [package]
 name = "pepomote"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "PepoMote receiver — turns your Android phone into a Wii-style pointer/controller for your PC"
@@ -91,6 +91,7 @@ core-foundation = "0.9"
 # El trait ForeignType de core-graphics (as_ptr de CGImage)
 foreign-types = "0.5"
 objc2-app-kit = { version = "0.2", features = [
+    "libc",
     "NSEvent",
     "NSGraphicsContext",
     "NSApplication",

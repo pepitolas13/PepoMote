@@ -74,6 +74,14 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
   táctil: para jugar con un mando de verdad en el PC; ✕ arriba a la izquierda
   para salir y, si su subcasilla está activa, **Teclado** arriba a la derecha.
   El giro es el del ajuste **Giro**. Ver `docs/SETUP-CEMU.md`.
+- **Switch**: Pro Controller para Eden, sin pantalla ni zona táctil, con un
+  jugador independiente por móvil. **Capturar** hace una captura y **Teclado**
+  escribe en el teclado del juego. **Giro** ajusta cómo sostienes el móvil.
+  Las preferencias antiguas de Joy-Con se convierten a Pro; la elección del
+  mando de Cemu se conserva. Puedes abrirlo directamente con
+  `PepoMote-Mobile --autoconnect switch`. Requiere que el receptor anuncie
+  compatibilidad con Switch; hasta su confirmación los controles quedan
+  atenuados. Ver [Configurar Switch](SETUP-SWITCH.md).
 - La cabecera enseña RTT y la frecuencia real del sensor.
 
 ## Sensores
@@ -151,8 +159,10 @@ hay gyro:
 ls /sys/bus/iio/devices/*/in_anglvel_x_raw
 ```
 
-Si no existe, el móvil no tiene gyro expuesto (o falta el driver): PepoMote
-necesita giroscopio.
+Si no existe, el móvil no tiene gyro expuesto (o falta el driver). PepoMote
+se conecta igualmente y transmite botones y sticks sin movimiento de giro.
+Si hay acelerómetro disponible, conserva sus lecturas. La falta o caída del
+sensor no detiene la sesión.
 
 Frecuencia: la app pide la mayor disponible ≤ 250 Hz (`sampling_frequency`).
 Escribir ahí requiere permiso: la regla udev de `install.sh` lo da; si no,

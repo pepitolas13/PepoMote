@@ -25,9 +25,9 @@ struct RemoteMetrics {
     let precisionW: CGFloat
     let scrollW: CGFloat
 
-    init(size: CGSize) {
-        grow = UiScale.factor(size, base: UiScale.remoteBase, fixed: UiScale.remoteFixed)
-        s = Swift.min(1, size.height / 780) * grow
+    init(size: CGSize, extraHeader: CGFloat = 0) {
+        grow = UiScale.factor(size, base: UiScale.remoteBase, fixed: UiScale.remoteFixed + extraHeader)
+        s = Swift.min(1, (size.height - extraHeader) / 780) * grow
         colW = Swift.min(size.width, 520 * grow)
         flexible = grow > 1
         cross = 168 * s
@@ -84,7 +84,8 @@ struct ControllerScreen: View {
 
     var body: some View {
         GeometryReader { geo in
-            let m = RemoteMetrics(size: geo.size)
+            let wrapsNunchuk = link.link.connected.map { $0.supportsSwitch && showModeChips($0, showChips) && showNunchukChip($0) } ?? false
+            let m = RemoteMetrics(size: geo.size, extraHeader: wrapsNunchuk && geo.size.width < 420 ? 37 : 0)
             ZStack {
                 // La columna del mando y las tiras comparten anchura
                 ZStack {
@@ -131,9 +132,12 @@ struct ControllerScreen: View {
                 if modeChips || nunchuk {
                     Spacer().frame(height: 6)
                     let dense = m.colW < 420
-                    HStack(spacing: dense ? 8 : 10) {
-                        if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, dense: dense) }
-                        if nunchuk { NunchukChip(link: c, dense: dense).padding(.leading, 4) }
+                    VStack(spacing: 5) {
+                        HStack(spacing: dense ? 8 : 10) {
+                            if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, dense: dense) }
+                            if nunchuk && !(dense && c.supportsSwitch) { NunchukChip(link: c, dense: dense).padding(.leading, 4) }
+                        }
+                        if nunchuk && dense && c.supportsSwitch { NunchukChip(link: c, dense: dense) }
                     }
                 }
                 if isWiiUAsWiimote(c) {

@@ -117,6 +117,7 @@ struct Snapshot {
     dolphin_status: Option<CfgStatus>,
     cemu_status: Option<CfgStatus>,
     cemu_screen: Option<CfgStatus>,
+    eden_status: Option<CfgStatus>,
     error: Option<String>,
     port_notice: Option<String>,
     firewall: Option<crate::firewall::FirewallIssue>,
@@ -191,6 +192,7 @@ impl eframe::App for PepoMoteApp {
                 dolphin_status: s.dolphin_cfg_status.clone(),
                 cemu_status: s.cemu_cfg_status.clone(),
                 cemu_screen: s.cemu_screen_status.clone(),
+                eden_status: s.eden_cfg_status.clone(),
                 error: s.last_error.clone(),
                 port_notice: s.port_notice.clone(),
                 firewall: s.firewall,
@@ -254,6 +256,8 @@ impl eframe::App for PepoMoteApp {
                                     self.ui_dolphin(ui, &snap);
                                 } else if snap.mode == Mode::Cemu {
                                     self.ui_cemu(ui, &snap);
+                                } else if snap.mode == Mode::Switch {
+                                    self.ui_switch(ui, &snap);
                                 }
                                 if snap.player_count < crate::net::MAX_PLAYERS {
                                     ui.add_space(12.0);
@@ -608,6 +612,23 @@ impl PepoMoteApp {
         );
     }
 
+    fn ui_switch(&self, ui: &mut egui::Ui, snap: &Snapshot) {
+        ui.add_space(8.0);
+        ui.label(RichText::new(tr!("win.switch_clients",snap.dsu_clients)).size(13.0).color(theme::blue()));
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(RichText::new(tr!("win.configure_eden")).size(13.0)).clicked() {
+                crate::eden::configure_now(&self.shared);
+            }
+            if ui.button(RichText::new(tr!("win.restore_eden")).size(13.0)).clicked() {
+                crate::eden::restore_now(&self.shared);
+            }
+        });
+        if let Some(st)=&snap.eden_status {
+            ui.label(RichText::new(&st.text).size(12.0).color(if st.ok {theme::ok()} else {theme::warn()}));
+        }
+        ui.label(RichText::new(tr!("win.switch_help")).size(11.0).color(theme::text_dim()));
+    }
+
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
         let mut config = self.shared.lock_tolerant().config.clone();
         let before = config.clone();
@@ -645,12 +666,23 @@ impl PepoMoteApp {
                 RichText::new(tr!("cfg.auto_cemu")).size(13.0),
             );
             ui.add_space(4.0);
+            ui.checkbox(&mut config.auto_eden, RichText::new(tr!("cfg.auto_eden")).size(13.0));
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.checkbox(
                     &mut config.auto_mode,
                     RichText::new(tr!("cfg.auto_mode")).size(13.0),
                 );
                 info_icon(ui, tr!("cfg.auto_mode_help"));
+            });
+            ui.add_enabled_ui(config.auto_mode, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.checkbox(
+                        &mut config.return_to_pointer,
+                        RichText::new(tr!("cfg.return_to_pointer")).size(13.0),
+                    );
+                    info_icon(ui, tr!("cfg.return_to_pointer_help"));
+                });
             });
             ui.horizontal(|ui| {
                 ui.label(RichText::new(tr!("cfg.cemu_folder")).size(13.0).color(theme::text_dim()));
@@ -668,6 +700,12 @@ impl PepoMoteApp {
                     .size(11.0)
                     .color(theme::text_dim()),
             );
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(tr!("cfg.eden_folder")).size(13.0).color(theme::text_dim()));
+                ui.add(egui::TextEdit::singleline(&mut config.eden_dir).desired_width(200.0).hint_text(tr!("cfg.auto_hint")));
+                if ui.button(RichText::new(tr!("cfg.detect")).size(12.0)).clicked() {crate::eden::detect_now(&self.shared);}
+            });
+            ui.label(RichText::new(tr!("cfg.eden_folder_help")).size(11.0).color(theme::text_dim()));
             ui.horizontal(|ui| {
                 ui.label(RichText::new(tr!("cfg.dolphin_folder")).size(13.0).color(theme::text_dim()));
                 ui.add(
@@ -875,8 +913,12 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
     let layout = crate::state::player_layout(&snap.players);
     for (i, slot) in snap.players.iter().enumerate() {
         let Some(p) = slot else { continue };
-        let number = crate::state::player_number(&snap.players, i as u8);
-        let badge = if p.role == crate::state::Role::Nunchuk {
+        let pad_state = crate::state::pad_state(snap.mode,&snap.players,i as u8);
+        let number = pad_state.player;
+        let badge = if snap.mode==Mode::Switch {
+            if p.role==crate::state::Role::Nunchuk {tr!("win.badge_nunchuk_switch") .to_owned()}
+            else {tr!("win.badge_switch_pro", number)}
+        } else if p.role == crate::state::Role::Nunchuk {
             if cemu && !cemu_layout.iter().any(|c| c.nunchuk_slot == Some(i as u8)) {
                 tr!("win.badge_nunchuk_unused", number)
             } else if !cemu && !layout.iter().any(|(_, n)| *n == Some(i as u8)) {

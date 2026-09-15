@@ -14,6 +14,21 @@ class PadMetricsTest {
     private val eps = 0.5f
 
     @Test
+    fun switchHasOneCapturePillAndNeverAStreamArea() {
+        for ((w, h) in listOf(640f to 240f, 734f to 320f, 852f to 393f, 1133f to 744f, 1376f to 1032f)) {
+            val m = padMetrics(w, h, pro = true, switchPad = true)
+            assertTrue(m.noScreen)
+            assertTrue("capture available at $w x $h", m.pillW > 0f)
+            assertEquals(0f, m.touchW, 0f)
+            assertEquals(0f, m.touchH, 0f)
+            assertTrue(m.sideW * 2 + m.centerW + m.gap * 2 <= w + 0.1f)
+            val centerExtent = if (m.row) m.roundBtn * 3 + m.pillH + m.rowGap * 3
+                else m.roundBtn * 3 + m.pillW + m.rowGap * 3
+            assertTrue("center fits at $w x $h", centerExtent <= (if (m.row) m.bodyH else m.centerW) + 0.1f)
+        }
+    }
+
+    @Test
     fun conPantallaUnMovilMideLoDeSiempreYUnaTabletLlenaLaColumna() {
         val phone = padMetrics(852f, 393f)
         assertEquals(1f, phone.k, 1e-3f)

@@ -14,7 +14,7 @@ object PmpCodec {
     const val TYPE_PONG: Byte = 0x03
     const val INPUT_LEN = 72
 
-    /** INPUT con el bloque de extensión Wii U (FLAG_EXT): bytes 72-79. */
+    /** INPUT con el bloque de extensión Wii U / Switch (FLAG_EXT): bytes 72-79. */
     const val INPUT_EXT_LEN = 80
     const val PING_LEN = 20
 
@@ -29,9 +29,8 @@ object PmpCodec {
 
     /**
      * flags bit2: el paquete mide 80 bytes y los bytes 72-79 llevan el bloque
-     * Wii U (stick derecho + táctil). Solo se emite con el receptor en modo
-     * `cemu` confirmado: un receptor antiguo nunca lo confirma y así nunca
-     * recibe 80 bytes.
+     * Wii U / Switch (stick derecho + táctil, solo Wii U). Solo se emite con
+     * `cemu` o `switch` y su capacidad confirmados por el receptor.
      */
     const val FLAG_EXT = 4
 
@@ -59,14 +58,15 @@ object PmpCodec {
         stick2X: Int = 0, // stick derecho del GamePad (solo con FLAG_EXT)
         stick2Y: Int = 0,
         touchX: Int = 0, // táctil 0..65535, 0 = borde izquierdo (solo con FLAG_EXT)
-        touchY: Int = 0 // táctil 0..65535, 0 = arriba
+        touchY: Int = 0, // táctil 0..65535, 0 = arriba
+        switchPad: Boolean = false
     ): ByteArray {
         val ext = flags and FLAG_EXT != 0
         val buf = ByteBuffer.allocate(if (ext) INPUT_EXT_LEN else INPUT_LEN)
             .order(ByteOrder.LITTLE_ENDIAN)
         buf.putInt(MAGIC)
         buf.put(TYPE_INPUT)
-        buf.put((flags and 0xFF).toByte())
+        buf.put(((if (switchPad) flags and FLAG_TOUCH.inv() else flags) and 0xFF).toByte())
         buf.put(stickX.coerceIn(-127, 127).toByte())
         buf.put(stickY.coerceIn(-127, 127).toByte())
         buf.putInt(sessionId)
@@ -75,15 +75,15 @@ object PmpCodec {
         buf.putFloat(quat[0]); buf.putFloat(quat[1]); buf.putFloat(quat[2]); buf.putFloat(quat[3])
         buf.putFloat(gyro[0]); buf.putFloat(gyro[1]); buf.putFloat(gyro[2])
         buf.putFloat(accel[0]); buf.putFloat(accel[1]); buf.putFloat(accel[2])
-        buf.putInt(buttons)
+        buf.putInt(if (switchPad) buttons and (1 shl 27).inv() else buttons)
         buf.put((recenterCount and 0xFF).toByte())
         buf.put((batteryPct.coerceIn(0, 100)).toByte())
         buf.putShort(touchScrollDy.coerceIn(-32768, 32767).toShort())
         if (ext) {
             buf.put(stick2X.coerceIn(-127, 127).toByte())
             buf.put(stick2Y.coerceIn(-127, 127).toByte())
-            buf.putShort(touchX.coerceIn(0, 0xFFFF).toShort()) // u16 LE
-            buf.putShort(touchY.coerceIn(0, 0xFFFF).toShort())
+            buf.putShort((if (switchPad) 0 else touchX.coerceIn(0, 0xFFFF)).toShort()) // u16 LE
+            buf.putShort((if (switchPad) 0 else touchY.coerceIn(0, 0xFFFF)).toShort())
             buf.putShort(0) // 78-79 reservados
         }
         return buf.array()

@@ -21,6 +21,32 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// Keep each real sensor independent: stale gyro must not suppress accel,
+/// and stale acceleration must not keep influencing a live gyro stream.
+#[derive(Default)]
+struct Readings {
+    last_accel: Option<(u64, [f32; 3])>,
+    last_gyro_us: Option<u64>,
+}
+
+impl Readings {
+    // Reports in a batch can be grouped by sensor. Allow a complete paced
+    // interval before treating the other real sensor as stopped.
+    const STALE_US: u64 = 50_000 + crate::pacing::MAX_DELAY_US;
+    fn accel(&mut self, t_us: u64, value: [f32; 3]) -> Option<Sample> {
+        self.last_accel = Some((t_us, value));
+        if self.last_gyro_us.is_some_and(|last| t_us.saturating_sub(last) < Self::STALE_US) { return None; }
+        Some(Sample { t_us, gyro_valid: false, gyro: [0.0; 3], accel: value })
+    }
+
+    fn gyro(&mut self, t_us: u64, value: [f32; 3]) -> Sample {
+        self.last_gyro_us = Some(t_us);
+        let accel = self.last_accel.filter(|(last, _)| t_us.saturating_sub(*last) < Self::STALE_US)
+            .map(|(_, value)| value).unwrap_or([0.0; 3]);
+        Sample { t_us, gyro_valid: true, gyro: value, accel }
+    }
+}
+
 // ---------------------------------------------------------------- protobuf
 
 /// Codec protobuf mínimo (solo lo que usa el SSC).
@@ -839,28 +865,35 @@ impl Ssc {
         if !registry_ok {
             ssc.info.push_str("aviso: el sensor 'registry' no responde (SSC arrancando o sin firmware)\n");
         }
-        ssc.gyro = ssc
-            .lookup_suid("gyro", Duration::from_secs(2))?
-            .ok_or("el SSC no tiene ningún sensor 'gyro'")?;
-        ssc.accel = ssc
-            .lookup_suid("accel", Duration::from_secs(2))?
-            .ok_or("el SSC no tiene ningún sensor 'accel'")?;
-
-        let (g_rates, g_matrix) = ssc.attributes(ssc.gyro);
-        let (a_rates, _) = ssc.attributes(ssc.accel);
+        ssc.gyro = ssc.lookup_suid("gyro", Duration::from_secs(2)).ok().flatten().unwrap_or_default();
+        ssc.accel = ssc.lookup_suid("accel", Duration::from_secs(2)).ok().flatten().unwrap_or_default();
+        let (g_rates, g_matrix) = if ssc.gyro != (0, 0) { ssc.attributes(ssc.gyro) } else { (Vec::new(), None) };
+        let (a_rates, _) = if ssc.accel != (0, 0) { ssc.attributes(ssc.accel) } else { (Vec::new(), None) };
         let g_rate = pick_rate(&g_rates).unwrap_or(200.0);
-        let a_rate = pick_rate(&a_rates).unwrap_or(g_rate).min(g_rate.max(100.0));
-        ssc.rate_hz = g_rate;
+        let a_rate = pick_rate(&a_rates).unwrap_or(100.0).min(g_rate.max(100.0));
         ssc.info.push_str(&format!(
             "gyro {:016x}{:016x} rates {:?} · accel rates {:?}{}\n",
-            ssc.gyro.1,
-            ssc.gyro.0,
-            g_rates,
-            a_rates,
+            ssc.gyro.1, ssc.gyro.0, g_rates, a_rates,
             g_matrix.map(|m| format!(" · matriz fw {m:?}")).unwrap_or_default()
         ));
-        ssc.enable(ssc.gyro, g_rate)?;
-        ssc.enable(ssc.accel, a_rate)?;
+        if ssc.gyro != (0, 0) {
+            if let Err(error) = ssc.enable(ssc.gyro, g_rate) {
+                ssc.info.push_str(&format!("gyro no disponible: {error}\n"));
+                ssc.disable(ssc.gyro);
+                ssc.gyro = (0, 0);
+            }
+        }
+        if ssc.accel != (0, 0) {
+            if let Err(error) = ssc.enable(ssc.accel, a_rate) {
+                ssc.info.push_str(&format!("accel no disponible: {error}\n"));
+                ssc.disable(ssc.accel);
+                ssc.accel = (0, 0);
+            }
+        }
+        if ssc.gyro == (0, 0) && ssc.accel == (0, 0) {
+            return Err(format!("SSC sin sensores de movimiento disponibles\n{}", ssc.info));
+        }
+        ssc.rate_hz = if ssc.gyro == (0, 0) { a_rate } else { g_rate };
         Ok(ssc)
     }
 
@@ -977,6 +1010,7 @@ impl Ssc {
     }
 
     fn disable(&mut self, uid: (u64, u64)) {
+        if uid == (0, 0) { return; }
         let _ = self.request(uid, MSG_DISABLE, None);
     }
 }
@@ -984,7 +1018,7 @@ impl Ssc {
 #[cfg(target_os = "linux")]
 impl Source for Ssc {
     fn run(mut self: Box<Self>, tx: Sender<Sample>, stop: Arc<AtomicBool>) {
-        let mut last_accel = [0f32; 3];
+        let mut readings = Readings::default();
         let mut buf = vec![0u8; 16384];
         let _ = self.sock.set_timeout(Duration::from_millis(200));
         let pending = std::mem::take(&mut self.pending);
@@ -1004,24 +1038,20 @@ impl Source for Ssc {
                     continue;
                 }
                 let Some(v) = decode_vec3(&r.msg) else { continue };
-                if r.uid == self.accel {
-                    last_accel = v;
-                } else if r.uid == self.gyro {
-                    let t_us = if r.timestamp > 0 {
-                        (r.timestamp as f64 / QTIMER_HZ * 1e6) as u64
-                    } else {
-                        now_us()
-                    };
-                    if tx
-                        .send(Sample {
-                            t_us,
-                            gyro: v,
-                            accel: last_accel,
-                        })
-                        .is_err()
-                    {
-                        return;
-                    }
+                let t_us = if r.timestamp > 0 {
+                    (r.timestamp as f64 / QTIMER_HZ * 1e6) as u64
+                } else {
+                    now_us()
+                };
+                let sample = if r.uid == self.accel && self.accel != (0, 0) {
+                    readings.accel(t_us, v)
+                } else if r.uid == self.gyro && self.gyro != (0, 0) {
+                    Some(readings.gyro(t_us, v))
+                } else {
+                    None
+                };
+                if let Some(sample) = sample {
+                    if tx.send(sample).is_err() { return; }
                 }
             }
         }
@@ -1031,7 +1061,7 @@ impl Source for Ssc {
     }
 
     fn describe(&self) -> String {
-        format!("SSC/SLPI Qualcomm · gyro+accel · {:.0} Hz", self.rate_hz)
+        format!("SSC/SLPI Qualcomm · {} · {:.0} Hz", if self.gyro == (0, 0) { "accel" } else if self.accel == (0, 0) { "gyro" } else { "gyro+accel" }, self.rate_hz)
     }
 }
 
@@ -1082,6 +1112,24 @@ impl Source for Ssc {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accelerometer_only_or_stalled_gyro_still_emits_real_acceleration() {
+        let mut readings = Readings::default();
+        let sample = readings.accel(1_000_000, [1.0, 2.0, 9.8]).unwrap();
+        assert!(!sample.gyro_valid);
+        assert_eq!(sample.gyro, [0.0; 3]);
+        assert_eq!(sample.accel, [1.0, 2.0, 9.8]);
+        assert!(readings.gyro(1_005_000, [0.1, 0.2, 0.3]).gyro_valid);
+        assert!(readings.accel(1_010_000, [2.0, 3.0, 9.8]).is_none());
+        assert!(readings.accel(1_085_000, [2.0, 3.0, 9.8]).is_none(), "a healthy 80 ms burst can deliver accel before gyro");
+        let stalled = readings.accel(1_140_000, [3.0, 4.0, 9.8]).unwrap();
+        assert!(!stalled.gyro_valid);
+        assert_eq!(stalled.gyro, [0.0; 3]);
+        assert_eq!(stalled.accel, [3.0, 4.0, 9.8]);
+        assert_eq!(readings.gyro(1_220_000, [0.1, 0.2, 0.3]).accel, [3.0, 4.0, 9.8]);
+        assert_eq!(readings.gyro(1_280_000, [0.1, 0.2, 0.3]).accel, [0.0; 3]);
+    }
 
     #[test]
     fn peticion_con_batching_explicito() {

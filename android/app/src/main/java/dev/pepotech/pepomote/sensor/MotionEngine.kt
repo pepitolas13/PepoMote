@@ -34,12 +34,16 @@ enum class SenderKind {
      * extensión (stick derecho + táctil) y los sensores remapeados al marco
      * del mando apaisado ([Frame]).
      */
-    GAMEPAD
+    GAMEPAD,
+
+    /** Switch: the same extension with both sticks and Capture, without a touch surface. */
+    SWITCH
 }
 
 /**
- * Sensores a máxima frecuencia. La cadencia de envío la marca el gyro:
- * un paquete INPUT por muestra de gyro (tope natural del hardware).
+ * INPUT sigue al giroscopio hasta 250 Hz. Un reloj de 100 Hz mantiene los
+ * controles activos cuando faltan sensores, fallan o dejan de dar muestras.
+ * El reloj y los sensores comparten hilo; stop espera cualquier envío en curso.
  */
 class MotionEngine(
     context: Context,
@@ -75,6 +79,7 @@ class MotionEngine(
 
     private val quat = floatArrayOf(1f, 0f, 0f, 0f) // w, x, y, z
     private val gyro = FloatArray(3)
+    private val latestGyro = FloatArray(3)
     private val accel = FloatArray(3)
 
     // Sensores ya remapeados al marco del GamePad (sin reservar memoria por paquete)
@@ -83,7 +88,13 @@ class MotionEngine(
     private val accelOut = FloatArray(3)
 
     private var seq = 0
+    private var running = false
+    private var closed = false
+    private var gyroRegistered = false
+    private var accelRegistered = false
+    private var rotationRegistered = false
     private var hasRotationVector = false
+    /** Reloj real compartido por muestras y respaldo: una ráfaga de callbacks no acelera INPUT. */
     private var lastSendNs = 0L
     /** Media ponderada por tiempo del gyro entre envíos (∑ω·Δt y ∑Δt). */
     private val gyroSum = FloatArray(3)
@@ -101,44 +112,86 @@ class MotionEngine(
 
     private val scratch = FloatArray(4)
 
-    fun start() {
-        val gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-        val accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val rotSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
-        hasRotationVector = rotSensor != null
-
-        gyroSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
-        }
-        accelSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
-        }
-        rotSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
+    private val fallback = object : Runnable {
+        override fun run() = synchronized(this@MotionEngine) {
+            if (!running) return@synchronized
+            val now = SystemClock.elapsedRealtimeNanos()
+            if (now - lastSendNs >= FALLBACK_INTERVAL_NS) {
+                if (lastGyroNs != 0L && now - lastGyroNs < GYRO_STALE_NS) {
+                    // Un gyro de 50 Hz sigue vivo entre los envíos de 100 Hz.
+                    // También conservar muestras que llegaron tras un envío.
+                    consumeGyro()
+                } else {
+                    // No integrar indefinidamente una velocidad de un sensor
+                    // parado. La frescura es independiente del reloj de INPUT.
+                    gyro.fill(0f)
+                    gyroSum.fill(0f)
+                    gyroSumNs = 0L
+                    lastGyroNs = 0L
+                    lastSensorHz = 0f
+                    hzWindowStartNs = 0L
+                    hzCount = 0
+                }
+                lastSendNs = now
+                sendPacket(now)
+            }
+            if (running) handler.postDelayed(this, FALLBACK_INTERVAL_MS)
         }
     }
 
+    @Synchronized
+    fun start() {
+        if (running || closed) return
+        running = true
+        gyroRegistered = register(Sensor.TYPE_GYROSCOPE)
+        accelRegistered = register(Sensor.TYPE_ACCELEROMETER)
+        rotationRegistered = register(Sensor.TYPE_GAME_ROTATION_VECTOR)
+        handler.postDelayed(fallback, FALLBACK_INTERVAL_MS)
+    }
+
+    private fun register(type: Int): Boolean = try {
+        val sensor = sensorManager.getDefaultSensor(type)
+        sensor != null && sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_FASTEST, handler)
+    } catch (_: RuntimeException) {
+        // Algunos dispositivos exponen el sensor pero rechazan su registro.
+        false
+    }
+
+    @Synchronized
     fun stop() {
+        if (closed) return
+        running = false
+        closed = true
+        handler.removeCallbacksAndMessages(null)
         sensorManager.unregisterListener(this)
         thread.quitSafely()
     }
 
+    @Synchronized
     override fun onSensorChanged(event: SensorEvent) {
+        if (!running) return
         when (event.sensor.type) {
             Sensor.TYPE_GAME_ROTATION_VECTOR -> {
+                if (!rotationRegistered) return
                 SensorManager.getQuaternionFromVector(scratch, event.values)
                 // getQuaternionFromVector devuelve [w, x, y, z]
                 quat[0] = scratch[0]; quat[1] = scratch[1]
                 quat[2] = scratch[2]; quat[3] = scratch[3]
+                hasRotationVector = true
             }
 
             Sensor.TYPE_ACCELEROMETER -> {
+                if (!accelRegistered) return
                 accel[0] = event.values[0]
                 accel[1] = event.values[1]
                 accel[2] = event.values[2]
             }
 
             Sensor.TYPE_GYROSCOPE -> {
+                if (!gyroRegistered) return
+                val now = SystemClock.elapsedRealtimeNanos()
+                val age = now - event.timestamp
+                if (age !in 0 until GYRO_STALE_NS || lastGyroNs != 0L && event.timestamp <= lastGyroNs) return
                 trackHz(event.timestamp)
                 // Media ponderada por tiempo de las muestras entre envíos: un
                 // gyro a 400-500 Hz decimado a 250 Hz sin promediar tiraba
@@ -152,30 +205,32 @@ class MotionEngine(
                     gyroSum.fill(0f); gyroSumNs = 0L
                 }
                 lastGyroNs = event.timestamp
+                for (i in 0..2) latestGyro[i] = event.values[i]
                 // Tope de 250 Hz del protocolo: móviles con gyro a 400-500 Hz
                 // saturan el Wi-Fi y provocan ráfagas/pérdidas (cursor errático)
-                if (event.timestamp - lastSendNs >= 3_900_000L) {
-                    lastSendNs = event.timestamp
-                    if (gyroSumNs > 0L) {
-                        for (i in 0..2) gyro[i] = gyroSum[i] / gyroSumNs
-                    } else {
-                        for (i in 0..2) gyro[i] = event.values[i]
-                    }
-                    gyroSum.fill(0f); gyroSumNs = 0L
-                    sendPacket(event.timestamp)
+                if (now - lastSendNs >= GYRO_INTERVAL_NS) {
+                    lastSendNs = now
+                    consumeGyro()
+                    sendPacket(now)
                 }
             }
         }
     }
 
+    private fun consumeGyro() {
+        for (i in 0..2) gyro[i] = if (gyroSumNs > 0L) gyroSum[i] / gyroSumNs else latestGyro[i]
+        gyroSum.fill(0f)
+        gyroSumNs = 0L
+    }
+
     private fun sendPacket(tSensorNs: Long) {
         seq++
         val quatFlag = if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0
-        val packet = when (kind) {
-            SenderKind.GAMEPAD -> {
+        val packet = when (val senderKind = kind) {
+            SenderKind.GAMEPAD, SenderKind.SWITCH -> {
                 // Marco del mando apaisado (contrato §4) ANTES de escribir el paquete
                 val rot = rotation
-                Frame.remapQuat(quat, rot, quatOut)
+                Frame.remapQuat(quat, if (hasRotationVector) rot else Surface.ROTATION_0, quatOut)
                 Frame.remapGyro(gyro, rot, gyroOut)
                 Frame.remapAccel(accel, rot, accelOut)
                 val touch = ButtonState.touch()
@@ -197,7 +252,8 @@ class MotionEngine(
                     stick2X = ButtonState.stickRX(),
                     stick2Y = ButtonState.stickRY(),
                     touchX = touch.x,
-                    touchY = touch.y
+                    touchY = touch.y,
+                    switchPad = senderKind == SenderKind.SWITCH
                 )
             }
 
@@ -221,7 +277,7 @@ class MotionEngine(
                 // Como el Nunchuk (stick en la trama) pero con el móvil de lado:
                 // sensores al marco apaisado (contrato §4), igual que el GamePad
                 val rot = rotation
-                Frame.remapQuat(quat, rot, quatOut)
+                Frame.remapQuat(quat, if (hasRotationVector) rot else Surface.ROTATION_0, quatOut)
                 Frame.remapGyro(gyro, rot, gyroOut)
                 Frame.remapAccel(accel, rot, accelOut)
                 PmpCodec.encodeInput(
@@ -245,7 +301,7 @@ class MotionEngine(
                 // Móvil de lado (NES): sensores girados según diga la pantalla
                 // (Route.sidewaysRotation); en vertical (ROTATION_0), tal cual
                 val rot = rotation
-                Frame.remapQuat(quat, rot, quatOut)
+                Frame.remapQuat(quat, if (hasRotationVector) rot else Surface.ROTATION_0, quatOut)
                 Frame.remapGyro(gyro, rot, gyroOut)
                 Frame.remapAccel(accel, rot, accelOut)
                 PmpCodec.encodeInput(
@@ -288,4 +344,11 @@ class MotionEngine(
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+    private companion object {
+        const val GYRO_INTERVAL_NS = 4_000_000L
+        const val GYRO_STALE_NS = 50_000_000L
+        const val FALLBACK_INTERVAL_MS = 10L
+        const val FALLBACK_INTERVAL_NS = FALLBACK_INTERVAL_MS * 1_000_000L
+    }
 }

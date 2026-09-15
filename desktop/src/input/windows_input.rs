@@ -41,6 +41,20 @@ pub struct WinInjector {
     activation: ActivationMode,
 }
 
+/// Activación para texto dirigido a un emulador, sin AttachThreadInput ni ALT.
+pub(crate) fn focus_for_text(hwnd: HWND) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{IsIconic, ShowWindowAsync, SW_RESTORE};
+    unsafe {
+        if IsIconic(hwnd).as_bool() {let _=ShowWindowAsync(hwnd,SW_RESTORE);}
+        if GetForegroundWindow()==hwnd {return true;}
+        if !SetForegroundWindow(hwnd).as_bool() {
+            WinInjector {activation:ActivationMode::Modern}.send_mouse(0,0,0,MOUSEEVENTF_MOVE);
+            let _=SetForegroundWindow(hwnd);
+        }
+        GetForegroundWindow()==hwnd
+    }
+}
+
 impl WinInjector {
     pub fn new() -> Self {
         let activation = activation_mode(std::env::var("PEPOMOTE_WIN_ACTIVATE").ok().as_deref());

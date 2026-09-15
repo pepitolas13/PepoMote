@@ -1,7 +1,7 @@
 # PepoMote en iPhone y iPad
 
 La app de iOS/iPadOS es el mismo emisor que la de Android: puntero, mando de
-Wii para Dolphin, GamePad de Wii U para Cemu (con doble pantalla), Nunchuk,
+Wii para Dolphin, GamePad de Wii U para Cemu (con doble pantalla), mandos de Switch para Eden, Nunchuk,
 varios PCs, reconexión automática, español/inglés y tema claro/oscuro.
 Funciona en iOS/iPadOS **15 o superior** (desde iPhone 7 hasta los iPad con
 iPadOS 26).
@@ -212,3 +212,9 @@ dispositivo. Los tests (`Cmd+U`) cubren el codec contra los vectores dorados
 del protocolo, el latch de botones, el stick, el teclado de Cemu, el remapeo
 de ejes, la reconexión, el routing, los PCs guardados, el canal de pantalla
 (con un receptor falso) y la paridad de textos español/inglés.
+
+## Switch
+
+La integración de Switch incluye exclusivamente Pro Controller, con un jugador independiente por móvil. Capturar, teclado y capacidades del receptor funcionan con el mismo protocolo que Android; se conserva la elección de mando de Wii U. Los botones y sticks siguen transmitiéndose si Core Motion no está disponible o deja de entregar datos; el giro ausente se envía como cero. Consulta [SETUP-SWITCH.md](SETUP-SWITCH.md).
+
+La validación local de esta integración se ha hecho desde Windows: las pruebas XCTest, las capturas y la compilación de iOS necesitan Xcode en un Mac y quedan pendientes antes de publicar esta versión.

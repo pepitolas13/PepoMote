@@ -602,6 +602,10 @@ fn flatpak_dir() -> Option<PathBuf> {
 /// Carpetas de config de Cemu donde escribir los perfiles (todas las
 /// instalaciones a la vista), a partir de los directorios del ejecutable.
 pub fn config_dirs_from(exe_dirs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+    // E2E aislado: nunca recorrer ni modificar las instalaciones reales.
+    if let Some(dir) = std::env::var_os("PEPOMOTE_CEMU_DIR") {
+        return Ok(vec![PathBuf::from(dir)]);
+    }
     fn push(dirs: &mut Vec<PathBuf>, d: PathBuf) {
         if !dirs.contains(&d) {
             dirs.push(d);
@@ -649,6 +653,7 @@ pub fn config_dirs_from(exe_dirs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
 
 /// Directorios del ejecutable: el de Ajustes (si lo hay) y los encontrados.
 fn exe_dirs(cfg: &Config) -> Vec<PathBuf> {
+    if std::env::var_os("PEPOMOTE_CEMU_DIR").is_some() { return Vec::new(); }
     let mut dirs = Vec::new();
     if !cfg.cemu_dir.trim().is_empty() {
         dirs.push(PathBuf::from(cfg.cemu_dir.trim()));

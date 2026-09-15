@@ -2,6 +2,7 @@ package dev.pepotech.pepomote.service
 
 import android.content.Context
 import android.os.SystemClock
+import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.sensor.MotionEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +38,9 @@ sealed class UiLink {
          * El receptor confirmó «solo pantalla» (`ok.screen_only` o eco de
          * `screen_only`); null = receptor anterior a 1.6, que no lo conoce.
          */
-        val screenOnly: Boolean? = null
+        val screenOnly: Boolean? = null,
+        /** `ok.modes` contains "switch"; absent means an older receiver. */
+        val supportsSwitch: Boolean = false
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
@@ -65,6 +68,7 @@ object LinkState {
     const val MODE_POINTER = "pointer"
     const val MODE_DOLPHIN = "dolphin"
     const val MODE_CEMU = "cemu"
+    const val MODE_SWITCH = "switch"
 
     const val PAD_GAMEPAD = "gamepad"
     const val PAD_PRO = "pro"
@@ -130,7 +134,12 @@ object LinkState {
      * modo se aplica en cuanto llegue el `ok`.
      */
     fun requestMode(mode: String) {
-        _intent.value = if (mode == MODE_CEMU) PadIntent.WiiU else PadIntent.None
+        ButtonState.reset()
+        _intent.value = when (mode) {
+            MODE_CEMU -> PadIntent.WiiU
+            MODE_SWITCH -> PadIntent.Switch
+            else -> PadIntent.None
+        }
         val send = sendMode
         if (send != null && _flow.value is UiLink.Connected) send(mode) else pendingMode = mode
     }

@@ -1,6 +1,7 @@
 package dev.pepotech.pepomote.net
 
 import dev.pepotech.pepomote.control.TextInput
+import dev.pepotech.pepomote.service.PadPreference
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -45,7 +46,8 @@ class ControlClient(
         /** El receptor confirma el Nunchuk propio (`"own"`); "none" si no, o receptor antiguo. */
         val nunchuk: String = "none",
         /** El receptor conoce «solo pantalla» (`ok.screen_only`); null = receptor anterior a 1.6. */
-        val screenOnly: Boolean? = null
+        val screenOnly: Boolean? = null,
+        val supportsSwitch: Boolean = false
     )
 
     interface Callbacks {
@@ -60,7 +62,7 @@ class ControlClient(
         fun onModeChanged(mode: String, byPc: Boolean)
 
         /** Eco del `pad`: mando efectivo (gamepad / pro / wiimote). */
-        fun onPadChanged(pad: String)
+        fun onPadChanged(pad: String, player: Int?)
 
         /** Eco del `nunchuk`: el receptor aplica (o no) el Nunchuk propio. */
         fun onNunchukChanged(own: Boolean)
@@ -75,6 +77,8 @@ class ControlClient(
 
     @Volatile
     private var running = true
+    @Volatile
+    private var confirmedMode = "pointer"
     private var socket: Socket? = null
     private var writer: BufferedWriter? = null
 
@@ -125,21 +129,25 @@ class ControlClient(
                     continue
                 }
                 when (msg.optString("m")) {
-                    "ok" -> callbacks.onOk(
-                        Ok(
-                            sessionId = msg.getInt("session_id"),
-                            udpPort = msg.optInt("udp_port", port),
-                            mode = msg.optString("mode", "pointer"),
-                            slot = msg.optInt("slot", 0),
-                            role = msg.optString("role", role),
-                            player = msg.optInt("player", 0),
-                            supportsCemu = supportsCemu(msg),
-                            pad = msg.optString("pad", "gamepad"),
-                            name = msg.optString("name", ""),
-                            nunchuk = msg.optString("nunchuk", "none"),
-                            screenOnly = if (msg.has("screen_only")) msg.optBoolean("screen_only") else null
+                    "ok" -> {
+                        confirmedMode = msg.optString("mode", "pointer")
+                        callbacks.onOk(
+                            Ok(
+                                sessionId = msg.getInt("session_id"),
+                                udpPort = msg.optInt("udp_port", port),
+                                mode = confirmedMode,
+                                slot = msg.optInt("slot", 0),
+                                role = msg.optString("role", role),
+                                player = msg.optInt("player", 0),
+                                supportsCemu = supportsMode(msg, "cemu"),
+                                pad = PadPreference.effective(confirmedMode, msg.optString("pad", "gamepad")),
+                                name = msg.optString("name", ""),
+                                nunchuk = msg.optString("nunchuk", "none"),
+                                screenOnly = if (msg.has("screen_only")) msg.optBoolean("screen_only") else null,
+                                supportsSwitch = supportsMode(msg, "switch")
+                            )
                         )
-                    )
+                    }
 
                     "err" -> {
                         callbacks.onError(msg.optString("code"), msg.optString("msg"))
@@ -148,8 +156,13 @@ class ControlClient(
 
                     "ping" -> sendJson(JSONObject().put("m", "pong").put("t", msg.opt("t")))
                     "pong" -> Unit
-                    "mode" -> callbacks.onModeChanged(msg.optString("mode", "pointer"), msg.optString("by") == "pc")
-                    "pad" -> callbacks.onPadChanged(msg.optString("pad", "gamepad"))
+                    "mode" -> {
+                        confirmedMode = msg.optString("mode", "pointer")
+                        callbacks.onModeChanged(confirmedMode, msg.optString("by") == "pc")
+                    }
+                    // Obsolete half/side fields are deliberately ignored.
+                    "pad" -> callbacks.onPadChanged(PadPreference.effective(confirmedMode, msg.optString("pad", "gamepad")),
+                        msg.optInt("player", 0).takeIf { it in 1..4 })
                     "nunchuk" -> callbacks.onNunchukChanged(msg.optBoolean("own", false))
                     "screen_only" -> callbacks.onScreenOnlyChanged(msg.optBoolean("on", false))
                     "notice" -> msg.optString("text").takeIf { it.isNotBlank() }?.let(callbacks::onNotice)
@@ -176,13 +189,22 @@ class ControlClient(
         }
     }, "pepomote-control-ping").apply { isDaemon = true; start() }
 
-    fun sendMode(mode: String) {
+    fun sendMode(mode: String, cemuScreenOnly: Boolean? = null) {
+        // The receiver may configure Cemu immediately upon mode change, before its echo arrives.
+        if (mode == "cemu" && cemuScreenOnly != null) sendScreenOnly(cemuScreenOnly)
         sendJson(JSONObject().put("m", "mode").put("mode", mode))
+    }
+
+    /** Restore preferences only after the receiver confirmed their console mode. */
+    fun restoreModePreferences(mode: String, pad: String, cemuScreenOnly: Boolean) {
+        // Apply this before pad: that message can also trigger Cemu profile configuration.
+        if (mode == "cemu") sendScreenOnly(cemuScreenOnly)
+        sendPad(PadPreference.normalize(mode, pad))
     }
 
     /** Modo Wii U: "wiimote" (Mando Wii) o "gamepad" (volver a GamePad/Pro). */
     fun sendPad(pad: String) {
-        sendJson(JSONObject().put("m", "pad").put("pad", pad))
+        sendJson(JSONObject().put("m", "pad").put("pad", PadPreference.effective(confirmedMode, pad)))
     }
 
     /** Nunchuk en el mismo móvil, encendido o apagado; el receptor lo confirma con el eco. */
@@ -240,12 +262,13 @@ class ControlClient(
 
     private companion object {
         /** `ok.modes` contiene "cemu" (un receptor antiguo no manda `modes`). */
-        fun supportsCemu(ok: JSONObject): Boolean {
+        fun supportsMode(ok: JSONObject, mode: String): Boolean {
             val modes = ok.optJSONArray("modes") ?: return false
             for (i in 0 until modes.length()) {
-                if (modes.optString(i) == "cemu") return true
+                if (modes.optString(i) == mode) return true
             }
             return false
         }
+
     }
 }

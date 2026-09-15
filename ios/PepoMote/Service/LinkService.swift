@@ -23,7 +23,6 @@ final class LinkService {
     private var reconnectWork: DispatchWorkItem?
     /// Último modo y tipo de mando pedidos por la UI: se reponen al reconectar.
     private var lastMode: String?
-    private var lastPad: String?
     /// Generación del enlace: los callbacks de un ControlClient anterior se ignoran.
     private var generation = 0
     private var control: ControlClient?
@@ -44,7 +43,6 @@ final class LinkService {
         cancelReconnect()
         phase = .initial
         lastMode = nil
-        lastPad = nil
         ButtonState.shared.reset()
         UIApplication.shared.isIdleTimerDisabled = true
         attempt = 0
@@ -86,12 +84,30 @@ final class LinkService {
                 onError: { [weak self] code, msg in self?.onError(code, msg, gen, pairing) },
                 onModeChanged: { [weak self] mode, byPc in
                     guard let self, gen == self.generation else { return }
-                    self.link.updateConnected { $0.mode = mode }
+                    let changed = self.link.link.connected?.mode != mode
+                    if changed {
+                        ButtonState.shared.reset()
+                        self.motion?.kind = self.role == LinkState.roleNunchuk ? .nunchuk : .wiimote
+                        if mode != LinkState.modeCemu { ScreenLink.shared.release() }
+                    }
+                    self.link.updateConnected {
+                        $0.mode = mode
+                    }
                     self.link.resolveIntent(mode: mode, byPc: byPc)
+                    self.lastMode = mode
+                    if changed { self.restorePad(mode: mode) }
                 },
-                onPadChanged: { [weak self] pad in
+                onPadChanged: { [weak self] pad, player in
                     guard let self, gen == self.generation else { return }
-                    self.link.updateConnected { $0.pad = pad }
+                    let current = self.link.link.connected
+                    if current?.pad != pad || (player != nil && current?.player != player) {
+                        ButtonState.shared.reset()
+                        self.motion?.kind = self.role == LinkState.roleNunchuk ? .nunchuk : .wiimote
+                    }
+                    self.link.updateConnected {
+                        $0.pad = pad
+                        if let player, (1...4).contains(player) { $0.player = player }
+                    }
                 },
                 onNunchukChanged: { [weak self] own in
                     guard let self, gen == self.generation else { return }
@@ -109,13 +125,13 @@ final class LinkService {
                 onClosed: { [weak self] in self?.onClosed(gen, pairing) }
             ),
             ownNunchuk: AppPrefs.ownNunchuk,
-            screenOnly: AppPrefs.gamePadFullScreen
+            screenOnly: AppPrefs.gamePadFullScreen,
+            pad: AppPrefs.switchPad
         )
     }
 
     private func onOk(_ ok: ControlClient.Ok, _ gen: Int, _ pairing: Pairing) {
         guard gen == generation else { return }
-        let recovered = phase == .reconnecting
         phase = .live
         reconnectAttempt = 0
         let nunchuk = ok.role == LinkState.roleNunchuk
@@ -145,10 +161,14 @@ final class LinkService {
             self?.lastMode = m
             self?.control?.sendMode(m)
         }
-        // Cada conexión empieza como GamePad/Pro; lo pedido se recuerda para reponerlo si hay que reconectar
+        // Preferencias separadas: el vocabulario de un modo no reemplaza al otro.
         link.sendPad = { [weak self] p in
-            self?.lastPad = p
-            self?.control?.sendPad(p)
+            guard let self, let mode = self.link.link.connected?.mode else { return }
+            if mode == LinkState.modeSwitch, LinkState.validSwitchPad(p) { AppPrefs.switchPad = p }
+            else if mode == LinkState.modeCemu, [LinkState.padGamepad, LinkState.padWiimote].contains(p) { AppPrefs.cemuPad = p }
+            else { return }
+            ButtonState.shared.reset()
+            self.control?.sendPad(p)
         }
         link.sendText = { [weak self] t in self?.control?.sendText(t) }
         link.sendNunchuk = { [weak self] own in self?.control?.sendNunchuk(own) }
@@ -165,15 +185,18 @@ final class LinkService {
             supportsCemu: ok.supportsCemu,
             pad: ok.pad,
             ownNunchuk: ok.nunchuk == "own",
-            screenOnly: ok.screenOnly
+            screenOnly: ok.screenOnly,
+            supportsSwitch: ok.supportsSwitch
         )))
         if let m = link.pendingMode {
             link.pendingMode = nil
             lastMode = m
             control?.sendMode(m)
+            if m == ok.mode { restorePad(mode: ok.mode) }
+        } else {
+            lastMode = ok.mode
+            restorePad(mode: ok.mode)
         }
-        // Tras una caída, el Mando de Wii vuelve a serlo
-        if recovered, lastPad == LinkState.padWiimote { control?.sendPad(LinkState.padWiimote) }
         // Doble pantalla: la pantalla GamePad abre el canal cuando toca; va al
         // mismo puerto que este control. Un Nunchuk no tiene.
         if !nunchuk { ScreenLink.shared.bind(host: pairing.host, port: pairing.port, sessionId: ok.sessionId) }
@@ -181,6 +204,12 @@ final class LinkService {
         UiSounds.shared.connect()
         // "Pulsar la diana" automáticamente al conectar: recentra y centra el cursor
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { ButtonState.shared.bumpRecenter() }
+    }
+
+    private func restorePad(mode: String) {
+        guard role == LinkState.roleWiimote else { return }
+        if mode == LinkState.modeSwitch { control?.sendPad(AppPrefs.switchPad) }
+        else if mode == LinkState.modeCemu { control?.sendPad(AppPrefs.cemuPad) }
     }
 
     private func onError(_ code: String, _ msg: String, _ gen: Int, _ pairing: Pairing) {

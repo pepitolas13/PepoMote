@@ -6,6 +6,21 @@ enum AppPrefs {
 
     private static var d: UserDefaults { .standard }
 
+    static let cemuPadKey = "cemuPad"
+    static var cemuPad: String {
+        get { d.string(forKey: cemuPadKey) == LinkState.padWiimote ? LinkState.padWiimote : LinkState.padGamepad }
+        set { d.set(newValue == LinkState.padWiimote ? newValue : LinkState.padGamepad, forKey: cemuPadKey) }
+    }
+
+    static let switchPadKey = "switchPad"
+    static var switchPad: String {
+        get {
+            let pad = d.string(forKey: switchPadKey) ?? LinkState.padPro
+            return LinkState.validSwitchPad(pad) ? pad : LinkState.padPro
+        }
+        set { d.set(LinkState.validSwitchPad(newValue) ? newValue : LinkState.padPro, forKey: switchPadKey) }
+    }
+
     /// Mostrar el selector Puntero/Dolphin en el mando al entrar por Conectar.
     static var showDolphinChips: Bool {
         get { d.object(forKey: "showDolphinChips") as? Bool ?? true }

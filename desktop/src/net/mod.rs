@@ -37,7 +37,7 @@ pub struct Session {
     /// Último `pad` (tipo de mando en Cemu) que se le dijo a este móvil, para
     /// avisarle solo cuando cambia (J2 pasa a GamePad si J1 se va, el
     /// Nunchuk entra en uso cuando su jugador elige Mando de Wii…).
-    pub last_pad: Option<&'static str>,
+    pub last_pad: Option<crate::state::PadState>,
 }
 
 /// Escribe una línea JSON en el canal de control de una sesión.

@@ -121,7 +121,7 @@
     <string name="ob2_title">Scan the QR</string>
     <string name="ob2_body">Connect → point the camera. Paired for good.</string>
     <string name="ob3_title">Point. Click. Play.</string>
-    <string name="ob3_body">The phone moves the cursor like a Wii Remote. And in Dolphin, you really play.</string>
+    <string name="ob3_body">With a gyroscope, point like a Wii Remote. Without one, you can play with buttons, sticks and touch controls.</string>
     <string name="lets_go">Let\'s go!</string>
 
     <!-- controller -->
@@ -166,4 +166,15 @@
     <string name="kb_write">Type</string>
     <string name="kb_close">Close</string>
     <string name="kb_accept">Accept</string>
+    <string name="channel_switch">Switch</string>
+    <string name="channel_switch_sub">Pro Controller</string>
+    <string name="mode_switch">Switch</string>
+    <string name="activating_switch">Activating Switch…</string>
+    <string name="capture">Capture</string>
+    <string name="side_ask_switch">Keep your Switch controller this way?</string>
+    <string name="warn_needs_switch">Update the PC receiver to use Switch.</string>
+    <string name="shortcut_switch">Switch</string>
+    <string name="shortcut_switch_long">Switch controller</string>
+    <string name="kb_switch_title">Switch keyboard</string>
+    <string name="kb_switch_help">For the game\'s on-screen keyboard. Delete removes a character, Type sends the text and continues, Accept sends the text and Enter.</string>
 </resources>

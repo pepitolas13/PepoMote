@@ -113,9 +113,9 @@ class LinkForegroundService : Service() {
     private var reconnectAttempt = 0
     private var reconnectRunnable: Runnable? = null
 
-    /** Último modo y tipo de mando pedidos por la UI: se reponen al reconectar. */
+    /** El modo pedido se repone al reconectar; cada consola conserva su mando en AppPrefs. */
     private var lastMode: String? = null
-    private var lastPad: String? = null
+    private var sessionId: Int? = null
 
     /**
      * Generación del enlace. Cada connect() la sube; los callbacks de un
@@ -175,7 +175,7 @@ class LinkForegroundService : Service() {
         cancelReconnect()
         phase = Phase.Initial
         lastMode = null
-        lastPad = null
+        sessionId = null
         if (wakeLock?.isHeld != true) acquireLocks()
         LinkState.publish(UiLink.Connecting)
         ButtonState.reset()
@@ -234,11 +234,13 @@ class LinkForegroundService : Service() {
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
             role = role,
             ownNunchuk = AppPrefs.ownNunchuk(this),
+            // Stored Wii U preference, also while Switch is active. This does not open ScreenLink.
             screenOnly = AppPrefs.gamePadFullScreen(this),
             callbacks = object : ControlClient.Callbacks {
                 override fun onOk(ok: ControlClient.Ok) {
-                    if (gen != generation) return
-                    val recovered = phase == Phase.Reconnecting
+                    // El handshake crea una sola pareja motor/socket por conexión.
+                    if (gen != generation || phase == Phase.Live) return
+                    sessionId = ok.sessionId
                     phase = Phase.Live
                     reconnectAttempt = 0
                     val nunchuk = ok.role == LinkState.ROLE_NUNCHUK
@@ -261,18 +263,24 @@ class LinkForegroundService : Service() {
                     LinkState.motion = engine
                     engine.start()
                     LinkState.sendMode = { m ->
+                        ButtonState.reset()
                         lastMode = m
-                        control?.sendMode(m)
+                        control?.sendMode(m, cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
                     }
-                    // Cada conexión empieza como GamePad/Pro; lo pedido se
-                    // recuerda para reponerlo si hay que reconectar
+                    // Guardar la elección de Wii U; Switch siempre usa Pro Controller.
                     LinkState.sendPad = { p ->
-                        lastPad = p
-                        control?.sendPad(p)
+                        ButtonState.reset()
+                        (LinkState.flow.value as? UiLink.Connected)?.mode?.let {
+                            val pad = PadPreference.normalize(it, p)
+                            AppPrefs.setPad(this@LinkForegroundService, it, pad)
+                            control?.sendPad(pad)
+                        }
                     }
                     LinkState.sendText = { t -> control?.sendText(t) }
                     LinkState.sendNunchuk = { own -> control?.sendNunchuk(own) }
-                    LinkState.sendScreenOnly = { on -> control?.sendScreenOnly(on) }
+                    LinkState.sendScreenOnly = { on ->
+                        if ((LinkState.flow.value as? UiLink.Connected)?.mode == LinkState.MODE_CEMU) control?.sendScreenOnly(on)
+                    }
                     LinkState.publish(
                         UiLink.Connected(
                             pcName, ok.mode, null, 0f, ok.slot,
@@ -282,19 +290,24 @@ class LinkForegroundService : Service() {
                             supportsCemu = ok.supportsCemu,
                             pad = ok.pad,
                             ownNunchuk = ok.nunchuk == "own",
-                            screenOnly = ok.screenOnly
+                            screenOnly = ok.screenOnly,
+                            supportsSwitch = ok.supportsSwitch
                         )
                     )
-                    LinkState.pendingMode?.let { m ->
+                    val requestedMode = LinkState.pendingMode
+                    requestedMode?.let { m ->
                         LinkState.pendingMode = null
                         lastMode = m
-                        control?.sendMode(m)
+                        control?.sendMode(m, cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
                     }
-                    // Tras una caída, el Mando de Wii vuelve a serlo
-                    if (recovered && lastPad == LinkState.PAD_WIIMOTE) control?.sendPad(LinkState.PAD_WIIMOTE)
+                    // Reponer solo la elección del modo confirmado, después de su eco si estaba pendiente.
+                    if (!nunchuk && requestedMode == null && (ok.mode == LinkState.MODE_CEMU && ok.supportsCemu || ok.mode == LinkState.MODE_SWITCH && ok.supportsSwitch)) {
+                        control?.restoreModePreferences(ok.mode, AppPrefs.pad(this@LinkForegroundService, ok.mode),
+                            cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
+                    }
                     // Doble pantalla: la pantalla GamePad abre el canal cuando
                     // toca; va al mismo puerto que este control. Un Nunchuk no tiene.
-                    if (!nunchuk) ScreenLink.bind(pairing.host, pairing.port, ok.sessionId)
+                    if (!nunchuk && ok.mode == LinkState.MODE_CEMU) ScreenLink.bind(pairing.host, pairing.port, ok.sessionId)
                     UiSounds.init(this@LinkForegroundService)
                     UiSounds.connect()
                     // "Pulsar la diana" automáticamente al conectar: recentra
@@ -347,13 +360,28 @@ class LinkForegroundService : Service() {
                  */
                 override fun onModeChanged(mode: String, byPc: Boolean) {
                     if (gen != generation) return
-                    LinkState.updateConnected { it.copy(mode = mode) }
+                    val before = LinkState.flow.value as? UiLink.Connected
+                    if (before?.mode != mode) ButtonState.reset()
+                    LinkState.updateConnected {
+                        it.copy(mode = mode, pad = PadPreference.effective(mode, it.pad))
+                    }
                     LinkState.resolveIntent(this@LinkForegroundService, mode, byPc)
+                    if (role == LinkState.ROLE_WIIMOTE) {
+                        if (mode == LinkState.MODE_CEMU && before?.supportsCemu == true || mode == LinkState.MODE_SWITCH && before?.supportsSwitch == true) {
+                            control?.restoreModePreferences(mode, AppPrefs.pad(this@LinkForegroundService, mode),
+                                cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
+                        }
+                        if (mode == LinkState.MODE_CEMU) {
+                            sessionId?.let { ScreenLink.bind(pairing.host, pairing.port, it) }
+                        } else ScreenLink.unbind()
+                    }
                 }
 
-                override fun onPadChanged(pad: String) {
+                override fun onPadChanged(pad: String, player: Int?) {
                     if (gen != generation) return
-                    LinkState.updateConnected { it.copy(pad = pad) }
+                    val before = LinkState.flow.value as? UiLink.Connected
+                    if (before?.pad != pad || player != null && before.player != player) ButtonState.reset()
+                    LinkState.updateConnected { it.copy(pad = PadPreference.effective(it.mode, pad), player = player ?: it.player) }
                 }
 
                 override fun onNunchukChanged(own: Boolean) {

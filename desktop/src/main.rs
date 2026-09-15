@@ -7,6 +7,7 @@ mod cemu;
 mod diag;
 mod dolphin;
 mod dsu;
+mod eden;
 mod firewall;
 #[cfg(any(target_os = "linux", test))]
 mod fixes;
@@ -14,6 +15,7 @@ mod fixes;
 mod screens;
 mod i18n;
 mod icon;
+mod ini;
 mod input;
 mod launch;
 mod log;

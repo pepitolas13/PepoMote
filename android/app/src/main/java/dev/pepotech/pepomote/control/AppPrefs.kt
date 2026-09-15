@@ -1,10 +1,28 @@
 package dev.pepotech.pepomote.control
 
 import android.content.Context
+import androidx.core.content.edit
+import dev.pepotech.pepomote.service.PadPreference
 
 /** Preferencias simples de la app (aparte del emparejamiento). */
 object AppPrefs {
     private const val PREFS = "app"
+
+    fun pad(context: Context, mode: String): String {
+        val key = PadPreference.key(mode) ?: return PadPreference.normalize(mode, null)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val saved = prefs.getString(key, null)
+        val normalized = PadPreference.normalize(mode, saved)
+        if (saved != normalized) prefs.edit { putString(key, normalized) }
+        return normalized
+    }
+
+    fun setPad(context: Context, mode: String, pad: String) {
+        val key = PadPreference.key(mode) ?: return
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+            putString(key, PadPreference.normalize(mode, pad))
+        }
+    }
 
     fun volDownIsB(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

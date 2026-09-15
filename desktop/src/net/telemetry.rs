@@ -220,11 +220,15 @@ pub fn run(
         }
 
         // Texto pendiente de teclear (teclado de Cemu desde el móvil)
-        let pending: Vec<String> = std::mem::take(&mut shared.lock_tolerant().text_queue);
+        let pending = std::mem::take(&mut shared.lock_tolerant().text_queue);
         if !pending.is_empty() {
             if let Some(inj) = injector.as_deref_mut() {
-                for t in &pending {
-                    inj.type_text(t);
+                for (target, t) in &pending {
+                    if *target != Mode::Switch || crate::eden::focus_keyboard() {
+                        inj.type_text(t);
+                    } else {
+                        super::notify_all(tr!("eden.keyboard_unavailable"));
+                    }
                 }
             }
         }

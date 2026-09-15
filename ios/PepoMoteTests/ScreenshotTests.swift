@@ -25,6 +25,10 @@ final class ScreenshotTests: XCTestCase {
         ("ipad-11-land", CGSize(width: 1180, height: 820)),
         ("ipad-13-land", CGSize(width: 1376, height: 1032)),
     ]
+    private static let switchLandscape = landscape + [
+        ("iphone-se-land", CGSize(width: 667, height: 320)),
+        ("iphone-se-land-safe", CGSize(width: 548, height: 320)),
+    ]
 
     private var dir: URL?
 
@@ -39,6 +43,7 @@ final class ScreenshotTests: XCTestCase {
 
     override func tearDown() {
         LinkState.shared.publish(.disconnected)
+        LinkState.shared.clearIntent()
         ScreenLink.shared.release()
         AppModel.shared.nunchukSide = .unset
         AppModel.shared.gamePadSide = .unset
@@ -48,7 +53,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private func connected(mode: String, pad: String = LinkState.padGamepad, role: String = LinkState.roleWiimote, slot: Int = 0) -> UiLink {
-        .connected(ConnectedLink(pcName: "SALON", mode: mode, rttMs: 12, sensorHz: 100, slot: slot, role: role, player: slot + 1, supportsCemu: true, pad: pad))
+        .connected(ConnectedLink(pcName: "SALON", mode: mode, rttMs: 12, sensorHz: 100, slot: slot, role: role, player: slot + 1, supportsCemu: true, pad: pad, supportsSwitch: true))
     }
 
     private func shoot<V: View>(_ view: V, _ name: String, _ size: CGSize, minBytes: Int = 10_000) throws {
@@ -141,5 +146,18 @@ final class ScreenshotTests: XCTestCase {
             AppModel.shared.nunchukSide = .unset
             try shoot(WiimoteNunchukScreen(showChips: true, onDisconnect: {}), "wii-nunchuk-ask-\(dev)", size)
         }
+    }
+
+    func testSwitchControllers() throws {
+        AppModel.shared.gamePadSide = .left
+        for (dev, size) in Self.switchLandscape {
+            LinkState.shared.publish(connected(mode: LinkState.modeSwitch, pad: LinkState.padPro))
+            try shoot(GamePadScreen(onDisconnect: {}), "gamepad-switch-\(dev)", size)
+        }
+        LinkState.shared.publish(connected(mode: LinkState.modeCemu))
+        LinkState.shared.requestMode(LinkState.modeSwitch)
+        try shoot(GamePadScreen(onDisconnect: {}), "gamepad-switch-activating", CGSize(width: 548, height: 320))
+        LinkState.shared.clearIntent()
+        LinkState.shared.pendingMode = nil
     }
 }

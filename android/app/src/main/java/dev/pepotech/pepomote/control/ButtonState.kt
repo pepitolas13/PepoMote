@@ -48,7 +48,7 @@ object ButtonState {
     /** Soplar al micrófono del GamePad. */
     const val MIC = 1 shl 27
 
-    /** Cambiar la vista TV ↔ pantalla del GamePad (función de Cemu). */
+    /** Wii U: cambiar TV ↔ GamePad. Switch: Capturar. */
     const val SCREEN = 1 shl 28
 
     /** Precisión (modo puntero): mientras se mantiene, el cursor va al 40 %. */

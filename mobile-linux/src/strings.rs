@@ -18,6 +18,12 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("common.gamepad", "GamePad", "GamePad"),
     ("common.pro", "Pro Controller", "Pro Controller"),
     ("common.wiimote", "Mando de Wii", "Wii Remote"),
+    ("common.mode_switch", "Switch", "Switch"),
+    ("gp.capture", "Capturar", "Capture"),
+    ("gp.activating_switch", "Activando Switch…", "Activating Switch…"),
+    ("home.card_switch", "Switch", "Switch"),
+    ("home.card_switch_sub", "Pro Controller para Eden", "Pro Controller for Eden"),
+    ("notice.old_pc_switch", "El PC necesita un PepoMote más nuevo para Switch", "The PC needs a newer PepoMote for Switch"),
     // --- inicio
     ("home.tagline", "Apunta. Haz clic. Juega.", "Point. Click. Play."),
     ("home.lang_switch", "Cambiar a {0}", "Switch to {0}"),
@@ -38,6 +44,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("home.card_pair", "Emparejar", "Pair"),
     ("home.card_pair_sub", "otro PC / código", "another PC / code"),
     ("home.sensors", "Sensores: {0}", "Sensors: {0}"),
+    ("home.controls_only", "Sin sensores de movimiento · botones y sticks disponibles", "No motion sensors · buttons and sticks available"),
     ("home.no_sensors", "sin sensores: {0}", "no sensors: {0}"),
     ("home.calibrate", "Calibrar sensores", "Calibrate sensors"),
     (
@@ -152,6 +159,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ),
     // --- teclado
     ("kb.space", "espacio", "space"),
+    ("kb.title_switch", "Teclado para Switch", "Keyboard for Switch"),
     ("kb.title", "Teclado para Cemu", "Keyboard for Cemu"),
     (
         "kb.subtitle",
@@ -164,8 +172,8 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("kb.accept", "Aceptar", "Accept"),
     (
         "kb.help",
-        "Borrar quita una letra en Cemu · Escribir la teclea · Aceptar la teclea y confirma",
-        "Delete removes a letter in Cemu · Type types it · Accept types it and confirms",
+        "Borrar quita una letra en el juego · Escribir la teclea · Aceptar la teclea y confirma",
+        "Delete removes a letter in the game · Type types it · Accept types it and confirms",
     ),
     ("kb.close", "Cerrar", "Close"),
     // --- calibración

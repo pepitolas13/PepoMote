@@ -2,7 +2,7 @@ import SwiftUI
 
 // Glifos propios, dibujados a mano — nada de iconografía ajena.
 enum ChannelGlyph {
-    case qr, pad, pointer, stick, gamePad, gear
+    case qr, pad, pointer, stick, gamePad, switchPad, gear
 }
 
 /// Tarjeta del inicio: glifo, título y subtítulo.
@@ -55,6 +55,7 @@ struct GlyphView: View {
             case .pointer: GlyphView.pointer(&ctx, w, accent)
             case .stick: GlyphView.stick(&ctx, w, accent)
             case .gamePad: GlyphView.gamePad(&ctx, w, accent)
+            case .switchPad: GlyphView.switchPad(&ctx, w, accent)
             case .gear: GlyphView.gear(&ctx, w, accent)
             }
         }
@@ -144,5 +145,23 @@ struct GlyphView: View {
         }
         ring(&ctx, c, rOut * 0.72, w * 0.10, accent)
         circle(&ctx, c, rIn, accent)
+    }
+
+    /// Dos mandos con sus sticks y botones, sin pantalla.
+    private static func switchPad(_ ctx: inout GraphicsContext, _ w: CGFloat, _ accent: Color) {
+        let halves: [CGFloat] = [0.09, 0.54]
+        for x in halves {
+            let body = CGRect(x: w * x, y: w * 0.12, width: w * 0.36, height: w * 0.76)
+            ctx.stroke(Path(roundedRect: body, cornerRadius: w * 0.15), with: .color(accent), lineWidth: w * 0.065)
+        }
+        circle(&ctx, CGPoint(x: w * 0.27, y: w * 0.35), w * 0.075, accent)
+        circle(&ctx, CGPoint(x: w * 0.72, y: w * 0.66), w * 0.075, accent)
+        let centers: [(CGFloat, CGFloat)] = [(0.27, 0.65), (0.72, 0.35)]
+        let offsets: [(CGFloat, CGFloat)] = [(-0.065, 0), (0.065, 0), (0, -0.065), (0, 0.065)]
+        for (cx, cy) in centers {
+            for (dx, dy) in offsets {
+                circle(&ctx, CGPoint(x: w * (cx + dx), y: w * (cy + dy)), w * 0.023, accent)
+            }
+        }
     }
 }

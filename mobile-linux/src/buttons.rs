@@ -46,6 +46,7 @@ pub struct Buttons {
     /// El móvil actúa como GamePad/Pro de Wii U: el hilo de paquetes manda
     /// 80 bytes con el bloque de extensión y remapea los sensores.
     gamepad: AtomicBool,
+    switch: AtomicBool,
     /// Giro del móvil apaisado (`frame::Rotation`): 0 = borde superior a la
     /// izquierda, 1 = a la derecha.
     rotation: AtomicU8,
@@ -71,6 +72,7 @@ impl Buttons {
             touch_y: AtomicU16::new(0),
             touch_down: AtomicBool::new(false),
             gamepad: AtomicBool::new(false),
+            switch: AtomicBool::new(false),
             rotation: AtomicU8::new(0),
         }
     }
@@ -180,6 +182,14 @@ impl Buttons {
     /// Entrar/salir de la pantalla GamePad: cambia cómo se construye el INPUT.
     pub fn set_gamepad(&self, on: bool) {
         self.gamepad.store(on, Ordering::Relaxed);
+    }
+
+    pub fn set_switch(&self, on: bool) {
+        self.switch.store(on, Ordering::Relaxed);
+    }
+
+    pub fn is_switch(&self) -> bool {
+        self.switch.load(Ordering::Relaxed)
     }
 
     pub fn is_gamepad(&self) -> bool {

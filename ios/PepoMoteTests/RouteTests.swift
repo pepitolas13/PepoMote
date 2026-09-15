@@ -9,9 +9,44 @@ final class RouteTests: XCTestCase {
         pad: String = LinkState.padGamepad,
         slot: Int = 0,
         supportsCemu: Bool = true,
-        ownNunchuk: Bool = false
+        ownNunchuk: Bool = false,
+        supportsSwitch: Bool = true
     ) -> UiLink {
-        .connected(ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad, ownNunchuk: ownNunchuk))
+        .connected(ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad, ownNunchuk: ownNunchuk, supportsSwitch: supportsSwitch))
+    }
+
+    func testSwitchAlwaysRoutesToCompleteLandscapeProController() {
+        for pad in ["pro", "joycons", "joycon_side", "joycon_r"] {
+            let link = connected(mode: "switch", pad: pad)
+            XCTAssertTrue(Route.isSwitch(link))
+            XCTAssertEqual(Route.route(link, .none), .gamePad)
+            XCTAssertTrue(Route.forcesLandscape(link, .none))
+        }
+        XCTAssertFalse(Route.isSwitch(connected(mode: "switch", role: "nunchuk")))
+        XCTAssertEqual(Route.route(connected(mode: "switch", role: "nunchuk"), .switchMode), .nunchuk)
+    }
+
+    func testSwitchIntentIsDistinctFromWiiUAndBlocksInputsBeforeEcho() {
+        XCTAssertEqual(Route.route(.connecting, .switchMode), .gamePad)
+        XCTAssertEqual(Route.route(.disconnected, .switchMode), .wii)
+        XCTAssertEqual(Route.wantedMode(connected(mode: "cemu"), .switchMode), "switch")
+        XCTAssertEqual(Route.wantedMode(connected(mode: "switch"), .wiiU), "cemu")
+        XCTAssertFalse(Route.extendedOperative(connected(mode: "cemu"), .switchMode))
+        XCTAssertFalse(Route.extendedOperative(connected(mode: "switch"), .wiiU))
+        XCTAssertFalse(Route.extendedOperative(.connecting, .switchMode))
+        XCTAssertTrue(Route.extendedOperative(connected(mode: "switch", pad: "pro"), .none))
+        XCTAssertTrue(Route.extendedOperative(connected(mode: "cemu", pad: "pro"), .none))
+        XCTAssertFalse(Route.extendedOperative(connected(mode: "cemu", pad: "wiimote"), .none))
+        XCTAssertEqual(Route.route(connected(mode: "switch", pad: "joycons"), .wiiU), .gamePad)
+    }
+
+    func testSwitchEchoWarningsUseItsOwnCapability() {
+        XCTAssertEqual(Route.afterModeEcho(.switchMode, "switch", connected(mode: "switch")).intent, .none)
+        XCTAssertNil(Route.afterModeEcho(.switchMode, "switch", connected(mode: "switch")).warning)
+        XCTAssertEqual(Route.afterModeEcho(.switchMode, "pointer", connected(slot: 1, supportsSwitch: true)).warning, Route.warnPlayer1)
+        XCTAssertEqual(Route.afterModeEcho(.switchMode, "pointer", connected(slot: 1, supportsCemu: true, supportsSwitch: false)).warning, Route.warnNeedsSwitch)
+        XCTAssertEqual(Route.afterModeEcho(.switchMode, "pointer", .connecting).warning, Route.warnNeedsSwitch)
+        XCTAssertNil(Route.afterModeEcho(.switchMode, "dolphin", connected(), byPc: true).warning)
     }
 
     func testMandoDeLadoGiraLaCrucetaYLosSensores() {
@@ -151,6 +186,7 @@ final class RouteTests: XCTestCase {
             let b = L10n.bundle(for: code)
             XCTAssertNotEqual(b.localizedString(forKey: Route.warnNeeds13, value: "", table: nil), "")
             XCTAssertNotEqual(b.localizedString(forKey: Route.warnPlayer1, value: "", table: nil), "")
+            XCTAssertNotEqual(b.localizedString(forKey: Route.warnNeedsSwitch, value: "", table: nil), "")
         }
     }
 }

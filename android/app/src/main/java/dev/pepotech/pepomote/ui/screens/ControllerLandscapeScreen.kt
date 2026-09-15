@@ -142,7 +142,7 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (showModeChips(link, showChips)) {
-                                ModeChips(current = link.mode, supportsCemu = link.supportsCemu, compact = true)
+                                ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, compact = true)
                             }
                             if (showNunchukChip(link)) NunchukChip(link, compact = true)
                         }

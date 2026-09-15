@@ -123,8 +123,11 @@ import dev.pepotech.pepomote.R
 fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val view = LocalView.current
     val connected = link as? UiLink.Connected
-    val operative = Route.isGamePad(link)
-    val pro = connected?.pad == LinkState.PAD_PRO
+    val intent by LinkState.intent.collectAsState()
+    val wantedMode = Route.displayMode(link, intent)
+    val switchPad = wantedMode == LinkState.MODE_SWITCH
+    val operative = Route.isGamePad(link) && connected?.mode == wantedMode
+    val pro = switchPad || connected?.pad == LinkState.PAD_PRO
     val engine = LinkState.motion
     val rotation = rememberDisplayRotation()
     val screen by ScreenLink.client.collectAsState()
@@ -150,12 +153,13 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
 
     // Solo con el modo confirmado el motor emite como GamePad; si el modo se
     // va (eco de otro modo, Mando de Wii) o se sale, vuelve lo de antes.
-    DisposableEffect(engine, operative) {
+    DisposableEffect(engine, operative, wantedMode, connected?.pad) {
+        ButtonState.reset()
         if (engine != null && operative) {
             val prevKind = engine.kind
             val prevRotation = engine.rotation
             engine.rotation = rotation
-            engine.kind = SenderKind.GAMEPAD
+            engine.kind = if (switchPad) SenderKind.SWITCH else SenderKind.GAMEPAD
             onDispose {
                 engine.kind = prevKind
                 engine.rotation = prevRotation
@@ -178,7 +182,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val fullScreenKb = remember { AppPrefs.gamePadFullScreenKeyboard(context) }
     // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene),
     // con el modo confirmado y sin el ajuste «GamePad sin pantalla»
-    val wantScreen = operative && connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
+    val wantScreen = operative && !switchPad && connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
     // Pantalla completa: solo la pantalla de Cemu y el táctil (mando real en
     // el PC). Nunca sin el modo confirmado: el estado «Activando Wii U…»
     // sigue con cabecera y «Salir»
@@ -207,7 +211,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         // crecen con k y los pads llenan la columna; en cualquier móvil con
         // pantalla, lo de siempre; sin pantalla, en fila o apilado según cuál
         // dé pads más grandes
-        val m = padMetrics(maxWidth.value, maxHeight.value, noScreenPref, pro)
+        val m = padMetrics(maxWidth.value, maxHeight.value, noScreenPref, pro, switchPad)
         val gap = m.gap.dp
         val screenW = maxWidth
         val k = m.k
@@ -248,9 +252,10 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         if (fullScreen) {
             FullScreenGamePad(screen, showKeyboard = fullScreenKb, onKeyboard = { keyboardOpen = true })
         } else Column(Modifier.fillMaxSize()) {
-            Header(
+            GamePadHeader(
                 link, operative, headerH, screen,
                 width = screenW,
+                wantedMode = wantedMode,
                 onKeyboard = if (operative) {
                     { keyboardOpen = true }
                 } else null,
@@ -264,7 +269,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                     .height(selectorH),
                 contentAlignment = Alignment.Center
             ) {
-                if (connected != null) PadSelector(connected, compact = true)
+                if (connected != null && connected.mode == wantedMode) PadSelector(connected, compact = true)
             }
             Spacer(Modifier.height(gap))
 
@@ -352,6 +357,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         val plus: @Composable () -> Unit = { RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt()) }
                         val tv: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.tv_pad), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt()) }
                         val blow: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, pillH, textSize = (12 * k).roundToInt()) }
+                        val capture: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.capture), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt()) }
                         Spacer(Modifier.weight(1f))
                         if (m.row) {
                             Column(
@@ -361,6 +367,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                 minus()
                                 home()
                                 plus()
+                                if (switchPad) capture()
                                 if (!pro) {
                                     tv()
                                     blow()
@@ -384,7 +391,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(rowGap)
                             ) {
-                                if (!pro) tv()
+                                if (switchPad) capture() else if (!pro) tv()
                                 minus()
                                 home()
                                 plus()
@@ -472,7 +479,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = if (fullScreen) 8.dp else headerH + gap),
-                title = stringResource(R.string.side_ask_gamepad),
+                title = stringResource(if (switchPad) R.string.side_ask_switch else R.string.side_ask_gamepad),
                 onFlip = { GamePadSide.setProvisional(shown.flipped()) },
                 onKeep = { GamePadSide.save(context, shown) }
             )
@@ -487,7 +494,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
         if (keyboardOpen) {
             KeyboardDialog(
                 onSend = { LinkState.sendText?.invoke(it) },
-                onClose = { keyboardOpen = false }
+                onClose = { keyboardOpen = false },
+                switchPad = switchPad
             )
         }
     }
@@ -618,12 +626,13 @@ private fun FullScreenTouch(screen: ScreenClient<Bitmap>?, modifier: Modifier) {
  * suspensivos) y, en último extremo, los chips y «Teclado»; «Salir» nunca.
  */
 @Composable
-private fun Header(
+internal fun GamePadHeader(
     link: UiLink,
     operative: Boolean,
     height: Dp,
     screen: ScreenClient<Bitmap>?,
     width: Dp,
+    wantedMode: String = LinkState.MODE_CEMU,
     onKeyboard: (() -> Unit)?,
     onDisconnect: () -> Unit
 ) {
@@ -649,8 +658,9 @@ private fun Header(
                         .layoutId(HeaderSlot.Pc)
                         .widthIn(max = 160.dp)
                 )
-                val padName = if (link.pad == LinkState.PAD_PRO) stringResource(R.string.pro_controller) else stringResource(R.string.gamepad)
-                val activating = stringResource(R.string.activating_wiiu)
+                val padName = if (wantedMode == LinkState.MODE_SWITCH || link.pad == LinkState.PAD_PRO)
+                    stringResource(R.string.pro_controller) else stringResource(R.string.gamepad)
+                val activating = stringResource(if (wantedMode == LinkState.MODE_SWITCH) R.string.activating_switch else R.string.activating_wiiu)
                 Text(
                     if (operative) buildString {
                         append("J${link.player}")
@@ -678,8 +688,9 @@ private fun Header(
                 if (link.slot == 0) {
                     // Mientras se espera el eco, Wii U ya va marcado (es lo pedido)
                     ModeChips(
-                        current = if (operative) link.mode else LinkState.MODE_CEMU,
+                        current = if (operative) link.mode else wantedMode,
                         supportsCemu = link.supportsCemu,
+                        supportsSwitch = link.supportsSwitch,
                         compact = true,
                         modifier = Modifier.layoutId(HeaderSlot.Chips)
                     )
@@ -719,7 +730,7 @@ private fun Header(
  * texto crece con el botón (18 y 20 sp en los 44 dp de un móvil).
  */
 @Composable
-private fun FaceButtons(size: Dp, btn: Dp) {
+internal fun FaceButtons(size: Dp, btn: Dp) {
     val text = (btn.value * 18f / 44f).roundToInt()
     Box(Modifier.size(size)) {
         Box(Modifier.align(BiasAlignment(0f, -1f))) {

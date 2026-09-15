@@ -34,8 +34,8 @@ struct Channel {
 
 pub struct Imu {
     pub name: String,
-    gyro: [Channel; 3],
-    accel: [Channel; 3],
+    gyro: Option<[Channel; 3]>,
+    accel: Option<[Channel; 3]>,
     gyro_mount: Matrix,
     accel_mount: Matrix,
     pub rate_hz: f32,
@@ -216,11 +216,6 @@ impl Imu {
                 accel_dir = Some(d);
             }
         }
-        let gyro_dir = gyro_dir.ok_or(
-            "No encuentro giroscopio (in_anglvel_*) en /sys/bus/iio/devices: ¿este móvil tiene gyro y el driver cargado?",
-        )?;
-        let accel_dir = accel_dir.ok_or("No encuentro acelerómetro (in_accel_*) en /sys/bus/iio/devices")?;
-
         let ch = |dir: &Path, kind: &str| -> Result<[Channel; 3], String> {
             Ok([
                 open_channel(dir, kind, 'x').ok_or(format!("in_{kind}_x_raw no legible"))?,
@@ -228,22 +223,21 @@ impl Imu {
                 open_channel(dir, kind, 'z').ok_or(format!("in_{kind}_z_raw no legible"))?,
             ])
         };
-        let gyro = ch(&gyro_dir, "anglvel")?;
-        let accel = ch(&accel_dir, "accel")?;
-
-        let rate = configure_rate(&gyro_dir, "anglvel");
-        if accel_dir != gyro_dir {
-            let _ = configure_rate(&accel_dir, "accel");
+        let gyro = gyro_dir.as_deref().and_then(|dir| ch(dir, "anglvel").ok());
+        let accel = accel_dir.as_deref().and_then(|dir| ch(dir, "accel").ok());
+        if gyro.is_none() && accel.is_none() {
+            return Err("No hay canales IIO de movimiento legibles".into());
         }
-        let rate_hz = rate.unwrap_or(100.0).clamp(MIN_RATE_HZ, MAX_RATE_HZ);
-
+        let gyro_rate = gyro_dir.as_deref().filter(|_| gyro.is_some()).and_then(|dir| configure_rate(dir, "anglvel"));
+        let accel_rate = accel_dir.as_deref().filter(|_| accel.is_some()).and_then(|dir| configure_rate(dir, "accel"));
+        let name_dir = if gyro.is_some() { gyro_dir.as_deref() } else { accel_dir.as_deref() };
         Ok(Imu {
-            name: read_attr(&gyro_dir, "name").unwrap_or_else(|| "iio".into()),
-            gyro_mount: mount_matrix(&gyro_dir, "anglvel"),
-            accel_mount: mount_matrix(&accel_dir, "accel"),
+            name: name_dir.and_then(|dir| read_attr(dir, "name")).unwrap_or_else(|| "iio".into()),
+            gyro_mount: gyro_dir.as_deref().map(|dir| mount_matrix(dir, "anglvel")).unwrap_or(IDENTITY),
+            accel_mount: accel_dir.as_deref().map(|dir| mount_matrix(dir, "accel")).unwrap_or(IDENTITY),
             gyro,
             accel,
-            rate_hz,
+            rate_hz: gyro_rate.or(accel_rate).unwrap_or(100.0).clamp(MIN_RATE_HZ, MAX_RATE_HZ),
         })
     }
 
@@ -262,12 +256,14 @@ impl Imu {
 
     /// Una lectura completa (para tests y diagnóstico).
     pub fn read(&mut self) -> Option<Sample> {
-        let gyro = Self::read3(&mut self.gyro, &self.gyro_mount)?;
-        let accel = Self::read3(&mut self.accel, &self.accel_mount)?;
+        let gyro = self.gyro.as_mut().and_then(|channels| Self::read3(channels, &self.gyro_mount));
+        let accel = self.accel.as_mut().and_then(|channels| Self::read3(channels, &self.accel_mount));
+        if gyro.is_none() && accel.is_none() { return None; }
         Some(Sample {
             t_us: now_us(),
-            gyro,
-            accel,
+            gyro_valid: gyro.is_some(),
+            gyro: gyro.unwrap_or([0.0; 3]),
+            accel: accel.unwrap_or([0.0; 3]),
         })
     }
 }
@@ -348,16 +344,25 @@ mod tests {
     }
 
     #[test]
-    fn sin_gyro_da_error_claro() {
+    fn sin_gyro_conserva_el_acelerometro_real() {
         let base = fake_sysfs("nogyro");
         for a in ['x', 'y', 'z'] {
             std::fs::remove_file(base.join("iio-device0").join(format!("in_anglvel_{a}_raw"))).unwrap();
         }
-        let err = match Imu::find(&base) {
-            Err(e) => e,
-            Ok(_) => panic!("sin gyro debería fallar"),
-        };
-        assert!(err.contains("giroscopio"), "{err}");
+        let mut imu = Imu::find(&base).expect("an accelerometer is sufficient for controls");
+        let sample = imu.read().unwrap();
+        assert_eq!(sample.gyro, [0.0; 3]);
+        assert!((sample.accel[2] - 9.797).abs() < 0.01);
+    }
+
+    #[test]
+    fn gyro_read_failure_does_not_discard_available_acceleration() {
+        let base = fake_sysfs("gyro-read-failure");
+        let mut imu = Imu::find(&base).unwrap();
+        std::fs::write(base.join("iio-device0/in_anglvel_x_raw"), "unavailable").unwrap();
+        let sample = imu.read().expect("acceleration continues after a gyro read failure");
+        assert_eq!(sample.gyro, [0.0; 3]);
+        assert!((sample.accel[2] - 9.797).abs() < 0.01);
     }
 
     #[test]

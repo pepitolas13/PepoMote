@@ -67,6 +67,7 @@ pub fn mode_label(mode: &str) -> String {
         "pointer" => tr!("common.mode_pointer").to_owned(),
         "dolphin" => tr!("common.mode_dolphin").to_owned(),
         "cemu" => tr!("common.mode_cemu").to_owned(),
+        "switch" => tr!("common.mode_switch").to_owned(),
         other => other.to_owned(),
     }
 }
@@ -202,10 +203,10 @@ impl ControllerUi {
             });
         });
 
-        if let Status::Connected { mode, supports_cemu, player, pad, .. } = status {
+        if let Status::Connected { mode, supports_cemu, supports_switch, player, pad, .. } = status {
             let wiiu = mode == "cemu";
             if show_chips {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     // selección por igualdad exacta del modo
                     if ui.selectable_label(mode == "pointer", RichText::new(format!("  {}  ", tr!("common.mode_pointer"))).size(14.0)).clicked() {
                         action = Action::Mode("pointer");
@@ -215,6 +216,9 @@ impl ControllerUi {
                     }
                     if *supports_cemu && ui.selectable_label(wiiu, RichText::new(format!("  {}  ", tr!("common.mode_cemu"))).size(14.0)).clicked() {
                         action = Action::Mode("cemu");
+                    }
+                    if *supports_switch && ui.selectable_label(mode == "switch", RichText::new(format!("  {}  ", tr!("common.mode_switch"))).size(14.0)).clicked() {
+                        action = Action::Mode("switch");
                     }
                 });
             }

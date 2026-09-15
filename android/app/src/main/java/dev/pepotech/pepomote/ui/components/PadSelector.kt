@@ -51,6 +51,15 @@ private const val PAD_ECHO_TIMEOUT_MS = 2000L
  */
 @Composable
 fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? = null) {
+    if (link.mode == LinkState.MODE_SWITCH) {
+        Text(
+            stringResource(R.string.pro_controller),
+            style = MaterialTheme.typography.labelLarge,
+            color = PepoColors.Text,
+            maxLines = 1
+        )
+        return
+    }
     val wiimote = link.pad == LinkState.PAD_WIIMOTE
     var pending by remember { mutableStateOf<String?>(null) }
 

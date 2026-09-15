@@ -22,7 +22,7 @@ mod macos_keys;
 #[cfg(target_os = "macos")]
 mod macos_input;
 #[cfg(windows)]
-mod windows_input;
+pub(crate) mod windows_input;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MouseButton {

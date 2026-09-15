@@ -3,7 +3,7 @@
 //! PING/PONG para el RTT) y el hilo de paquetes que fusiona las muestras del
 //! sensor. Mismo comportamiento que LinkForegroundService + MotionEngine de
 //! Android. Un mismo enlace sirve de Wiimote, de Nunchuk (PROTOCOL.md §3) o
-//! de GamePad/Pro de Wii U (modo `cemu`): cambian el hello y, en cada INPUT,
+//! de GamePad/Pro de Wii U (`cemu`) o Pro Controller (`switch`): cambian el hello y, en cada INPUT,
 //! el stick con su flag o el bloque de extensión de 80 bytes.
 
 use crate::bias::GyroBias;
@@ -38,6 +38,8 @@ pub fn reconnect_delay(attempt: u32) -> Duration {
 }
 /// Tope del protocolo: 250 Hz.
 const MIN_PACKET_GAP: Duration = Duration::from_micros(3_900);
+const CONTROL_PACKET_GAP: Duration = Duration::from_millis(10);
+const STALE_MOTION: Duration = Duration::from_millis(50);
 /// Cuánto se muestra un aviso (`notice`) en pantalla.
 pub const NOTICE_SECS: u64 = 6;
 
@@ -79,6 +81,7 @@ pub enum Status {
         rtt_ms: Option<f32>,
         /// El receptor anuncia `modes` con "cemu": sabe de Wii U (1.3+).
         supports_cemu: bool,
+        supports_switch: bool,
         /// Tipo de mando efectivo en modo Wii U: "gamepad", "pro" o "wiimote".
         pad: String,
         /// Aviso transitorio (del receptor o local) y cuándo llegó.
@@ -108,6 +111,13 @@ pub enum Status {
 }
 
 impl Status {
+    /// Extended input is only enabled after the receiver confirms support.
+    pub fn ext_confirmed(&self) -> bool {
+        matches!(self, Self::Connected { mode, role: Role::Wiimote, pad, supports_cemu, supports_switch, .. }
+            if (mode == "cemu" && *supports_cemu && matches!(pad.as_str(), "gamepad" | "pro"))
+            || (mode == "switch" && *supports_switch && is_switch_pad(pad)))
+    }
+
     /// Aviso aún vigente (menos de `NOTICE_SECS` desde que llegó).
     pub fn live_notice(&self) -> Option<&str> {
         match self {
@@ -193,15 +203,13 @@ impl Link {
         send_json(&self.writer, &json!({"m":"mode","mode":mode}));
     }
 
-    /// Elegir Mando Wii (`"wiimote"`) o volver a GamePad/Pro (`"gamepad"`)
-    /// en modo Wii U. El receptor contesta con el eco del tipo efectivo; uno
+    /// Elegir GamePad/Mando de Wii en Cemu, o Pro Controller en Switch. El receptor contesta con el eco del tipo efectivo; uno
     /// antiguo no contesta y no pasa nada.
     pub fn send_pad(&self, pad: &str) {
         send_json(&self.writer, &json!({"m":"pad","pad":pad}));
     }
 
-    /// Teclado del móvil → teclado en pantalla de Cemu (solo tiene sentido
-    /// con `mode == "cemu"`). Sin respuesta; un receptor antiguo lo ignora.
+    /// Teclado del móvil → teclado en pantalla de Cemu o Switch. Sin respuesta; un receptor antiguo lo ignora.
     pub fn send_text(&self, text: &str) {
         send_json(&self.writer, &text_message(text));
     }
@@ -319,16 +327,36 @@ fn supports_cemu(ok: &Value) -> bool {
         .is_some_and(|m| m.iter().any(|v| v.as_str() == Some("cemu")))
 }
 
+fn supports_switch(ok: &Value) -> bool {
+    ok["modes"].as_array().is_some_and(|m| m.iter().any(|v| v.as_str() == Some("switch")))
+}
+
+pub fn is_switch_pad(pad: &str) -> bool {
+    pad == "pro"
+}
+
 fn valid_pad(s: Option<&str>) -> Option<&str> {
-    s.filter(|p| matches!(*p, "gamepad" | "pro" | "wiimote"))
+    s.filter(|p| matches!(*p, "gamepad" | "pro" | "wiimote") || is_switch_pad(p))
+}
+
+#[cfg(test)]
+#[test]
+fn switch_pad_vocabulary_normalizes_to_pro() {
+    for pad in ["pro", "joycons", "joycon_side", "joycon_r"] {
+        assert_eq!(pad_of(&json!({"mode":"switch", "pad":pad}), 0), "pro");
+    }
+    assert_eq!(pad_of(&json!({"mode":"switch"}), 0), "pro");
+    assert_eq!(pad_of(&json!({"mode":"cemu", "pad":"wiimote"}), 0), "wiimote");
+    assert_eq!(pad_of(&json!({"mode":"cemu", "pad":"gamepad"}), 0), "gamepad");
 }
 
 /// Tipo de mando efectivo en modo Wii U que anuncia el `ok`; si falta
 /// (receptor antiguo, que nunca confirmará `cemu`), el que tocaría: GamePad
 /// para el jugador 1 y Pro para los demás.
 fn pad_of(ok: &Value, slot: u8) -> String {
+    if ok["mode"] == "switch" { return "pro".to_owned(); }
     valid_pad(ok["pad"].as_str())
-        .unwrap_or(if slot == 0 { "gamepad" } else { "pro" })
+        .unwrap_or(if ok["mode"] == "switch" || slot != 0 { "pro" } else { "gamepad" })
         .to_owned()
 }
 
@@ -337,7 +365,7 @@ fn pad_of(ok: &Value, slot: u8) -> String {
 /// `nunchuk` (eco del Nunchuk propio) y `notice`. Cualquier otro se ignora
 /// (devuelve `false`).
 fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
-    let Status::Connected { mode, mode_by_pc, pad, notice, mode_seq, pad_seq, own_nunchuk, screen_only, .. } = st else {
+    let Status::Connected { mode, mode_by_pc, pad, player, notice, mode_seq, pad_seq, own_nunchuk, screen_only, .. } = st else {
         return false;
     };
     match msg["m"].as_str() {
@@ -351,13 +379,19 @@ fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
         }
         Some("mode") => {
             *mode = msg["mode"].as_str().unwrap_or("pointer").to_owned();
+            if mode == "switch" { *pad = "pro".to_owned(); }
             *mode_by_pc = msg["by"].as_str() == Some("pc");
             *mode_seq = mode_seq.wrapping_add(1);
             true
         }
         Some("pad") => {
-            if let Some(p) = valid_pad(msg["pad"].as_str()) {
+            if mode == "switch" {
+                *pad = "pro".to_owned();
+            } else if let Some(p) = valid_pad(msg["pad"].as_str()) {
                 *pad = p.to_owned();
+            }
+            if let Some(p) = msg["player"].as_u64().filter(|p| (1..=4).contains(p)) {
+                *player = p as u8;
             }
             *pad_seq = pad_seq.wrapping_add(1);
             true
@@ -454,7 +488,7 @@ fn control_thread(mut pairing: Pairing, source: Box<dyn Source>, pending_mode: O
             End::Dropped { mode, pad } => {
                 crate::app::log_line(&format!("enlace con {} caído: reconectando", pairing.pc_name));
                 pending_mode = Some(mode).filter(|m| m != "pointer");
-                restore_pad = Some(pad).filter(|p| p == "wiimote");
+                restore_pad = Some(pad).filter(|p| p == "wiimote" || is_switch_pad(p));
                 reconnecting = Some((Instant::now(), 0));
                 *ctx.status.lock().unwrap() = Status::Reconnecting { pc_name: pairing.pc_name.clone(), attempt: 1 };
             }
@@ -609,6 +643,7 @@ fn session(
                     role,
                     rtt_ms: None,
                     supports_cemu: supports_cemu(&msg),
+                    supports_switch: supports_switch(&msg),
                     pad: pad_of(&msg, slot),
                     notice: None,
                     mode_seq: 0,
@@ -744,10 +779,10 @@ fn start_hot_path(source: Box<dyn Source>, ctx: &Ctx) {
 
 /// INPUT a partir del estado fusionado y de lo que tiene el dedo. Como
 /// GamePad/Pro de Wii U (`buttons.is_gamepad()`, que la UI solo activa con
-/// `mode == "cemu"` confirmado): 80 bytes con FLAG_EXT (+FLAG_TOUCH con dedo
+/// `cemu` o `switch` confirmado): 80 bytes con FLAG_EXT (+FLAG_TOUCH con dedo
 /// en la pantalla táctil), stick izquierdo en 6-7, derecho y táctil en la
 /// extensión, y los sensores remapeados al marco apaisado según el giro. Si
-/// no, 72 bytes como siempre: el Nunchuk lleva su stick con FLAG_STICK_VALID
+/// Switch nunca lleva táctil. Si no hay modo extendido, 72 bytes como siempre: el Nunchuk lleva su stick con FLAG_STICK_VALID
 /// y el mando manda 0,0.
 #[allow(clippy::too_many_arguments)]
 fn packet_from_state(
@@ -759,6 +794,7 @@ fn packet_from_state(
     seq: u32,
     battery_pct: u8,
 ) -> pmp::InputPacket {
+    let quat_flag = if st.quat_valid { pmp::FLAG_QUAT_VALID } else { 0 };
     let base = pmp::InputPacket {
         session_id,
         seq,
@@ -776,8 +812,8 @@ fn packet_from_state(
         let (quat, gyro, accel) = frame::remap(st.quat, st.gyro, st.accel, Rotation::from_u8(buttons.rotation()));
         let (stick_x, stick_y) = buttons.stick();
         let (stick_rx, stick_ry) = buttons.stick2();
-        let (touch_x, touch_y, touch_down) = buttons.touch();
-        let mut flags = pmp::FLAG_QUAT_VALID | pmp::FLAG_STICK_VALID | pmp::FLAG_EXT;
+        let (touch_x, touch_y, touch_down) = if buttons.is_switch() { (0, 0, false) } else { buttons.touch() };
+        let mut flags = quat_flag | pmp::FLAG_STICK_VALID | pmp::FLAG_EXT;
         if touch_down {
             flags |= pmp::FLAG_TOUCH;
         }
@@ -796,8 +832,8 @@ fn packet_from_state(
         };
     }
     let (flags, (stick_x, stick_y)) = match role {
-        Role::Nunchuk => (pmp::FLAG_QUAT_VALID | pmp::FLAG_STICK_VALID, buttons.stick()),
-        Role::Wiimote => (pmp::FLAG_QUAT_VALID, (0, 0)),
+        Role::Nunchuk => (quat_flag | pmp::FLAG_STICK_VALID, buttons.stick()),
+        Role::Wiimote => (quat_flag, (0, 0)),
     };
     pmp::InputPacket {
         flags,
@@ -823,7 +859,10 @@ fn packet_loop(
     let mut seq: u32 = 0;
     let mut last_t_us: Option<u64> = None;
     let mut next_send = Instant::now();
-    let mut last_sent = Instant::now();
+    let mut source_closed = false;
+    let mut last_packet_t_us = 0;
+    let mut has_rotation = false;
+    let mut gyro_available = false;
     let mut last_sample_at: Option<Instant> = None;
     let mut last_ping = Instant::now();
     let mut battery = Battery::new();
@@ -835,7 +874,13 @@ fn packet_loop(
     while !stop.load(Ordering::Relaxed) {
         // 1) Muestras: se procesan todas las que lleguen hasta que toque enviar
         let wait = next_send.saturating_duration_since(Instant::now());
-        match rx.recv_timeout(wait) {
+        let incoming = if source_closed {
+            std::thread::sleep(wait);
+            Err(mpsc::RecvTimeoutError::Timeout)
+        } else {
+            rx.recv_timeout(wait)
+        };
+        match incoming {
             Ok(sample) => {
                 let now = Instant::now();
                 last_sample_at = Some(now);
@@ -844,12 +889,21 @@ fn packet_loop(
                     .filter(|dt| (1e-5..0.25).contains(dt))
                     .unwrap_or(0.005);
                 last_t_us = Some(sample.t_us);
-                let gyro = bias.correct(sample.t_us, sample.gyro, sample.accel);
-                fusion.update(gyro, sample.accel, dt);
+                gyro_available = sample.gyro_valid;
+                let gyro = if sample.gyro_valid {
+                    let corrected = bias.correct(sample.t_us, sample.gyro, sample.accel);
+                    fusion.update(corrected, sample.accel, dt);
+                    has_rotation = true;
+                    corrected
+                } else {
+                    // Missing hardware is not a negative bias measurement.
+                    [0.0; 3]
+                };
                 pacer.push(
                     State {
                         t_us: sample.t_us,
                         quat: fusion.quat(),
+                        quat_valid: has_rotation,
                         gyro,
                         accel: sample.accel,
                     },
@@ -872,38 +926,50 @@ fn packet_loop(
                         crate::app::log_line(&format!("entrega del sensor a ráfagas: reproducción con {} ms de retardo", d / 1000));
                     }
                 }
-                continue;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Disconnected) => source_closed = true,
         }
 
         // 2) Envío a ritmo fijo (tope del protocolo), interpolado con el
         //    reloj de pared: las ráfagas del sensor no llegan al receptor
         let now = Instant::now();
-        if now < next_send {
-            continue;
-        }
-        next_send = now + MIN_PACKET_GAP;
+        if stop.load(Ordering::Relaxed) { break; }
+        if now < next_send { continue; }
+        // SSC may deliver 80 ms bursts. Its real samples remain valid while
+        // the pacer is playing the buffered interval, plus the normal grace.
+        let stale_after = STALE_MOTION + Duration::from_micros(pacer.delay_us());
+        let idle = last_sample_at.is_none_or(|at| now.duration_since(at) >= stale_after);
+        next_send = now + if idle || !gyro_available { CONTROL_PACKET_GAP } else { MIN_PACKET_GAP };
         // sin sesión (reconectando): se fusiona igual, pero no se envía
         let Some(t) = target.lock().unwrap().clone() else {
             continue;
         };
-        let idle = last_sample_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(1));
-        if idle {
-            // sin muestras: keepalive 1 Hz con lo último (PROTOCOL.md §4.1)
-            sensor_hz.store(0f32.to_bits(), Ordering::Relaxed);
-            if last_sent.elapsed() < Duration::from_secs(1) {
-                continue;
-            }
-        }
-        let st = pacer.output(wall_us(now)).unwrap_or(State {
+        if idle { sensor_hz.store(0f32.to_bits(), Ordering::Relaxed); }
+        let mut st = pacer.output(wall_us(now)).unwrap_or(State {
             t_us: sensor::now_us(),
             quat: fusion.quat(),
+            quat_valid: has_rotation,
             gyro: [0.0; 3],
             accel: [0.0; 3],
         });
-        last_sent = now;
+        if idle {
+            st.gyro = [0.0; 3];
+            st.accel = [0.0; 3];
+        }
+        if !gyro_available {
+            // An accel-only sample must not interpolate an old angular velocity
+            // or an old orientation after the real gyro becomes unavailable.
+            st.gyro = [0.0; 3];
+            st.quat = fusion.quat();
+        }
+        // Controls have their own clock even when the last sensor timestamp
+        // freezes. Preserve the source time domain across stall/resume.
+        let clock_us = last_t_us.zip(last_sample_at)
+            .map(|(t, at)| t.saturating_add(now.duration_since(at).as_micros() as u64))
+            .unwrap_or_else(sensor::now_us);
+        st.t_us = clock_us.max(last_packet_t_us + 1);
+        last_packet_t_us = st.t_us;
         seq = seq.wrapping_add(1);
         let packet = packet_from_state(&st, &buttons, role, now, t.session_id, seq, battery.pct());
         let _ = t.udp.send(&pmp::build_input(&packet));
@@ -959,6 +1025,207 @@ impl Battery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Exercise the real packet worker/socket with either a silent, dead or
+    /// stopped sensor channel. No sensor callbacks are needed for controls.
+    fn fallback_packets(disconnect_source: bool, stop_readings: bool) {
+        let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
+        receiver.set_read_timeout(Some(Duration::from_millis(250))).unwrap();
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender.connect(receiver.local_addr().unwrap()).unwrap();
+        let target = Arc::new(Mutex::new(Some(Target { udp: Arc::new(sender), session_id: 7 })));
+        let buttons = Arc::new(Buttons::new());
+        buttons.set_gamepad(true);
+        buttons.set_switch(true);
+        buttons.set_rotation(2);
+        let stop = Arc::new(AtomicBool::new(false));
+        let hz = Arc::new(AtomicU32::new(0));
+        let (tx, rx) = mpsc::channel();
+        if stop_readings {
+            tx.send(Sample { t_us: sensor::now_us(), gyro_valid: true, gyro: [1.0, 2.0, 3.0], accel: [0.0, 0.0, 9.8] }).unwrap();
+        }
+        let source = if disconnect_source { drop(tx); None } else { Some(tx) };
+        let worker = {
+            let (target, buttons, stop, hz) = (target.clone(), buttons.clone(), stop.clone(), hz.clone());
+            std::thread::spawn(move || packet_loop(target, rx, buttons, stop, hz, Role::Wiimote))
+        };
+        let receive = || {
+            let mut bytes = [0; 128];
+            loop {
+                let size = receiver.recv(&mut bytes).expect("input packets must continue without sensor callbacks");
+                if let Some(pmp::Packet::Input(packet)) = pmp::parse(&bytes[..size]) { break packet; }
+            }
+        };
+        // Stop/join even when an assertion fails, so no worker leaks into another test.
+        let result = std::panic::catch_unwind(|| {
+            let mut previous = receive();
+            assert_eq!(previous.session_id, 7);
+            let before = Instant::now();
+            for _ in 0..8 { previous = receive(); }
+            assert!(before.elapsed() < Duration::from_millis(250), "fallback must be responsive, not a 1 Hz keepalive");
+            if !stop_readings {
+                assert_eq!(previous.gyro, [0.0; 3]);
+                assert_eq!(previous.accel, [0.0; 3]);
+                assert_eq!(previous.quat, [1.0, 0.0, 0.0, 0.0]);
+                assert_eq!(previous.flags & pmp::FLAG_QUAT_VALID, 0);
+            }
+            buttons.set(pmp::BTN_A, true);
+            buttons.set_stick(110, -45);
+            buttons.set_stick2(-35, 90);
+            let mut down = receive();
+            for _ in 0..4 { if down.buttons & pmp::BTN_A != 0 { break; } down = receive(); }
+            assert_ne!(down.buttons & pmp::BTN_A, 0);
+            assert_eq!((down.stick_x, down.stick_y, down.stick_rx, down.stick_ry), (110, -45, -35, 90));
+            buttons.set(pmp::BTN_A, false);
+            let mut released = receive();
+            for _ in 0..20 { if released.buttons & pmp::BTN_A == 0 { break; } released = receive(); }
+            assert_eq!(released.buttons & pmp::BTN_A, 0);
+            assert!(released.t_sensor_us > down.t_sensor_us);
+            if stop_readings {
+                // A frozen angular velocity must never keep rotating the controller.
+                for _ in 0..12 { previous = receive(); }
+                assert_eq!(previous.gyro, [0.0; 3]);
+                assert_eq!(previous.accel, [0.0; 3]);
+                assert_eq!(f32::from_bits(hz.load(Ordering::Relaxed)), 0.0);
+            }
+            // The same worker survives a control-session replacement.
+            target.lock().unwrap().as_mut().unwrap().session_id = 8;
+            let mut resumed = receive();
+            for _ in 0..4 { if resumed.session_id == 8 { break; } resumed = receive(); }
+            assert_eq!(resumed.session_id, 8);
+        });
+        stop.store(true, Ordering::Relaxed);
+        drop(source);
+        worker.join().unwrap();
+        if let Err(error) = result { std::panic::resume_unwind(error); }
+    }
+
+    #[test]
+    fn no_sensor_readings_still_send_buttons_sticks_and_releases() { fallback_packets(false, false); }
+
+    #[test]
+    fn failed_sensor_source_still_sends_buttons_sticks_and_releases() { fallback_packets(true, false); }
+
+    #[test]
+    fn stopped_sensor_readings_clear_stale_motion_and_keep_controls_live() { fallback_packets(false, true); }
+
+    #[test]
+    fn ssc_bursts_keep_buffered_motion_until_the_pacer_has_played_it() {
+        let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
+        receiver.set_read_timeout(Some(Duration::from_millis(250))).unwrap();
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender.connect(receiver.local_addr().unwrap()).unwrap();
+        let target = Arc::new(Mutex::new(Some(Target { udp: Arc::new(sender), session_id: 9 })));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        let burst = |tx: &mpsc::Sender<Sample>, batch: u64| {
+            for i in 0..16 {
+                tx.send(Sample {
+                    t_us: 2_000_000 + batch * 80_000 + i * 5_000,
+                    gyro_valid: true, gyro: [0.0, 0.0, 0.5], accel: [0.0, 0.0, 9.8],
+                }).unwrap();
+            }
+        };
+        burst(&tx, 0);
+        let worker = {
+            let stop = stop.clone();
+            std::thread::spawn(move || packet_loop(target, rx, Arc::new(Buttons::new()), stop, Arc::new(AtomicU32::new(0)), Role::Wiimote))
+        };
+        let producer = std::thread::spawn(move || {
+            for batch in 1..4 {
+                std::thread::sleep(Duration::from_millis(80));
+                burst(&tx, batch);
+            }
+            tx
+        });
+        let result = std::panic::catch_unwind(|| {
+            let started = Instant::now();
+            let mut inputs = 0;
+            let mut wire = [0; 128];
+            while started.elapsed() < Duration::from_millis(290) {
+                let size = receiver.recv(&mut wire).unwrap();
+                if let Some(pmp::Packet::Input(packet)) = pmp::parse(&wire[..size]) {
+                    assert!((packet.gyro[2] - 0.5).abs() < 0.001, "80 ms sensor batches still have buffered real gyro: {packet:?}");
+                    assert!((packet.accel[2] - 9.8).abs() < 0.001);
+                    inputs += 1;
+                }
+            }
+            assert!(inputs >= 10, "packet timing also depends on the host timer resolution");
+        });
+        let source = producer.join().unwrap();
+        stop.store(true, Ordering::Relaxed);
+        drop(source);
+        worker.join().unwrap();
+        if let Err(error) = result { std::panic::resume_unwind(error); }
+    }
+
+    #[test]
+    fn switch_capability_and_extension_are_confirmed_together() {
+        assert!(supports_switch(&json!({"modes":["pointer","dolphin","cemu","switch"]})));
+        for ok in [json!({}), json!({"modes":"switch"}), json!({"modes":["cemu"]})] {
+            assert!(!supports_switch(&ok));
+        }
+        let mut status = connected();
+        apply_update(&mut status, &json!({"m":"mode","mode":"switch"}), Instant::now());
+        apply_update(&mut status, &json!({"m":"pad","pad":"joycon_r","half":"right"}), Instant::now());
+        assert!(status.ext_confirmed());
+        if let Status::Connected { supports_switch, .. } = &mut status { *supports_switch = false; }
+        assert!(!status.ext_confirmed());
+        if let Status::Connected { supports_switch, role, .. } = &mut status { *supports_switch = true; *role = Role::Nunchuk; }
+        assert!(!status.ext_confirmed());
+        assert!(!Status::Connecting.ext_confirmed());
+    }
+
+    #[test]
+    fn retired_switch_assignments_normalize_to_independent_pro() {
+        let mut status = connected();
+        let now = Instant::now();
+        apply_update(&mut status, &json!({"m":"mode","mode":"switch"}), now);
+        for old in ["joycons", "joycon_side", "joycon_r", "pro"] {
+            apply_update(&mut status, &json!({"m":"pad","pad":old,"half":"left","side":"right","player":3}), now);
+            assert!(matches!(&status, Status::Connected { pad, player: 3, .. } if pad == "pro"));
+        }
+        apply_update(&mut status, &json!({"m":"mode","mode":"cemu"}), now);
+        apply_update(&mut status, &json!({"m":"pad","pad":"wiimote"}), now);
+        assert!(matches!(&status, Status::Connected { pad, .. } if pad == "wiimote"));
+    }
+
+    #[test]
+    fn player_number_updates_with_pad_echo() {
+        let mut status = connected();
+        let now = Instant::now();
+        apply_update(&mut status, &json!({"m":"pad","pad":"pro","player":2}), now);
+        assert!(matches!(status, Status::Connected { player: 2, .. }));
+        apply_update(&mut status, &json!({"m":"pad","pad":"pro"}), now);
+        assert!(matches!(status, Status::Connected { player: 2, .. }), "old receivers can omit player");
+        apply_update(&mut status, &json!({"m":"pad","pad":"pro","player":0}), now);
+        assert!(matches!(status, Status::Connected { player: 2, .. }));
+    }
+
+    #[test]
+    fn switch_wire_has_capture_both_sticks_and_no_cemu_touch() {
+        let b = Buttons::new();
+        b.set_gamepad(true);
+        b.set_switch(true);
+        b.set_rotation(2);
+        b.set(pmp::BTN_SCREEN, true);
+        b.set_stick(100, -50);
+        b.set_stick2(-30, 120);
+        b.set_touch(0x8000, 0x4000, true); // stale Cemu touch must never leak
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 123, 1, 90);
+        let wire = pmp::build_input(&p);
+        assert_eq!(wire.len(), 80);
+        assert_eq!(&wire[6..8], &[100, (-50_i8) as u8]);
+        assert_eq!(&wire[72..74], &[(-30_i8) as u8, 120]);
+        assert_eq!(&wire[74..80], &[0; 6]);
+        assert_eq!(p.flags & pmp::FLAG_TOUCH, 0);
+        assert_eq!(p.buttons, 1 << 28);
+        assert_eq!(p.quat, wiiu_state().quat, "an unknown rotation preserves the phone frame");
+        b.set_stick(0, 0);
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 123, 2, 90);
+        assert_eq!((p.stick_x, p.stick_y), (0, 0));
+        assert_eq!((p.stick_rx, p.stick_ry), (-30, 120), "the right stick uses the extension block");
+    }
 
     #[test]
     fn hello_declara_el_papel_solo_en_el_nunchuk() {
@@ -1034,6 +1301,7 @@ mod tests {
             role: Role::Wiimote,
             rtt_ms: None,
             supports_cemu: true,
+            supports_switch: true,
             pad: "gamepad".into(),
             notice: None,
             mode_seq: 0,
@@ -1148,6 +1416,7 @@ mod tests {
         State {
             t_us: 5_000_000,
             quat: [1.0, 0.0, 0.0, 0.0],
+            quat_valid: true,
             gyro: [0.0; 3],
             accel: [0.0, 0.0, 9.5],
         }
@@ -1188,6 +1457,7 @@ mod tests {
         let st = State {
             t_us: 1,
             quat: [1.0, 0.0, 0.0, 0.0],
+            quat_valid: true,
             gyro: [1.0, 0.0, 0.0],
             accel: [0.0, 1.0, 0.0],
         };

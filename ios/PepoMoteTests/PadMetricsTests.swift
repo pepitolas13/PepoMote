@@ -7,6 +7,25 @@ import XCTest
 final class PadMetricsTests: XCTestCase {
     private func sz(_ w: CGFloat, _ h: CGFloat) -> CGSize { CGSize(width: w, height: h) }
 
+    func testSwitchKeepsOneCapturePillAndNoScreen() {
+        let phone = PadMetrics(size: sz(852, 393), pro: true, switchPad: true)
+        XCTAssertTrue(phone.switchPad)
+        XCTAssertTrue(phone.noScreen)
+        XCTAssertTrue(phone.row)
+        XCTAssertEqual(phone.padSize, 190.5, accuracy: 0.5)
+        XCTAssertEqual(phone.centerW, 66, accuracy: 0.5)
+        XCTAssertEqual(phone.pillW, 66, accuracy: 0.5)
+        let ipad = PadMetrics(size: sz(1376, 1032), switchPad: true)
+        XCTAssertFalse(ipad.row)
+        XCTAssertEqual(ipad.padSize, 397.4, accuracy: 0.5)
+        XCTAssertEqual(ipad.centerW, 365.2, accuracy: 0.5)
+        for size in [sz(667, 320), sz(548, 320), sz(734, 393)] {
+            let m = PadMetrics(size: size, switchPad: true)
+            XCTAssertLessThanOrEqual(m.sideW * 2 + m.centerW + m.gap * 2, size.width + 0.01)
+            XCTAssertLessThanOrEqual(m.roundBtn * 3 + m.pillH + m.gap * 3, m.bodyH)
+        }
+    }
+
     func testConPantallaUnIphoneMideLoDeSiempreYUnIpadLlenaLaColumna() {
         let phone = PadMetrics(size: sz(852, 393))
         XCTAssertEqual(phone.k, 1)

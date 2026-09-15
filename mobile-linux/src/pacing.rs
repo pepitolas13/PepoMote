@@ -14,6 +14,7 @@ use std::collections::VecDeque;
 pub struct State {
     pub t_us: u64,
     pub quat: [f32; 4],
+    pub quat_valid: bool,
     pub gyro: [f32; 3],
     pub accel: [f32; 3],
 }
@@ -30,7 +31,7 @@ pub struct Pacer {
 /// Histórico y ventana de edades que se conservan.
 const KEEP_US: u64 = 1_500_000;
 /// Retardo máximo que se acepta (más allá, mejor un salto que tanta latencia).
-const MAX_DELAY_US: u64 = 80_000;
+pub(crate) const MAX_DELAY_US: u64 = 80_000;
 /// Margen sobre el envejecimiento medido.
 const MARGIN_US: u64 = 5_000;
 
@@ -106,6 +107,7 @@ impl Pacer {
                 return Some(State {
                     t_us: target,
                     quat: slerp(a.quat, b.quat, f),
+                    quat_valid: a.quat_valid && b.quat_valid,
                     gyro: lerp3(a.gyro, b.gyro, f),
                     accel: lerp3(a.accel, b.accel, f),
                 });
@@ -170,6 +172,7 @@ mod tests {
         State {
             t_us,
             quat: qz(yaw),
+            quat_valid: true,
             gyro: [0.0, 0.0, yaw],
             accel: [0.0, 0.0, 9.81],
         }

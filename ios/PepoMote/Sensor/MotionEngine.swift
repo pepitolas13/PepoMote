@@ -1,4 +1,3 @@
-import CoreMotion
 import Foundation
 import UIKit
 
@@ -16,11 +15,14 @@ enum SenderKind {
     /// GamePad / Pro Controller de Wii U (Cemu): 80 bytes con el bloque de
     /// extensión y los sensores remapeados al marco del mando apaisado.
     case gamepad
+    /// Switch usa la misma extensión, siempre sin pantalla táctil.
+    case switchPad
 }
 
 /// Sensores por CoreMotion (deviceMotion, marco `xArbitraryZVertical`: Z
 /// vertical, rumbo arbitrario, como el GAME_ROTATION_VECTOR de Android). Un
-/// paquete INPUT por muestra, con tope de 250 Hz y media ponderada del gyro
+/// paquete INPUT por muestra, con tope de 250 Hz y un envío de botones a
+/// ~100 Hz si las muestras fallan. Se conserva la media ponderada del gyro
 /// entre envíos. Los ejes del dispositivo coinciden con los de Android (X a
 /// la derecha, Y hacia arriba del móvil, Z saliendo de la pantalla); el
 /// acelerómetro se convierte a la convención de Android (en reposo boca
@@ -47,7 +49,10 @@ final class MotionEngine {
 
     private let sessionId: UInt32
     private let onPacket: (Data) -> Void
-    private let manager = CMMotionManager()
+    private let source: MotionSource
+    static let staleMotionNs: Int64 = 50_000_000
+    private var running = false
+    private var generation = 0
     private let sync = DispatchQueue(label: "pepomote.sensors", qos: .userInteractive)
     private let opQueue: OperationQueue = {
         let q = OperationQueue()
@@ -62,7 +67,7 @@ final class MotionEngine {
     private var seq: UInt32 = 0
     private var hasRotationVector = false
     private var lastSendNs: Int64 = 0
-    private var lastSampleNs: Int64 = 0
+    private var lastSampleAtNs: Int64 = 0
     /// Media ponderada por tiempo del gyro entre envíos (∑ω·Δt y ∑Δt).
     private var gyroSum: [Float] = [0, 0, 0]
     private var gyroSumNs: Int64 = 0
@@ -80,7 +85,8 @@ final class MotionEngine {
         return lastSensorHzV
     }
 
-    init(sessionId: UInt32, kind: SenderKind = .wiimote, onPacket: @escaping (Data) -> Void) {
+    init(sessionId: UInt32, kind: SenderKind = .wiimote, source: MotionSource = CoreMotionSource(), onPacket: @escaping (Data) -> Void) {
+        self.source = source
         self.sessionId = sessionId
         kindV = kind
         self.onPacket = onPacket
@@ -89,82 +95,103 @@ final class MotionEngine {
 
     func start() {
         DispatchQueue.main.async { UIDevice.current.isBatteryMonitoringEnabled = true }
-        if manager.isDeviceMotionAvailable {
-            hasRotationVector = true
-            manager.deviceMotionUpdateInterval = 1.0 / 250.0
-            manager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: opQueue) { [weak self] motion, _ in
-                guard let self, let motion else { return }
-                self.onMotion(motion)
+        sync.sync {
+            guard !running else { return }
+            running = true
+            generation += 1
+            let gen = generation
+            resetMotion()
+            source.start(to: opQueue) { [weak self] reading in
+                guard let self else { return }
+                self.sync.async {
+                    guard self.running, self.generation == gen else { return }
+                    self.onReading(reading)
+                }
             }
-        } else if manager.isAccelerometerAvailable {
-            // Sin giroscopio: solo acelerómetro y sin quaternion (el receptor lo sabe por los flags)
-            manager.accelerometerUpdateInterval = 1.0 / 100.0
-            manager.startAccelerometerUpdates(to: opQueue) { [weak self] data, _ in
-                guard let self, let data else { return }
-                let a = data.acceleration
-                self.accel = [Float(-a.x * 9.80665), Float(-a.y * 9.80665), Float(-a.z * 9.80665)]
-                self.onSample(tNs: Int64(data.timestamp * 1e9))
-            }
-        }
-        // Keepalive 1 Hz aunque el sensor calle (PROTOCOL.md §4.1)
-        let t = DispatchSource.makeTimerSource(queue: sync)
-        t.schedule(deadline: .now() + 1, repeating: 1)
-        t.setEventHandler { [weak self] in
-            guard let self else { return }
-            let now = Int64(DispatchTime.now().uptimeNanoseconds)
-            if now - self.lastSendNs >= 1_000_000_000 {
-                self.sendPacket(tSensorNs: self.lastSampleNs > 0 ? self.lastSampleNs : now)
+            let timer = DispatchSource.makeTimerSource(queue: sync)
+            timer.schedule(deadline: .now(), repeating: .milliseconds(10), leeway: .milliseconds(1))
+            timer.setEventHandler { [weak self] in
+                guard let self, self.running, self.generation == gen else { return }
+                let now = Int64(DispatchTime.now().uptimeNanoseconds)
+                // Leave the 250 Hz sensor path alone; never depend on it for input.
+                if now - self.lastSendNs < 9_000_000 { return }
+                if self.lastSampleAtNs == 0 || now - self.lastSampleAtNs >= Self.staleMotionNs {
+                    self.gyro = [0, 0, 0]
+                    self.accel = [0, 0, 0]
+                    self.gyroSum = [0, 0, 0]
+                    self.gyroSumNs = 0
+                    self.lastGyroNs = 0
+                    self.lock.lock(); self.lastSensorHzV = 0; self.lock.unlock()
+                }
                 self.lastSendNs = now
+                self.sendPacket(tSensorNs: now)
             }
+            timer.resume()
+            keepalive = timer
         }
-        t.resume()
-        keepalive = t
     }
 
     func stop() {
-        manager.stopDeviceMotionUpdates()
-        manager.stopAccelerometerUpdates()
-        keepalive?.cancel()
-        keepalive = nil
+        // This drains any active send before returning. Queued source callbacks
+        // and cancelled-timer callbacks also check their session generation.
+        sync.sync {
+            guard running else { return }
+            running = false
+            generation += 1
+            keepalive?.cancel()
+            keepalive = nil
+            source.stop()
+            resetMotion()
+        }
     }
 
-    private func onMotion(_ m: CMDeviceMotion) {
-        let tNs = Int64(m.timestamp * 1e9)
-        let q = m.attitude.quaternion
-        quat = [Float(q.w), Float(q.x), Float(q.y), Float(q.z)]
-        let g = m.gravity
-        let u = m.userAcceleration
-        accel = [Float(-(g.x + u.x) * 9.80665), Float(-(g.y + u.y) * 9.80665), Float(-(g.z + u.z) * 9.80665)]
-        let r = m.rotationRate
-        let sample: [Float] = [Float(r.x), Float(r.y), Float(r.z)]
+    private func resetMotion() {
+        quat = [1, 0, 0, 0]
+        gyro = [0, 0, 0]
+        accel = [0, 0, 0]
+        hasRotationVector = false
+        lastSendNs = 0
+        lastSampleAtNs = 0
+        lastGyroNs = 0
+        gyroSum = [0, 0, 0]
+        gyroSumNs = 0
+        hzWindowStartNs = 0
+        hzCount = 0
+        lock.lock(); lastSensorHzV = 0; lock.unlock()
+    }
+
+    private func onReading(_ reading: MotionReading) {
+        let now = Int64(DispatchTime.now().uptimeNanoseconds)
+        let tNs = reading.timestampNs
+        // A delayed sample is not fresh motion, even when it just reached our queue.
+        guard tNs > 0, now - tNs < Self.staleMotionNs, tNs <= now + 1_000_000 else { return }
+        lastSampleAtNs = tNs
+        accel = reading.accel
+        if let quaternion = reading.quaternion {
+            quat = quaternion
+            hasRotationVector = true
+        }
         trackHz(tNs)
-        // Media ponderada por tiempo de las muestras entre envíos; con un hueco raro se reinicia
+        let sample = reading.quaternion == nil ? [Float](repeating: 0, count: 3) : reading.gyro
         let gap = tNs - lastGyroNs
-        if lastGyroNs != 0, gap >= 1, gap <= 50_000_000 {
+        if reading.quaternion != nil, lastGyroNs != 0, gap >= 1, gap <= Self.staleMotionNs {
             for i in 0..<3 { gyroSum[i] += sample[i] * Float(gap) }
             gyroSumNs += gap
         } else {
             gyroSum = [0, 0, 0]
             gyroSumNs = 0
         }
-        lastGyroNs = tNs
-        // Tope de 250 Hz del protocolo
-        if tNs - lastSendNs >= 3_900_000 {
-            if gyroSumNs > 0 {
-                for i in 0..<3 { gyro[i] = gyroSum[i] / Float(gyroSumNs) }
-            } else {
-                gyro = sample
-            }
-            gyroSum = [0, 0, 0]
-            gyroSumNs = 0
-            onSample(tNs: tNs)
+        lastGyroNs = reading.quaternion == nil ? 0 : tNs
+        gyro = sample
+        // Compare wall-clock send times; fallback packets use that same clock.
+        guard now - lastSendNs >= 3_900_000 else { return }
+        if gyroSumNs > 0 {
+            for i in 0..<3 { gyro[i] = gyroSum[i] / Float(gyroSumNs) }
         }
-    }
-
-    private func onSample(tNs: Int64) {
-        lastSampleNs = tNs
-        lastSendNs = Int64(DispatchTime.now().uptimeNanoseconds)
-        sendPacket(tSensorNs: tNs)
+        gyroSum = [0, 0, 0]
+        gyroSumNs = 0
+        lastSendNs = now
+        sendPacket(tSensorNs: now)
     }
 
     private func sendPacket(tSensorNs: Int64) {
@@ -173,10 +200,11 @@ final class MotionEngine {
         let bs = ButtonState.shared
         let tUs = UInt64(max(0, tSensorNs / 1000))
         let packet: Data
-        switch kind {
-        case .gamepad:
+        let senderKind = kind
+        switch senderKind {
+        case .gamepad, .switchPad:
             let rot = rotation
-            let touch = bs.touch()
+            let touch = senderKind == .gamepad ? bs.touch() : ButtonState.Touch(x: 0, y: 0, down: false)
             packet = PmpCodec.encodeInput(
                 sessionId: sessionId, seq: seq, tSensorUs: tUs,
                 quat: Frame.remapQuat(quat, rot), gyro: Frame.remapGyro(gyro, rot), accel: Frame.remapAccel(accel, rot),

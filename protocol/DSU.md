@@ -1,6 +1,6 @@
 # DSU (cemuhook) — notas verificadas y mapeo PepoMote
 
-Servidor DSU del receptor: `127.0.0.1:26760` (UDP), hasta 4 mandos (slot = jugador − 1, MAC `PMP1`+0x00+slot). Verificado contra la spec comunitaria (v1993.github.io/cemuhook-protocol) y `DualShockUDPClient.cpp` del código de Dolphin.
+Servidor DSU del receptor: `127.0.0.1:26760` (UDP), hasta 4 fuentes físicas (en pares Switch dos fuentes pueden pertenecer al mismo jugador; MAC `PMP1`+0x00+slot). Verificado contra la spec comunitaria (v1993.github.io/cemuhook-protocol) y `DualShockUDPClient.cpp` del código de Dolphin.
 
 ## Estructura
 
@@ -104,10 +104,31 @@ Cemu lee del PadData los bits de los bytes 36-37 (botón i = bit i del 36, 8+i =
 
 En este perfil el pulso de recentrado NO toca el byte Touch (es Home); el recentrado lo consume el motor de puntero del receptor cuando el móvil es Mando Wii. Perfil de Cemu por jugador en `controllerProfiles/controller{N}.xml` con `<api>DSUController</api>`, `<uuid>{pad}</uuid>`, `<ip>127.0.0.1</ip>`, `<port>26760</port>` y `<motion>true</motion>` (GamePad y Mando Wii); Mando Wii con `<device_type>5</device_type>` (MotionPlus) o `6` (MotionPlus + Nunchuk, segundo `<controller>` leyendo del pad del otro móvil).
 
+## Modo Switch (Eden)
+
+El perfil Switch usa DSU completo para botones, dos sticks y movimiento; no publica pantalla táctil ni soplado. No cambia el perfil Wii U. Los sticks Switch se centran en **127** (`127 + i8`, limitado a 0–255), conforme al cliente UDP de Eden; Wii y Wii U mantienen su centro 128.
+
+| Switch | DSU / identificador de botón de Eden |
+|---|---|
+| A / B / X / Y | Circle / Cross / Triangle / Square; 8192 / 16384 / 4096 / 32768 |
+| L / R / ZL / ZR | L1 / R1 / L2 / R2; 1024 / 2048 / 256 / 512 |
+| + / −, clic izquierdo / derecho | Options / Share, L3 / R3; 8 / 1 / 2 / 4 |
+| Home / Capturar | PS / Touch; 262144 / 524288 |
+| ↑ / → / ↓ / ← | 16 / 32 / 64 / 128 |
+| stick izquierdo / derecho | ejes 0–1 / 2–3 |
+
+El bit PMP 28 activa Capturar (byte Touch como botón); los contactos táctiles DSU siguen inactivos. El perfil usa el marco DS4 igual que Wii U, con aceleración en g. El gyro lleva además `312/360`: Eden divide por 312 y su capa de movimiento convierte vueltas/s a grados/s, por lo que la cadena devuelve los grados/s reales. Esta compensación solo se aplica en Switch. Las pruebas numéricas comprueban el factor; las comprobaciones de orientación y sensación en juegos requieren teléfonos reales.
+
+Cada binding de Eden contiene `engine:cemuhookudp`, el GUID IPv4 `0000000000000000000000007f000001`, `port` y `pad`. **`pad` es un índice global: posición del servidor en `udp_input_servers` × 4 + slot DSU físico**. PepoMote conserva el orden de servidores y añade el suyo al final si falta. No basta con indicar el GUID para resolver ese índice.
+
+PepoMote configura exclusivamente el tipo **0: Pro Controller**. Todos los botones, ambos sticks y ambas entradas de movimiento de un jugador apuntan al mismo slot DSU. Cada móvil ocupa un jugador independiente. Al actualizar una configuración de las primeras pruebas se sustituyen sus tipos antiguos y se vacían las asignaciones SL/SR. El mapeo está concentrado en `desktop/src/eden/mapping.rs`.
+
+Fuentes primarias inspeccionadas: [cliente UDP de Eden](https://github.com/eden-emulator/mirror/blob/master/src/input_common/drivers/udp_client.cpp) y [controlador emulado](https://github.com/eden-emulator/mirror/blob/master/src/hid_core/frontend/emulated_controller.cpp). La configuración y restauración se detallan en [SETUP-SWITCH.md](../docs/SETUP-SWITCH.md).
+
 ## Recentrado
 
 La diana del móvil incrementa `recenter_count` (PMP); el servidor DSU traduce cada flanco en un **pulso de 150 ms del botón Touch**, que el perfil mapea a `IMUPointer/Recenter`. Así el mismo gesto recentra en modo puntero y en Dolphin.
 
 ## Modo
 
-El receptor solo alimenta el DSU en modo `dolphin` (perfil Wii) y en modo `cemu` (perfil Wii U); en modo puntero el pad se reporta desconectado al caducar el TTL de 1 s. Así un Dolphin o un Cemu abiertos no reciben movimiento mientras usas el cursor.
+El receptor alimenta el DSU en `dolphin` (Wii), `cemu` (Wii U) y `switch` (Switch); en modo puntero el pad se reporta desconectado al caducar el TTL de 1 s. Así los emuladores abiertos no reciben movimiento mientras usas el cursor.

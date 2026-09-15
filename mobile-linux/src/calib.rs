@@ -182,7 +182,7 @@ mod tests {
     use super::*;
 
     fn s(t_us: u64, gyro: [f32; 3], accel: [f32; 3]) -> Sample {
-        Sample { t_us, gyro, accel }
+        Sample { t_us, gyro_valid: true, gyro, accel }
     }
 
     #[test]

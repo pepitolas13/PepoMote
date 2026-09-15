@@ -7,7 +7,7 @@ use crate::state::LockTolerant;
 use super::{broadcast, free_slot, ghosts_of, send_line, Session, Sessions};
 use crate::pairing::PairingInfo;
 use crate::screen::ScreenHub;
-use crate::state::{effective_pad, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState, SwitchPad};
+use crate::state::{pad_state, PadState, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState, SwitchPad};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -48,30 +48,28 @@ type Writer = Arc<Mutex<TcpStream>>;
 
 /// Nombre del tipo de mando (Wii U o Switch, según el modo) de la sesión del
 /// `slot` (`ok.pad` / eco `pad`).
-fn pad_str(shared: &SharedState, slot: u8) -> &'static str {
-    let s = shared.lock_tolerant();
-    effective_pad(s.mode, &s.players, slot)
+fn current_pad(shared: &SharedState, slot:u8) -> PadState {
+    let s=shared.lock_tolerant(); pad_state(s.mode,&s.players,slot)
 }
 
-/// El reparto de Cemu cambia con cada entrada, salida o elección de Mando de
-/// Wii: a cada móvil cuyo `pad` efectivo haya cambiado se le manda (J2 pasa
-/// a GamePad si J1 se va; el Nunchuk entra en uso, o deja de estarlo).
+fn pad_message(p:PadState) -> Value {
+    json!({"m":"pad","pad":p.pad,"half":null,
+        "side":null,"player":p.player})
+}
+
 fn push_pad_states(shared: &SharedState, sessions: &Sessions) {
-    let (mode, players) = {
-        let s = shared.lock_tolerant();
-        (s.mode, s.players.clone())
-    };
-    let mut guard = sessions.lock_tolerant();
-    for s in guard.values_mut() {
-        let pad = effective_pad(mode, &players, s.slot);
-        if s.last_pad == Some(pad) {
-            continue;
-        }
-        s.last_pad = Some(pad);
-        if let Some(w) = &s.writer {
-            send_line(w, &json!({"m":"pad","pad":pad}));
+    let (mode,players)={let s=shared.lock_tolerant();(s.mode,s.players.clone())};
+    let mut outgoing=Vec::new();
+    {
+        let mut guard=sessions.lock_tolerant();
+        for s in guard.values_mut() {
+            let pad=pad_state(mode,&players,s.slot);
+            if s.last_pad==Some(pad) {continue;}
+            s.last_pad=Some(pad);
+            if let Some(w)=&s.writer {outgoing.push((w.clone(),pad_message(pad)));}
         }
     }
+    for (writer,message) in outgoing {send_line(&writer,&message);}
 }
 
 /// Disparo de la autoconfiguración de emuladores (cada una se filtra por modo)
@@ -80,6 +78,7 @@ fn auto_configure(shared: &SharedState, sessions: &Sessions) {
     push_pad_states(shared, sessions);
     crate::dolphin::maybe_auto_configure(shared);
     crate::cemu::maybe_auto_configure(shared);
+    crate::eden::maybe_auto_configure(shared);
 }
 
 /// El PC cambia el modo por su cuenta (modo automático: se abrió o cerró
@@ -252,16 +251,18 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         (s.mode, player_number(&s.players, slot))
     };
     let modes: Vec<&str> = Mode::ALL.iter().map(|m| m.as_str()).collect();
-    let pad = pad_str(shared, slot);
+    let pad = current_pad(shared, slot);
     if let Some(sess) = sessions.lock_tolerant().get_mut(&session_id) {
         sess.last_pad = Some(pad);
     }
     let mut ok = json!({"m":"ok","session_id":session_id,"udp_port":pairing.port,
                         "mode":mode.as_str(),"slot":slot,"name":pairing.name,
                         "role":if role == Role::Nunchuk { "nunchuk" } else { "wiimote" },
-                        "player":player,
+                        "player":pad.player,
                         "modes":modes,
-                        "pad":pad,
+                        "pad":pad.pad,
+                        "half":null,
+                        "side":null,
                         "nunchuk":if own_nunchuk { "own" } else { "none" },
                         "screen_only":screen_only});
     if code_ok {
@@ -315,36 +316,29 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 }
             }
             Some("pad") => {
-                // Modo Wii U: cada móvil elige ser Mando Wii o GamePad/Pro
-                if role == Role::Wiimote {
-                    let wants_wii = msg["pad"].as_str() == Some("wiimote");
-                    let changed = {
-                        let mut s = shared.lock_tolerant();
-                        match s.players[slot as usize].as_mut() {
-                            Some(p) if p.pad_wii != wants_wii => {
-                                p.pad_wii = wants_wii;
-                                true
+                let changed={
+                    let mut s=shared.lock_tolerant(); let mode=s.mode;
+                    if let Some(p)=s.players[slot as usize].as_mut().filter(|p|p.role==Role::Wiimote) {
+                        match (mode,msg["pad"].as_str()) {
+                            (Mode::Switch,Some(value)) => {
+                                if let Some(kind)=SwitchPad::parse(value) {
+                                    let changed=p.switch_pad!=kind; p.switch_pad=kind; changed
+                                } else {false}
                             }
-                            _ => false,
+                            (Mode::Cemu,Some(value @ ("wiimote" | "gamepad" | "pro")))=> {
+                                let wii=value=="wiimote"; let changed=p.pad_wii!=wii;p.pad_wii=wii;changed
+                            }
+                            _=>false,
                         }
-                    };
-                    let effective = pad_str(shared, slot);
-                    if let Some(sess) = sessions.lock_tolerant().get_mut(&session_id) {
-                        sess.pad_wii = wants_wii;
-                        sess.last_pad = Some(effective);
-                    }
-                    if debug() {
-                        eprintln!("[control] {device_name} (slot {slot}) pad → {effective}");
-                    }
-                    let _ = send(&writer, &json!({"m":"pad","pad":effective}));
-                    if changed {
-                        // el Nunchuk del jugador (y nadie más) cambia de estado
-                        push_pad_states(shared, sessions);
-                        crate::cemu::maybe_auto_configure(shared);
-                    }
-                } else {
-                    let _ = send(&writer, &json!({"m":"pad","pad":pad_str(shared, slot)}));
+                    } else {false}
+                };
+                let effective=current_pad(shared,slot);
+                let wants_wii=shared.lock_tolerant().players[slot as usize].as_ref().is_some_and(|p|p.pad_wii);
+                if let Some(sess)=sessions.lock_tolerant().get_mut(&session_id) {
+                    sess.pad_wii=wants_wii;sess.last_pad=Some(effective);
                 }
+                let _=send(&writer,&pad_message(effective));
+                if changed {auto_configure(shared,sessions);}
             }
             Some("nunchuk") => {
                 // Nunchuk en el mismo móvil (modo Dolphin): el mando manda
@@ -413,7 +407,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 // si no se la encuentra, o en otros modos, al SO (ventana con
                 // el foco) desde el hilo de telemetría
                 if let Some(t) = msg["text"].as_str().filter(|t| !t.is_empty()) {
-                    let wiiu = shared.lock_tolerant().mode == Mode::Cemu;
+                    let target = shared.lock_tolerant().mode;
+                    let wiiu = target == Mode::Cemu;
                     let to_os = if wiiu {
                         // sin camino directo a la ventana (Linux): al SO, pero
                         // solo con Cemu abierto (que tendrá el foco)
@@ -422,7 +417,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         true
                     };
                     if to_os {
-                        shared.lock_tolerant().text_queue.push(t.to_owned());
+                        shared.lock_tolerant().text_queue.push((target, t.to_owned()));
                     }
                 }
             }

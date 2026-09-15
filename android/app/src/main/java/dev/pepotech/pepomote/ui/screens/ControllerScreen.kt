@@ -3,6 +3,7 @@ package dev.pepotech.pepomote.ui.screens
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.displayCutoutPadding
@@ -41,6 +42,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
@@ -194,7 +198,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                         horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 10.dp, Alignment.CenterHorizontally),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, dense = dense)
+                        if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, dense = dense)
                         if (nunchuk) NunchukChip(link, dense = dense, modifier = Modifier.padding(start = 4.dp))
                     }
                 }
@@ -310,6 +314,7 @@ internal fun NunchukChip(link: UiLink.Connected, compact: Boolean = false, dense
 internal fun modeLabel(mode: String): String = when (mode) {
     LinkState.MODE_DOLPHIN -> stringResource(R.string.mode_dolphin)
     LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
+    LinkState.MODE_SWITCH -> stringResource(R.string.mode_switch)
     else -> stringResource(R.string.mode_pointer)
 }
 
@@ -320,8 +325,9 @@ internal fun modeLabel(mode: String): String = when (mode) {
  * el eco lo confirma. Lo comparten el mando vertical, el apaisado y el GamePad.
  */
 @Composable
-internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else if (dense) 8.dp else 10.dp)) {
+@OptIn(ExperimentalLayoutApi::class)
+internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: Boolean = false, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier) {
+    val chips: @Composable () -> Unit = {
         ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact, dense = dense) {
             LinkState.requestMode(LinkState.MODE_POINTER)
         }
@@ -333,7 +339,15 @@ internal fun ModeChips(current: String, supportsCemu: Boolean, compact: Boolean 
                 LinkState.requestMode(LinkState.MODE_CEMU)
             }
         }
+        if (supportsSwitch) {
+            ModeChip(stringResource(R.string.mode_switch), selected = current == LinkState.MODE_SWITCH, compact = compact, dense = dense) {
+                LinkState.requestMode(LinkState.MODE_SWITCH)
+            }
+        }
     }
+    val gap = if (compact) 6.dp else if (dense) 8.dp else 10.dp
+    if (compact) Row(modifier, horizontalArrangement = Arrangement.spacedBy(gap)) { chips() }
+    else FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(6.dp)) { chips() }
 }
 
 /**
@@ -364,9 +378,8 @@ internal fun ModeChip(
         modifier = modifier
             .background(fill, shape)
             .then(if (toggle && !selected) Modifier.border(1.5.dp, PepoColors.Ok, shape) else Modifier)
-            .pointerInput(label) {
-                detectTapGestures(onTap = { current() })
-            }
+            .semantics { this.selected = selected }
+            .clickable(role = if (toggle) Role.Switch else Role.RadioButton) { current() }
             .padding(
                 horizontal = if (compact || dense) 12.dp else 18.dp,
                 vertical = if (compact) 6.dp else 8.dp

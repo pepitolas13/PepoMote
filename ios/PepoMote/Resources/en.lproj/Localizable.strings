@@ -10,6 +10,8 @@
 "channel_dolphin_sub" = "Play real Wii games";
 "channel_wiiu" = "Wii U";
 "channel_wiiu_sub" = "GamePad for Cemu";
+"channel_switch" = "Switch";
+"channel_switch_sub" = "Pro Controller";
 "channel_nunchuk" = "Nunchuk";
 "channel_nunchuk_sub" = "The other hand";
 "channel_settings" = "Settings";
@@ -31,6 +33,7 @@
 "lost_connection" = "Lost the connection to %1$@";
 "warn_needs_13" = "The PC needs PepoMote 1.3 for Wii U";
 "warn_player_1" = "Only Player 1 changes the mode";
+"warn_needs_switch" = "Your PC needs a newer PepoMote for Switch";
 "reconnecting_short" = "Reconnecting…";
 "camera_denied" = "PepoMote has no camera permission. Turn it on in Settings → PepoMote → Camera.";
 "local_network_hint" = "If the PC does not answer, check that PepoMote has the Local Network permission (Settings → PepoMote) and that phone and PC are on the same Wi-Fi.";
@@ -82,8 +85,8 @@
 "side_ask_sub" = "It will always face this side (change it in Settings)";
 "side_flip" = "Flip it";
 "side_keep" = "Keep it like this";
-"side_gamepad_title" = "Wii U GamePad side";
-"side_gamepad_sub" = "Which way the Wii U GamePad (and Pro Controller) turns, separately from the Wii Remote + Nunchuk. Asked the first time and then fixed";
+"side_gamepad_title" = "Wii U and Switch side";
+"side_gamepad_sub" = "Which way the GamePad and Pro Controller turn, separately from the Wii Remote + Nunchuk. Asked the first time and then fixed";
 "side_ask_gamepad" = "Is the GamePad the right way up?";
 "link_other_pc" = "Pair with another PC";
 "link_other_pc_sub" = "Scan a new QR";
@@ -143,6 +146,13 @@
 /* Cemu keyboard */
 "kb_title" = "Cemu keyboard";
 "kb_help" = "For the game's on-screen keyboard. Delete removes a character in Cemu, Type sends the text and continues, Accept sends the text and Enter.";
+"kb_help_switch" = "Open the game's on-screen keyboard. Delete removes a character, Type sends the text and continues, Accept sends the text and Enter.";
+
+/* Switch */
+"mode_switch" = "Switch";
+"in_switch" = "In Switch I am:";
+"capture" = "Capture";
+"activating_switch" = "Activating Switch…";
 "kb_placeholder" = "Text for the game";
 "kb_delete" = "Delete";
 "kb_write" = "Type";

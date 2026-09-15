@@ -1,6 +1,7 @@
 package dev.pepotech.pepomote.service
 
 import android.app.PendingIntent
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
@@ -68,6 +69,8 @@ class PepoTileService : TileService() {
         }
     }
 
+    // PendingIntent overload exists only on API 34+; older Android needs the Intent overload.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun openApp() {
         val i = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= 34) {

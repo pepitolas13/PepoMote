@@ -5,9 +5,13 @@
 
 **[Español](README.es.md)**
 
+**PepoMote 1.7:** Switch Pro Controller for Eden, controls that work without a gyroscope, and optional automatic return to pointer mode. [Downloads and release notes](https://github.com/pepitolas13/PepoMote/releases/tag/v1.7.0). Update both the PC receiver and the phone app.
+
 - **Pointer mode** — aim your phone at the screen and the cursor goes exactly there (world-anchored absolute pointing, roll-invariant, 250 Hz). Buttons, drag, scroll, media keys. Your real mouse keeps working whenever the phone is still.
 - **Dolphin mode** — PepoMote becomes a full-motion virtual Wiimote (DSU/cemuhook server on `127.0.0.1:26760`). Play real Wii games — Wii Sports bowling included — in the [Dolphin emulator](https://dolphin-emu.org/).
 - **Wii U mode** — turn the phone sideways and it is a Wii U GamePad for the [Cemu emulator](https://cemu.info/): two sticks, A/B/X/Y, L/R/ZL/ZR, gyro, touch screen. Cemu's controller profiles are written for you; a second phone can be a Pro Controller, and any phone can be a Wii Remote (with Nunchuk) for Wii-style Wii U games. **Second screen included**: the GamePad's own screen (map, inventory, off-TV play) is streamed from Cemu to the phone (and hidden on the PC), touching it touches the GamePad screen, and the phone's keyboard types into Cemu's on-screen keyboard (player names and the like). Or, with a real controller on the PC, the phone can be the GamePad's touch screen only, full screen (**GamePad screen full screen** in Settings).
+
+- **Switch mode** — Pro Controller for Eden, with one independent player per phone. Buttons, both sticks, motion when a gyroscope is available, Capture and keyboard; automatic setup with backup and controller restoration. [Switch setup guide](docs/SETUP-SWITCH.md).
 
 | Piece | Platform | File |
 |---|---|---|
@@ -40,6 +44,10 @@ See [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — two minutes of one-time D
 
 See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold the phone sideways, open Cemu. Nothing to configure: PepoMote writes Cemu's controller profile (GamePad from your phone's DSU pad, motion and touch included) while Cemu is closed.
 
+## Play Switch games
+
+Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden and play. Setup, restoration and multiplayer: [docs/SETUP-SWITCH.md](docs/SETUP-SWITCH.md). This mode integrates Eden; Ryujinx is not included yet.
+
 ## Nice touches
 
 - **Local multiplayer**: up to 4 phones on one PC — scan the same QR and each phone becomes its own Wiimote in Dolphin, with Dolphin's controller config written for you automatically
@@ -50,7 +58,7 @@ See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold 
 - Optional start-with-the-system (tray only, no window)
 - One QR pairing; reconnects with one tap; auto-discovery on your LAN
 - Synthesized UI sounds + haptics (both optional)
-- **Automatic mode** (1.4): open Dolphin or Cemu and the receiver switches mode by itself; close it and the pointer is back
+- **Automatic mode** (1.4): open Dolphin, Cemu or Eden and the receiver switches mode by itself; closing it keeps the current mode. Enable **Return to pointer when an emulator closes** in Settings for automatic return (off by default)
 - **Precision**: hold the crosshair strip and the cursor moves at 40 %, with no jump when you let go; it keeps working even if your finger drifts off the strip
 - **Browser back/forward and volume that repeats**: in pointer mode the D-pad ← / → go back / forward in the browser (↑ / ↓ stay arrow keys), and holding − / + or the media 🔉 / 🔊 keeps stepping the volume
 - **iPhone and iPad** (1.5): the same sender in Swift, with the Wii U GamePad's second screen and everything else; installed with SideStore or AltStore from a one-tap source, built and tested by the CI on macOS

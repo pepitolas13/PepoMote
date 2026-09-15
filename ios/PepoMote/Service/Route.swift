@@ -13,6 +13,7 @@ enum Route {
     /// Claves de los avisos (Localizable.strings).
     static let warnNeeds13 = "warn_needs_13"
     static let warnPlayer1 = "warn_player_1"
+    static let warnNeedsSwitch = "warn_needs_switch"
 
     /// Modo Wii U activo como GamePad/Pro: el receptor confirmó `cemu` y este
     /// móvil (mando) no ha elegido ser Mando de Wii. Solo entonces se emiten
@@ -22,14 +23,32 @@ enum Route {
         return c.mode == LinkState.modeCemu && c.role == LinkState.roleWiimote && c.pad != LinkState.padWiimote
     }
 
+    static func isSwitch(_ link: UiLink) -> Bool {
+        guard let c = link.connected else { return false }
+        return c.mode == LinkState.modeSwitch && c.role == LinkState.roleWiimote
+    }
+
+    /// La intención manda mientras se espera el eco, aunque ambas usen GamePadScreen.
+    static func wantedMode(_ link: UiLink, _ intent: PadIntent) -> String {
+        intent.mode ?? (isSwitch(link) ? LinkState.modeSwitch : LinkState.modeCemu)
+    }
+
+    /// Solo un modo confirmado puede emitir el bloque de 80 bytes.
+    static func extendedOperative(_ link: UiLink, _ intent: PadIntent) -> Bool {
+        guard isGamePad(link) || isSwitch(link) else { return false }
+        return intent.mode == nil || intent.mode == link.connected?.mode
+    }
+
     /// - Nunchuk si el enlace es un Nunchuk (nunca es GamePad, pida lo que pida);
     /// - GamePad si el receptor confirmó `cemu` y este mando no es Mando de Wii;
     /// - GamePad si hay intención Wii U pendiente y hay enlace;
     /// - si no, el layout Wii (vertical / NES apaisado según orientación).
     static func route(_ link: UiLink, _ intent: PadIntent) -> PadScreen {
         if let c = link.connected, c.role == LinkState.roleNunchuk { return .nunchuk }
+        if let wanted = intent.mode, link.alive, link.connected?.mode != wanted { return .gamePad }
+        if isSwitch(link) { return .gamePad }
         if isGamePad(link) { return .gamePad }
-        if intent == .wiiU, link.alive { return .gamePad }
+        if intent != .none, link.alive { return .gamePad }
         return .wii
     }
 
@@ -45,7 +64,8 @@ enum Route {
     /// mando + Nunchuk de Dolphin. El mando se gira solo: no hace falta girar
     /// el móvil.
     static func forcesLandscape(_ link: UiLink, _ intent: PadIntent) -> Bool {
-        route(link, intent) == .gamePad || wiiLandscapeNunchuk(link)
+        let screen = route(link, intent)
+        return screen == .gamePad || wiiLandscapeNunchuk(link)
     }
 
     /// Con el mando de lado (NES) el móvil ES un Mando de Wii girado: en
@@ -83,10 +103,12 @@ enum Route {
     /// cambia el modo. Si lo decidió el PC (`byPc`) la intención se descarta
     /// sin aviso: el notice del PC ya lo explica.
     static func afterModeEcho(_ intent: PadIntent, _ mode: String, _ link: UiLink, byPc: Bool = false) -> Outcome {
-        if intent != .wiiU { return Outcome(intent: intent, warning: nil) }
-        if mode == LinkState.modeCemu || byPc { return Outcome(intent: .none, warning: nil) }
+        guard let wanted = intent.mode else { return Outcome(intent: intent, warning: nil) }
+        if mode == wanted || byPc { return Outcome(intent: .none, warning: nil) }
         let c = link.connected
-        let warning = (c != nil && c!.supportsCemu && c!.slot != 0) ? warnPlayer1 : warnNeeds13
+        let supported = wanted == LinkState.modeSwitch ? c?.supportsSwitch : c?.supportsCemu
+        let oldReceiver = wanted == LinkState.modeSwitch ? warnNeedsSwitch : warnNeeds13
+        let warning = supported == true && c?.slot != 0 ? warnPlayer1 : oldReceiver
         return Outcome(intent: .none, warning: warning)
     }
 }

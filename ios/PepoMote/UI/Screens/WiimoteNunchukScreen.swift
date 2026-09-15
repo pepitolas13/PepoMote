@@ -83,15 +83,18 @@ struct WiimoteNunchukScreen: View {
                         case .reconnecting(let pc, _):
                             ReconnectingLabel(pcName: pc, font: PepoFont.bodyMedium()).layoutPriority(1)
                         case .connected(let c):
-                            Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160).layoutPriority(0)
-                            Text(tr("mode_dolphin_nunchuk")).pepoBody().lineLimit(1).layoutPriority(1)
+                            if geo.size.width >= 850 {
+                                Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160).layoutPriority(0)
+                            }
+                            if geo.size.width >= 1000 || !showModeChips(c, showChips) {
+                                Text(tr("mode_dolphin_nunchuk")).pepoBody().lineLimit(1).layoutPriority(1)
+                            }
                             HStack(spacing: 6) {
                                 if showModeChips(c, showChips) {
-                                    ModeChips(current: c.mode, supportsCemu: c.supportsCemu, compact: true)
+                                    ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
                                 }
                                 NunchukChip(link: c, compact: true)
                             }
-                            .fixedSize()
                             .layoutPriority(2)
                         case .connecting:
                             Text(tr("status_connecting")).pepoBody().lineLimit(1).layoutPriority(1)

@@ -34,7 +34,7 @@ enum Btn {
     static let stickR: UInt32 = 1 << 26
     /// Soplar al micrófono del GamePad.
     static let mic: UInt32 = 1 << 27
-    /// Cambiar la vista TV ↔ pantalla del GamePad (función de Cemu).
+    /// TV ↔ GamePad en Cemu; Capturar en Switch.
     static let screen: UInt32 = 1 << 28
     /// Precisión (modo puntero): mientras se mantiene, el cursor va al 40 %.
     static let precision: UInt32 = 1 << 29

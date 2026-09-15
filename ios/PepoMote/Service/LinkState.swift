@@ -14,7 +14,7 @@ struct ConnectedLink: Equatable {
     var player: Int = 1
     /// El receptor sabe de Wii U (`ok.modes` trae "cemu").
     var supportsCemu: Bool = false
-    /// Mando efectivo en modo Wii U: gamepad / pro / wiimote.
+    /// Mando efectivo; vocabulario Wii U o Switch según el modo confirmado.
     var pad: String = LinkState.padGamepad
     /// El receptor confirmó el Nunchuk en el mismo móvil (`ok.nunchuk` o eco
     /// de `nunchuk`): en Dolphin, apaisado = mando + Nunchuk.
@@ -22,6 +22,8 @@ struct ConnectedLink: Equatable {
     /// El receptor confirmó «solo pantalla» (`ok.screen_only` o eco de
     /// `screen_only`); nil = receptor anterior a 1.6, que no lo conoce.
     var screenOnly: Bool? = nil
+    /// El receptor anuncia Switch en `ok.modes`.
+    var supportsSwitch: Bool = false
 }
 
 enum UiLink: Equatable {
@@ -52,11 +54,20 @@ struct Notice: Equatable {
     let atMs: Int64
 }
 
-/// Intención pendiente del usuario: `wiiU` = tocó la tarjeta Wii U o el chip
-/// Wii U y aún no ha llegado ningún eco/difusión de `mode` posterior.
+/// Modo de mando pedido y aún sin eco: Wii U y Switch comparten pantalla
+/// optimista, pero conservan su identidad y sus avisos por separado.
 enum PadIntent {
     case none
     case wiiU
+    case switchMode
+
+    var mode: String? {
+        switch self {
+        case .none: return nil
+        case .wiiU: return LinkState.modeCemu
+        case .switchMode: return LinkState.modeSwitch
+        }
+    }
 }
 
 /// Estado observable del enlace, publicado por `LinkService`. Todo en la cola principal.
@@ -68,9 +79,14 @@ final class LinkState: ObservableObject {
     static let modePointer = "pointer"
     static let modeDolphin = "dolphin"
     static let modeCemu = "cemu"
+    static let modeSwitch = "switch"
     static let padGamepad = "gamepad"
     static let padPro = "pro"
     static let padWiimote = "wiimote"
+
+    static func validSwitchPad(_ pad: String) -> Bool {
+        pad == padPro
+    }
 
     @Published private(set) var link: UiLink = .disconnected
     @Published private(set) var notice: Notice?
@@ -79,13 +95,13 @@ final class LinkState: ObservableObject {
     /// Rol del enlace vivo (o arrancando).
     var role: String = LinkState.roleWiimote
 
-    /// Cambia el modo pointer/dolphin/cemu; lo conecta el servicio al ControlClient.
+    /// Cambia el modo pointer/dolphin/cemu/switch; conectado al ControlClient.
     var sendMode: ((String) -> Void)?
     /// Modo a aplicar en cuanto se complete la próxima conexión.
     var pendingMode: String?
-    /// Modo Wii U: elegir "wiimote" (Mando de Wii) o "gamepad" (volver a GamePad/Pro).
+    /// Elegir el mando dentro del modo confirmado (vocabulario distinto en cada uno).
     var sendPad: ((String) -> Void)?
-    /// Modo Wii U: texto para el teclado en pantalla de Cemu.
+    /// Texto para el teclado en pantalla de Wii U o Switch.
     var sendText: ((String) -> Void)?
     /// Nunchuk en el mismo móvil (modo Dolphin): pedirlo o quitarlo; el eco lo confirma.
     var sendNunchuk: ((Bool) -> Void)?
@@ -96,10 +112,15 @@ final class LinkState: ObservableObject {
 
     static func nowMs() -> Int64 { Int64(DispatchTime.now().uptimeNanoseconds / 1_000_000) }
 
-    /// Pide un modo al receptor. `cemu` deja la intención Wii U; cualquier otro
-    /// modo la quita. Si el enlace aún no está, se aplica al llegar el `ok`.
+    /// Pide un modo al receptor. Wii U y Switch dejan su intención pendiente.
+    /// Si el enlace aún no está, se aplica al llegar el `ok`.
     func requestMode(_ mode: String) {
-        intent = mode == LinkState.modeCemu ? .wiiU : .none
+        intent = mode == LinkState.modeCemu ? .wiiU : mode == LinkState.modeSwitch ? .switchMode : .none
+        ButtonState.shared.reset()
+        if mode == LinkState.modeSwitch { ScreenLink.shared.release() }
+        if intent != .none, link.connected?.mode != mode {
+            motion?.kind = role == LinkState.roleNunchuk ? .nunchuk : .wiimote
+        }
         if let send = sendMode, case .connected = link {
             send(mode)
         } else {
@@ -118,7 +139,12 @@ final class LinkState: ObservableObject {
     }
 
     func publish(_ state: UiLink) {
-        link = state
+        if case .connected(var connected) = state {
+            Self.normalizeController(&connected)
+            link = .connected(connected)
+        } else {
+            link = state
+        }
         // Sin enlace no hay intención que mantener
         switch state {
         case .disconnected, .failed: intent = .none
@@ -129,8 +155,13 @@ final class LinkState: ObservableObject {
     func updateConnected(_ transform: (inout ConnectedLink) -> Void) {
         if case .connected(var c) = link {
             transform(&c)
+            Self.normalizeController(&c)
             link = .connected(c)
         }
+    }
+
+    private static func normalizeController(_ connected: inout ConnectedLink) {
+        if connected.mode == modeSwitch { connected.pad = padPro }
     }
 
     func publishNotice(_ text: String) {

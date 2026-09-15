@@ -510,3 +510,17 @@ versiones nuevas»). Si no sale la tarjeta: hace menos de 24 h de la última
 consulta, la ocultaste con «Ocultar» (una versión posterior sí se anuncia)
 o no hay salida a Internet (se reintenta en una hora). En iPhone/iPad,
 SideStore y AltStore avisan además por su cuenta con la fuente de PepoMote.
+
+## Switch / Eden
+
+- **No aparece Switch o se avisa de receptor antiguo:** usa el APK y receptor de la misma compilación; cierra el receptor anterior antes de abrir el nuevo.
+- **El mando no funciona tras cambiar el número de jugadores:** cierra Eden, espera a que PepoMote confirme la configuración y vuelve a abrirlo. Revisa Ajustes → Carpeta de Eden si tienes varias instalaciones.
+- **Otro servidor DSU ya estaba configurado:** su orden se conserva; PepoMote puede usar UDP Controller 4, 8 u otro número. No cambies manualmente ese número al slot físico del móvil.
+- **Tenía un Joy-Con elegido:** esta versión usa solo Pro Controller. Las preferencias anteriores se convierten automáticamente; conecta todos los móviles con Eden cerrado para actualizar sus mandos.
+- **Mi móvil no tiene giroscopio:** los botones y sticks funcionan igualmente. Actualiza el APK y el receptor de esta prueba; el movimiento de giro requiere un giroscopio físico.
+- **Al cerrar el emulador cambia de modo:** desmarca Ajustes del receptor → Volver al puntero al cerrar un emulador. Desactivado conserva el modo, también en Dolphin y Wii U.
+- **Quiero recuperar mis mandos:** Restaurar mis mandos de Eden. La restauración apaga la autoconfiguración de Switch; vuelve a activarla si después quieres usar PepoMote automáticamente.
+- **No entra el texto:** abre el teclado del juego dentro de Eden. En Linux deja Eden en primer plano; Windows/macOS necesitan poder activar su ventana.
+- **Hay un perfil específico de juego:** la integración escribe el perfil global. Si ese juego fuerza otro perfil, selecciona la configuración global de mandos en Eden.
+
+Guía completa: [SETUP-SWITCH.md](SETUP-SWITCH.md).

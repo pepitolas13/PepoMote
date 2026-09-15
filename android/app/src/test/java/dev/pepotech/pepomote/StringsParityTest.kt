@@ -12,6 +12,18 @@ import java.io.File
  */
 class StringsParityTest {
 
+    @Test
+    fun switchControlsHaveBilingualNames() {
+        for (locale in listOf("values", "values-en")) {
+            val labels = strings("src/main/res/$locale/strings.xml")
+            for (key in listOf("channel_switch", "mode_switch", "capture", "pro_controller", "warn_needs_switch", "kb_switch_title", "kb_switch_help")) {
+                assertTrue("$locale/$key", labels[key]?.isNotBlank() == true)
+            }
+            assertEquals("Pro Controller", labels["channel_switch_sub"])
+            assertTrue("Removed controller options have no labels", labels.keys.none { it.startsWith("joycon") })
+        }
+    }
+
     private fun strings(path: String): Map<String, String> {
         val file = listOf(File(path), File("app/$path")).first { it.exists() }
         val re = Regex("<string name=\"([^\"]+)\">(.*?)</string>", RegexOption.DOT_MATCHES_ALL)

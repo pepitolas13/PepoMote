@@ -18,9 +18,9 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
-      - name: Build debug APK
+      - name: Tests, lint y APK debug
         working-directory: android
-        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+        run: chmod +x gradlew && ./gradlew testDebugUnitTest lintRelease assembleDebug --no-daemon
       # La firma release se activa en h5 con los secrets:
       # KEYSTORE_B64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
       - uses: actions/upload-artifact@v4

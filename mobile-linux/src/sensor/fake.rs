@@ -38,6 +38,7 @@ impl Source for Fake {
             let accel = [0.0, G * pitch.sin(), G * pitch.cos()];
             if tx
                 .send(Sample {
+                    gyro_valid: true,
                     t_us: now_us(),
                     gyro,
                     accel,

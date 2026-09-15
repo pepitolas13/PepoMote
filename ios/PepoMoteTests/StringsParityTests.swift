@@ -55,7 +55,9 @@ final class StringsParityTests: XCTestCase {
                     "nunchuk_own_title", "nunchuk_own_sub", "nunchuk_chip", "mode_dolphin_nunchuk", "notices_title", "notices_sub",
                     "fullscreen_title", "fullscreen_sub", "fullscreen_kb_title", "fullscreen_kb_sub", "fullscreen_old_receiver",
                     "side_title", "side_sub", "side_left", "side_right", "side_sensor", "side_ask", "side_ask_sub", "side_flip", "side_keep",
-                    "side_gamepad_title", "side_gamepad_sub", "side_ask_gamepad"] {
+                    "side_gamepad_title", "side_gamepad_sub", "side_ask_gamepad",
+                    "mode_switch", "channel_switch", "channel_switch_sub", "in_switch",
+                    "capture", "activating_switch", "warn_needs_switch", "kb_help_switch"] {
             XCTAssertNotNil(es[key], "falta \(key)")
         }
     }

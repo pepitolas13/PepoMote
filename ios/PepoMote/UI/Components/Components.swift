@@ -328,6 +328,7 @@ func modeLabel(_ mode: String) -> String {
     switch mode {
     case LinkState.modeDolphin: return tr("mode_dolphin")
     case LinkState.modeCemu: return tr("mode_wiiu")
+    case LinkState.modeSwitch: return tr("mode_switch")
     default: return tr("mode_pointer")
     }
 }
@@ -339,7 +340,7 @@ func isWiiUAsWiimote(_ c: ConnectedLink) -> Bool {
 
 /// Chips de modo: solo el Jugador 1; con el ajuste activo o, siempre, dentro de Wii U.
 func showModeChips(_ c: ConnectedLink, _ showChips: Bool) -> Bool {
-    c.slot == 0 && (showChips || c.mode == LinkState.modeCemu)
+    c.slot == 0 && (showChips || c.mode == LinkState.modeCemu || c.mode == LinkState.modeSwitch)
 }
 
 // MARK: - Chips de modo y botón Teclado
@@ -349,6 +350,7 @@ func showModeChips(_ c: ConnectedLink, _ showChips: Bool) -> Bool {
 struct ModeChips: View {
     let current: String
     let supportsCemu: Bool
+    var supportsSwitch = false
     var compact = false
     /// Chips estrechos (iPhone): caben cuatro en una fila.
     var dense = false
@@ -364,6 +366,11 @@ struct ModeChips: View {
             if supportsCemu {
                 ModeChip(label: tr("mode_wiiu"), selected: current == LinkState.modeCemu, compact: compact, dense: dense) {
                     LinkState.shared.requestMode(LinkState.modeCemu)
+                }
+            }
+            if supportsSwitch {
+                ModeChip(label: tr("mode_switch"), selected: current == LinkState.modeSwitch, compact: compact, dense: dense) {
+                    LinkState.shared.requestMode(LinkState.modeSwitch)
                 }
             }
         }
@@ -440,7 +447,7 @@ struct KeyboardDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(tr("kb_title")).font(PepoFont.titleMedium()).foregroundColor(Pepo.text)
-            Text(tr("kb_help")).pepoBody()
+            Text(tr(LinkState.shared.link.connected?.mode == LinkState.modeSwitch ? "kb_help_switch" : "kb_help")).pepoBody()
             TextField(tr("kb_placeholder"), text: $field)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
@@ -503,11 +510,30 @@ struct PadSelector: View {
     let width: CGFloat
     var compact = false
     var help: String? = nil
+    var switchPad = false
     @State private var pending: String?
 
     private static let echoTimeoutMs = 2000
 
     var body: some View {
+        Group {
+            if switchPad { switchSelector } else { cemuSelector }
+        }
+        .onChange(of: link.pad) { _ in pending = nil }
+        .onChange(of: link.mode) { _ in pending = nil }
+    }
+
+    private var switchSelector: some View {
+        HStack(spacing: 8) {
+            Text(tr("in_switch")).foregroundColor(Pepo.textDim)
+            Text(tr("pro_controller")).foregroundColor(Pepo.text)
+        }
+        .font(PepoFont.bodyMedium())
+        .padding(.horizontal, 14)
+        .frame(height: 38)
+    }
+
+    private var cemuSelector: some View {
         let wiimote = link.pad == LinkState.padWiimote
         let inlinePrefix = width >= 430
         let prefixW: CGFloat = inlinePrefix ? 110 : 0
@@ -597,6 +623,8 @@ struct PadSelector: View {
         }
     }
 }
+
+func switchPadLabel(_ pad: String) -> String { tr("pro_controller") }
 
 // MARK: - Precisión y scroll
 

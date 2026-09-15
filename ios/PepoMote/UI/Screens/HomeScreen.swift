@@ -77,6 +77,9 @@ struct HomeScreen: View {
                     ChannelCard(title: tr("channel_wiiu"), subtitle: tr("channel_wiiu_sub"), glyph: .gamePad, accent: Pepo.ok) {
                         model.openController(mode: LinkState.modeCemu, dolphinOnly: false)
                     }
+                    ChannelCard(title: tr("channel_switch"), subtitle: tr("channel_switch_sub"), glyph: .switchPad, accent: Pepo.blue) {
+                        model.openController(mode: LinkState.modeSwitch, dolphinOnly: false)
+                    }
                     // Con Dolphin: el segundo móvil, en la otra mano
                     ChannelCard(title: tr("channel_nunchuk"), subtitle: tr("channel_nunchuk_sub"), glyph: .stick, accent: Pepo.ok) {
                         model.openNunchuk()

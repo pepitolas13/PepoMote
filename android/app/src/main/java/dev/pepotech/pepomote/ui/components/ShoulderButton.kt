@@ -22,6 +22,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -53,6 +58,11 @@ fun ShoulderButton(
         modifier = modifier
             .width(width)
             .height(height)
+            .semantics {
+                role = Role.Button
+                contentDescription = label
+                onClick { ButtonState.set(bit, true); ButtonState.set(bit, false); true }
+            }
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale

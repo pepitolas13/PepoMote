@@ -1,4 +1,4 @@
-//! El GamePad de Wii U (modo Cemu), apaisado: L/ZL y R/ZR en las esquinas,
+//! GamePad de Wii U y Pro Controller de Switch, apaisados: L/ZL y R/ZR en las esquinas,
 //! dos sticks con su L3/R3, cruceta, A/B/X/Y en rombo, − Home +, «TV/Pad»,
 //! «Soplar» y la pantalla táctil 16:9 en el centro. Se pinta a mano en un
 //! espacio virtual apaisado: si la ventana ya es apaisada, recto; si es
@@ -54,6 +54,7 @@ pub struct Inputs<'a> {
     /// Intención Wii U pendiente: pantalla optimista (Wii U marcado,
     /// controles inertes hasta el eco).
     pub optimistic: bool,
+    pub wanted_mode: &'a str,
     /// Petición de `pad` sin eco: su segmento a medio tono.
     pub pad_pending: Option<&'a str>,
     pub sensor_hz: f32,
@@ -115,6 +116,8 @@ struct View<'a> {
     mode: &'a str,
     show_chips: bool,
     supports_cemu: bool,
+    supports_switch: bool,
+    switch: bool,
     /// El receptor ha confirmado Wii U y somos GamePad/Pro: se juega.
     active: bool,
     optimistic: bool,
@@ -144,6 +147,7 @@ pub struct GamePadUi {
     /// La pantalla del GamePad de Cemu (se crea con la primera imagen y se
     /// actualiza con cada una; se suelta sin canal).
     texture: Option<TextureHandle>,
+    layout_key: Option<String>,
 }
 
 impl Default for GamePadUi {
@@ -215,6 +219,7 @@ impl GamePadUi {
             active: false,
             fired: None,
             texture: None,
+            layout_key: None,
         }
     }
 
@@ -248,8 +253,7 @@ impl GamePadUi {
         let avail = ui.available_size();
         let (rect, _) = ui.allocate_exact_size(avail, Sense::hover());
         self.screen = rect;
-        self.transform = Transform::for_screen(rect, inp.rotation);
-        self.upload(ui.ctx(), inp.screen);
+        self.upload(ui.ctx(), if inp.wanted_mode == "switch" { None } else { inp.screen });
         let notice = inp.status.live_notice();
         let view = match inp.status {
             Status::Connected {
@@ -258,23 +262,26 @@ impl GamePadUi {
                 player,
                 rtt_ms,
                 supports_cemu,
+                supports_switch,
                 pad,
                 ..
             } => View {
                 pc_name,
                 player: *player,
                 pro: pad == "pro",
-                no_screen: pad == "pro" || inp.no_screen,
-                pad,
-                mode,
+                no_screen: inp.wanted_mode == "switch" || pad == "pro" || inp.no_screen,
+                pad: if inp.wanted_mode == "switch" { "pro" } else { pad },
+                mode: if inp.optimistic { inp.wanted_mode } else { mode },
                 show_chips: inp.show_chips,
                 supports_cemu: *supports_cemu,
-                active: mode == "cemu" && pad != "wiimote",
+                supports_switch: *supports_switch,
+                switch: inp.wanted_mode == "switch",
+                active: inp.status.ext_confirmed() && mode == inp.wanted_mode,
                 optimistic: inp.optimistic,
                 pending: inp.pad_pending,
                 notice,
                 rtt_ms: *rtt_ms,
-                screen: inp.screen,
+                screen: if inp.wanted_mode == "switch" { None } else { inp.screen },
             },
             other => View {
                 pc_name: match other {
@@ -284,11 +291,13 @@ impl GamePadUi {
                 },
                 player: 1,
                 pro: false,
-                no_screen: inp.no_screen,
-                pad: "gamepad",
-                mode: "",
+                no_screen: inp.wanted_mode == "switch" || inp.no_screen,
+                pad: if inp.wanted_mode == "switch" { "pro" } else { "gamepad" },
+                mode: inp.wanted_mode,
                 show_chips: false,
                 supports_cemu: false,
+                supports_switch: false,
+                switch: inp.wanted_mode == "switch",
                 active: false,
                 optimistic: inp.optimistic,
                 pending: None,
@@ -297,6 +306,12 @@ impl GamePadUi {
                 screen: None,
             },
         };
+        self.transform = Transform::for_screen(rect, inp.rotation);
+        let key = format!("{}/{}/{:?}/{}/{}/{}", view.mode, view.pad, self.transform, view.active, inp.full_screen, view.no_screen);
+        if self.layout_key.as_ref() != Some(&key) {
+            self.release(buttons);
+            self.layout_key = Some(key);
+        }
         self.active = view.active;
         self.hits.clear();
         {
@@ -315,7 +330,7 @@ impl GamePadUi {
             // que el velo y la cabecera se refresquen en cuanto llegue el eco
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
-        let current_pad = if view.pad == "wiimote" { "wiimote" } else { "gamepad" };
+        let current_pad = if view.switch { view.pad } else if view.pad == "wiimote" { "wiimote" } else { "gamepad" };
         match self.fired.take() {
             Some(Chip::Exit) => Action::Exit,
             Some(Chip::Mode(m)) => Action::Mode(m),
@@ -331,6 +346,8 @@ impl GamePadUi {
     /// toques que sigan no llegarán aquí).
     pub fn release(&mut self, buttons: &Buttons) {
         self.touches.clear();
+        self.dpad_held = 0;
+        self.fired = None;
         for st in &mut self.sticks {
             st.knob = Vec2::ZERO;
         }
@@ -344,8 +361,6 @@ impl GamePadUi {
         // Escala: referencia 700×370 pt virtuales (un móvil apaisado)
         let s = (vh / 370.0).min(vw / 700.0).clamp(0.5, 1.6);
         let (x0, y0) = (r.left(), r.top());
-        let cx = r.center().x;
-
         // ---- Cabecera: chips desde la derecha, el nombre con lo que quede ----
         let hh = 30.0 * s;
         let hy = y0 + hh / 2.0;
@@ -364,22 +379,25 @@ impl GamePadUi {
             Rotation::Right => tr!("gp.rotate_right"),
         };
         self.chip(cv, place(66.0 * s), giro, chip_font, false, theme::text(), Chip::Rotate);
-        if v.mode == "cemu" {
+        if matches!(v.mode, "cemu" | "switch") {
             // teclado del móvil para el teclado en pantalla de Cemu (GamePad y Pro)
             self.chip(cv, place(64.0 * s), tr!("common.keyboard"), chip_font, false, theme::text(), Chip::Keyboard);
         }
         if v.show_chips {
             // esta ES la pantalla Wii U: su chip va marcado (también mientras
             // se espera el eco); los otros dos, por igualdad exacta
-            if v.supports_cemu || v.optimistic {
-                let on = v.mode == "cemu" || v.optimistic;
+            if v.supports_switch || v.switch {
+                self.chip(cv, place(62.0 * s), tr!("common.mode_switch"), chip_font, v.mode == "switch", theme::text(), Chip::Mode("switch"));
+            }
+            if v.supports_cemu || (!v.switch && v.optimistic) {
+                let on = v.mode == "cemu";
                 self.chip(cv, place(58.0 * s), tr!("common.mode_cemu"), chip_font, on, theme::text(), Chip::Mode("cemu"));
             }
             self.chip(cv, place(66.0 * s), tr!("common.mode_dolphin"), chip_font, v.mode == "dolphin" && !v.optimistic, theme::text(), Chip::Mode("dolphin"));
             self.chip(cv, place(66.0 * s), tr!("common.mode_pointer"), chip_font, v.mode == "pointer" && !v.optimistic, theme::text(), Chip::Mode("pointer"));
         }
         let title_font = FontId::proportional(13.0 * s);
-        let kind = if v.pro { tr!("common.pro") } else { tr!("common.gamepad") };
+        let kind = Self::kind(v);
         let mut line = tr!("gp.title", v.pc_name, v.player, kind);
         if let Some(ms) = v.rtt_ms {
             line.push_str(&format!(" · {ms:.0} ms"));
@@ -396,33 +414,8 @@ impl GamePadUi {
         let avail = right - x0 - 4.0 * s;
         cv.text(Pos2::new(x0 + 4.0 * s, hy), Align2::LEFT_CENTER, &cv.fit_text(&line, title_font.clone(), avail), title_font, theme::text());
 
-        // ---- Selector «En Cemu soy» bajo la cabecera, centrado ----
-        let sel_h = 26.0 * s;
         let sel_y = y0 + hh + 2.0 * s;
-        let label_font = FontId::proportional(12.0 * s);
-        let label = tr!("common.in_cemu");
-        let label_w = cv.text_width(label, label_font.clone());
-        let seg_w = 104.0 * s;
-        let total = label_w + 8.0 * s + seg_w * 2.0 + 4.0 * s;
-        let mut x = cx - total / 2.0;
-        cv.text(Pos2::new(x, sel_y + sel_h / 2.0), Align2::LEFT_CENTER, label, label_font, theme::text_dim());
-        x += label_w + 8.0 * s;
-        let wii = v.pad == "wiimote";
-        let seg = |key: &str, on: bool| -> Seg {
-            if v.pending == Some(key) {
-                Seg::Pending
-            } else if on && v.pending.is_none() {
-                Seg::On
-            } else {
-                Seg::Off
-            }
-        };
-        let r1 = Rect::from_min_size(Pos2::new(x, sel_y), Vec2::new(seg_w, sel_h));
-        let r2 = Rect::from_min_size(Pos2::new(x + seg_w + 4.0 * s, sel_y), Vec2::new(seg_w, sel_h));
-        let sh = touch::segment(cv, r1, kind, chip_font, seg("gamepad", !wii));
-        self.hits.push((sh, Target::Chip(Chip::Pad("gamepad"))));
-        let sh = touch::segment(cv, r2, "Mando de Wii", chip_font, seg("wiimote", wii));
-        self.hits.push((sh, Target::Chip(Chip::Pad("wiimote"))));
+        let sel_h = if v.switch { 0.0 } else { self.selector(cv, v, sel_y, s) };
 
         // ---- Cuerpo ----
         let by = sel_y + sel_h + 6.0 * s;
@@ -443,7 +436,7 @@ impl GamePadUi {
 
         // Sin pantalla táctil (Pro Controller o el ajuste): stick y cruceta en
         // fila si así salen más grandes que apilados (en un móvil, siempre)
-        let row = v.no_screen.then(|| row_metrics(vw, r.bottom() - by, s, v.pro)).filter(|m| m.pad > 92.0 * s);
+        let row = v.no_screen.then(|| row_metrics(vw, r.bottom() - by, s, v.pro && !v.switch)).filter(|m| m.pad > 92.0 * s);
         let zone_w = if let Some(m) = row {
             self.layout_row(cv, v, &m, s, pressed, r, by);
             m.center_w
@@ -451,11 +444,18 @@ impl GamePadUi {
             self.layout_stacked(cv, buttons, v, s, pressed, r, by)
         };
 
+        self.overlay(cv, v, r, by, s, zone_w);
+    }
+
+    fn overlay(&self, cv: &Canvas, v: &View, r: Rect, by: f32, s: f32, zone_w: f32) {
+        let (x0, cx, vw) = (r.left(), r.center().x, r.width());
         // Aún no se juega: velo sobre los controles y el porqué
         if !v.active {
             let body = Rect::from_min_max(Pos2::new(x0, by - 2.0 * s), r.max);
             cv.rounded_rect(body, 0.0, veil(), Stroke::NONE);
-            let why = if v.mode.is_empty() {
+            let why = if v.switch {
+                tr!("gp.activating_switch")
+            } else if v.mode.is_empty() {
                 tr!("common.connecting")
             } else if v.pad == "wiimote" {
                 tr!("gp.veil_wiimote")
@@ -475,11 +475,40 @@ impl GamePadUi {
         }
     }
 
-    /// Trazado apilado (el de siempre): stick sobre cruceta a la izquierda,
-    /// stick sobre rombo a la derecha, y en el centro la pantalla táctil 16:9
-    /// (solo GamePad con pantalla) con las filas de sistema debajo. Devuelve
-    /// la anchura de la zona central.
-    #[allow(clippy::too_many_arguments)]
+    fn kind(v: &View) -> &'static str {
+        if v.switch || v.pro { tr!("common.pro") } else { tr!("common.gamepad") }
+    }
+
+    /// Wii U retains GamePad / Wii Remote choices; Switch is always Pro.
+    fn selector(&mut self, cv: &Canvas, v: &View, y: f32, s: f32) -> f32 {
+        let r = cv.rect();
+        let h = 26.0 * s;
+        let gap = 4.0 * s;
+        let font = 12.0 * s;
+        let label = tr!("common.in_cemu");
+        let choices = [(Self::kind(v), "gamepad"), (tr!("common.wiimote"), "wiimote")];
+        let label_w = cv.text_width(label, FontId::proportional(font)) + 8.0 * s;
+        let available = r.width() - 12.0 * s - label_w;
+        let w = ((available - gap) / 2.0).min(104.0 * s);
+        let total = label_w + 2.0 * w + gap;
+        let x = r.center().x - total / 2.0;
+        cv.text(Pos2::new(x, y + h / 2.0), Align2::LEFT_CENTER, label, FontId::proportional(font), theme::text_dim());
+        let current = if v.pad == "wiimote" { "wiimote" } else { "gamepad" };
+        for (i, (label, pad)) in choices.iter().enumerate() {
+            let rc = Rect::from_min_size(Pos2::new(x + label_w + i as f32 * (w + gap), y), Vec2::new(w, h));
+            let seg = if v.pending == Some(*pad) { Seg::Pending } else if current == *pad && v.pending.is_none() { Seg::On } else { Seg::Off };
+            let size = font.min(font * (w - 10.0 * s) / cv.text_width(label, FontId::proportional(font)).max(1.0));
+            let shape = touch::segment(cv, rc, label, size, seg);
+            self.hits.push((shape, Target::Chip(Chip::Pad(pad))));
+        }
+        h
+    }
+
+    fn pill(&mut self, cv: &Canvas, r: Rect, label: &str, bit: u32, s: f32, pressed: u32) {
+        let shape = touch::rect_button(cv, r, 9.0 * s, label, 13.0 * s, pressed & bit != 0, false);
+        self.hits.push((shape, Target::Button(bit)));
+    }
+
     fn layout_stacked(&mut self, cv: &Canvas, buttons: &Buttons, v: &View, s: f32, pressed: u32, r: Rect, by: f32) -> f32 {
         let (x0, cx, vw) = (r.left(), r.center().x, r.width());
         let sh_ = 24.0 * s;
@@ -524,7 +553,9 @@ impl GamePadUi {
         self.button(cv, Pos2::new(cx - 62.0 * s, rows_y), br2, "−", 18.0 * s, pmp::BTN_MINUS, pressed, false);
         self.button(cv, Pos2::new(cx, rows_y), br2, "Home", 10.0 * s, pmp::BTN_HOME, pressed, false);
         self.button(cv, Pos2::new(cx + 62.0 * s, rows_y), br2, "+", 18.0 * s, pmp::BTN_PLUS, pressed, false);
-        if !v.pro {
+        if v.switch {
+            self.pill(cv, Rect::from_center_size(Pos2::new(cx, rows_y + 50.0 * s), Vec2::new(76.0 * s, 24.0 * s)), tr!("gp.capture"), pmp::BTN_SCREEN, s, pressed);
+        } else if !v.pro {
             let ry = rows_y + br2 + 6.0 * s;
             let (bw, bh) = (76.0 * s, 24.0 * s);
             let tv = Rect::from_min_size(Pos2::new(cx - 44.0 * s - bw / 2.0, ry), Vec2::new(bw, bh));
@@ -566,13 +597,15 @@ impl GamePadUi {
         let br2 = 20.0 * s;
         let (bw, bh) = (76.0 * s, 24.0 * s);
         let gap = 6.0 * s;
-        let total = 6.0 * br2 + 2.0 * gap + if v.pro { 0.0 } else { 2.0 * (bh + gap) };
+        let total = 6.0 * br2 + 2.0 * gap + if v.switch { bh + gap } else if v.pro { 0.0 } else { 2.0 * (bh + gap) };
         let mut y = by + (r.bottom() - by - total) / 2.0;
         for (label, font, bit) in [("−", 18.0, pmp::BTN_MINUS), ("Home", 10.0, pmp::BTN_HOME), ("+", 18.0, pmp::BTN_PLUS)] {
             self.button(cv, Pos2::new(cx, y + br2), br2, label, font * s, bit, pressed, false);
             y += 2.0 * br2 + gap;
         }
-        if !v.pro {
+        if v.switch {
+            self.pill(cv, Rect::from_min_size(Pos2::new(cx - bw / 2.0, y), Vec2::new(bw, bh)), tr!("gp.capture"), pmp::BTN_SCREEN, s, pressed);
+        } else if !v.pro {
             for (label, bit) in [(tr!("gp.tv_pad"), pmp::BTN_SCREEN), (tr!("gp.blow"), pmp::BTN_MIC)] {
                 let rc = Rect::from_min_size(Pos2::new(cx - bw / 2.0, y), Vec2::new(bw, bh));
                 let shape = touch::rect_button(cv, rc, 8.0 * s, label, 11.0 * s, pressed & bit != 0, false);
@@ -862,6 +895,83 @@ impl GamePadUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn switch_status(pad: &str) -> Status {
+        Status::Connected {
+            pc_name: "PC".into(), mode: "switch".into(), mode_by_pc: false,
+            slot: 0, player: 1, role: crate::link::Role::Wiimote, rtt_ms: None,
+            supports_cemu: true, supports_switch: true, pad: pad.into(),
+            notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None,
+        }
+    }
+
+    fn render(gamepad: &mut GamePadUi, buttons: &Buttons, status: &Status, size: Vec2) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                gamepad.show(ui, buttons, &Inputs {
+                    status, rotation: Rotation::Left, show_chips: true, optimistic: false,
+                    wanted_mode: "switch", pad_pending: None, sensor_hz: 200.0, screen: None,
+                    no_screen: false, full_screen: true, keyboard_button: true,
+                });
+            });
+        });
+    }
+
+    fn mask(gamepad: &GamePadUi) -> u32 {
+        gamepad.hits.iter().fold(0, |bits, (_, target)| bits | if let Target::Button(bit) = target { *bit } else { 0 })
+    }
+
+    fn position(gamepad: &GamePadUi, target: Target) -> Pos2 {
+        match gamepad.hits.iter().find(|(_, t)| *t == target).unwrap().0 {
+            Shape::Circle { c, .. } => c,
+            Shape::Rect(r) => r.center(),
+        }
+    }
+
+    #[test]
+    fn switch_always_has_complete_pro_controls_without_a_selector_or_screen() {
+        let required = pmp::BTN_A | pmp::BTN_B | pmp::BTN_X | pmp::BTN_Y | pmp::BTN_L | pmp::BTN_R |
+            pmp::BTN_ZL | pmp::BTN_ZR | pmp::BTN_STICK_L | pmp::BTN_STICK_R | pmp::BTN_MINUS | pmp::BTN_PLUS | pmp::BTN_HOME | pmp::BTN_SCREEN;
+        for pad in ["pro", "joycons", "joycon_side", "joycon_r"] {
+            for size in [Vec2::new(700.0, 370.0), Vec2::new(360.0, 640.0)] {
+                let mut ui = GamePadUi::new();
+                render(&mut ui, &Buttons::new(), &switch_status(pad), size);
+                assert_eq!(mask(&ui), required, "{pad}");
+                assert!(ui.touch_size_px(1.0).is_none());
+                assert!(!ui.hits.iter().any(|(_, t)| matches!(t, Target::Touch | Target::Chip(Chip::Pad(_)))));
+                assert!(ui.hits.iter().any(|(_, t)| *t == Target::Stick(Side::Left)));
+                assert!(ui.hits.iter().any(|(_, t)| *t == Target::Stick(Side::Right)));
+                assert!(ui.hits.iter().any(|(_, t)| *t == Target::Dpad));
+                assert_eq!(ui.transform, Transform::for_screen(ui.screen, Rotation::Left));
+                assert!(position(&ui, Target::Button(pmp::BTN_A)).x > position(&ui, Target::Button(pmp::BTN_Y)).x);
+                assert!(position(&ui, Target::Button(pmp::BTN_X)).y < position(&ui, Target::Button(pmp::BTN_B)).y);
+            }
+        }
+    }
+
+    #[test]
+    fn layout_changes_release_held_controls_and_pending_mode_is_inert() {
+        let mut ui = GamePadUi::new();
+        let b = Buttons::new();
+        render(&mut ui, &b, &switch_status("pro"), Vec2::new(700.0, 370.0));
+        ui.begin(1, position(&ui, Target::Button(pmp::BTN_A)), &b);
+        let stick = position(&ui, Target::Stick(Side::Left));
+        ui.begin(2, stick, &b);
+        ui.moved(2, stick + Vec2::new(500.0, 0.0), &b);
+        assert_ne!(b.physical(), 0);
+        assert_ne!(b.stick(), (0, 0));
+        render(&mut ui, &b, &switch_status("joycon_r"), Vec2::new(360.0, 640.0));
+        assert_eq!(b.physical(), 0);
+        assert_eq!(b.wire_at(std::time::Instant::now()), 0);
+        assert_eq!(b.stick(), (0, 0));
+        assert!(ui.touches.is_empty());
+        let mut pending = switch_status("pro");
+        if let Status::Connected { mode, .. } = &mut pending { *mode = "pointer".into(); }
+        render(&mut ui, &b, &pending, Vec2::new(700.0, 370.0));
+        ui.begin(3, position(&ui, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), 0);
+    }
 
     #[test]
     fn medidas_del_trazado_en_fila() {

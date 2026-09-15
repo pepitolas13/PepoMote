@@ -29,14 +29,14 @@ Una línea UTF-8 = un mensaje JSON terminado en `\n`. El móvil conecta y envía
 | Mensaje | Dirección | Campos | Respuesta |
 |---|---|---|---|
 | `hello` | móvil→PC | `{"m":"hello","pv":1,"token":"...","code":"1234"?,"name":"<móvil>","model":"<modelo>","role":"wiimote"\|"nunchuk"?,"pad":"wiimote"?,"nunchuk":"own"?,"screen_only":true?}` | `ok` / `err` |
-| `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer","slot":0,"role":"wiimote","player":1,"name":"<PC>","modes":["pointer","dolphin","cemu"],"pad":"gamepad"\|"pro"\|"wiimote"\|"nunchuk","nunchuk":"own"\|"none","screen_only":true\|false}` | — |
+| `ok` | PC→móvil | `{"m":"ok","session_id":u32,"udp_port":26761,"token":"..."?,"mode":"pointer","slot":0,"role":"wiimote","player":1,"name":"<PC>","modes":["pointer","dolphin","cemu","switch"],"pad":"gamepad"\|"pro"\|"wiimote"\|"nunchuk","half":null,"side":null,"nunchuk":"own"\|"none","screen_only":true\|false}` | — |
 | `err` | PC→móvil | `{"m":"err","code":"bad_token"\|"bad_code"\|"bad_version"\|"busy","msg":"..."}` | cerrar |
-| `mode` | ambas | `{"m":"mode","mode":"pointer"\|"dolphin"\|"cemu","by":"pc"?}` | eco `mode` como confirmación; el PC lo difunde además a las otras sesiones cuando cambia. Desde 1.4 el PC puede cambiarlo por su cuenta (modo automático: se abrió o cerró Dolphin o Cemu): lo difunde a TODAS las sesiones con `"by":"pc"` seguido de un `notice`, y el móvil aplica el modo descartando sin aviso cualquier petición suya pendiente |
-| `pad` | ambas | `{"m":"pad","pad":"wiimote"\|"gamepad"}` (modo Wii U: ser Mando de Wii o GamePad/Pro) | eco `pad` con el tipo efectivo (`gamepad`, `pro`, `wiimote`); el PC lo envía además sin que se lo pidan a cualquier móvil cuyo tipo cambie (J2 pasa a `gamepad` si J1 se va; a un Nunchuk le dice `wiimote` cuando su jugador es Mando de Wii y está en uso, `nunchuk` si no) |
+| `mode` | ambas | `{"m":"mode","mode":"pointer"\|"dolphin"\|"cemu"\|"switch","by":"pc"?}` | eco `mode` como confirmación; el PC lo difunde además a las otras sesiones cuando cambia. Desde 1.4 el PC puede cambiarlo por su cuenta (modo automático: se abrió Dolphin, Cemu o Eden, o se cerró con `return_to_pointer` activo): lo difunde a TODAS las sesiones con `"by":"pc"` seguido de un `notice`, y el móvil aplica el modo descartando sin aviso cualquier petición suya pendiente |
+| `pad` | ambas | `{"m":"pad","pad":"wiimote"\|"gamepad"\|"pro"}` | eco con tipo efectivo y metadatos `half`, `side` y `player`; también se difunde cuando cambia el reparto. Tipos Wii U: `wiimote`, `gamepad`, `pro`; tipo Switch: `pro` (los nombres antiguos se migran a Pro). Un Nunchuk recibe `wiimote` si está en uso en Wii U y `nunchuk` si no. |
 | `nunchuk` | ambas | `{"m":"nunchuk","own":true\|false}` (modo Dolphin: el mando lleva su propio Nunchuk en el mismo móvil) | eco `nunchuk` con el valor efectivo (`false` siempre para un móvil con rol `nunchuk`); si cambia, el PC reconfigura Dolphin (con Dolphin abierto queda pendiente hasta cerrarlo) |
 | `screen_only` | ambas | `{"m":"screen_only","on":true\|false}` (modo Wii U: el móvil GamePad solo hace de pantalla táctil a pantalla completa; el mando real del usuario sigue siendo el Controller 1 de Cemu) | eco `screen_only` con el valor efectivo (`false` siempre para rol `nunchuk`); si cambia, el PC reconfigura Cemu (abierto: pendiente hasta cerrarlo) |
 | `notice` | PC→móvil | `{"m":"notice","text":"..."}` aviso legible (p. ej. «Cemu está abierto: ciérralo…»), en el idioma del PC (desde 1.4: español o inglés) | — (se muestra unos segundos) |
-| `text` | móvil→PC | `{"m":"text","text":"..."}` texto para teclear en el PC (`\n` = Intro, `\u0008` = borrar). En modo `cemu` va al teclado en pantalla de Cemu, que solo atiende a teclas (Windows: mensajes de tecla a su ventana; Linux: teclado virtual, solo con Cemu abierto); en los demás modos, a la ventana con el foco | — (un receptor anterior a 1.3 lo ignora) |
+| `text` | móvil→PC | `{"m":"text","text":"..."}` texto para teclear en el PC (`\n` = Intro, `\u0008` = borrar). En modo `cemu` va al teclado en pantalla de Cemu, que solo atiende a teclas (Windows: mensajes de tecla a su ventana; Linux: teclado virtual, solo con Cemu abierto); en `switch` activa Eden antes de inyectar Unicode en Windows/macOS (en Linux Eden debe estar en primer plano); en los demás modos, a la ventana con el foco | — (un receptor anterior a 1.3 lo ignora) |
 | `config` | ambas | `{"m":"config","sensor_hz":u16?,"sens_deg":f32?,...}` solo claves presentes | eco `config` |
 | `ping` | ambas | `{"m":"ping","t":u64}` | `{"m":"pong","t":<mismo t>}` |
 | `bye` | ambas | `{"m":"bye"}` | cerrar |
@@ -45,7 +45,13 @@ Latido: `ping` TCP cada 1 s si no hay tráfico. Sesión muerta a los 5 s sin nad
 
 **Multijugador (desde pv=1, cambio aditivo):** hasta 4 sesiones simultáneas. El receptor asigna a cada `hello` el slot libre más bajo y lo devuelve en `ok.slot` (0 = Jugador 1). Con los 4 ocupados, `err busy`. El mensaje `mode` solo tiene efecto desde el slot 0 (a los demás se les responde con el modo vigente). En modo puntero solo inyecta el slot 0; en modo Dolphin cada sesión alimenta su slot DSU homónimo (0..3), cada uno con su MAC (`"PMP1"+0x00+slot`) y su pulso de recentrado propio.
 
-**Wii U / Cemu (desde pv=1, cambio aditivo):** modo `cemu`. Como en `dolphin`, el receptor no inyecta nada en el SO y cada sesión alimenta su pad DSU, pero con el perfil Wii U (`protocol/DSU.md`) y configurando Cemu en vez de Dolphin. El Jugador 1 es el **GamePad** y los demás **Pro Controller**; cualquier móvil puede pedir ser **Mando Wii** (`pad`), y entonces su puntero IR (motor de puntero del receptor) y su Nunchuk llegan a Cemu. `ok.modes` anuncia los modos del receptor: un móvil no ofrece Wii U si falta `cemu` (un receptor antiguo contesta `pointer` al pedir `cemu`, y el móvil se queda en el layout Wii). Mientras el receptor ha confirmado `cemu` y el móvil actúa como GamePad/Pro, el `INPUT` lleva el bloque de extensión (§4.1) con el stick derecho y la pantalla táctil; en cualquier otro caso mide 72 bytes. Los mensajes con `m` desconocido se ignoran.
+**Wii U / Cemu (desde pv=1, cambio aditivo):** modo `cemu`. Como en `dolphin`, el receptor no inyecta nada en el SO y cada sesión alimenta su pad DSU, pero con el perfil Wii U (`protocol/DSU.md`) y configurando Cemu en vez de Dolphin. El Jugador 1 es el **GamePad** y los demás **Pro Controller**; cualquier móvil puede pedir ser **Mando Wii** (`pad`), y entonces su puntero IR (motor de puntero del receptor) y su Nunchuk llegan a Cemu. `ok.modes` anuncia los modos del receptor: un móvil no ofrece Wii U si falta `cemu` (un receptor antiguo contesta `pointer` al pedir `cemu`, y el móvil se queda en el layout Wii). Mientras el receptor ha confirmado `cemu` y el móvil actúa como GamePad/Pro, el `INPUT` lleva el bloque de extensión (§4.1) con el stick derecho y la pantalla táctil; en Switch también se usa la extensión cuando ese modo está confirmado; en los demás casos mide 72 bytes. Los mensajes con `m` desconocido se ignoran.
+
+**Switch / Eden (pv=1, cambio aditivo):** `ok.modes` anuncia `switch`. Un móvil solo ofrece los controles Switch y envía su extensión tras confirmar ese modo. El único tipo de mando es `pro`. Ejemplo de eco: `{"m":"pad","pad":"pro","half":null,"side":null,"player":1}`. Cada móvil con rol de mando es un jugador independiente, numerado por orden de slot; el rol Nunchuk no ocupa jugador en Switch. Solo el slot 0 cambia el modo general.
+
+Los valores `joycons`, `joycon_side` y `joycon_r` se aceptan exclusivamente como migración de preferencias antiguas, tanto en `hello` como en `pad`: se normalizan a `pro` y el receptor devuelve `pro`. Nunca se emparejan móviles ni se configura un Joy-Con. `half` y `side` se mantienen a null en las respuestas para limpiar clientes de pruebas anteriores. Los tipos de otras consolas se rechazan devolviendo el tipo efectivo.
+
+En Switch, bit 28 es Capturar; no hay micrófono, pantalla remota ni táctil. El receptor neutraliza el táctil aunque reciba datos antiguos. Los móviles limpian botones, sticks y gestos al cambiar de modo o diseño. La preferencia de mando Wii U se conserva al entrar y salir de Switch. Ver [DSU.md](DSU.md) para el perfil y [SETUP-SWITCH.md](../docs/SETUP-SWITCH.md) para Eden.
 
 **Nunchuk (desde pv=1, cambio aditivo):** un segundo móvil en la otra mano. El `hello` lleva `"role":"nunchuk"` (ausente o `"wiimote"` = mando). Los Wiimotes ocupan slots desde el 0 hacia arriba y los Nunchuks desde el 3 hacia abajo; el Nunchuk i-ésimo (por slot descendente) va emparejado con el Wiimote i-ésimo (por slot ascendente) y el `ok` lo dice en `player` (1..4, el jugador al que pertenece; en un Wiimote, `player` = `slot`+1). Un Nunchuk nunca inyecta puntero ni cambia el modo; en modo Dolphin alimenta su slot DSU con el stick (bytes 6-7 del INPUT), C/Z y su acelerómetro, y el receptor configura el Wiimote emulado del jugador con `Extension = Nunchuk` leyendo de ese slot (`protocol/DSU.md`).
 
@@ -55,13 +61,13 @@ Latido: `ping` TCP cada 1 s si no hay tráfico. Sesión muerta a los 5 s sin nad
 
 ## 4. Telemetría (UDP, binario)
 
-### 4.1 `INPUT` móvil→receptor — 72 bytes (80 con el bloque Wii U)
+### 4.1 `INPUT` móvil→receptor — 72 bytes (80 con el bloque extendido Wii U / Switch)
 
 | off | tam | tipo | campo |
 |---|---|---|---|
 | 0 | 4 | u32 | magic `0x31504D50` (ASCII "PMP1") |
 | 4 | 1 | u8 | tipo = `0x01` |
-| 5 | 1 | u8 | flags: bit0 = quaternion válido (el móvil tiene GAME_ROTATION_VECTOR); bit1 = stick válido (Nunchuk o stick izquierdo del GamePad); bit2 = `FLAG_EXT`, el paquete mide 80 bytes y trae el bloque Wii U; bit3 = `FLAG_TOUCH`, hay un dedo en la pantalla táctil del GamePad; resto reservado 0 |
+| 5 | 1 | u8 | flags: bit0 = quaternion válido (el móvil tiene GAME_ROTATION_VECTOR); bit1 = stick válido (Nunchuk o stick izquierdo del GamePad); bit2 = `FLAG_EXT`, el paquete mide 80 bytes y trae el bloque extendido; bit3 = `FLAG_TOUCH`, hay un dedo en la pantalla táctil del GamePad; resto reservado 0 |
 | 6 | 1 | i8 | `stick_x` (Nunchuk o stick izquierdo): −127..127, + = derecha (0 en un Wiimote) |
 | 7 | 1 | i8 | `stick_y` (Nunchuk o stick izquierdo): −127..127, + = arriba (0 en un Wiimote) |
 | 8 | 4 | u32 | `session_id` (del `ok`) |
@@ -74,15 +80,15 @@ Latido: `ping` TCP cada 1 s si no hay tráfico. Sesión muerta a los 5 s sin nad
 | 68 | 1 | u8 | `recenter_count`: incrementa con cada pulsación de recentrado; el receptor actúa al detectar el cambio |
 | 69 | 1 | u8 | batería 0-100 |
 | 70 | 2 | i16 | `touch_scroll_dy`: píxeles acumulados de la tira de scroll desde el paquete anterior (+ = dedo hacia arriba = scroll up) |
-| 72 | 1 | i8 | **bloque Wii U (solo con bit2):** `stick_rx`, stick derecho, + = derecha |
+| 72 | 1 | i8 | **bloque extendido (solo con bit2):** `stick_rx`, stick derecho, + = derecha |
 | 73 | 1 | i8 | `stick_ry`, stick derecho, + = arriba |
 | 74 | 2 | u16 | `touch_x`: fracción horizontal de la pantalla táctil del GamePad, 0 = izquierda … 65535 = derecha (válido con bit3) |
 | 76 | 2 | u16 | `touch_y`: fracción vertical, 0 = arriba … 65535 = abajo |
 | 78 | 2 | — | reservado 0 |
 
-El bloque Wii U solo se envía cuando el receptor ha confirmado el modo `cemu` (§3): un receptor antiguo descarta cualquier `INPUT` que no mida 72 bytes, y nunca confirma `cemu`, así que nunca lo recibe.
+El bloque extendido solo se envía cuando el receptor ha confirmado `cemu` o `switch` (§3), para un tipo de mando que lo use. Un receptor anterior a estas capacidades nunca confirma esos modos y sigue recibiendo 72 bytes. En Switch, `FLAG_TOUCH` permanece a cero y los bytes 74–77 no representan ninguna pantalla.
 
-Cadencia: la del sensor (típico 100-200 Hz), tope 250 Hz, mínimo keepalive 1 Hz aunque no cambie nada. Cada paquete lleva el estado completo de botones: la pérdida de un paquete nunca deja un botón atascado.
+Cadencia: la del sensor cuando está disponible, con tope de 250 Hz. La conexión transmite también sin giroscopio: un temporizador independiente mantiene los botones y sticks a aproximadamente 100 Hz. Al faltar o detenerse el sensor se envía gyro cero; la orientación es estable o neutra y el acelerómetro disponible se conserva. El temporizador termina al detener la sesión. Cada paquete lleva el estado completo de botones: la pérdida de un paquete nunca deja un botón atascado.
 
 ### 4.2 Bitmask de botones
 
@@ -107,19 +113,19 @@ Cadencia: la del sensor (típico 100-200 Hz), tope 250 Hz, mínimo keepalive 1 H
 | 16 | media prev | pista anterior |
 | 17 | C (Nunchuk) | — (solo Dolphin / Cemu) |
 | 18 | Z (Nunchuk) | — (solo Dolphin / Cemu) |
-| 19 | X (Wii U) | — (solo Cemu) |
-| 20 | Y (Wii U) | — (solo Cemu) |
-| 21 | L | — (solo Cemu) |
-| 22 | R | — (solo Cemu) |
-| 23 | ZL | — (solo Cemu) |
-| 24 | ZR | — (solo Cemu) |
-| 25 | click stick izquierdo | — (solo Cemu) |
-| 26 | click stick derecho | — (solo Cemu) |
+| 19 | X (Wii U / Switch) | — (Cemu / Switch) |
+| 20 | Y (Wii U / Switch) | — (Cemu / Switch) |
+| 21 | L | — (Cemu / Switch) |
+| 22 | R | — (Cemu / Switch) |
+| 23 | ZL | — (Cemu / Switch) |
+| 24 | ZR | — (Cemu / Switch) |
+| 25 | click stick izquierdo | — (Cemu / Switch) |
+| 26 | click stick derecho | — (Cemu / Switch) |
 | 27 | soplar al micrófono del GamePad | — (solo Cemu) |
-| 28 | pantalla TV↔GamePad (función de Cemu) | — (solo Cemu) |
+| 28 | TV↔GamePad en Cemu / Capturar en Switch | — (Cemu / Switch) |
 | 29 | precisión (mantener) | el cursor se mueve al 40 % mientras se mantiene (desde 1.4; en Dolphin / Cemu se ignora) |
 
-En modo `dolphin` y en modo `cemu` el receptor NO inyecta nada en el SO: todo el estado va al servidor DSU (mapeo en `protocol/DSU.md`).
+En `dolphin`, `cemu` y `switch` las entradas del mando van al servidor DSU, sin inyección de botones o movimiento en el SO; el mensaje `text` es un canal explícito de teclado aparte (mapeo en `protocol/DSU.md`).
 
 ### 4.3 `PING`/`PONG` UDP (RTT del hot path, para los HUD)
 
@@ -140,7 +146,7 @@ El receptor captura solo mientras hay algún móvil suscrito, a 30 fps como máx
 
 ## 5. Versionado
 
-`pv` va en `hello` y en el TXT de mDNS. Mismo `pv` = compatible. `pv` distinto → `err bad_version` con `msg` legible ("Actualiza PepoMote en el PC/móvil"). El paquete `INPUT` de 72 bytes no cambia dentro de pv=1; el bloque Wii U es un añadido opcional que solo se emite hacia receptores que lo anuncian. Cambios de layout = pv=2.
+`pv` va en `hello` y en el TXT de mDNS. Mismo `pv` = compatible. `pv` distinto → `err bad_version` con `msg` legible ("Actualiza PepoMote en el PC/móvil"). El paquete `INPUT` de 72 bytes no cambia dentro de pv=1; el bloque extendido Wii U / Switch es un añadido opcional que solo se emite hacia receptores que lo anuncian. Cambios de layout = pv=2.
 
 ## 6. Vectores dorados (`vectors/`)
 

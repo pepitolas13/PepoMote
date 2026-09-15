@@ -83,10 +83,12 @@ pub fn report() -> String {
         let cfg = crate::state::Config::load();
         let si_no = |b: bool| if b { "sí" } else { "no" };
         out.push(format!(
-            "Emuladores: modo automático: {} · Dolphin abierto: {} · Cemu abierto: {}",
+            "Emuladores: modo automático: {} · volver al puntero al cerrar: {} · Dolphin abierto: {} · Cemu abierto: {} · Eden abierto: {}",
             si_no(cfg.auto_mode),
+            si_no(cfg.return_to_pointer),
             si_no(crate::dolphin::running_exe().0),
-            si_no(crate::cemu::running_exe().0)
+            si_no(crate::cemu::running_exe().0),
+            si_no(crate::eden::running_exe().0)
         ));
     }
     out.push("Inyección:".to_owned());

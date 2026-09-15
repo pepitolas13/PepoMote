@@ -12,27 +12,51 @@ enum class PadScreen { GamePad, Wii, Nunchuk }
  * Wii U y aún no ha llegado ningún eco/difusión de `mode` posterior. Mientras
  * dura, la pantalla GamePad se enseña de forma optimista.
  */
-enum class PadIntent { None, WiiU }
+enum class PadIntent { None, WiiU, Switch }
 
 /**
  * Routing del mando: función pura de (estado del enlace, intención pendiente),
  * sin Android, testeada en RouteTest.
  */
 object Route {
+    /** Modes the owner can select from a compact controller menu. */
+    fun availableModes(link: UiLink.Connected): List<String> {
+        if (link.slot != 0 || link.role != LinkState.ROLE_WIIMOTE) return emptyList()
+        return buildList {
+            add(LinkState.MODE_POINTER)
+            add(LinkState.MODE_DOLPHIN)
+            if (link.supportsCemu) add(LinkState.MODE_CEMU)
+            if (link.supportsSwitch) add(LinkState.MODE_SWITCH)
+        }
+    }
+
     @StringRes
     val WARN_NEEDS_13: Int = R.string.warn_needs_13
 
     @StringRes
     val WARN_PLAYER_1: Int = R.string.warn_player_1
 
+    @StringRes
+    val WARN_NEEDS_SWITCH: Int = R.string.warn_needs_switch
+
     /**
      * Modo Wii U activo como GamePad/Pro: el receptor confirmó `cemu` y este
      * móvil (mando) no ha elegido ser Mando de Wii. Solo entonces se emiten
      * paquetes de 80 bytes.
      */
-    fun isGamePad(link: UiLink): Boolean =
-        link is UiLink.Connected && link.mode == LinkState.MODE_CEMU &&
-            link.role == LinkState.ROLE_WIIMOTE && link.pad != LinkState.PAD_WIIMOTE
+    fun isGamePad(link: UiLink): Boolean = link is UiLink.Connected &&
+        link.role == LinkState.ROLE_WIIMOTE && when (link.mode) {
+            LinkState.MODE_CEMU -> link.supportsCemu && link.pad in setOf(LinkState.PAD_GAMEPAD, LinkState.PAD_PRO)
+            LinkState.MODE_SWITCH -> link.supportsSwitch
+            else -> false
+        }
+
+    /** Pending intent wins over the previous receiver mode while the echo is in flight. */
+    fun displayMode(link: UiLink, intent: PadIntent): String = when (intent) {
+        PadIntent.WiiU -> LinkState.MODE_CEMU
+        PadIntent.Switch -> LinkState.MODE_SWITCH
+        PadIntent.None -> (link as? UiLink.Connected)?.mode ?: LinkState.MODE_CEMU
+    }
 
     /**
      * - Nunchuk si el enlace es un Nunchuk (nunca es GamePad, pida lo que pida);
@@ -42,8 +66,8 @@ object Route {
      */
     fun route(link: UiLink, intent: PadIntent): PadScreen {
         if (link is UiLink.Connected && link.role == LinkState.ROLE_NUNCHUK) return PadScreen.Nunchuk
+        if (intent != PadIntent.None && link.alive) return PadScreen.GamePad
         if (isGamePad(link)) return PadScreen.GamePad
-        if (intent == PadIntent.WiiU && link.alive) return PadScreen.GamePad
         return PadScreen.Wii
     }
 
@@ -105,10 +129,13 @@ object Route {
      * intención se descarta sin aviso: el notice del PC ya lo explica.
      */
     fun afterModeEcho(intent: PadIntent, mode: String, link: UiLink, byPc: Boolean = false): Outcome {
-        if (intent != PadIntent.WiiU) return Outcome(intent, null)
-        if (mode == LinkState.MODE_CEMU || byPc) return Outcome(PadIntent.None, null)
+        if (intent == PadIntent.None) return Outcome(intent, null)
+        val wanted = if (intent == PadIntent.Switch) LinkState.MODE_SWITCH else LinkState.MODE_CEMU
+        if (mode == wanted || byPc) return Outcome(PadIntent.None, null)
         val c = link as? UiLink.Connected
-        val warning = if (c != null && c.supportsCemu && c.slot != 0) WARN_PLAYER_1 else WARN_NEEDS_13
+        val supported = if (intent == PadIntent.Switch) c?.supportsSwitch == true else c?.supportsCemu == true
+        val warning = if (supported && c?.slot != 0) WARN_PLAYER_1
+            else if (intent == PadIntent.Switch) WARN_NEEDS_SWITCH else WARN_NEEDS_13
         return Outcome(PadIntent.None, warning)
     }
 }

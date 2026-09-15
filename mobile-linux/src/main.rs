@@ -71,7 +71,7 @@ fn main() -> eframe::Result {
         std::process::exit(0);
     }
     let fake = args.iter().any(|a| a == "--fake-sensors");
-    // --autoconnect [pointer|dolphin|cemu|nunchuk] → directo al mando (al
+    // --autoconnect [pointer|dolphin|cemu|switch|nunchuk] → directo al mando (al
     // GamePad de Wii U, o al Nunchuk de la otra mano), conectado (lanzadores)
     let autoconnect = args
         .iter()

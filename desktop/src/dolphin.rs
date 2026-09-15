@@ -545,81 +545,7 @@ pub fn running_exe() -> (bool, Option<PathBuf>) {
     (false, None)
 }
 
-/// INI partido en (preámbulo, secciones ordenadas). Conserva líneas tal cual.
-struct Ini {
-    preamble: Vec<String>,
-    sections: Vec<(String, Vec<String>)>,
-}
-
-fn parse_ini(text: &str) -> Ini {
-    let mut ini = Ini {
-        preamble: Vec::new(),
-        sections: Vec::new(),
-    };
-    for line in text.lines() {
-        let t = line.trim();
-        if t.starts_with('[') && t.ends_with(']') {
-            ini.sections
-                .push((t[1..t.len() - 1].to_owned(), Vec::new()));
-        } else if let Some((_, body)) = ini.sections.last_mut() {
-            body.push(line.to_owned());
-        } else {
-            ini.preamble.push(line.to_owned());
-        }
-    }
-    ini
-}
-
-fn serialize_ini(ini: &Ini) -> String {
-    let mut out = String::new();
-    for l in &ini.preamble {
-        out.push_str(l);
-        out.push('\n');
-    }
-    for (name, body) in &ini.sections {
-        out.push('[');
-        out.push_str(name);
-        out.push_str("]\n");
-        for l in body {
-            out.push_str(l);
-            out.push('\n');
-        }
-    }
-    out
-}
-
-fn set_section(ini: &mut Ini, name: &str, body: Vec<String>) {
-    if let Some((_, b)) = ini.sections.iter_mut().find(|(n, _)| n == name) {
-        *b = body;
-    } else {
-        ini.sections.push((name.to_owned(), body));
-    }
-}
-
-/// Clave de una línea `Clave = valor` de INI (None para comentarios/vacías).
-fn ini_key(line: &str) -> Option<&str> {
-    let t = line.trim();
-    if t.is_empty() || t.starts_with('#') || t.starts_with(';') {
-        return None;
-    }
-    Some(t.split('=').next()?.trim())
-}
-
-/// Escribe el INI solo si cambia algo. El backup `.pepomote.bak` se hace UNA
-/// vez (el archivo tal como estaba antes de que PepoMote lo tocara nunca):
-/// re-copiarlo en cada pasada lo habría sustituido por nuestra propia versión.
-fn write_if_changed(path: &Path, original: &str, new: String) -> Result<(), String> {
-    if original == new {
-        return Ok(());
-    }
-    if path.exists() {
-        let bak = path.with_extension("ini.pepomote.bak");
-        if !bak.exists() {
-            let _ = std::fs::copy(path, bak);
-        }
-    }
-    std::fs::write(path, new).map_err(|e| e.to_string())
-}
+use crate::ini::{parse_ini, serialize_ini, set_section, ini_key, write_if_changed, set_ini_key};
 
 /// Dolphin.ini: [BluetoothPassthrough] Enabled = False, es decir, "Emular el
 /// adaptador Bluetooth de la Wii" en el diálogo de mandos. Con "Acceder
@@ -637,32 +563,6 @@ pub fn ensure_emulated_adapter(cfg_dir: &Path) -> Result<(), String> {
 /// funcionar». Con la ventana de Dolphin en primer plano no cambia nada.
 pub fn ensure_background_input(cfg_dir: &Path) -> Result<(), String> {
     set_ini_key(&cfg_dir.join("Dolphin.ini"), "Input", "BackgroundInput", "True")
-}
-
-/// Pone `key = value` en la sección `section` del INI (creando la sección si
-/// no existe; una clave nueva va la primera); el resto de la sección y del
-/// archivo se conservan. Solo escribe si cambia algo.
-fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> Result<(), String> {
-    let original = std::fs::read_to_string(path).unwrap_or_default();
-    let mut ini = parse_ini(&original);
-    let mut body: Vec<String> = ini
-        .sections
-        .iter()
-        .find(|(n, _)| n == section)
-        .map(|(_, b)| b.clone())
-        .unwrap_or_default();
-    let mut found = false;
-    for l in body.iter_mut() {
-        if ini_key(l) == Some(key) {
-            *l = format!("{key} = {value}");
-            found = true;
-        }
-    }
-    if !found {
-        body.insert(0, format!("{key} = {value}"));
-    }
-    set_section(&mut ini, section, body);
-    write_if_changed(path, &original, serialize_ini(&ini))
 }
 
 /// [Wiimote1..n] con nuestro mapeo (Source=1) y [Wiimote n+1..4] con

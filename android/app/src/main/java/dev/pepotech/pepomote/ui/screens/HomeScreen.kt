@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +52,7 @@ fun HomeScreen(
     onController: () -> Unit,
     onDolphin: () -> Unit,
     onWiiU: () -> Unit,
+    onSwitch: () -> Unit,
     onNunchuk: () -> Unit,
     onNewPairing: () -> Unit,
     /** Versión nueva publicada que anunciar (null = ninguna). */
@@ -153,6 +155,15 @@ fun HomeScreen(
                     onClick = onWiiU
                 )
             }
+            item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_switch),
+                    subtitle = stringResource(R.string.channel_switch_sub),
+                    glyph = ChannelGlyph.Switch,
+                    accent = PepoColors.Error,
+                    onClick = onSwitch
+                )
+            }
             // Con Dolphin: el segundo móvil, en la otra mano
             item {
                 ChannelCard(
@@ -163,12 +174,13 @@ fun HomeScreen(
                     onClick = onNunchuk
                 )
             }
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 ChannelCard(
                     title = stringResource(R.string.channel_settings),
                     subtitle = stringResource(R.string.channel_settings_sub),
                     glyph = ChannelGlyph.Gear,
                     accent = PepoColors.TextDim,
+                    wide = true,
                     onClick = onNewPairing
                 )
             }

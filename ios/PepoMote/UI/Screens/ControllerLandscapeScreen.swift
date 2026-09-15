@@ -51,8 +51,10 @@ struct ControllerLandscapeScreen: View {
                         case .reconnecting(let pc, _):
                             ReconnectingLabel(pcName: pc, font: PepoFont.bodyMedium()).layoutPriority(1)
                         case .connected(let c):
-                            Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160).layoutPriority(0)
-                            if isWiiUAsWiimote(c) {
+                            if geo.size.width >= 850 || !showModeChips(c, showChips) {
+                                Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160).layoutPriority(0)
+                            }
+                            if isWiiUAsWiimote(c), geo.size.width >= 850 || !showModeChips(c, showChips) {
                                 Text(tr("wiiu_as_wiimote")).pepoBody().lineLimit(1).layoutPriority(1)
                             }
                             // Selector de modo y, en Dolphin, el chip «Nunchuk» (aquí
@@ -60,11 +62,10 @@ struct ControllerLandscapeScreen: View {
                             if showModeChips(c, showChips) || showNunchukChip(c) {
                                 HStack(spacing: 6) {
                                     if showModeChips(c, showChips) {
-                                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, compact: true)
+                                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
                                     }
                                     if showNunchukChip(c) { NunchukChip(link: c, compact: true) }
                                 }
-                                .fixedSize()
                                 .layoutPriority(2)
                             }
                             if c.mode == LinkState.modeCemu {

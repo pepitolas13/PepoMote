@@ -1,16 +1,18 @@
 # e2e del receptor (Windows/Linux, en el propio equipo)
 
 Pruebas de extremo a extremo contra un receptor REAL: TCP/UDP del protocolo
-PMP, cliente DSU como el de Dolphin/Cemu, y los archivos de configuración que
+PMP, cliente DSU como el de Dolphin/Cemu/Eden, y los archivos de configuración que
 escribe. Necesitan Python 3 (sin dependencias).
 
 Arranca un receptor de pruebas AISLADO (no toca tu configuración, ni Dolphin,
-ni Cemu, y convive con el receptor normal):
+ni Cemu ni Eden, y convive con el receptor normal):
 
 ```
 APPDATA=<dir>\appdata            (Cemu roaming aislado; crea <dir>\appdata\Cemu vacío)
 PEPOMOTE_CONFIG_DIR=<dir>\config  (settings.json y token.txt propios)
 PEPOMOTE_DOLPHIN_DIR=<dir>\dolphin
+PEPOMOTE_CEMU_DIR=<dir>\appdata\Cemu
+PEPOMOTE_EDEN_DIR=<dir>\eden
 PEPOMOTE_PORT=26771 PEPOMOTE_DSU_PORT=26770
 PEPOMOTE_PAIR_CODE=1234 PEPOMOTE_ASSUME_EMULATOR_CLOSED=1 PEPOMOTE_NO_TRAY=1
 PepoMote.exe
@@ -71,3 +73,9 @@ salida) para analizar un gesto real fuera de línea.
 Ojo en Windows: un `python` instalado como paquete MSIX ve un
 `%APPDATA%\Roaming` virtualizado; pasa rutas absolutas y el token por variable
 de entorno en vez de leer `%APPDATA%` desde Python.
+
+## Validación local de Switch y regresiones
+
+`python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/switch-preview/validation/e2e` ejecuta secuencialmente Switch, Wii U y Nunchuk contra un binario ya compilado. Crea directorios y puertos propios, desactiva actualizaciones y bandeja, y termina únicamente sus procesos de prueba. Los overrides `PEPOMOTE_CEMU_DIR` y `PEPOMOTE_EDEN_DIR` impiden buscar instalaciones personales o portátiles. Deja `checks.log` y el log del receptor por suite.
+
+`e2e_eden.py` comprueba negociación, Pro Controller por jugador, migración de preferencias antiguas, cambios de modo, botones/sticks/gyro DSU y pulsación/liberación sin sensores en las tres consolas, ausencia de táctil y escritura de `qt-config.ini` con respaldo y secciones ajenas conservadas. La fixture incluye otro servidor DSU para comprobar los índices globales de Eden. Estas pruebas simulan móviles y el cliente DSU; no sustituyen una prueba con Eden, juegos y sensores físicos.

@@ -8,6 +8,11 @@ import org.junit.Test
 /** Routing del mando (addendum UX v2): función pura de enlace + intención. */
 class RouteTest {
 
+    @Test
+    fun extensionRequiresReceiverCapability() {
+        assertEquals(false, Route.isGamePad(connected(mode = "cemu", supportsCemu = false)))
+    }
+
     private fun connected(
         mode: String = LinkState.MODE_POINTER,
         role: String = LinkState.ROLE_WIIMOTE,

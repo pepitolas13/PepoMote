@@ -55,10 +55,9 @@ jobs:
             dist/PepoMote-linux-x86_64.tar.gz
 
   # Receptor para macOS (Apple Silicon): .app firmado con la identidad del
-  # secret (o ad hoc) y DMG. Un fallo en macOS no debe bloquear la release.
+  # secret (o ad hoc) y DMG. Todas las plataformas deben terminar correctamente.
   macos:
     runs-on: macos-15
-    continue-on-error: true
     timeout-minutes: 45
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
@@ -124,8 +123,6 @@ jobs:
 
   mobile_musl:
     runs-on: ubuntu-24.04-arm
-    # Un fallo del binario musl (postmarketOS) no debe bloquear la release entera
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Build in Alpine (musl)
@@ -183,8 +180,7 @@ jobs:
   ios:
     runs-on: macos-15
     # IPA sin firmar (AltStore / Sideloadly lo firman con el Apple ID de quien lo
-    # instala). Un fallo en macOS no debe bloquear la release del resto.
-    continue-on-error: true
+    # instala). El IPA es obligatorio para completar la versión.
     steps:
       - uses: actions/checkout@v4
       - name: Xcode + XcodeGen
@@ -213,13 +209,10 @@ jobs:
     needs: [windows, linux, macos, mobile, mobile_musl, android, ios]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
-      - name: SHA256SUMS
-        run: |
-          sha256sum PepoMote.exe PepoMote-x86_64.AppImage PepoMote.apk \
-            PepoMote-Mobile-aarch64.AppImage $(ls PepoMote-linux-x86_64.tar.gz PepoMote-macOS.dmg pepomote-mobile*arm64.deb PepoMote-Mobile-aarch64-musl.tar.gz PepoMote.ipa 2>/dev/null) > SHA256SUMS.txt
       # Fuente de AltStore: apuntando al IPA de esta release (tamaño real). Se
       # añade en AltStore por su URL estable: .../releases/latest/download/altstore.json
       - name: altstore.json
@@ -237,7 +230,7 @@ jobs:
           raw = f"https://raw.githubusercontent.com/{repo}/main"
           version = tag.lstrip("v")
           today = datetime.date.today().isoformat()
-          notes = f"PepoMote {version} para iPhone y iPad: puntero, mando de Wii para Dolphin, GamePad de Wii U para Cemu (con doble pantalla) y Nunchuk. Notas completas: {base}/releases/tag/{tag}"
+          notes = f"PepoMote {version} para iPhone y iPad: puntero, mando de Wii para Dolphin, GamePad de Wii U para Cemu (con doble pantalla), Nunchuk y Pro Controller para Eden. Botones y sticks también sin giroscopio. Notas completas: {base}/releases/tag/{tag}"
           src = {
               "name": "PepoTech",
               "identifier": "dev.pepotech.altstore",
@@ -253,7 +246,7 @@ jobs:
                   "bundleIdentifier": "dev.pepotech.pepomote",
                   "developerName": "PepoTech",
                   "subtitle": "Tu iPhone o iPad, mando de tu PC",
-                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual y a Cemu con un GamePad de Wii U con doble pantalla. Necesita el receptor PepoMote en el PC (Windows, Linux o macOS).",
+                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual a Cemu con un GamePad de Wii U con doble pantalla y a Eden con un Pro Controller. Los botones y sticks funcionan aunque el dispositivo no tenga giroscopio. Necesita el receptor PepoMote en el PC (Windows, Linux o macOS).",
                   "iconURL": f"{raw}/assets/brand/logo.png",
                   "tintColor": "3FA9F5",
                   "category": "utilities",
@@ -279,6 +272,28 @@ jobs:
           json.dump(src, open("altstore.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2)
           print(open("altstore.json", encoding="utf-8").read())
           EOF
+      - name: Comprobar todos los paquetes y generar SHA256SUMS
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'EOF'
+          import hashlib, os
+          from pathlib import Path
+          version = os.environ["TAG"].removeprefix("v")
+          files = [
+              "PepoMote.exe", "PepoMote-x86_64.AppImage", "PepoMote-linux-x86_64.tar.gz",
+              "PepoMote-macOS.dmg", "PepoMote.apk", "PepoMote.ipa", "altstore.json",
+              "PepoMote-Mobile-aarch64.AppImage", "PepoMote-Mobile-aarch64-musl.tar.gz",
+              f"pepomote-mobile_{version}_arm64.deb", "pepomote-mobile_arm64.deb",
+          ]
+          sums = []
+          for name in sorted(files):
+              path = Path(name)
+              if not path.is_file() or path.stat().st_size == 0:
+                  raise SystemExit(f"Falta el paquete de la versión: {name}")
+              sums.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {name}\n")
+          Path("SHA256SUMS.txt").write_text("".join(sums), encoding="utf-8")
+          EOF
       - uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -293,4 +308,8 @@ jobs:
             PepoMote.ipa
             altstore.json
             SHA256SUMS.txt
-          generate_release_notes: true
+          body_path: docs/releases/${{ github.ref_name }}.md
+          name: PepoMote ${{ github.ref_name }}
+          draft: true
+          make_latest: false
+          fail_on_unmatched_files: true

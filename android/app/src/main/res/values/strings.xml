@@ -121,7 +121,7 @@
     <string name="ob2_title">Escanea el QR</string>
     <string name="ob2_body">Conectar → apunta con la cámara. Emparejado para siempre.</string>
     <string name="ob3_title">Apunta. Haz clic. Juega.</string>
-    <string name="ob3_body">El móvil mueve el cursor como un mando de Wii. Y en Dolphin, juegas de verdad.</string>
+    <string name="ob3_body">Con giroscopio, apunta como un mando de Wii. Sin él, puedes jugar con los botones, sticks y controles táctiles.</string>
     <string name="lets_go">¡Vamos!</string>
 
     <!-- mando -->
@@ -166,4 +166,15 @@
     <string name="kb_write">Escribir</string>
     <string name="kb_close">Cerrar</string>
     <string name="kb_accept">Aceptar</string>
+    <string name="channel_switch">Switch</string>
+    <string name="channel_switch_sub">Pro Controller</string>
+    <string name="mode_switch">Switch</string>
+    <string name="activating_switch">Activando Switch…</string>
+    <string name="capture">Capturar</string>
+    <string name="side_ask_switch">¿Quieres el mando de Switch así?</string>
+    <string name="warn_needs_switch">Actualiza el receptor del PC para usar Switch.</string>
+    <string name="shortcut_switch">Switch</string>
+    <string name="shortcut_switch_long">Mando de Switch</string>
+    <string name="kb_switch_title">Teclado de Switch</string>
+    <string name="kb_switch_help">Para el teclado en pantalla del juego. Borrar quita un carácter, Escribir manda el texto y sigue, Aceptar manda el texto e Intro.</string>
 </resources>

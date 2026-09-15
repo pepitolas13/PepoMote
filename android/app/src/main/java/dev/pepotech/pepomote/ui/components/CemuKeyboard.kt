@@ -86,7 +86,7 @@ fun KeyboardButton(compact: Boolean = false, modifier: Modifier = Modifier, onCl
  * paquetes INPUT siguen saliendo mientras está abierto.
  */
 @Composable
-fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit) {
+fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit, switchPad: Boolean = false) {
     var field by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -115,9 +115,9 @@ fun KeyboardDialog(onSend: (String) -> Unit, onClose: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(stringResource(R.string.kb_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(if (switchPad) R.string.kb_switch_title else R.string.kb_title), style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(R.string.kb_help),
+                stringResource(if (switchPad) R.string.kb_switch_help else R.string.kb_help),
                 style = MaterialTheme.typography.bodyMedium
             )
             OutlinedTextField(

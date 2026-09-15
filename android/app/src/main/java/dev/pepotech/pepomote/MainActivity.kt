@@ -1,6 +1,7 @@
 package dev.pepotech.pepomote
 
 import android.content.ActivityNotFoundException
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -278,6 +279,7 @@ class MainActivity : ComponentActivity() {
             LaunchAction.Pointer -> openController(LinkState.MODE_POINTER, dolphinOnly = false)
             LaunchAction.Dolphin -> openController(LinkState.MODE_DOLPHIN, dolphinOnly = true)
             LaunchAction.WiiU -> openController(LinkState.MODE_CEMU, dolphinOnly = false)
+            LaunchAction.Switch -> openController(LinkState.MODE_SWITCH, dolphinOnly = false)
             LaunchAction.Nunchuk -> openNunchuk()
         }
     }
@@ -378,6 +380,8 @@ class MainActivity : ComponentActivity() {
      * en Ajustes. La duración mínima del toque en el cable la pone ButtonState
      * (PressLatch).
      */
+    // Activity's public key hook is inherited through AndroidX Core's restricted override.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val bit = when (event.keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP -> ButtonState.A
@@ -512,6 +516,7 @@ private fun Root(activity: MainActivity) {
                 onController = { activity.openPad() },
                 onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
                 onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
+                onSwitch = { activity.openController(LinkState.MODE_SWITCH, dolphinOnly = false) },
                 onNunchuk = { activity.openNunchuk() },
                 onNewPairing = { activity.currentScreen = Screen.Settings },
                 update = update,

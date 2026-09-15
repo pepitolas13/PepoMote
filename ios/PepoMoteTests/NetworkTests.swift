@@ -165,7 +165,7 @@ final class ControlClientTests: XCTestCase {
                 onOk: { got = $0; okE.fulfill() },
                 onError: { code, msg in XCTFail("error \(code): \(msg)") },
                 onModeChanged: { m, byPc in mode = (m, byPc); modeE.fulfill() },
-                onPadChanged: { pad = $0; padE.fulfill() },
+                onPadChanged: { p, _ in pad = p; padE.fulfill() },
                 onNotice: { notice = $0; noticeE.fulfill() },
                 onClosed: { closedE.fulfill() }
             )
@@ -221,7 +221,7 @@ final class ControlClientTests: XCTestCase {
             callbacks: ControlClient.Callbacks(
                 onOk: { _ in XCTFail("no debería haber ok") },
                 onError: { c, _ in code = c; errE.fulfill() },
-                onModeChanged: { _, _ in }, onPadChanged: { _ in }, onNotice: { _ in },
+                onModeChanged: { _, _ in }, onPadChanged: { _, _ in }, onNotice: { _ in },
                 onClosed: { closedE.fulfill() }
             )
         )
