@@ -61,6 +61,10 @@
 /* ajustes */
 "sounds_title" = "Sonidos";
 "sounds_sub" = "Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)";
+"slide_press_title" = "Pulsar deslizando";
+"slide_press_sub" = "El botón por el que pasa el dedo se pulsa; al salir se suelta y se pulsa el siguiente";
+"sticky_press_title" = "Mantener al salir del botón";
+"sticky_press_sub" = "Un botón pulsado sigue pulsado mientras no levantes el dedo, aunque se salga";
 "chips_title" = "Modo Dolphin en el mando";
 "chips_sub" = "Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector";
 "nunchuk_own_title" = "Nunchuk en el mismo móvil";
@@ -119,6 +123,9 @@
 "reconnect" = "Reconectar";
 "exit" = "Salir";
 "keyboard" = "Teclado";
+"header_controls" = "Controles";
+"header_show" = "Mostrar los controles";
+"header_hide" = "Ocultar los controles";
 "media_open" = "Multimedia ▲";
 "media_closed" = "Multimedia ▼";
 "rotate_hint" = "Gira el móvil para volver al mando vertical";

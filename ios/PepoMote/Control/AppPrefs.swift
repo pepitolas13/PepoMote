@@ -35,6 +35,26 @@ enum AppPrefs {
         }
     }
 
+    /// Pulsar deslizando: el botón que queda bajo el dedo se pulsa, y
+    /// deslizar a otro suelta el primero y pulsa el nuevo (un dedo que nace en
+    /// el vacío también pulsa al entrar). Apagado de serie. Clave pública: los
+    /// botones y el lienzo lo miran con @AppStorage.
+    static let slidePressKey = "slidePress"
+    static var slidePress: Bool {
+        get { d.bool(forKey: slidePressKey) }
+        set { d.set(newValue, forKey: slidePressKey) }
+    }
+
+    /// Mantener al salir del botón: un botón pulsado sigue pulsado mientras el
+    /// dedo toque la pantalla, aunque se salga de él. Encendido de serie (lo
+    /// de siempre en iOS); solo se puede elegir con «Pulsar deslizando»
+    /// apagado, que manda en ejecución.
+    static let stickyPressKey = "stickyPress"
+    static var stickyPress: Bool {
+        get { d.object(forKey: stickyPressKey) as? Bool ?? true }
+        set { d.set(newValue, forKey: stickyPressKey) }
+    }
+
     /// Idioma: "system", "es" o "en".
     static var lang: String {
         get { d.string(forKey: "lang") ?? langSystem }

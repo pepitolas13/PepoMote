@@ -46,6 +46,7 @@ import com.journeyapps.barcodescanner.ScanOptions
 import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.LocaleHelper
+import dev.pepotech.pepomote.control.PressMode
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.control.UpdateCheck
 import dev.pepotech.pepomote.service.RotationSuggester
@@ -259,6 +260,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         hideSystemBars()
         UiSounds.init(this)
+        PressMode.init(this)
         NunchukSide.load(this)
         GamePadSide.load(this)
         // Aviso de versión nueva: lo ya guardado se enseña al momento; la

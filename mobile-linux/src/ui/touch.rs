@@ -34,6 +34,53 @@ pub fn hit_test<T: Copy>(hits: &[(Shape, T)], p: Pos2) -> Option<T> {
     hits.iter().find(|(s, _)| s.hit(p)).map(|(_, t)| *t)
 }
 
+/// Cómo se pulsan los botones (los dos ajustes de Inicio, iguales en las
+/// tres apps). De serie: sin deslizar y pegajoso, como siempre.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Press {
+    /// «Pulsar deslizando»: el botón por el que pasa el dedo se pulsa; al
+    /// salir se suelta y se pulsa el siguiente. Manda sobre `sticky`.
+    pub slide: bool,
+    /// «Mantener al salir del botón»: un botón pulsado sigue pulsado mientras
+    /// no se levante el dedo, aunque se salga de su forma.
+    pub sticky: bool,
+}
+
+impl Default for Press {
+    fn default() -> Self {
+        Self { slide: false, sticky: true }
+    }
+}
+
+/// Lo que le toca a un dedo que se mueve: seguir con lo suyo o cambiar de
+/// botón (`To(None)` = el dedo se queda libre).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Move {
+    Keep,
+    To(Option<u32>),
+}
+
+/// Núcleo compartido con Android e iOS: `held` es el bit que lleva el dedo
+/// (si lleva alguno) y `over` el que hay bajo él ahora. Deslizando manda lo
+/// que haya debajo; sin deslizar y pegajoso no se suelta nunca hasta
+/// levantar; sin pegajoso se suelta al salirse y el dedo ya no vuelve a coger
+/// nada (como el mando de Android de siempre).
+pub fn on_move(press: Press, held: Option<u32>, over: Option<u32>) -> Move {
+    if press.slide {
+        if over == held {
+            Move::Keep
+        } else {
+            Move::To(over)
+        }
+    } else if press.sticky {
+        Move::Keep
+    } else if held.is_some() && over != held {
+        Move::To(None)
+    } else {
+        Move::Keep
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Begin,
@@ -370,6 +417,35 @@ mod tests {
         assert_eq!(hit_test(&hits, Pos2::new(10.0, 10.0)), Some("circulo"), "el primero gana");
         assert_eq!(hit_test(&hits, Pos2::new(1.0, 1.0)), Some("rect"));
         assert_eq!(hit_test(&hits, Pos2::new(50.0, 50.0)), None);
+    }
+
+    #[test]
+    fn modos_de_pulsacion() {
+        assert_eq!(Press::default(), Press { slide: false, sticky: true }, "de serie: sin deslizar y pegajoso");
+        let slide = Press { slide: true, sticky: true };
+        // deslizando manda lo que haya bajo el dedo
+        assert_eq!(on_move(slide, Some(1), Some(1)), Move::Keep, "sigue en el suyo");
+        assert_eq!(on_move(slide, Some(1), Some(2)), Move::To(Some(2)), "suelta el 1 y pulsa el 2");
+        assert_eq!(on_move(slide, Some(1), None), Move::To(None), "al vacío: suelta y queda libre");
+        assert_eq!(on_move(slide, None, Some(2)), Move::To(Some(2)), "un dedo libre pulsa al entrar");
+        assert_eq!(on_move(slide, None, None), Move::Keep);
+        // `sticky` no cambia nada mientras se desliza: `slide` manda
+        let solo_slide = Press { slide: true, sticky: false };
+        assert_eq!(on_move(solo_slide, Some(1), Some(2)), Move::To(Some(2)));
+        assert_eq!(on_move(solo_slide, None, Some(2)), Move::To(Some(2)));
+        // pegajoso: no se suelta pase lo que pase (hasta levantar el dedo)
+        let sticky = Press { slide: false, sticky: true };
+        for over in [None, Some(1), Some(2)] {
+            assert_eq!(on_move(sticky, Some(1), over), Move::Keep, "{over:?}");
+        }
+        assert_eq!(on_move(sticky, None, Some(2)), Move::Keep, "sin deslizar, un dedo libre no coge nada");
+        // ni pegajoso ni deslizando: se suelta al salirse y no vuelve
+        let plain = Press { slide: false, sticky: false };
+        assert_eq!(on_move(plain, Some(1), Some(1)), Move::Keep, "dentro: sigue pulsado");
+        assert_eq!(on_move(plain, Some(1), None), Move::To(None), "fuera: se suelta");
+        assert_eq!(on_move(plain, Some(1), Some(2)), Move::To(None), "en otro botón: se suelta, y no lo pulsa");
+        assert_eq!(on_move(plain, None, Some(2)), Move::Keep, "un dedo libre ya no vuelve a coger nada");
+        assert_eq!(on_move(plain, None, None), Move::Keep);
     }
 
     fn touch(id: u64, phase: TouchPhase, x: f32) -> Event {

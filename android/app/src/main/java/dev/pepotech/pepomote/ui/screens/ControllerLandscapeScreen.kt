@@ -14,11 +14,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import dev.pepotech.pepomote.service.Route
 import dev.pepotech.pepomote.sensor.Frame
@@ -29,26 +28,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
-import dev.pepotech.pepomote.ui.components.HeaderSlot
-import dev.pepotech.pepomote.ui.components.KeyboardButton
+import dev.pepotech.pepomote.ui.components.CollapsibleHeader
 import dev.pepotech.pepomote.ui.components.KeyboardDialog
+import dev.pepotech.pepomote.ui.components.LocalPressRegistry
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
-import dev.pepotech.pepomote.ui.components.PadSelector
 import dev.pepotech.pepomote.ui.components.NearPill
 import dev.pepotech.pepomote.ui.components.PrecisionPill
-import dev.pepotech.pepomote.ui.components.PriorityRow
-import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RotateSuggestion
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.UiScale
+import dev.pepotech.pepomote.ui.components.rememberPressRegistry
+import dev.pepotech.pepomote.ui.components.slideCanvas
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -85,188 +81,140 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
         }
     }
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(PepoColors.Background)
-            .statusBarsPadding()
-            .displayCutoutPadding()
-            .navigationBarsPadding()
-    ) {
-        // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
-        val s = UiScale.landscape(maxWidth.value, maxHeight.value)
-        // Cabecera compacta (+ selector de mando dentro de Wii U). Si no cabe
-        // todo, PriorityRow deja fuera primero el nombre del PC y luego el
-        // estado; los chips y «Teclado» solo en último extremo; «Salir» nunca
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            PriorityRow(spacing = 14.dp, fill = false) {
-                if (link is UiLink.Reconnecting) {
-                    ReconnectingLabel(link, MaterialTheme.typography.bodyMedium, modifier = Modifier.layoutId(HeaderSlot.Status))
-                } else {
-                    Text(
-                        when (link) {
-                            is UiLink.Connected -> link.pcName
-                            is UiLink.Connecting -> stringResource(R.string.status_connecting)
-                            else -> stringResource(R.string.status_disconnected)
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        // Un nombre de PC largo no echa a «Salir» fuera de la
-                        // pantalla: se recorta a 160 dp y, si aun así no cabe, cae él
-                        modifier = Modifier
-                            .layoutId(if (link is UiLink.Connected) HeaderSlot.Pc else HeaderSlot.Status)
-                            .widthIn(max = 160.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (link is UiLink.Connected) {
-                    if (isWiiUAsWiimote(link)) {
-                        Text(
-                            stringResource(R.string.wiiu_as_wiimote),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.layoutId(HeaderSlot.Status)
-                        )
-                    }
-                    // Selector Puntero/Dolphin/Wii U también de lado (solo el
-                    // Jugador 1) y, en Dolphin, el chip «Nunchuk» (aquí apagado:
-                    // encenderlo cambia este NES por el mando + Nunchuk)
-                    if (showModeChips(link, showChips) || showNunchukChip(link)) {
-                        Row(
-                            modifier = Modifier.layoutId(HeaderSlot.Chips),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (showModeChips(link, showChips)) {
-                                ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android", compact = true)
-                            }
-                            if (showNunchukChip(link)) NunchukChip(link, compact = true)
-                        }
-                    }
-                    // Modo Wii U: texto para el teclado en pantalla de Cemu
-                    if (link.mode == LinkState.MODE_CEMU) {
-                        KeyboardButton(compact = true, modifier = Modifier.layoutId(HeaderSlot.Keyboard)) { keyboardOpen = true }
-                    }
-                }
-                TextButton(onClick = onDisconnect, modifier = Modifier.layoutId(HeaderSlot.Exit)) {
-                    Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            if (link is UiLink.Connected && isWiiUAsWiimote(link)) {
-                PadSelector(link, compact = true)
-            }
-        }
+    // Capa de pulsación de la pantalla: cada botón dice dónde está y, con
+    // «Pulsar deslizando», el dedo pasa de uno a otro sin levantarlo
+    val press = rememberPressRegistry()
+    DisposableEffect(press) { onDispose { press.releaseAll() } }
 
-        // Cruceta izquierda
-        Box(
+    CompositionLocalProvider(LocalPressRegistry provides press) {
+        BoxWithConstraints(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 34.dp * s)
+                .fillMaxSize()
+                .background(PepoColors.Background)
+                .statusBarsPadding()
+                .displayCutoutPadding()
+                .navigationBarsPadding()
+                .slideCanvas()
         ) {
-            // En un juego, la cruceta de un mando girado (IR a la izquierda)
-            PadCross(sizeDp = 190.dp * s, sideways = Route.sidewaysDpad(link))
-        }
+            // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
+            val s = UiScale.landscape(maxWidth.value, maxHeight.value)
 
-        // − / ◎ / + y A en el centro (un 20 % más grandes que en la primera
-        // versión: de lado se pulsan con el pulgar y quedaban pequeños). La
-        // diana, como en el mando vertical y en el mando + Nunchuk: mantener
-        // recentra el cursor (puntero) o el puntero IR (Dolphin, Mando de Wii
-        // en Cemu), que de lado también se apunta. Home, pequeño, a la derecha
-        // de A y fuera del modo puntero (el PC no le da uso): como en el Mando
-        // de Wii de lado, donde −/Home/+ quedan entre A y 1/2; Dolphin abre con
-        // él el menú HOME y Mario Party 10 lo pide para emparejar cada mando
-        Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp * s)
-        ) {
-            Spacer(Modifier.height(20.dp * s))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp * s),
-                verticalAlignment = Alignment.CenterVertically
+            // Cruceta izquierda
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 34.dp * s)
             ) {
-                RoundButton("−", 53.dp * s, ButtonState.MINUS, textSize = (19 * s).roundToInt())
-                RecenterButton(size = 54.dp * s)
-                RoundButton("+", 53.dp * s, ButtonState.PLUS, textSize = (19 * s).roundToInt())
+                // En un juego, la cruceta de un mando girado (IR a la izquierda)
+                PadCross(sizeDp = 190.dp * s, sideways = Route.sidewaysDpad(link))
             }
-            if (showHomeButton(link)) {
-                // un hueco igual a la izquierda deja A centrada bajo la diana
+
+            // − / ◎ / + y A en el centro (un 20 % más grandes que en la primera
+            // versión: de lado se pulsan con el pulgar y quedaban pequeños). La
+            // diana, como en el mando vertical y en el mando + Nunchuk: mantener
+            // recentra el cursor (puntero) o el puntero IR (Dolphin, Mando de Wii
+            // en Cemu), que de lado también se apunta. Home, pequeño, a la derecha
+            // de A y fuera del modo puntero (el PC no le da uso): como en el Mando
+            // de Wii de lado, donde −/Home/+ quedan entre A y 1/2; Dolphin abre con
+            // él el menú HOME y Mario Party 10 lo pide para emparejar cada mando
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp * s)
+            ) {
+                Spacer(Modifier.height(20.dp * s))
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(14.dp * s),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp * s),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Spacer(Modifier.size(40.dp * s))
-                    RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
-                    RoundButton(stringResource(R.string.home_btn), 40.dp * s, ButtonState.HOME, textSize = (11 * s).roundToInt())
+                    RoundButton("−", 53.dp * s, ButtonState.MINUS, textSize = (19 * s).roundToInt())
+                    RecenterButton(size = 54.dp * s)
+                    RoundButton("+", 53.dp * s, ButtonState.PLUS, textSize = (19 * s).roundToInt())
                 }
-            } else {
-                RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
+                if (showHomeButton(link)) {
+                    // un hueco igual a la izquierda deja A centrada bajo la diana
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp * s),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Spacer(Modifier.size(40.dp * s))
+                        RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
+                        RoundButton(stringResource(R.string.home_btn), 40.dp * s, ButtonState.HOME, textSize = (11 * s).roundToInt())
+                    }
+                } else {
+                    RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
+                }
             }
-        }
 
-        // 1 y 2 grandes a la derecha (los botones de acción del modo NES)
-        Row(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 30.dp * s),
-            horizontalArrangement = Arrangement.spacedBy(18.dp * s)
-        ) {
-            RoundButton(
-                "1", 92.dp * s, ButtonState.ONE,
-                background = PepoColors.Blue,
-                pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.OnAccent,
-                textSize = (28 * s).roundToInt()
+            // 1 y 2 grandes a la derecha (los botones de acción del modo NES)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 30.dp * s),
+                horizontalArrangement = Arrangement.spacedBy(18.dp * s)
+            ) {
+                RoundButton(
+                    "1", 92.dp * s, ButtonState.ONE,
+                    background = PepoColors.Blue,
+                    pressedColor = PepoColors.BlueHover,
+                    textColor = PepoColors.OnAccent,
+                    textSize = (28 * s).roundToInt()
+                )
+                RoundButton(
+                    "2", 92.dp * s, ButtonState.TWO,
+                    background = PepoColors.Blue,
+                    pressedColor = PepoColors.BlueHover,
+                    textColor = PepoColors.OnAccent,
+                    textSize = (28 * s).roundToInt(),
+                    pop = true
+                )
+            }
+
+            Text(
+                stringResource(R.string.rotate_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 8.dp)
             )
-            RoundButton(
-                "2", 92.dp * s, ButtonState.TWO,
-                background = PepoColors.Blue,
-                pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.OnAccent,
-                textSize = (28 * s).roundToInt(),
-                pop = true
-            )
-        }
 
-        Text(
-            stringResource(R.string.rotate_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp)
-        )
+            // En Dolphin la precisión no hace nada: la píldora es «Acercar»
+            val pill = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 6.dp)
+            if (isDolphin(link)) NearPill(modifier = pill) else PrecisionPill(modifier = pill)
 
-        // En Dolphin la precisión no hace nada: la píldora es «Acercar»
-        val pill = Modifier
-            .align(Alignment.BottomStart)
-            .padding(start = 16.dp, bottom = 6.dp)
-        if (isDolphin(link)) NearPill(modifier = pill) else PrecisionPill(modifier = pill)
+            // Aviso de «sin giroscopio real» (una vez, en modo puntero: de lado
+            // también se apunta) y, debajo, los avisos transitorios del receptor
+            Column(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 84.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RotateSuggestion()
+                GyroWarnCard(link)
+                NoticeBanner()
+            }
 
-        // Aviso de «sin giroscopio real» (una vez, en modo puntero: de lado
-        // también se apunta) y, debajo, los avisos transitorios del receptor
-        Column(
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 84.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            RotateSuggestion()
-            GyroWarnCard(link)
-            NoticeBanner()
-        }
+            if (keyboardOpen) {
+                KeyboardDialog(
+                    onSend = { LinkState.sendText?.invoke(it) },
+                    onClose = { keyboardOpen = false }
+                )
+            }
 
-        if (keyboardOpen) {
-            KeyboardDialog(
-                onSend = { LinkState.sendText?.invoke(it) },
-                onClose = { keyboardOpen = false }
+            // Cabecera plegable, la última del Box: desplegada tapa a los
+            // botones (y no al revés) y a los cuatro segundos se quita de en
+            // medio. Dentro lleva lo que antes iba en una línea: el PC, los
+            // chips, «Teclado», «En Cemu soy» y «Salir»
+            CollapsibleHeader(
+                link = link,
+                showChips = showChips,
+                modifier = Modifier.align(Alignment.TopCenter),
+                onKeyboard = { keyboardOpen = true },
+                onDisconnect = onDisconnect
             )
         }
     }

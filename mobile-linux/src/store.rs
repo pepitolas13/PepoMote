@@ -48,6 +48,14 @@ pub struct Settings {
     /// Avisos del receptor en pantalla («Dolphin configurado…»); apagados,
     /// el banner no sale (los avisos locales sí).
     pub receiver_notices: bool,
+    /// «Pulsar deslizando»: el botón por el que pasa el dedo se pulsa; al
+    /// salir se suelta y se pulsa el siguiente. Apagado de serie.
+    pub slide_press: bool,
+    /// «Mantener al salir del botón»: un botón pulsado sigue pulsado mientras
+    /// no se levante el dedo, aunque se salga. Encendido de serie (es lo que
+    /// hacía esta app desde siempre); solo se puede elegir con el anterior
+    /// apagado, que manda sobre él.
+    pub sticky_press: bool,
 }
 
 impl Default for Settings {
@@ -65,6 +73,8 @@ impl Default for Settings {
             gamepad_full_screen_kb: true,
             own_nunchuk: false,
             receiver_notices: true,
+            slide_press: false,
+            sticky_press: true,
         }
     }
 }
@@ -276,6 +286,8 @@ mod tests {
             gamepad_full_screen_kb: false,
             own_nunchuk: true,
             receiver_notices: false,
+            slide_press: true,
+            sticky_press: false,
         };
         let back: Settings = serde_json::from_str(&serde_json::to_string(&mine).unwrap()).unwrap();
         assert_eq!(back, mine);
@@ -285,6 +297,8 @@ mod tests {
         assert!(d.gamepad_full_screen_kb, "con pantalla completa, el botón de teclado viene encendido");
         assert!(!d.own_nunchuk, "sin trazado propio, el Nunchuk en el mismo móvil va apagado");
         assert!(d.receiver_notices, "los avisos del receptor vienen encendidos");
+        assert!(!d.slide_press, "pulsar deslizando viene apagado");
+        assert!(d.sticky_press, "un botón pulsado sigue pulsado al salirse el dedo, como siempre");
         assert_eq!(d.update_latest, None);
         let s: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
         assert_eq!(s.theme, crate::theme::ThemePref::Light, "el tema se guarda en minúsculas");

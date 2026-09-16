@@ -25,4 +25,29 @@ class AppPrefsTest {
         AppPrefs.setPad(context, "cemu", "gamepad")
         assertEquals("gamepad", AppPrefs.pad(context, "cemu"))
     }
+
+    /**
+     * Los dos ajustes de pulsación vienen como toca (deslizar no, mantener
+     * sí) y cambiarlos llega al momento a [PressMode], que es lo que leen los
+     * botones (como `setSoundsEnabled` con `UiSounds.enabled`).
+     */
+    @Test fun losModosDePulsacionVienenComoTocaYLosSettersAvisanAPressMode() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        assertEquals(false, AppPrefs.slidePress(context))
+        assertEquals(true, AppPrefs.stickyPress(context))
+
+        AppPrefs.setSlidePress(context, true)
+        assertEquals(true, AppPrefs.slidePress(context))
+        assertEquals(true, PressMode.slide)
+
+        AppPrefs.setStickyPress(context, false)
+        assertEquals(false, AppPrefs.stickyPress(context))
+        assertEquals(false, PressMode.sticky)
+
+        // como estaban: PressMode es un objeto y vive más que esta prueba
+        AppPrefs.setSlidePress(context, false)
+        AppPrefs.setStickyPress(context, true)
+        assertEquals(false, PressMode.slide)
+        assertEquals(true, PressMode.sticky)
+    }
 }

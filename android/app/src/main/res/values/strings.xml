@@ -77,6 +77,10 @@
     <string name="vol_sub">Con el mando abierto: subir volumen = A, bajar = gatillo B. Juega con los botones físicos del móvil</string>
     <string name="sounds_title">Sonidos</string>
     <string name="sounds_sub">Bips de botones y melodía de conexión/desconexión (la vibración se mantiene)</string>
+    <string name="slide_press_title">Pulsar deslizando</string>
+    <string name="slide_press_sub">El botón por el que pasa el dedo se pulsa; al salir se suelta y se pulsa el siguiente</string>
+    <string name="sticky_press_title">Mantener al salir del botón</string>
+    <string name="sticky_press_sub">Un botón pulsado sigue pulsado mientras no levantes el dedo, aunque se salga</string>
     <string name="chips_title">Modo Dolphin en el mando</string>
     <string name="chips_sub">Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector</string>
     <string name="nunchuk_own_title">Nunchuk en el mismo móvil</string>
@@ -85,6 +89,9 @@
     <string name="notices_sub">«Dolphin configurado…», «Cemu está abierto…»: salen unos segundos sobre el mando al cambiar de modo. Apágalos si te estorban</string>
     <string name="nunchuk_chip">Nunchuk</string>
     <string name="mode_dolphin_nunchuk">Dolphin · Nunchuk</string>
+    <string name="header_controls">Controles</string>
+    <string name="header_show">Mostrar los controles</string>
+    <string name="header_hide">Ocultar los controles</string>
     <string name="noscreen_title">GamePad sin pantalla táctil</string>
     <string name="noscreen_sub">Quita la pantalla del GamePad de Wii U (y la doble pantalla) para que los botones sean más grandes</string>
     <string name="fullscreen_title">Pantalla del GamePad a pantalla completa</string>

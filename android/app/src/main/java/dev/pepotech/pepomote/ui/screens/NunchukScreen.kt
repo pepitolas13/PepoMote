@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,10 +32,13 @@ import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
+import dev.pepotech.pepomote.ui.components.LocalPressRegistry
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.TriggerZone
 import dev.pepotech.pepomote.ui.components.UiScale
+import dev.pepotech.pepomote.ui.components.rememberPressRegistry
+import dev.pepotech.pepomote.ui.components.slideCanvas
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -60,68 +64,76 @@ fun NunchukScreen(link: UiLink, onDisconnect: () -> Unit) {
         }
     }
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(PepoColors.Background)
-            .statusBarsPadding()
-            .displayCutoutPadding()
-            .navigationBarsPadding()
-    ) {
-        // De lado hay poca altura: todo más pequeño, mismo orden. En una
-        // tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
-        val compact = maxHeight < 520.dp
-        val grow = if (compact) 1f else UiScale.remote(maxWidth.value, maxHeight.value)
-        val stickSize = if (compact) maxHeight * 0.40f else minOf(maxWidth * 0.66f, 264.dp * grow)
-        val cHeight = if (compact) 48.dp else 64.dp * grow
-        val zHeight = if (compact) 64.dp else 96.dp * grow
+    // Capa de pulsación de la pantalla: cada botón dice dónde está y, con
+    // «Pulsar deslizando», el dedo pasa de uno a otro sin levantarlo
+    val press = rememberPressRegistry()
+    DisposableEffect(press) { onDispose { press.releaseAll() } }
 
-        Column(
+    CompositionLocalProvider(LocalPressRegistry provides press) {
+        BoxWithConstraints(
             modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxHeight()
-                .widthIn(max = 520.dp * grow)
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxSize()
+                .background(PepoColors.Background)
+                .statusBarsPadding()
+                .displayCutoutPadding()
+                .navigationBarsPadding()
+                .slideCanvas()
         ) {
-            Spacer(Modifier.height(10.dp))
-            Header(link, onDisconnect)
+            // De lado hay poca altura: todo más pequeño, mismo orden. En una
+            // tablet todo crece a la vez (UiScale; en cualquier móvil, 1)
+            val compact = maxHeight < 520.dp
+            val grow = if (compact) 1f else UiScale.remote(maxWidth.value, maxHeight.value)
+            val stickSize = if (compact) maxHeight * 0.40f else minOf(maxWidth * 0.66f, 264.dp * grow)
+            val cHeight = if (compact) 48.dp else 64.dp * grow
+            val zHeight = if (compact) 64.dp else 96.dp * grow
 
-            // Aviso permanente: en Wii U el Nunchuk solo acompaña a un Mando de Wii
-            if (link is UiLink.Connected && link.mode == LinkState.MODE_CEMU &&
-                link.pad != LinkState.PAD_WIIMOTE
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxHeight()
+                    .widthIn(max = 520.dp * grow)
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    stringResource(R.string.nunchuk_help),
-                    style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Warn),
-                    textAlign = TextAlign.Center
+                Spacer(Modifier.height(10.dp))
+                Header(link, onDisconnect)
+
+                // Aviso permanente: en Wii U el Nunchuk solo acompaña a un Mando de Wii
+                if (link is UiLink.Connected && link.mode == LinkState.MODE_CEMU &&
+                    link.pad != LinkState.PAD_WIIMOTE
+                ) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.nunchuk_help),
+                        style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Warn),
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+                // C: banda ancha encima del stick, se acierta con el pulgar sin mirar
+                TriggerZone(
+                    bit = ButtonState.C, label = "C", height = cHeight,
+                    background = PepoColors.CardBorder,
+                    pressedColor = PepoColors.Glow,
+                    textColor = PepoColors.Text
                 )
+                Spacer(Modifier.height(if (compact) 10.dp else 18.dp * grow))
+                AnalogStick(stickSize) { x, y -> ButtonState.setStick(x, y) }
+                Spacer(Modifier.weight(1f))
+
+                // Z: banda inferior, como el gatillo B del mando
+                TriggerZone(bit = ButtonState.Z, label = "Z", height = zHeight)
+                Spacer(Modifier.height(12.dp))
             }
 
-            Spacer(Modifier.weight(1f))
-            // C: banda ancha encima del stick, se acierta con el pulgar sin mirar
-            TriggerZone(
-                bit = ButtonState.C, label = "C", height = cHeight,
-                background = PepoColors.CardBorder,
-                pressedColor = PepoColors.Glow,
-                textColor = PepoColors.Text
+            NoticeBanner(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 64.dp, start = 24.dp, end = 24.dp)
             )
-            Spacer(Modifier.height(if (compact) 10.dp else 18.dp * grow))
-            AnalogStick(stickSize) { x, y -> ButtonState.setStick(x, y) }
-            Spacer(Modifier.weight(1f))
-
-            // Z: banda inferior, como el gatillo B del mando
-            TriggerZone(bit = ButtonState.Z, label = "Z", height = zHeight)
-            Spacer(Modifier.height(12.dp))
         }
-
-        NoticeBanner(
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 64.dp, start = 24.dp, end = 24.dp)
-        )
     }
 }
 

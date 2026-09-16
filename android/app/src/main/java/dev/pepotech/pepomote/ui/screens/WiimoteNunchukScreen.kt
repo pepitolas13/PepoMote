@@ -11,22 +11,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.ButtonState
@@ -36,15 +36,18 @@ import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.NunchukSide
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
-import dev.pepotech.pepomote.ui.components.HeaderSlot
+import dev.pepotech.pepomote.ui.components.CollapsibleHeader
+import dev.pepotech.pepomote.ui.components.HeaderCollapse
+import dev.pepotech.pepomote.ui.components.LocalPressRegistry
 import dev.pepotech.pepomote.ui.components.NearPill
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
-import dev.pepotech.pepomote.ui.components.PriorityRow
-import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.ShoulderButton
 import dev.pepotech.pepomote.ui.components.UiScale
+import dev.pepotech.pepomote.ui.components.rememberPressRegistry
+import dev.pepotech.pepomote.ui.components.rememberScreenReader
+import dev.pepotech.pepomote.ui.components.slideCanvas
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlin.math.roundToInt
 
@@ -139,147 +142,131 @@ fun WiimoteNunchukScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> U
         onDispose { NunchukSide.setProvisional(null) }
     }
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(PepoColors.Background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .displayCutoutPadding()
-    ) {
-        val s = UiScale.landscape(maxWidth.value, maxHeight.value)
-        val m = WiiNunchukMetrics(maxWidth.value, maxHeight.value, s)
+    // Capa de pulsación de la pantalla: cada botón dice dónde está y, con
+    // «Pulsar deslizando», el dedo pasa de uno a otro sin levantarlo
+    val press = rememberPressRegistry()
+    DisposableEffect(press) { onDispose { press.releaseAll() } }
 
-        // Cabecera compacta: PC · «Dolphin · Nunchuk» · chips · Salir
-        Column(
+    // La cabecera plegable avisa de si está desplegada (la pregunta del lado
+    // ocupa el mismo sitio) y de cuánto mide, para poner la pregunta justo
+    // debajo cuando la cabecera no se va a plegar sola
+    var headerExpanded by remember { mutableStateOf(true) }
+    var headerBox by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+    // Con lector de pantalla la cabecera se queda abierta hasta que la cierren:
+    // ahí la pregunta no puede esperar a que se pliegue o no saldría nunca
+    val autoCollapse = HeaderCollapse.autoCollapses(link is UiLink.Connected, rememberScreenReader())
+
+    CompositionLocalProvider(LocalPressRegistry provides press) {
+        BoxWithConstraints(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxSize()
+                .background(PepoColors.Background)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .displayCutoutPadding()
+                .slideCanvas()
         ) {
-            PriorityRow(spacing = 14.dp, fill = false) {
-                if (link is UiLink.Reconnecting) {
-                    ReconnectingLabel(link, MaterialTheme.typography.bodyMedium, modifier = Modifier.layoutId(HeaderSlot.Status))
-                } else {
-                    Text(
-                        when (link) {
-                            is UiLink.Connected -> link.pcName
-                            is UiLink.Connecting -> stringResource(R.string.status_connecting)
-                            else -> stringResource(R.string.status_disconnected)
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier
-                            .layoutId(if (link is UiLink.Connected) HeaderSlot.Pc else HeaderSlot.Status)
-                            .widthIn(max = 160.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (link is UiLink.Connected) {
-                    Text(
-                        stringResource(R.string.mode_dolphin_nunchuk),
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.layoutId(HeaderSlot.Status)
-                    )
-                    Row(
-                        modifier = Modifier.layoutId(HeaderSlot.Chips),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (showModeChips(link, showChips)) {
-                            ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android", compact = true)
-                        }
-                        NunchukChip(link, compact = true)
-                    }
-                }
-                TextButton(onClick = onDisconnect, modifier = Modifier.layoutId(HeaderSlot.Exit)) {
-                    Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
-                }
+            val s = UiScale.landscape(maxWidth.value, maxHeight.value)
+            val m = WiiNunchukMetrics(maxWidth.value, maxHeight.value, s)
+
+            // Izquierda: Z y C arriba (bajo el índice), el stick del Nunchuk abajo (pulgar)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = m.margin.dp, top = m.headerH.dp),
+                horizontalArrangement = Arrangement.spacedBy(m.gap.dp)
+            ) {
+                ShoulderButton("Z", ButtonState.Z, m.zW.dp, m.pillH.dp, textSize = m.text(16f))
+                ShoulderButton("C", ButtonState.C, m.cW.dp, m.pillH.dp, textSize = m.text(16f))
             }
-        }
-
-        // Izquierda: Z y C arriba (bajo el índice), el stick del Nunchuk abajo (pulgar)
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = m.margin.dp, top = m.headerH.dp),
-            horizontalArrangement = Arrangement.spacedBy(m.gap.dp)
-        ) {
-            ShoulderButton("Z", ButtonState.Z, m.zW.dp, m.pillH.dp, textSize = m.text(16f))
-            ShoulderButton("C", ButtonState.C, m.cW.dp, m.pillH.dp, textSize = m.text(16f))
-        }
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = m.margin.dp, bottom = m.margin.dp)
-        ) {
-            AnalogStick(m.stick.dp) { x, y -> ButtonState.setStick(x, y) }
-        }
-
-        // Centro: − diana + y 1 Home 2
-        Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(m.rowGap.dp)
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(m.rowGap.dp), verticalAlignment = Alignment.CenterVertically) {
-                RoundButton("−", m.small.dp, ButtonState.MINUS, textSize = m.text(19f))
-                RecenterButton(size = m.recenter.dp)
-                RoundButton("+", m.small.dp, ButtonState.PLUS, textSize = m.text(19f))
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = m.margin.dp, bottom = m.margin.dp)
+            ) {
+                AnalogStick(m.stick.dp) { x, y -> ButtonState.setStick(x, y) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(m.rowGap.dp), verticalAlignment = Alignment.CenterVertically) {
-                RoundButton("1", m.small.dp, ButtonState.ONE, textSize = m.text(18f))
-                RoundButton(stringResource(R.string.home_btn), m.small.dp, ButtonState.HOME, textSize = m.text(12f))
-                RoundButton("2", m.small.dp, ButtonState.TWO, textSize = m.text(18f))
-            }
-            // Acercar el mando a la pantalla (mantener): juegos que lo piden
-            NearPill(modifier = Modifier)
-        }
 
-        // Derecha: B arriba (el gatillo, bajo el índice); cruceta y A grande abajo (pulgar)
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = m.margin.dp, top = m.headerH.dp)
-        ) {
-            ShoulderButton("B", ButtonState.B, m.bW.dp, m.pillH.dp, textSize = m.text(16f))
-        }
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = m.margin.dp, bottom = m.margin.dp),
-            horizontalArrangement = Arrangement.spacedBy(m.gap.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PadCross(sizeDp = m.cross.dp)
-            RoundButton(
-                "A", m.a.dp, ButtonState.A,
-                background = PepoColors.Blue,
-                pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.OnAccent,
-                textSize = m.text(44f),
-                pop = true
+            // Centro: − diana + y 1 Home 2
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(m.rowGap.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(m.rowGap.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RoundButton("−", m.small.dp, ButtonState.MINUS, textSize = m.text(19f))
+                    RecenterButton(size = m.recenter.dp)
+                    RoundButton("+", m.small.dp, ButtonState.PLUS, textSize = m.text(19f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(m.rowGap.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RoundButton("1", m.small.dp, ButtonState.ONE, textSize = m.text(18f))
+                    RoundButton(stringResource(R.string.home_btn), m.small.dp, ButtonState.HOME, textSize = m.text(12f))
+                    RoundButton("2", m.small.dp, ButtonState.TWO, textSize = m.text(18f))
+                }
+                // Acercar el mando a la pantalla (mantener): juegos que lo piden
+                NearPill(modifier = Modifier)
+            }
+
+            // Derecha: B arriba (el gatillo, bajo el índice); cruceta y A grande abajo (pulgar)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = m.margin.dp, top = m.headerH.dp)
+            ) {
+                ShoulderButton("B", ButtonState.B, m.bW.dp, m.pillH.dp, textSize = m.text(16f))
+            }
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = m.margin.dp, bottom = m.margin.dp),
+                horizontalArrangement = Arrangement.spacedBy(m.gap.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PadCross(sizeDp = m.cross.dp)
+                RoundButton(
+                    "A", m.a.dp, ButtonState.A,
+                    background = PepoColors.Blue,
+                    pressedColor = PepoColors.BlueHover,
+                    textColor = PepoColors.OnAccent,
+                    textSize = m.text(44f),
+                    pop = true
+                )
+            }
+
+            // La pregunta del lado va donde la cabecera desplegada: se espera a
+            // que se pliegue (si no, una encima de la otra) y, cuando no se
+            // pliega sola, se pone justo bajo la tarjeta
+            if (sideSaved == LandscapeSide.Unset && (!headerExpanded || !autoCollapse)) {
+                val shown = LandscapeSide.effective(LandscapeSide.current(rotation), sideProvisional)
+                SideAskCard(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (headerExpanded) headerBox + 4.dp else (m.headerH + 4f).dp),
+                    title = stringResource(R.string.side_ask),
+                    onFlip = { NunchukSide.setProvisional(shown.flipped()) },
+                    onKeep = { NunchukSide.save(context, shown) }
+                )
+            }
+
+            NoticeBanner(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 84.dp)
             )
-        }
 
-        if (sideSaved == LandscapeSide.Unset) {
-            val shown = LandscapeSide.effective(LandscapeSide.current(rotation), sideProvisional)
-            SideAskCard(
+            // Cabecera plegable, la última del Box: desplegada tapa a B, Z y C
+            // (y no al revés), y a los cuatro segundos se quita de en medio
+            CollapsibleHeader(
+                link = link,
+                showChips = showChips,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = (m.headerH + 4f).dp),
-                title = stringResource(R.string.side_ask),
-                onFlip = { NunchukSide.setProvisional(shown.flipped()) },
-                onKeep = { NunchukSide.save(context, shown) }
+                    .onSizeChanged { headerBox = with(density) { it.height.toDp() } },
+                alwaysNunchukChip = true,
+                onExpandedChange = { headerExpanded = it },
+                onDisconnect = onDisconnect
             )
         }
-
-        NoticeBanner(
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 84.dp)
-        )
     }
 }

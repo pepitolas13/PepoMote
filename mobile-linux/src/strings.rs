@@ -149,6 +149,18 @@ pub const TABLE: &[(&str, &str, &str)] = &[
         "A small button at the top right to type into Cemu's on-screen keyboard",
     ),
     ("gp.full_screen_old_pc", "El receptor no conoce la pantalla completa: actualízalo", "The receiver does not know about full screen: update it"),
+    ("home.slide_press", "Pulsar deslizando", "Slide to press"),
+    (
+        "home.slide_press_help",
+        "El botón por el que pasa el dedo se pulsa; al salir se suelta y se pulsa el siguiente",
+        "The button your finger slides over gets pressed; leaving it releases it and presses the next one",
+    ),
+    ("home.sticky_press", "Mantener al salir del botón", "Keep pressed when leaving the button"),
+    (
+        "home.sticky_press_help",
+        "Un botón pulsado sigue pulsado mientras no levantes el dedo, aunque se salga",
+        "A pressed button stays pressed until you lift your finger, even if it drifts off",
+    ),
     // --- Nunchuk
     ("nk.line", "Nunchuk · Jugador {0} · {1}", "Nunchuk · Player {0} · {1}"),
     ("nk.old_pc", "El PC te ve como mando: actualiza el receptor", "The PC sees you as a controller: update the receiver"),

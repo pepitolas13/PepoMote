@@ -481,6 +481,61 @@ la tira izquierda. Sigue activo mientras no levantes el dedo, aunque se
 salga de la tira. Al soltar no hay salto: el apuntado queda corrido hasta
 que recentres con la diana. En Dolphin y Wii U no hace nada.
 
+## Se me suelta el botón al mover el dedo (o quiero pulsar deslizando)
+
+En Ajustes, en Android, iPhone/iPad y Linux móvil, hay dos opciones para
+esto:
+
+- **Mantener al salir del botón**: un botón pulsado sigue pulsado mientras
+  no levantes el dedo, aunque el pulgar se salga de él. Viene **encendido**
+  de serie en las tres apps. En Android antes se soltaba al salirse (era lo
+  que hacía que el 2 se fuera solo en Mario Kart en cuanto el pulgar se
+  corría); en iPhone y en el móvil Linux ya funcionaba así.
+- **Pulsar deslizando**: el botón por el que pasa el dedo se pulsa y el
+  anterior se suelta, y un dedo que nace en el hueco entre dos botones pulsa
+  el primero al que llega. **Apagado** de serie.
+
+Las dos no se combinan: con «Pulsar deslizando» encendido, «Mantener al
+salir del botón» queda atenuado y manda el deslizar. Al apagarlo vuelve a
+valer lo que tuvieras en el otro.
+
+La cruceta, los sticks, la tira de scroll, la pantalla táctil del GamePad,
+los chips de la cabecera, el teclado y la diana de recentrado no entran en
+esto aposta: la cruceta ya desliza de una dirección a otra por su cuenta, y
+un stick o un táctil que se engancharan al pasar el dedo por encima darían
+más problemas que ventajas. Las tiras de **Precisión** y **Acercar** se
+mantienen siempre aunque el dedo se salga: son «mantener», no botones.
+
+Las tarjetas que se ponen encima del mando (la cabecera desplegada, la
+pregunta del lado la primera vez y los avisos) se quedan el toque: tocar su
+fondo no pulsa el botón que tapan.
+
+Un botón que ya está apretando un dedo no se lo lleva otro: el segundo que
+pase por encima no lo vuelve a pulsar y, al levantarlo, el botón sigue
+pulsado mientras el primero no lo suelte.
+
+En **iPhone y iPad**, «Pulsar deslizando» solo lleva **un dedo** desde el
+hueco vacío: si nace un segundo dedo fuera de todos los botones, ese no
+pulsa nada (los dedos que nacen sobre un botón sí van cada uno por su lado,
+que es el caso normal). En Android y en el móvil Linux van todos.
+
+En un barrido muy rápido puedes ver dos botones pulsados a la vez durante
+unas decenas de milisegundos: la app retiene cada pulsación 70 ms para que
+no se pierda si la Wi-Fi se traga un paquete, así que el que sueltas y el
+que pulsas se solapan ese rato. Es a propósito: sin ese margen, un toque
+muy rápido puede no llegar al emulador.
+
+De paso, en **Ajustes → Sensor del puntero** la elección entre Giroscopio y
+Acelerómetro se aplica al momento; antes había que salir y volver a entrar
+en Ajustes para ver el cambio.
+
+**¿Y «Salir»?** En los mandos apaisados (el de lado y el mando + Nunchuk) la
+cabecera es una pastilla con el modo, arriba en el centro. Tócala y baja la
+tarjeta con el nombre del PC, los chips de modo, el chip **Nunchuk**,
+**Teclado** y **Salir**; se pliega sola a los 4 segundos sin tocarla. En los
+mandos verticales y en el GamePad los botones siguen a la vista como
+siempre.
+
 ## Cruceta y volumen en modo puntero
 
 Cruceta ← y → = atrás y adelante en el navegador (en Windows también en el

@@ -9,7 +9,7 @@ use crate::buttons::Buttons;
 use crate::link::Status;
 use crate::theme;
 use crate::ui::dpad;
-use crate::ui::touch::{self, Canvas, Input, Phase, Shape, Transform};
+use crate::ui::touch::{self, Canvas, Input, Phase, Press, Shape, Transform};
 use egui::{Align2, FontId, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -26,9 +26,15 @@ pub enum Action {
     Keyboard,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Target {
     Button(u32),
+    /// Un dedo que no lleva nada: con «pulsar deslizando» pulsará el botón en
+    /// el que entre. Solo se registra con ese ajuste encendido.
+    Free,
+    /// La tira de precisión / acercar: es «mantener», no un botón. No se
+    /// suelta al salirse el dedo ni se pulsa deslizando; solo al levantar.
+    Hold(u32),
     /// La cruceta de una pieza: el dedo lleva sus bits mientras está apoyado.
     Dpad,
     Recenter,
@@ -56,6 +62,8 @@ pub struct ControllerUi {
     /// Modo Dolphin: la tira izquierda es «Acercar» (bit 30) en vez de la
     /// precisión, que ahí no hace nada.
     dolphin: bool,
+    /// Los dos ajustes de pulsación (deslizar / mantener al salir).
+    press: Press,
 }
 
 impl Default for ControllerUi {
@@ -136,6 +144,7 @@ impl ControllerUi {
             show_media: false,
             dpad: (Pos2::ZERO, 1.0),
             dolphin: false,
+            press: Press::default(),
         }
     }
 
@@ -147,7 +156,8 @@ impl ControllerUi {
     }
 
     /// `pad_pending`: tipo de mando pedido al receptor y aún sin eco (el
-    /// selector lo pinta a medio tono).
+    /// selector lo pinta a medio tono). `press`: los ajustes de pulsación.
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -156,8 +166,10 @@ impl ControllerUi {
         show_chips: bool,
         pad_pending: Option<&str>,
         sensor_hz: f32,
+        press: Press,
     ) -> Action {
         let mut action = Action::None;
+        self.press = press;
 
         // Cabecera
         ui.horizontal(|ui| {
@@ -398,7 +410,7 @@ impl ControllerUi {
             }
             painter.circle_filled(c, 1.0 * s, theme::text_dim());
         }
-        self.hits.push((Shape::Rect(strip), Target::Button(bit)));
+        self.hits.push((Shape::Rect(strip), Target::Hold(bit)));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -427,11 +439,31 @@ impl ControllerUi {
         }
     }
 
+    /// Forma del objetivo en el trazado de este frame: para saber si el dedo
+    /// sigue dentro sin volver a resolver el hit-test entero.
+    fn shape_of(&self, target: Target) -> Option<Shape> {
+        self.hits.iter().find(|(_, t)| *t == target).map(|(s, _)| *s)
+    }
+
+    /// ¿Lleva OTRO dedo ese mismo bit? Ni se le quita deslizando ni se suelta
+    /// al levantar este: mientras alguien lo apriete, sigue apretado (igual que
+    /// `SlideTracker` en Android).
+    fn taken(&self, key: u64, bit: u32) -> bool {
+        self.touches
+            .iter()
+            .any(|(k, t)| *k != key && matches!(t.target, Target::Button(b) | Target::Hold(b) if b == bit))
+    }
+
     fn begin(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
-        let Some(target) = touch::hit_test(&self.hits, pos) else { return };
+        let target = match touch::hit_test(&self.hits, pos) {
+            Some(t) => t,
+            // deslizando, un dedo que nace en el vacío pulsa al entrar
+            None if self.press.slide => Target::Free,
+            None => return,
+        };
         let mut held = 0;
         match target {
-            Target::Button(bit) => buttons.set(bit, true),
+            Target::Button(bit) | Target::Hold(bit) => buttons.set(bit, true),
             Target::Dpad => {
                 // un solo dedo lleva la cruceta; el segundo se ignora
                 if self.touches.values().any(|t| t.target == Target::Dpad) {
@@ -456,18 +488,50 @@ impl ControllerUi {
 
     fn moved(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
         let (dc, half) = self.dpad;
-        if let Some(t) = self.touches.get_mut(&key) {
-            match t.target {
-                Target::Scroll => {
-                    // dedo hacia arriba (dy negativo) = scroll up = positivo
-                    buttons.add_scroll((t.last.y - pos.y).round() as i32);
-                }
-                // deslizar por la cruceta cambia de dirección sin levantar el dedo
-                Target::Dpad => {
+        let Some(t) = self.touches.get(&key) else { return };
+        let (target, last) = (t.target, t.last);
+        match target {
+            Target::Scroll => {
+                // dedo hacia arriba (dy negativo) = scroll up = positivo
+                buttons.add_scroll((last.y - pos.y).round() as i32);
+            }
+            // deslizar por la cruceta cambia de dirección sin levantar el dedo
+            Target::Dpad => {
+                if let Some(t) = self.touches.get_mut(&key) {
                     dpad::apply(buttons, &mut t.held, dpad::bits(pos - dc, half));
                 }
-                _ => {}
             }
+            // un botón (o un dedo libre): lo que diga el modo de pulsación.
+            // La cruceta, la diana, el scroll y la tira de mantener quedan
+            // fuera: deslizar no los engancha ni los suelta.
+            Target::Button(_) | Target::Free => {
+                let held = if let Target::Button(bit) = target { Some(bit) } else { None };
+                let over = if self.press.slide {
+                    // deslizando manda lo que haya bajo el dedo (solo botones),
+                    // salvo el que ya lleve otro dedo: ese no se le quita
+                    match touch::hit_test(&self.hits, pos) {
+                        Some(Target::Button(bit)) if !self.taken(key, bit) => Some(bit),
+                        _ => None,
+                    }
+                } else {
+                    // si no, solo importa si el dedo sigue dentro de su forma
+                    held.filter(|_| self.shape_of(target).is_some_and(|s| s.hit(pos)))
+                };
+                if let touch::Move::To(next) = touch::on_move(self.press, held, over) {
+                    if let Some(bit) = held {
+                        buttons.set(bit, false);
+                    }
+                    if let Some(bit) = next {
+                        buttons.set(bit, true);
+                    }
+                    if let Some(t) = self.touches.get_mut(&key) {
+                        t.target = next.map_or(Target::Free, Target::Button);
+                    }
+                }
+            }
+            _ => {}
+        }
+        if let Some(t) = self.touches.get_mut(&key) {
             t.last = pos;
         }
     }
@@ -475,12 +539,204 @@ impl ControllerUi {
     fn end(&mut self, key: u64, buttons: &Buttons) {
         if let Some(mut t) = self.touches.remove(&key) {
             match t.target {
-                Target::Button(bit) => buttons.set(bit, false),
+                // la tira de mantener se suelta igual que un botón, salvo que
+                // otro dedo siga apretando ese mismo bit
+                Target::Button(bit) | Target::Hold(bit) => {
+                    if !self.taken(key, bit) {
+                        buttons.set(bit, false);
+                    }
+                }
                 Target::Dpad => {
                     dpad::apply(buttons, &mut t.held, 0);
                 }
+                // un dedo libre no lleva nada que soltar
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::touch::Press;
+
+    fn connected(mode: &str) -> Status {
+        Status::Connected {
+            pc_name: "PC".into(), mode: mode.into(), mode_by_pc: false,
+            slot: 0, player: 1, role: crate::link::Role::Wiimote, rtt_ms: None,
+            supports_cemu: true, supports_switch: true, pad: "wiimote".into(),
+            notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None,
+        }
+    }
+
+    /// Pinta un frame (sin eventos) para tener el trazado y sus formas.
+    fn render(ctl: &mut ControllerUi, buttons: &Buttons, status: &Status, press: Press) {
+        let ctx = egui::Context::default();
+        let size = Vec2::new(400.0, 900.0);
+        let _ = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                ctl.show(ui, buttons, status, false, None, 0.0, press);
+            });
+        });
+    }
+
+    fn position(ctl: &ControllerUi, target: Target) -> Pos2 {
+        match ctl.hits.iter().find(|(_, t)| *t == target).unwrap_or_else(|| panic!("sin {target:?}")).0 {
+            Shape::Circle { c, .. } => c,
+            Shape::Rect(r) => r.center(),
+        }
+    }
+
+    /// Un punto sin nada: el hueco entre 1 y 2 (sin Home están a 36·s del
+    /// centro y su radio es 26·s).
+    fn empty(ctl: &ControllerUi) -> Pos2 {
+        let one = position(ctl, Target::Button(pmp::BTN_ONE));
+        let two = position(ctl, Target::Button(pmp::BTN_TWO));
+        let mid = one + (two - one) * 0.5;
+        assert!(touch::hit_test(&ctl.hits, mid).is_none(), "el hueco entre 1 y 2 debería estar vacío: {mid:?}");
+        mid
+    }
+
+    fn setup(press: Press) -> (ControllerUi, Buttons) {
+        let mut ctl = ControllerUi::new();
+        let b = Buttons::new();
+        // modo puntero: sin Home entre 1 y 2, y la tira izquierda es Precisión
+        render(&mut ctl, &b, &connected("pointer"), press);
+        (ctl, b)
+    }
+
+    #[test]
+    fn deslizar_cambia_de_boton_sin_levantar_el_dedo() {
+        let (mut ctl, b) = setup(Press { slide: true, sticky: true });
+        let (one, two) = (position(&ctl, Target::Button(pmp::BTN_ONE)), position(&ctl, Target::Button(pmp::BTN_TWO)));
+        ctl.begin(1, one, &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE);
+        ctl.moved(1, empty(&ctl), &b);
+        assert_eq!(b.physical(), 0, "al salir al vacío se suelta");
+        ctl.moved(1, two, &b);
+        assert_eq!(b.physical(), pmp::BTN_TWO, "y al entrar en el 2 se pulsa el 2");
+        ctl.end(1, &b);
+        assert_eq!(b.physical(), 0);
+        assert!(ctl.touches.is_empty());
+    }
+
+    #[test]
+    fn un_boton_que_lleva_otro_dedo_no_se_le_quita() {
+        let (mut ctl, b) = setup(Press { slide: true, sticky: true });
+        let (one, two) = (position(&ctl, Target::Button(pmp::BTN_ONE)), position(&ctl, Target::Button(pmp::BTN_TWO)));
+        ctl.begin(1, one, &b);
+        ctl.begin(2, two, &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE | pmp::BTN_TWO);
+        // el segundo dedo se arrastra al 1: ya lo lleva el primero, así que
+        // suelta el 2 y se queda sin nada
+        ctl.moved(2, one, &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE, "el 1 sigue siendo del primer dedo");
+        assert_eq!(ctl.touches[&2].target, Target::Free);
+        ctl.end(2, &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE, "al levantar el segundo, el 1 sigue pulsado");
+        ctl.end(1, &b);
+        assert_eq!(b.physical(), 0);
+        // y dos dedos que caen a la vez en el mismo botón: lo suelta el último
+        let (mut ctl, b) = setup(Press::default());
+        let one = position(&ctl, Target::Button(pmp::BTN_ONE));
+        ctl.begin(3, one, &b);
+        ctl.begin(4, one, &b);
+        ctl.end(3, &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE, "el otro dedo lo sigue apretando");
+        ctl.end(4, &b);
+        assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn un_dedo_que_nace_en_el_vacio_pulsa_al_entrar() {
+        let (mut ctl, b) = setup(Press { slide: true, sticky: true });
+        let hueco = empty(&ctl);
+        ctl.begin(1, hueco, &b);
+        assert_eq!(b.physical(), 0, "en el vacío no se pulsa nada todavía");
+        assert_eq!(ctl.touches[&1].target, Target::Free);
+        ctl.moved(1, position(&ctl, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), pmp::BTN_A);
+        ctl.end(1, &b);
+        assert_eq!(b.physical(), 0);
+        // sin deslizar, ese dedo ni siquiera se registra
+        let (mut ctl, b) = setup(Press::default());
+        let hueco = empty(&ctl);
+        ctl.begin(2, hueco, &b);
+        assert!(ctl.touches.is_empty());
+        ctl.moved(2, position(&ctl, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn de_serie_el_boton_se_queda_pulsado_al_salirse() {
+        let (mut ctl, b) = setup(Press::default());
+        let one = position(&ctl, Target::Button(pmp::BTN_ONE));
+        ctl.begin(1, one, &b);
+        ctl.moved(1, empty(&ctl), &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE, "pegajoso: sigue pulsado fuera del botón");
+        ctl.moved(1, position(&ctl, Target::Button(pmp::BTN_TWO)), &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE, "y no coge el 2 al pasar por encima");
+        ctl.end(1, &b);
+        assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn sin_pegajoso_se_suelta_al_salir_y_no_vuelve() {
+        let (mut ctl, b) = setup(Press { slide: false, sticky: false });
+        let one = position(&ctl, Target::Button(pmp::BTN_ONE));
+        ctl.begin(1, one, &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE);
+        ctl.moved(1, one + Vec2::new(2.0, 0.0), &b);
+        assert_eq!(b.physical(), pmp::BTN_ONE, "dentro del botón no pasa nada");
+        ctl.moved(1, empty(&ctl), &b);
+        assert_eq!(b.physical(), 0, "al salirse se suelta");
+        ctl.moved(1, one, &b);
+        assert_eq!(b.physical(), 0, "y el dedo ya no vuelve a coger nada");
+        ctl.end(1, &b);
+        assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn la_tira_de_precision_no_se_suelta_al_salir_ni_se_pulsa_deslizando() {
+        // es «mantener»: aunque se apague lo pegajoso, sigue hasta levantar
+        let (mut ctl, b) = setup(Press { slide: false, sticky: false });
+        let strip = position(&ctl, Target::Hold(pmp::BTN_PRECISION));
+        ctl.begin(1, strip, &b);
+        assert_eq!(b.physical(), pmp::BTN_PRECISION);
+        ctl.moved(1, position(&ctl, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), pmp::BTN_PRECISION, "ni se suelta ni pulsa la A");
+        ctl.end(1, &b);
+        assert_eq!(b.physical(), 0);
+        // deslizando: un dedo que pasa por encima no la pulsa
+        let (mut ctl, b) = setup(Press { slide: true, sticky: true });
+        let strip = position(&ctl, Target::Hold(pmp::BTN_PRECISION));
+        ctl.begin(2, position(&ctl, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), pmp::BTN_A);
+        ctl.moved(2, strip, &b);
+        assert_eq!(b.physical(), 0, "suelta la A y la tira no se pulsa");
+        ctl.end(2, &b);
+        // y si el dedo nace en la tira, deslizar tampoco se la quita
+        ctl.begin(3, strip, &b);
+        assert_eq!(b.physical(), pmp::BTN_PRECISION);
+        ctl.moved(3, position(&ctl, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), pmp::BTN_PRECISION);
+        ctl.end(3, &b);
+        assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn deslizar_no_engancha_la_cruceta_la_diana_ni_el_scroll() {
+        let (mut ctl, b) = setup(Press { slide: true, sticky: true });
+        ctl.begin(1, position(&ctl, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), pmp::BTN_A);
+        for target in [Target::Dpad, Target::Recenter, Target::Scroll] {
+            ctl.moved(1, position(&ctl, target), &b);
+            assert_eq!(b.physical(), 0, "{target:?}: se suelta la A y no se coge nada");
+            assert_eq!(b.recenter_count(), 0);
+            assert_eq!(b.drain_scroll(), 0);
+        }
+        ctl.end(1, &b);
+        assert_eq!(b.physical(), 0);
     }
 }

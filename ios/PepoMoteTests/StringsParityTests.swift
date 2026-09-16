@@ -51,6 +51,8 @@ final class StringsParityTests: XCTestCase {
                     "kb_write", "kb_close", "kb_accept", "warn_needs_13", "warn_player_1", "lost_connection", "re_pair_reason",
                     "pc_not_responding", "qr_not_pepomote", "error_prefix", "your_pc", "camera_denied", "local_network_hint",
                     "ios_note", "scan_prompt", "cancel", "about", "update_title", "update_sub", "update_available",
+                    "slide_press_title", "slide_press_sub", "sticky_press_title", "sticky_press_sub",
+                    "header_controls", "header_show", "header_hide",
                     "update_download", "update_dismiss", "noscreen_title", "noscreen_sub",
                     "nunchuk_own_title", "nunchuk_own_sub", "nunchuk_chip", "mode_dolphin_nunchuk", "notices_title", "notices_sub",
                     "fullscreen_title", "fullscreen_sub", "fullscreen_kb_title", "fullscreen_kb_sub", "fullscreen_old_receiver",

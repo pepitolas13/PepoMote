@@ -8,6 +8,8 @@ struct NunchukScreen: View {
     let onDisconnect: () -> Void
     @EnvironmentObject var model: AppModel
     @ObservedObject var link = LinkState.shared
+    /// Dónde está cada botón, para «Pulsar deslizando».
+    @StateObject private var press = PressRegistry()
 
     var body: some View {
         GeometryReader { geo in
@@ -19,6 +21,9 @@ struct NunchukScreen: View {
             let cHeight: CGFloat = compact ? 48 : 64 * grow
             let zHeight: CGFloat = compact ? 64 : 96 * grow
             ZStack {
+                // El primero: recoge los dedos que nacen fuera de los botones
+                SlideCanvas()
+
                 VStack(spacing: 0) {
                     Spacer().frame(height: 10)
                     header
@@ -50,11 +55,14 @@ struct NunchukScreen: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
+        .coordinateSpace(name: PressRegistry.padSpace)
+        .environmentObject(press)
         .background(Pepo.background.ignoresSafeArea())
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
-            ButtonState.shared.setStick(0, 0) // nada queda inclinado al salir
+            press.releaseAll() // nada queda pulsado…
+            ButtonState.shared.setStick(0, 0) // …ni inclinado al salir
         }
     }
 

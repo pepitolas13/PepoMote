@@ -1,9 +1,7 @@
 package dev.pepotech.pepomote.ui.components
 
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -20,8 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -32,12 +28,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.pepotech.pepomote.control.ButtonState
-import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 /**
  * Botón circular momentáneo: mantiene el bit activo mientras está pulsado.
- * Háptica en cada pulsación.
+ * Háptica en cada pulsación. Cómo se pulsa y se suelta (mantener al salirse,
+ * pulsar deslizando) lo decide `pressBit` con los ajustes.
  */
 @Composable
 fun RoundButton(
@@ -50,7 +46,6 @@ fun RoundButton(
     textSize: Int = 20,
     pop: Boolean = false
 ) {
-    val view = LocalView.current
     var down by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (down) 0.90f else 1f, label = "press")
 
@@ -62,23 +57,15 @@ fun RoundButton(
                 contentDescription = label
                 onClick { ButtonState.set(bit, true); ButtonState.set(bit, false); true }
             }
+            // La zona pulsable se mide antes del encogido: el botón pulsado
+            // sigue ocupando lo mismo para el dedo que pasa por encima
+            .pressBit(bit, circular = true, pop = pop) { down = it }
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
             .shadow(if (down) 1.dp else 6.dp, CircleShape)
-            .background(if (down) pressedColor else background, CircleShape)
-            .pointerInput(bit) {
-                detectTapGestures(onPress = {
-                    down = true
-                    ButtonState.set(bit, true)
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    if (pop) UiSounds.pop() else UiSounds.blip()
-                    tryAwaitRelease()
-                    down = false
-                    ButtonState.set(bit, false)
-                })
-            },
+            .background(if (down) pressedColor else background, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         // Se encoge hasta caber: «Home» en un círculo pequeño no se corta

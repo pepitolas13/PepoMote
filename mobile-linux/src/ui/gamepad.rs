@@ -27,7 +27,7 @@ use crate::screen;
 use crate::theme;
 use crate::ui::dpad;
 use crate::ui::nunchuk::{knob_pos, stick_value};
-use crate::ui::touch::{self, fit_rect, Canvas, Input, Phase, Seg, Shape, Transform};
+use crate::ui::touch::{self, fit_rect, Canvas, Input, Phase, Press, Seg, Shape, Transform};
 use egui::{Align2, Color32, FontId, ImageData, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -67,15 +67,17 @@ pub struct Inputs<'a> {
     pub full_screen: bool,
     /// En pantalla completa, botón de teclado arriba a la derecha.
     pub keyboard_button: bool,
+    /// Los dos ajustes de pulsación (deslizar / mantener al salir).
+    pub press: Press,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Side {
     Left = 0,
     Right = 1,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Chip {
     Exit,
     Mode(&'static str),
@@ -84,9 +86,12 @@ enum Chip {
     Keyboard,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Target {
     Button(u32),
+    /// Un dedo que no lleva nada: con «pulsar deslizando» pulsará el botón en
+    /// el que entre. Solo se registra con ese ajuste encendido.
+    Free,
     Stick(Side),
     Touch,
     /// La cruceta de una pieza (un dedo, que lleva sus bits mientras está apoyado).
@@ -144,6 +149,8 @@ pub struct GamePadUi {
     zone_rect: Rect,
     active: bool,
     fired: Option<Chip>,
+    /// Los dos ajustes de pulsación (deslizar / mantener al salir).
+    press: Press,
     /// La pantalla del GamePad de Cemu (se crea con la primera imagen y se
     /// actualiza con cada una; se suelta sin canal).
     texture: Option<TextureHandle>,
@@ -218,6 +225,7 @@ impl GamePadUi {
             zone_rect: Rect::NOTHING,
             active: false,
             fired: None,
+            press: Press::default(),
             texture: None,
             layout_key: None,
         }
@@ -313,6 +321,7 @@ impl GamePadUi {
             self.layout_key = Some(key);
         }
         self.active = view.active;
+        self.press = inp.press;
         self.hits.clear();
         {
             let cv = Canvas::new(ui.painter(), rect, self.transform);
@@ -796,7 +805,12 @@ impl GamePadUi {
     }
 
     fn begin(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
-        let Some(target) = touch::hit_test(&self.hits, pos) else { return };
+        let target = match touch::hit_test(&self.hits, pos) {
+            Some(t) => t,
+            // deslizando, un dedo que nace en el vacío pulsa al entrar
+            None if self.press.slide => Target::Free,
+            None => return,
+        };
         // sin Wii U confirmado solo responden la cabecera y el selector
         if !self.active && !matches!(target, Target::Chip(_)) {
             return;
@@ -823,7 +837,7 @@ impl GamePadUi {
                 }
                 self.dpad_at(pos, buttons);
             }
-            Target::Chip(_) => {}
+            Target::Chip(_) | Target::Free => {}
         }
         self.touches.insert(key, target);
     }
@@ -834,13 +848,56 @@ impl GamePadUi {
             Some(Target::Touch) => self.touch_at(pos, buttons),
             // deslizar por la cruceta cambia de dirección sin levantar el dedo
             Some(Target::Dpad) => self.dpad_at(pos, buttons),
+            // un botón (o un dedo libre): lo que diga el modo de pulsación.
+            // Sticks, táctil, cruceta y chips quedan fuera: deslizar no los
+            // engancha ni los suelta.
+            Some(target @ (Target::Button(_) | Target::Free)) => self.slide(key, target, pos, buttons),
             _ => {}
+        }
+    }
+
+    /// ¿Lleva OTRO dedo ese mismo bit? Ni se le quita deslizando ni se suelta
+    /// al levantar este: mientras alguien lo apriete, sigue apretado (igual que
+    /// `SlideTracker` en Android).
+    fn taken(&self, key: u64, bit: u32) -> bool {
+        self.touches.iter().any(|(k, t)| *k != key && *t == Target::Button(bit))
+    }
+
+    /// Dedo que lleva un botón (o nada) y se mueve: suelta y pulsa lo que
+    /// diga `touch::on_move`.
+    fn slide(&mut self, key: u64, target: Target, pos: Pos2, buttons: &Buttons) {
+        let held = if let Target::Button(bit) = target { Some(bit) } else { None };
+        let over = if self.press.slide {
+            // deslizando manda lo que haya bajo el dedo (solo botones), salvo
+            // el que ya lleve otro dedo: ese no se le quita
+            match touch::hit_test(&self.hits, pos) {
+                Some(Target::Button(bit)) if !self.taken(key, bit) => Some(bit),
+                _ => None,
+            }
+        } else {
+            // si no, solo importa si el dedo sigue dentro de su forma
+            let shape = self.hits.iter().find(|(_, t)| *t == target).map(|(s, _)| *s);
+            held.filter(|_| shape.is_some_and(|s| s.hit(pos)))
+        };
+        if let touch::Move::To(next) = touch::on_move(self.press, held, over) {
+            if let Some(bit) = held {
+                buttons.set(bit, false);
+            }
+            if let Some(bit) = next {
+                buttons.set(bit, true);
+            }
+            self.touches.insert(key, next.map_or(Target::Free, Target::Button));
         }
     }
 
     fn end(&mut self, key: u64, pos: Pos2, buttons: &Buttons) {
         match self.touches.remove(&key) {
-            Some(Target::Button(bit)) => buttons.set(bit, false),
+            // salvo que otro dedo siga apretando ese mismo bit
+            Some(Target::Button(bit)) => {
+                if !self.taken(key, bit) {
+                    buttons.set(bit, false);
+                }
+            }
             Some(Target::Dpad) => {
                 let mut held = self.dpad_held;
                 dpad::apply(buttons, &mut held, 0);
@@ -906,13 +963,17 @@ mod tests {
     }
 
     fn render(gamepad: &mut GamePadUi, buttons: &Buttons, status: &Status, size: Vec2) {
+        render_press(gamepad, buttons, status, size, Press::default());
+    }
+
+    fn render_press(gamepad: &mut GamePadUi, buttons: &Buttons, status: &Status, size: Vec2, press: Press) {
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), ..Default::default() }, |ctx| {
             egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
                 gamepad.show(ui, buttons, &Inputs {
                     status, rotation: Rotation::Left, show_chips: true, optimistic: false,
                     wanted_mode: "switch", pad_pending: None, sensor_hz: 200.0, screen: None,
-                    no_screen: false, full_screen: true, keyboard_button: true,
+                    no_screen: false, full_screen: true, keyboard_button: true, press,
                 });
             });
         });
@@ -1017,5 +1078,152 @@ mod tests {
         assert_eq!(touch_fraction(r, Pos2::new(200.0, 78.125)), (0x8000, 0x4000));
         assert_eq!(touch_fraction(r, Pos2::new(-5.0, 999.0)), (0, 65535), "fuera: recortado");
         assert_eq!(touch_fraction(Rect::NOTHING, Pos2::new(1.0, 1.0)), (0, 0), "sin rectángulo no hay fracción");
+    }
+
+    /// Un punto del espacio virtual donde no hay nada.
+    fn empty(gp: &GamePadUi) -> Pos2 {
+        let v = gp.transform.virtual_rect(gp.screen);
+        let mut y = v.top() + 2.0;
+        while y < v.bottom() {
+            let mut x = v.left() + 2.0;
+            while x < v.right() {
+                let p = Pos2::new(x, y);
+                if touch::hit_test(&gp.hits, p).is_none() {
+                    return p;
+                }
+                x += 6.0;
+            }
+            y += 6.0;
+        }
+        panic!("no hay ni un hueco vacío en el trazado");
+    }
+
+    fn setup(press: Press) -> (GamePadUi, Buttons) {
+        let mut gp = GamePadUi::new();
+        let b = Buttons::new();
+        render_press(&mut gp, &b, &switch_status("pro"), Vec2::new(700.0, 370.0), press);
+        (gp, b)
+    }
+
+    #[test]
+    fn deslizar_cambia_de_boton_sin_levantar_el_dedo() {
+        let (mut gp, b) = setup(Press { slide: true, sticky: true });
+        let (a, x) = (position(&gp, Target::Button(pmp::BTN_A)), position(&gp, Target::Button(pmp::BTN_X)));
+        gp.begin(1, a, &b);
+        assert_eq!(b.physical(), pmp::BTN_A);
+        gp.moved(1, empty(&gp), &b);
+        assert_eq!(b.physical(), 0, "al salir al vacío se suelta");
+        gp.moved(1, x, &b);
+        assert_eq!(b.physical(), pmp::BTN_X, "y al entrar en la X se pulsa la X");
+        gp.end(1, x, &b);
+        assert_eq!(b.physical(), 0);
+        assert!(gp.touches.is_empty());
+    }
+
+    #[test]
+    fn un_boton_que_lleva_otro_dedo_no_se_le_quita() {
+        let (mut gp, b) = setup(Press { slide: true, sticky: true });
+        let (a, x) = (position(&gp, Target::Button(pmp::BTN_A)), position(&gp, Target::Button(pmp::BTN_X)));
+        gp.begin(1, a, &b);
+        gp.begin(2, x, &b);
+        assert_eq!(b.physical(), pmp::BTN_A | pmp::BTN_X);
+        // el segundo dedo se arrastra a la A: ya la lleva el primero, así que
+        // suelta la X y se queda sin nada
+        gp.moved(2, a, &b);
+        assert_eq!(b.physical(), pmp::BTN_A, "la A sigue siendo del primer dedo");
+        assert_eq!(gp.touches[&2], Target::Free);
+        gp.end(2, a, &b);
+        assert_eq!(b.physical(), pmp::BTN_A, "al levantar el segundo, la A sigue pulsada");
+        gp.end(1, a, &b);
+        assert_eq!(b.physical(), 0);
+        // y dos dedos que caen a la vez en el mismo botón: lo suelta el último
+        let (mut gp, b) = setup(Press::default());
+        let a = position(&gp, Target::Button(pmp::BTN_A));
+        gp.begin(3, a, &b);
+        gp.begin(4, a, &b);
+        gp.end(3, a, &b);
+        assert_eq!(b.physical(), pmp::BTN_A, "el otro dedo la sigue apretando");
+        gp.end(4, a, &b);
+        assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn un_dedo_que_nace_en_el_vacio_pulsa_al_entrar() {
+        let (mut gp, b) = setup(Press { slide: true, sticky: true });
+        let hueco = empty(&gp);
+        gp.begin(1, hueco, &b);
+        assert_eq!(b.physical(), 0);
+        assert_eq!(gp.touches[&1], Target::Free);
+        gp.moved(1, position(&gp, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), pmp::BTN_A);
+        gp.end(1, position(&gp, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), 0);
+        // sin deslizar, ese dedo ni se registra
+        let (mut gp, b) = setup(Press::default());
+        let hueco = empty(&gp);
+        gp.begin(2, hueco, &b);
+        assert!(gp.touches.is_empty());
+        gp.moved(2, position(&gp, Target::Button(pmp::BTN_A)), &b);
+        assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn sin_pegajoso_se_suelta_al_salir_y_no_vuelve() {
+        let (mut gp, b) = setup(Press { slide: false, sticky: false });
+        let a = position(&gp, Target::Button(pmp::BTN_A));
+        gp.begin(1, a, &b);
+        assert_eq!(b.physical(), pmp::BTN_A);
+        gp.moved(1, empty(&gp), &b);
+        assert_eq!(b.physical(), 0, "al salirse se suelta");
+        gp.moved(1, a, &b);
+        assert_eq!(b.physical(), 0, "y el dedo ya no vuelve a coger nada");
+        gp.end(1, a, &b);
+        assert_eq!(b.physical(), 0);
+        // de serie sigue siendo pegajoso
+        let (mut gp, b) = setup(Press::default());
+        gp.begin(2, a, &b);
+        gp.moved(2, empty(&gp), &b);
+        assert_eq!(b.physical(), pmp::BTN_A, "pegajoso: sigue pulsado fuera del botón");
+        gp.end(2, a, &b);
+        assert_eq!(b.physical(), 0);
+    }
+
+    #[test]
+    fn deslizar_no_engancha_sticks_cruceta_ni_chips() {
+        let (mut gp, b) = setup(Press { slide: true, sticky: true });
+        let chip = *gp.hits.iter().find_map(|(_, t)| if let Target::Chip(c) = t { Some(c) } else { None }).expect("algún chip");
+        for target in [Target::Stick(Side::Left), Target::Stick(Side::Right), Target::Dpad, Target::Chip(chip)] {
+            gp.begin(1, position(&gp, Target::Button(pmp::BTN_A)), &b);
+            assert_eq!(b.physical(), pmp::BTN_A);
+            let p = position(&gp, target);
+            gp.moved(1, p, &b);
+            assert_eq!(b.physical(), 0, "{target:?}: se suelta la A y no se coge nada");
+            assert_eq!(b.stick(), (0, 0));
+            assert_eq!(b.stick2(), (0, 0));
+            gp.end(1, p, &b);
+            assert!(gp.fired.take().is_none(), "{target:?}: un chip no dispara si el dedo no nació en él");
+        }
+    }
+
+    #[test]
+    fn con_wii_u_sin_eco_no_se_pulsa_nada_ni_deslizando() {
+        let mut pending = switch_status("pro");
+        if let Status::Connected { mode, .. } = &mut pending {
+            *mode = "pointer".into();
+        }
+        let mut gp = GamePadUi::new();
+        let b = Buttons::new();
+        let press = Press { slide: true, sticky: true };
+        render_press(&mut gp, &b, &pending, Vec2::new(700.0, 370.0), press);
+        assert!(!gp.active);
+        let a = position(&gp, Target::Button(pmp::BTN_A));
+        gp.begin(1, a, &b);
+        assert_eq!(b.physical(), 0);
+        assert!(gp.touches.is_empty());
+        // y un dedo que nace en el vacío tampoco se registra
+        gp.begin(2, empty(&gp), &b);
+        assert!(gp.touches.is_empty());
+        gp.moved(2, a, &b);
+        assert_eq!(b.physical(), 0);
     }
 }

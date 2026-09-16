@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,8 +55,11 @@ import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.KeyboardButton
 import dev.pepotech.pepomote.ui.components.KeyboardDialog
+import dev.pepotech.pepomote.ui.components.LocalPressRegistry
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
+import dev.pepotech.pepomote.ui.components.rememberPressRegistry
+import dev.pepotech.pepomote.ui.components.slideCanvas
 import dev.pepotech.pepomote.ui.components.RotateSuggestion
 import dev.pepotech.pepomote.ui.components.PadSelector
 import dev.pepotech.pepomote.ui.components.NearStrip
@@ -105,205 +109,213 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
         }
     }
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(PepoColors.Background)
-            .statusBarsPadding()
-            .displayCutoutPadding()
-            .navigationBarsPadding()
-    ) {
-        // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1),
-        // la columna del mando se limita a 520·grow y las tiras la abrazan (en
-        // vez de irse a los bordes de la pantalla); los huecos entre grupos se
-        // vuelven flexibles para repartir la holgura vertical
-        val grow = UiScale.remote(maxWidth.value, maxHeight.value)
-        val colW = minOf(maxWidth, 520.dp * grow)
-        val gutter = (maxWidth - colW) / 2
-        val flexible = grow > 1f
-        Column(
+    // Capa de pulsación de la pantalla: cada botón dice dónde está y, con
+    // «Pulsar deslizando», el dedo pasa de uno a otro sin levantarlo
+    val press = rememberPressRegistry()
+    DisposableEffect(press) { onDispose { press.releaseAll() } }
+
+    CompositionLocalProvider(LocalPressRegistry provides press) {
+        BoxWithConstraints(
             modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxHeight()
-                .width(colW)
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxSize()
+                .background(PepoColors.Background)
+                .statusBarsPadding()
+                .displayCutoutPadding()
+                .navigationBarsPadding()
+                .slideCanvas()
         ) {
-            Spacer(Modifier.height(10.dp))
-
-            // Cabecera: estado + desconectar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1),
+            // la columna del mando se limita a 520·grow y las tiras la abrazan (en
+            // vez de irse a los bordes de la pantalla); los huecos entre grupos se
+            // vuelven flexibles para repartir la holgura vertical
+            val grow = UiScale.remote(maxWidth.value, maxHeight.value)
+            val colW = minOf(maxWidth, 520.dp * grow)
+            val gutter = (maxWidth - colW) / 2
+            val flexible = grow > 1f
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxHeight()
+                    .width(colW)
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(Modifier.weight(1f)) {
-                    when (link) {
-                        is UiLink.Connected -> {
-                            Text(
-                                if (link.slot > 0) stringResource(R.string.pc_player, link.pcName, link.slot + 1)
-                                else link.pcName,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            val modeText = when {
-                                isWiiUAsWiimote(link) -> stringResource(R.string.wiiu_as_wiimote)
-                                link.mode == LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
-                                link.mode == LinkState.MODE_DOLPHIN && link.ownNunchuk -> stringResource(R.string.mode_dolphin_nunchuk)
-                                link.mode == LinkState.MODE_DOLPHIN -> stringResource(R.string.mode_dolphin)
-                                link.slot > 0 -> stringResource(R.string.pointer_player1_points)
-                                else -> stringResource(R.string.mode_pointer)
-                            }
-                            Text(
-                                buildString {
-                                    append(modeText)
-                                    link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
-                                },
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
+                Spacer(Modifier.height(10.dp))
 
-                        is UiLink.Connecting -> Text(stringResource(R.string.status_connecting), style = MaterialTheme.typography.titleMedium)
-                        is UiLink.Reconnecting -> ReconnectingLabel(link)
-                        else -> {
-                            Text(stringResource(R.string.status_disconnected), style = MaterialTheme.typography.titleMedium)
-                            val ctx = androidx.compose.ui.platform.LocalContext.current
-                            if (dev.pepotech.pepomote.net.PairStore.load(ctx) != null) {
-                                TextButton(onClick = {
-                                    dev.pepotech.pepomote.service.LinkForegroundService.start(ctx)
-                                }) {
-                                    Text(stringResource(R.string.reconnect), color = PepoColors.Blue)
+                // Cabecera: estado + desconectar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        when (link) {
+                            is UiLink.Connected -> {
+                                Text(
+                                    if (link.slot > 0) stringResource(R.string.pc_player, link.pcName, link.slot + 1)
+                                    else link.pcName,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                val modeText = when {
+                                    isWiiUAsWiimote(link) -> stringResource(R.string.wiiu_as_wiimote)
+                                    link.mode == LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
+                                    link.mode == LinkState.MODE_DOLPHIN && link.ownNunchuk -> stringResource(R.string.mode_dolphin_nunchuk)
+                                    link.mode == LinkState.MODE_DOLPHIN -> stringResource(R.string.mode_dolphin)
+                                    link.slot > 0 -> stringResource(R.string.pointer_player1_points)
+                                    else -> stringResource(R.string.mode_pointer)
+                                }
+                                Text(
+                                    buildString {
+                                        append(modeText)
+                                        link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+
+                            is UiLink.Connecting -> Text(stringResource(R.string.status_connecting), style = MaterialTheme.typography.titleMedium)
+                            is UiLink.Reconnecting -> ReconnectingLabel(link)
+                            else -> {
+                                Text(stringResource(R.string.status_disconnected), style = MaterialTheme.typography.titleMedium)
+                                val ctx = androidx.compose.ui.platform.LocalContext.current
+                                if (dev.pepotech.pepomote.net.PairStore.load(ctx) != null) {
+                                    TextButton(onClick = {
+                                        dev.pepotech.pepomote.service.LinkForegroundService.start(ctx)
+                                    }) {
+                                        Text(stringResource(R.string.reconnect), color = PepoColors.Blue)
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                // Modo Wii U: texto para el teclado en pantalla de Cemu
-                if (link is UiLink.Connected && link.mode == LinkState.MODE_CEMU) {
-                    KeyboardButton(compact = true) { keyboardOpen = true }
-                    Spacer(Modifier.width(4.dp))
-                }
-                TextButton(onClick = onDisconnect) {
-                    Text(stringResource(R.string.exit), color = PepoColors.Error)
-                }
-            }
-
-            if (link is UiLink.Connected) {
-                // Chips de modo (Jugador 1 con el ajuste activo, y siempre dentro de
-                // Wii U) y, en Dolphin, el interruptor «Nunchuk» a la derecha de Wii U
-                // con otro tono: es una opción, no un modo. Todo en UNA fila, lejos
-                // de la cruceta (antes el Nunchuk iba en una fila propia justo
-                // encima y se pulsaba sin querer): en un móvil los chips van densos
-                // para que quepan los cuatro; si aun así no caben (letra grande),
-                // el último pasa a la fila siguiente
-                val modeChips = showModeChips(link, showChips)
-                val nunchuk = showNunchukChip(link)
-                if (modeChips || nunchuk) {
-                    Spacer(Modifier.height(6.dp))
-                    val dense = colW < 420.dp
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 10.dp, Alignment.CenterHorizontally),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android", dense = dense)
-                        if (nunchuk) NunchukChip(link, dense = dense, modifier = Modifier.padding(start = 4.dp))
+                    // Modo Wii U: texto para el teclado en pantalla de Cemu
+                    if (link is UiLink.Connected && link.mode == LinkState.MODE_CEMU) {
+                        KeyboardButton(compact = true) { keyboardOpen = true }
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    TextButton(onClick = onDisconnect) {
+                        Text(stringResource(R.string.exit), color = PepoColors.Error)
                     }
                 }
-                // Wii U como Mando de Wii: qué mando soy en Cemu, con su ayuda
-                if (isWiiUAsWiimote(link)) {
-                    Spacer(Modifier.height(8.dp))
-                    PadSelector(link, help = stringResource(R.string.wii_pad_help))
+
+                if (link is UiLink.Connected) {
+                    // Chips de modo (Jugador 1 con el ajuste activo, y siempre dentro de
+                    // Wii U) y, en Dolphin, el interruptor «Nunchuk» a la derecha de Wii U
+                    // con otro tono: es una opción, no un modo. Todo en UNA fila, lejos
+                    // de la cruceta (antes el Nunchuk iba en una fila propia justo
+                    // encima y se pulsaba sin querer): en un móvil los chips van densos
+                    // para que quepan los cuatro; si aun así no caben (letra grande),
+                    // el último pasa a la fila siguiente
+                    val modeChips = showModeChips(link, showChips)
+                    val nunchuk = showNunchukChip(link)
+                    if (modeChips || nunchuk) {
+                        Spacer(Modifier.height(6.dp))
+                        val dense = colW < 420.dp
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 10.dp, Alignment.CenterHorizontally),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android", dense = dense)
+                            if (nunchuk) NunchukChip(link, dense = dense, modifier = Modifier.padding(start = 4.dp))
+                        }
+                    }
+                    // Wii U como Mando de Wii: qué mando soy en Cemu, con su ayuda
+                    if (isWiiUAsWiimote(link)) {
+                        Spacer(Modifier.height(8.dp))
+                        PadSelector(link, help = stringResource(R.string.wii_pad_help))
+                    }
                 }
+
+                // Hueco de sobra entre los chips y la cruceta: que ir a por ↑ no toque un chip
+                Gap(18.dp * grow, flexible)
+                PadCross(sizeDp = 168.dp * grow)
+
+                Gap(16.dp * grow, flexible)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RoundButton("−", 54.dp * grow, ButtonState.MINUS, textSize = (20 * grow).roundToInt())
+                    RecenterButton(size = 64.dp * grow)
+                    RoundButton("+", 54.dp * grow, ButtonState.PLUS, textSize = (20 * grow).roundToInt())
+                }
+
+                Gap(16.dp * grow, flexible)
+                RoundButton(
+                    "A", 148.dp * grow, ButtonState.A,
+                    background = PepoColors.Blue,
+                    pressedColor = PepoColors.BlueHover,
+                    textColor = PepoColors.OnAccent,
+                    textSize = (44 * grow).roundToInt(),
+                    pop = true
+                )
+
+                Gap(14.dp * grow, flexible)
+                // 1 · Home · 2, como en el mando + Nunchuk. Home solo fuera del modo
+                // puntero (el PC no le da uso): en Dolphin es el menú HOME de la Wii
+                // y en Cemu, además, Mario Party 10 lo pide para dar por emparejado
+                // cada Mando de Wii emulado
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RoundButton("1", 52.dp * grow, ButtonState.ONE, textSize = (18 * grow).roundToInt())
+                    if (showHomeButton(link)) {
+                        RoundButton(stringResource(R.string.home_btn), 52.dp * grow, ButtonState.HOME, textSize = (12 * grow).roundToInt())
+                    }
+                    RoundButton("2", 52.dp * grow, ButtonState.TWO, textSize = (18 * grow).roundToInt())
+                }
+
+                Gap(10.dp * grow, flexible)
+                MediaRow(buttonSize = 46.dp * grow, textSize = (16 * grow).roundToInt())
+
+                Spacer(Modifier.weight(1f))
+                TriggerZone(height = 88.dp * grow)
+                Spacer(Modifier.height(12.dp))
             }
 
-            // Hueco de sobra entre los chips y la cruceta: que ir a por ↑ no toque un chip
-            Gap(18.dp * grow, flexible)
-            PadCross(sizeDp = 168.dp * grow)
-
-            Gap(16.dp * grow, flexible)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RoundButton("−", 54.dp * grow, ButtonState.MINUS, textSize = (20 * grow).roundToInt())
-                RecenterButton(size = 64.dp * grow)
-                RoundButton("+", 54.dp * grow, ButtonState.PLUS, textSize = (20 * grow).roundToInt())
-            }
-
-            Gap(16.dp * grow, flexible)
-            RoundButton(
-                "A", 148.dp * grow, ButtonState.A,
-                background = PepoColors.Blue,
-                pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.OnAccent,
-                textSize = (44 * grow).roundToInt(),
-                pop = true
+            ScrollStrip(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = gutter)
+                    .fillMaxHeight(0.45f)
+                    .width(30.dp * grow)
             )
 
-            Gap(14.dp * grow, flexible)
-            // 1 · Home · 2, como en el mando + Nunchuk. Home solo fuera del modo
-            // puntero (el PC no le da uso): en Dolphin es el menú HOME de la Wii
-            // y en Cemu, además, Mario Party 10 lo pide para dar por emparejado
-            // cada Mando de Wii emulado
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RoundButton("1", 52.dp * grow, ButtonState.ONE, textSize = (18 * grow).roundToInt())
-                if (showHomeButton(link)) {
-                    RoundButton(stringResource(R.string.home_btn), 52.dp * grow, ButtonState.HOME, textSize = (12 * grow).roundToInt())
-                }
-                RoundButton("2", 52.dp * grow, ButtonState.TWO, textSize = (18 * grow).roundToInt())
-            }
-
-            Gap(10.dp * grow, flexible)
-            MediaRow(buttonSize = 46.dp * grow, textSize = (16 * grow).roundToInt())
-
-            Spacer(Modifier.weight(1f))
-            TriggerZone(height = 88.dp * grow)
-            Spacer(Modifier.height(12.dp))
-        }
-
-        ScrollStrip(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = gutter)
+            // Espejo de la de scroll, algo más ancha: mantener = puntero al 40 %
+            // (sigue aunque el dedo se salga de la tira). En Dolphin la precisión
+            // no hace nada: ahí la tira es «Acercar» (el mando emulado se acerca
+            // a la pantalla, para los juegos que lo piden)
+            val sideStrip = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = gutter)
                 .fillMaxHeight(0.45f)
-                .width(30.dp * grow)
-        )
+                .width(40.dp * grow)
+            if (isDolphin(link)) {
+                NearStrip(modifier = sideStrip, glyph = 16.dp * grow)
+            } else {
+                PrecisionStrip(modifier = sideStrip, glyph = 16.dp * grow)
+            }
 
-        // Espejo de la de scroll, algo más ancha: mantener = puntero al 40 %
-        // (sigue aunque el dedo se salga de la tira). En Dolphin la precisión
-        // no hace nada: ahí la tira es «Acercar» (el mando emulado se acerca
-        // a la pantalla, para los juegos que lo piden)
-        val sideStrip = Modifier
-            .align(Alignment.CenterStart)
-            .padding(start = gutter)
-            .fillMaxHeight(0.45f)
-            .width(40.dp * grow)
-        if (isDolphin(link)) {
-            NearStrip(modifier = sideStrip, glyph = 16.dp * grow)
-        } else {
-            PrecisionStrip(modifier = sideStrip, glyph = 16.dp * grow)
-        }
+            // Aviso de «sin giroscopio real» (una vez, en modo puntero) y, debajo,
+            // los avisos transitorios del receptor
+            Column(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 64.dp, start = 24.dp, end = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RotateSuggestion()
+                GyroWarnCard(link)
+                NoticeBanner()
+            }
 
-        // Aviso de «sin giroscopio real» (una vez, en modo puntero) y, debajo,
-        // los avisos transitorios del receptor
-        Column(
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 64.dp, start = 24.dp, end = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            RotateSuggestion()
-            GyroWarnCard(link)
-            NoticeBanner()
-        }
-
-        if (keyboardOpen) {
-            KeyboardDialog(
-                onSend = { LinkState.sendText?.invoke(it) },
-                onClose = { keyboardOpen = false }
-            )
+            if (keyboardOpen) {
+                KeyboardDialog(
+                    onSend = { LinkState.sendText?.invoke(it) },
+                    onClose = { keyboardOpen = false }
+                )
+            }
         }
     }
 }

@@ -124,6 +124,8 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     var volB by remember { mutableStateOf(AppPrefs.volDownIsB(context)) }
     var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
+    var slidePress by remember { mutableStateOf(AppPrefs.slidePress(context)) }
+    var stickyPress by remember { mutableStateOf(AppPrefs.stickyPress(context)) }
     var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
     var noScreen by remember { mutableStateOf(AppPrefs.gamePadNoScreen(context)) }
     var fullScreen by remember { mutableStateOf(AppPrefs.gamePadFullScreen(context)) }
@@ -213,6 +215,64 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         sounds = it
                         AppPrefs.setSoundsEnabled(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
+        // Cómo se pulsan los botones del mando: deslizando de uno a otro y,
+        // si no, si se mantienen al salirse el dedo. Los dos se excluyen en
+        // la interfaz (deslizar manda); el valor guardado no se toca
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.slide_press_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.slide_press_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = slidePress,
+                    onCheckedChange = {
+                        slidePress = it
+                        AppPrefs.setSlidePress(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 30.dp, end = 18.dp, bottom = 16.dp)
+                    .alpha(if (slidePress) 0.5f else 1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.sticky_press_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.sticky_press_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = stickyPress,
+                    enabled = !slidePress,
+                    onCheckedChange = {
+                        stickyPress = it
+                        AppPrefs.setStickyPress(context, it)
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )

@@ -2,43 +2,181 @@ import SwiftUI
 
 // MARK: - Gesto de pulsación
 
-/// Pulsación momentánea que sigue al dedo hasta que lo levanta, aunque salga
-/// de la vista (como `drag` en Android: nada se queda pulsado). `onUp`
-/// también si la vista desaparece con el dedo puesto.
+/// Pulsación momentánea que sigue al dedo hasta que lo levanta. Según los dos
+/// ajustes de pulsación (`AppPrefs`), tres maneras:
+///
+/// - Con «Mantener al salir del botón» (de serie): una vez pulsado sigue
+///   pulsado aunque el dedo se salga de la vista, hasta levantarlo.
+/// - Sin «Mantener»: al salir del rectángulo se suelta UNA vez y ese dedo ya
+///   no vuelve a pulsar hasta levantarlo (como `tryAwaitRelease` en Compose).
+/// - Con «Pulsar deslizando» (`slide` + `registry`): el gesto no es solo de
+///   este botón; el dedo va cogiendo la zona que pisa (`PressRegistry`) y
+///   soltando la anterior. Lo decide `PressStep`.
+///
+/// `onUp` también si la vista desaparece con el dedo puesto.
 struct HoldGesture: ViewModifier {
     let onDown: () -> Void
     let onUp: () -> Void
+    /// «Mantener al salir del botón»; las tiras de Precisión/Acercar, siempre.
+    var sticky = true
+    /// «Pulsar deslizando» (necesita `registry`).
+    var slide = false
+    /// Registro de zonas de la pantalla, solo con `slide`.
+    var registry: PressRegistry? = nil
+
+    /// Este botón lo tiene pulsado el dedo (maneras sin deslizar).
     @State private var down = false
+    /// Sin «Mantener»: el dedo ya se salió y no vuelve a pulsar.
+    @State private var gone = false
+    /// Tamaño propio, para saber cuándo el dedo se sale.
+    @State private var size: CGSize = .zero
+    /// Deslizando: zona que este dedo tiene cogida.
+    @State private var held: UUID?
+    /// Quién es este dedo para el registro (un gesto, un dedo).
+    @State private var finger = UUID()
+
+    private var sliding: Bool { slide && registry != nil }
+    /// Deslizando se mira toda la pantalla; si no, basta el rectángulo propio.
+    private var space: CoordinateSpace { sliding ? .named(PressRegistry.padSpace) : .local }
 
     func body(content: Content) -> some View {
         content
+            .background(
+                GeometryReader { g in
+                    Color.clear
+                        .onAppear { size = g.size }
+                        .onChange(of: g.size) { s in size = s }
+                }
+                .allowsHitTesting(false)
+            )
             .gesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                    .onChanged { _ in
-                        if !down {
-                            down = true
-                            onDown()
-                        }
+                DragGesture(minimumDistance: 0, coordinateSpace: space)
+                    .onChanged { v in
+                        if sliding { slideTo(v.location) } else { moved(v.location) }
                     }
                     .onEnded { _ in
-                        if down {
-                            down = false
-                            onUp()
-                        }
+                        releaseHeld()
+                        lifted()
                     }
             )
             .onDisappear {
-                if down {
-                    down = false
-                    onUp()
-                }
+                releaseHeld()
+                lifted()
             }
+    }
+
+    /// Deslizando: el dedo suelta lo que tuviera y coge lo que pisa. Una zona
+    /// que ya lleva otro dedo no se le quita a este: si no, al levantar el
+    /// segundo se soltaría el botón que el primero sigue apretando.
+    private func slideTo(_ p: CGPoint) {
+        guard let registry else { return }
+        let over = registry.resolve(p).flatMap { registry.free($0, for: finger) ? $0 : nil }
+        switch PressStep.next(slide: true, sticky: sticky, held: registry.bit(held), over: registry.bit(over)) {
+        case .keep:
+            break
+        case .to(let bit):
+            if let old = held { registry.release(old, by: finger) }
+            held = bit == nil ? nil : over
+            if let id = held { registry.press(id, by: finger) }
+        }
+    }
+
+    private func moved(_ p: CGPoint) {
+        if gone { return }
+        if !down {
+            down = true
+            onDown()
+            return
+        }
+        guard !sticky, size != .zero else { return }
+        // Sin «Mantener»: en cuanto el dedo se sale del botón, se suelta
+        if p.x < 0 || p.y < 0 || p.x > size.width || p.y > size.height {
+            gone = true
+            down = false
+            onUp()
+        }
+    }
+
+    private func lifted() {
+        gone = false
+        if down {
+            down = false
+            onUp()
+        }
+    }
+
+    private func releaseHeld() {
+        if let registry, let id = held { registry.release(id, by: finger) }
+        held = nil
     }
 }
 
 extension View {
     func holdGesture(onDown: @escaping () -> Void, onUp: @escaping () -> Void) -> some View {
         modifier(HoldGesture(onDown: onDown, onUp: onUp))
+    }
+}
+
+/// Modificador compartido de los botones momentáneos (redondos, pastillas y
+/// zonas-gatillo): apunta su marco en el registro de zonas, elige el gesto
+/// según los dos ajustes y deja en `down` si está pulsado (deslizando lo dice
+/// el registro, porque quien lo pulsa puede ser el dedo de otro botón).
+struct PressBit: ViewModifier {
+    let bit: UInt32
+    /// Redondo: la zona es el círculo, no su cuadrado.
+    let circular: Bool
+    /// Sonido «pop» en vez del bip (A y 2).
+    let pop: Bool
+    @Binding var down: Bool
+    @EnvironmentObject private var reg: PressRegistry
+    @AppStorage(AppPrefs.slidePressKey) private var slidePress = false
+    @AppStorage(AppPrefs.stickyPressKey) private var stickyPress = true
+    @State private var id = UUID()
+
+    /// Espacio de coordenadas común de la pantalla.
+    private var padSpace: CoordinateSpace { .named(PressRegistry.padSpace) }
+
+    func body(content: Content) -> some View {
+        let sliding = slidePress && reg.enabled
+        return content
+            .background(
+                GeometryReader { g in
+                    Color.clear
+                        .onAppear { place(g.frame(in: padSpace)) }
+                        .onChange(of: g.frame(in: padSpace)) { r in place(r) }
+                }
+                .allowsHitTesting(false)
+            )
+            .modifier(HoldGesture(
+                onDown: {
+                    down = true
+                    PressRegistry.fire(bit: bit, pop: pop, down: true)
+                },
+                onUp: {
+                    down = false
+                    PressRegistry.fire(bit: bit, pop: pop, down: false)
+                },
+                sticky: stickyPress,
+                slide: sliding,
+                registry: sliding ? reg : nil
+            ))
+            .onChange(of: reg.pressed.contains(id)) { on in
+                if sliding { down = on }
+            }
+            .onDisappear { reg.remove(id) }
+    }
+
+    private func place(_ rect: CGRect) {
+        // Pulsado, el botón se encoge (scaleEffect): vale su marco en reposo
+        guard !down, rect.width > 0, rect.height > 0 else { return }
+        reg.place(id, PressZone(bit: bit, rect: rect, circular: circular, pop: pop))
+    }
+}
+
+extension View {
+    /// Botón momentáneo con los dos modos de pulsación; `down` es lo que pinta.
+    func pressBit(bit: UInt32, circular: Bool, pop: Bool = false, down: Binding<Bool>) -> some View {
+        modifier(PressBit(bit: bit, circular: circular, pop: pop, down: down))
     }
 }
 
@@ -96,18 +234,7 @@ struct RoundButton: View {
         .scaleEffect(down ? 0.90 : 1)
         .animation(.easeOut(duration: 0.08), value: down)
         .contentShape(Circle())
-        .holdGesture(
-            onDown: {
-                down = true
-                ButtonState.shared.set(bit, true)
-                Haptics.tap()
-                if pop { UiSounds.shared.pop() } else { UiSounds.shared.blip() }
-            },
-            onUp: {
-                down = false
-                ButtonState.shared.set(bit, false)
-            }
-        )
+        .pressBit(bit: bit, circular: true, pop: pop, down: $down)
     }
 }
 
@@ -134,18 +261,7 @@ struct ShoulderButton: View {
         .scaleEffect(down ? 0.94 : 1)
         .animation(.easeOut(duration: 0.08), value: down)
         .contentShape(shape)
-        .holdGesture(
-            onDown: {
-                down = true
-                ButtonState.shared.set(bit, true)
-                Haptics.tap()
-                UiSounds.shared.blip()
-            },
-            onUp: {
-                down = false
-                ButtonState.shared.set(bit, false)
-            }
-        )
+        .pressBit(bit: bit, circular: false, down: $down)
     }
 }
 
@@ -171,18 +287,7 @@ struct TriggerZone: View {
         .frame(maxWidth: .infinity)
         .frame(height: height)
         .contentShape(Rectangle())
-        .holdGesture(
-            onDown: {
-                down = true
-                ButtonState.shared.set(bit, true)
-                Haptics.tap()
-                UiSounds.shared.blip()
-            },
-            onUp: {
-                down = false
-                ButtonState.shared.set(bit, false)
-            }
-        )
+        .pressBit(bit: bit, circular: false, down: $down)
     }
 }
 
@@ -664,13 +769,15 @@ struct CrosshairGlyph: View {
 }
 
 /// Mantener = un bit sostenido (precisión, acercar); háptico y tic al
-/// activar. Sigue activo aunque el dedo se salga.
+/// activar. Sigue activo aunque el dedo se salga: son «mantener», no botones,
+/// así que los dos ajustes de pulsación no les tocan (`sticky` siempre, nunca
+/// se deslizan).
 struct HoldBit: ViewModifier {
     let bit: UInt32
     @Binding var active: Bool
 
     func body(content: Content) -> some View {
-        content.holdGesture(
+        content.modifier(HoldGesture(
             onDown: {
                 active = true
                 ButtonState.shared.set(bit, true)
@@ -680,12 +787,15 @@ struct HoldBit: ViewModifier {
             onUp: {
                 active = false
                 ButtonState.shared.set(bit, false)
-            }
-        )
+            },
+            sticky: true,
+            slide: false
+        ))
     }
 }
 
-/// Mantener = bit de precisión (el puntero del PC va al 40 %). Solo en modo puntero.
+/// Mantener = bit de precisión (el puntero del PC va al 40 %). Solo en modo
+/// puntero; como `HoldBit`, siempre pegajoso y sin deslizar.
 struct PrecisionHold: ViewModifier {
     @Binding var active: Bool
 

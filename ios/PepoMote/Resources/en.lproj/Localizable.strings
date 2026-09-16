@@ -61,6 +61,10 @@
 /* settings */
 "sounds_title" = "Sounds";
 "sounds_sub" = "Button beeps and the connect/disconnect melody (vibration stays)";
+"slide_press_title" = "Slide to press";
+"slide_press_sub" = "The button your finger slides over gets pressed; leaving it releases it and presses the next one";
+"sticky_press_title" = "Keep pressed when leaving the button";
+"sticky_press_sub" = "A pressed button stays pressed until you lift your finger, even if it drifts off";
 "chips_title" = "Dolphin mode on the controller";
 "chips_sub" = "Shows the Pointer/Dolphin selector when entering via Connect. Turn it off for a pointer-only controller, no selector";
 "nunchuk_own_title" = "Nunchuk on this phone";
@@ -119,6 +123,9 @@
 "reconnect" = "Reconnect";
 "exit" = "Exit";
 "keyboard" = "Keyboard";
+"header_controls" = "Controls";
+"header_show" = "Show controls";
+"header_hide" = "Hide controls";
 "media_open" = "Media ▲";
 "media_closed" = "Media ▼";
 "rotate_hint" = "Turn the phone to go back to the upright controller";

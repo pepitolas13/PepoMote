@@ -15,7 +15,6 @@ struct LandscapeMetrics {
     let big: CGFloat
     let crossInset: CGFloat
     let bigInset: CGFloat
-    let selectorW: CGFloat
 
     init(size: CGSize) {
         s = UiScale.factor(size, base: UiScale.landscapeBase)
@@ -27,7 +26,6 @@ struct LandscapeMetrics {
         big = 92 * s
         crossInset = 34 * s
         bigInset = 30 * s
-        selectorW = Swift.min(size.width, 760)
     }
 
     func text(_ base: CGFloat) -> CGFloat { base * s }
@@ -36,8 +34,9 @@ struct LandscapeMetrics {
 
 /// Mando apaisado estilo "de lado" (NES): cruceta a la izquierda, 1 y 2
 /// grandes a la derecha. Para juegos 2D en Dolphin con el Wiimote de lado.
-/// Dentro de Wii U como Mando de Wii: cabecera «Wii U · Mando de Wii» con
-/// «Teclado» y el selector «En Cemu soy» debajo.
+/// Arriba, la cabecera plegable: una pastilla con el modo y, desplegada, la
+/// tarjeta con el PC, «Teclado», los chips, el selector «En Cemu soy» (dentro
+/// de Wii U como Mando de Wii) y «Salir».
 struct ControllerLandscapeScreen: View {
     let showChips: Bool
     let onDisconnect: () -> Void
@@ -46,52 +45,15 @@ struct ControllerLandscapeScreen: View {
     /// Home del Mando de Wii: conectado y fuera del modo puntero.
     private var showHome: Bool { link.link.connected.map(showHomeButton) ?? false }
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
+    /// Dónde está cada botón, para «Pulsar deslizando».
+    @StateObject private var press = PressRegistry()
 
     var body: some View {
         GeometryReader { geo in
             let m = LandscapeMetrics(size: geo.size)
             ZStack {
-                // Cabecera compacta (+ selector de mando dentro de Wii U). Si no
-                // cabe todo, cae primero el nombre del PC; «Salir» nunca
-                VStack(spacing: 2) {
-                    HStack(spacing: 14) {
-                        switch link.link {
-                        case .reconnecting(let pc, _):
-                            ReconnectingLabel(pcName: pc, font: PepoFont.bodyMedium()).layoutPriority(1)
-                        case .connected(let c):
-                            if geo.size.width >= 850 || !showModeChips(c, showChips) {
-                                Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160).layoutPriority(0)
-                            }
-                            if isWiiUAsWiimote(c), geo.size.width >= 850 || !showModeChips(c, showChips) {
-                                Text(tr("wiiu_as_wiimote")).pepoBody().lineLimit(1).layoutPriority(1)
-                            }
-                            // Selector de modo y, en Dolphin, el chip «Nunchuk» (aquí
-                            // apagado: encenderlo cambia este NES por el mando + Nunchuk)
-                            if showModeChips(c, showChips) || showNunchukChip(c) {
-                                HStack(spacing: 6) {
-                                    if showModeChips(c, showChips) {
-                                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
-                                    }
-                                    if showNunchukChip(c) { NunchukChip(link: c, compact: true) }
-                                }
-                                .layoutPriority(2)
-                            }
-                            if c.mode == LinkState.modeCemu {
-                                KeyboardButton(compact: true) { keyboardOpen = true }.fixedSize().layoutPriority(3)
-                            }
-                        case .connecting:
-                            Text(tr("status_connecting")).pepoBody().lineLimit(1).layoutPriority(1)
-                        default:
-                            Text(tr("status_disconnected")).pepoBody().lineLimit(1).layoutPriority(1)
-                        }
-                        TextLink(title: tr("exit"), color: Pepo.error, action: onDisconnect).fixedSize().layoutPriority(4)
-                    }
-                    if let c = link.link.connected, isWiiUAsWiimote(c) {
-                        PadSelector(link: c, width: m.selectorW, compact: true)
-                    }
-                }
-                .padding(.top, 6)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // El primero: recoge los dedos que nacen fuera de los botones
+                SlideCanvas()
 
                 // Cruceta izquierda
                 HStack {
@@ -156,7 +118,11 @@ struct ControllerLandscapeScreen: View {
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            // La última: la tarjeta desplegada gana a la cruceta y a 1/2
+            .overlay(alignment: .top) { header }
         }
+        .coordinateSpace(name: PressRegistry.padSpace)
+        .environmentObject(press)
         .background(Pepo.background.ignoresSafeArea())
         .sheet(isPresented: $keyboardOpen) {
             KeyboardSheet { keyboardOpen = false }
@@ -178,11 +144,72 @@ struct ControllerLandscapeScreen: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             link.motion?.rotation = Frame.rotation0
+            press.releaseAll() // nada queda pulsado al salir
             ButtonState.shared.reset()
+        }
+    }
+
+    /// Cabecera plegable: la pastilla con el modo y, desplegada, el PC, el
+    /// Teclado, los chips, el selector «En Cemu soy» y «Salir». Ya no hay
+    /// puertas de anchura: en la tarjeta cabe todo en cualquier móvil.
+    private var header: some View {
+        CollapsibleHeader(handleLabel: headerLabel, connected: link.link.connected != nil) {
+            VStack(spacing: 8) {
+                HStack(spacing: 20) {
+                    if let c = link.link.connected {
+                        Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160)
+                        if c.mode == LinkState.modeCemu {
+                            HeaderKeyboardButton { keyboardOpen = true }
+                        }
+                    }
+                    // Reconectando, el punto latiendo: es la única señal de que
+                    // el servicio está rehaciendo la sesión (como en Android)
+                    if case .reconnecting(let pc, _) = link.link {
+                        ReconnectingLabel(pcName: pc, font: PepoFont.bodyMedium())
+                    }
+                    TextLink(title: tr("exit"), color: Pepo.error, action: onDisconnect).fixedSize()
+                }
+                if let c = link.link.connected {
+                    if showModeChips(c, showChips) {
+                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
+                    }
+                    // En Dolphin, el chip «Nunchuk» (aquí apagado: encenderlo
+                    // cambia este NES por el mando + Nunchuk)
+                    if showNunchukChip(c) { NunchukChip(link: c, compact: true) }
+                    if isWiiUAsWiimote(c) {
+                        PadSelector(link: c, width: HeaderCollapse.cardWidth - 40, compact: true)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Texto de la pastilla: lo mismo que decía la cabecera de siempre.
+    private var headerLabel: String {
+        switch link.link {
+        case .reconnecting(let pc, _): return tr("status_reconnecting", pc)
+        case .connected(let c): return isWiiUAsWiimote(c) ? tr("wiiu_as_wiimote") : modeLabel(c.mode)
+        case .connecting: return tr("status_connecting")
+        default: return tr("status_disconnected")
         }
     }
 
     private func applyEngine() {
         link.motion?.rotation = Route.sidewaysRotation(link.link, displayRotation: rotation)
+    }
+}
+
+/// «Teclado» dentro de la cabecera plegable: al abrirlo, la tarjeta se pliega
+/// (el teclado tapa la pantalla y al volver el mando queda despejado).
+private struct HeaderKeyboardButton: View {
+    @Environment(\.headerCollapse) private var header
+    let onOpen: () -> Void
+
+    var body: some View {
+        KeyboardButton(compact: true) {
+            header.collapse()
+            onOpen()
+        }
+        .fixedSize()
     }
 }

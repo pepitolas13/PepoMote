@@ -17,6 +17,7 @@ use crate::ui::gamepad::{Action as GamePadAction, GamePadUi, Inputs as GamePadIn
 use crate::ui::keypad::{keypad, Key};
 use crate::ui::nunchuk::{Action as NunchukAction, NunchukUi};
 use crate::ui::text::{effect, TextDialog};
+use crate::ui::touch::Press;
 use egui::{RichText, Vec2};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -985,6 +986,28 @@ impl MobileApp {
                 store::save_settings(&self.settings);
             }
         });
+        // Cómo se pulsan los botones: deslizando (manda sobre el siguiente) o
+        // pegajoso (lo de siempre). La subopción solo se elige con el primero
+        // apagado; el valor guardado no se toca
+        if ui
+            .checkbox(&mut self.settings.slide_press, RichText::new(tr!("home.slide_press")).size(12.0))
+            .on_hover_text(tr!("home.slide_press_help"))
+            .changed()
+        {
+            store::save_settings(&self.settings);
+        }
+        ui.indent("sticky_press", |ui| {
+            if ui
+                .add_enabled(
+                    !self.settings.slide_press,
+                    egui::Checkbox::new(&mut self.settings.sticky_press, RichText::new(tr!("home.sticky_press")).size(12.0)),
+                )
+                .on_hover_text(tr!("home.sticky_press_help"))
+                .changed()
+            {
+                store::save_settings(&self.settings);
+            }
+        });
         ui.label(RichText::new(&self.diag).size(11.0).color(theme::text_dim()));
         ui.label(
             RichText::new(tr!("home.version", env!("CARGO_PKG_VERSION")))
@@ -1193,6 +1216,11 @@ impl MobileApp {
         }
     }
 
+    /// Los dos ajustes de pulsación tal como los ven las tres pantallas.
+    fn press(&self) -> Press {
+        Press { slide: self.settings.slide_press, sticky: self.settings.sticky_press }
+    }
+
     fn ui_controller(&mut self, ui: &mut egui::Ui) {
         let Some(link) = &self.link else {
             ui.add_space(10.0);
@@ -1210,7 +1238,8 @@ impl MobileApp {
         let slot0 = matches!(&status, Status::Connected { slot: 0, .. });
         let hz = link.sensor_hz();
         let pending = self.pad_pending.map(|p| p.pad);
-        match self.controller.show(ui, &self.buttons, &status, !self.dolphin_only && slot0, pending, hz) {
+        let press = self.press();
+        match self.controller.show(ui, &self.buttons, &status, !self.dolphin_only && slot0, pending, hz, press) {
             Action::Exit => {
                 self.close_link();
                 self.screen = Screen::Home;
@@ -1256,6 +1285,7 @@ impl MobileApp {
             no_screen: self.settings.gamepad_no_screen,
             full_screen: self.settings.gamepad_full_screen,
             keyboard_button: self.settings.gamepad_full_screen_kb,
+            press: self.press(),
         };
         match self.gamepad.show(ui, &self.buttons, &inputs) {
             GamePadAction::Exit => {
@@ -1292,7 +1322,8 @@ impl MobileApp {
         };
         let status = link.status();
         let hz = link.sensor_hz();
-        if let NunchukAction::Exit = self.nunchuk.show(ui, &self.buttons, &status, hz) {
+        let press = self.press();
+        if let NunchukAction::Exit = self.nunchuk.show(ui, &self.buttons, &status, hz, press) {
             self.close_link();
             self.screen = Screen::Home;
         }

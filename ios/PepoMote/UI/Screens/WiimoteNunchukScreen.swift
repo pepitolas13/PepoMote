@@ -71,41 +71,28 @@ struct WiimoteNunchukScreen: View {
     @ObservedObject var link = LinkState.shared
     @EnvironmentObject var model: AppModel
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
+    /// Dónde está cada botón, para «Pulsar deslizando».
+    @StateObject private var press = PressRegistry()
+    /// La cabecera está abierta: la pregunta del lado espera a que se pliegue.
+    @State private var headerExpanded = true
+    /// Lo que mide la cabecera ahora: la pregunta del lado se pone justo debajo
+    /// cuando la cabecera no se va a plegar sola.
+    @State private var headerBox: CGFloat = 0
+    /// Con VoiceOver la cabecera se queda abierta hasta que la cierren.
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+
+    /// ¿Se va a plegar sola la cabecera? Si no, la pregunta del lado no puede
+    /// esperar a que se pliegue o no saldría nunca.
+    private var autoCollapse: Bool {
+        HeaderCollapse.autoCollapses(connected: link.link.connected != nil, screenReader: voiceOver)
+    }
 
     var body: some View {
         GeometryReader { geo in
             let m = WiiNunchukMetrics(size: geo.size)
             ZStack {
-                // Cabecera compacta: PC · «Dolphin · Nunchuk» · chips · Salir
-                VStack(spacing: 2) {
-                    HStack(spacing: 14) {
-                        switch link.link {
-                        case .reconnecting(let pc, _):
-                            ReconnectingLabel(pcName: pc, font: PepoFont.bodyMedium()).layoutPriority(1)
-                        case .connected(let c):
-                            if geo.size.width >= 850 {
-                                Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160).layoutPriority(0)
-                            }
-                            if geo.size.width >= 1000 || !showModeChips(c, showChips) {
-                                Text(tr("mode_dolphin_nunchuk")).pepoBody().lineLimit(1).layoutPriority(1)
-                            }
-                            HStack(spacing: 6) {
-                                if showModeChips(c, showChips) {
-                                    ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
-                                }
-                                NunchukChip(link: c, compact: true)
-                            }
-                            .layoutPriority(2)
-                        case .connecting:
-                            Text(tr("status_connecting")).pepoBody().lineLimit(1).layoutPriority(1)
-                        default:
-                            Text(tr("status_disconnected")).pepoBody().lineLimit(1).layoutPriority(1)
-                        }
-                        TextLink(title: tr("exit"), color: Pepo.error, action: onDisconnect).fixedSize().layoutPriority(4)
-                    }
-                }
-                .padding(.top, 6)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // El primero: recoge los dedos que nacen fuera de los botones
+                SlideCanvas()
 
                 // Izquierda: Z y C arriba (bajo el índice), el stick del Nunchuk abajo (pulgar)
                 HStack(spacing: m.gap) {
@@ -156,8 +143,10 @@ struct WiimoteNunchukScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
 
                 // Primera vez: el lado del apaisado lo ha elegido iOS; se pregunta
-                // si es el bueno y se guarda para siempre (Ajustes lo cambia)
-                if model.nunchukSide == .unset {
+                // si es el bueno y se guarda para siempre (Ajustes lo cambia).
+                // Con la cabecera desplegada se espera a que se pliegue (si no,
+                // se solaparían) y, cuando no se pliega sola, se pone debajo
+                if model.nunchukSide == .unset, !headerExpanded || !autoCollapse {
                     let shown = LandscapeSide.effective(saved: LandscapeSide.current(OrientationLock.current), provisional: model.nunchukSideProvisional)
                     VStack {
                         SideAskCard(
@@ -165,7 +154,7 @@ struct WiimoteNunchukScreen: View {
                             onFlip: { model.nunchukSideProvisional = shown.flipped },
                             onKeep: { model.saveNunchukSide(shown) }
                         )
-                        .padding(.top, m.headerH + 4)
+                        .padding(.top, headerExpanded ? headerBox + 4 : m.headerH + 4)
                         Spacer()
                     }
                 }
@@ -176,7 +165,20 @@ struct WiimoteNunchukScreen: View {
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            // La última: la tarjeta desplegada gana a B, Z y C
+            .overlay(alignment: .top) {
+                header.background(
+                    GeometryReader { g in
+                        Color.clear
+                            .onAppear { headerBox = g.size.height }
+                            .onChange(of: g.size.height) { h in headerBox = h }
+                    }
+                    .allowsHitTesting(false)
+                )
+            }
         }
+        .coordinateSpace(name: PressRegistry.padSpace)
+        .environmentObject(press)
         .background(Pepo.background.ignoresSafeArea())
         // Trama con stick + C/Z y los sensores remapeados al marco apaisado
         .onChange(of: rotation) { _ in applyEngine() }
@@ -195,11 +197,54 @@ struct WiimoteNunchukScreen: View {
             // inclinado; la prueba del lado sin confirmar se olvida
             model.nunchukSideProvisional = nil
             UIApplication.shared.isIdleTimerDisabled = false
+            press.releaseAll()
             if let engine = link.motion {
                 engine.kind = .wiimote
                 engine.rotation = Frame.rotation0
             }
             ButtonState.shared.reset()
+        }
+    }
+
+    /// Cabecera plegable: la pastilla con el modo y, desplegada, el PC, los
+    /// chips y «Salir» (lo mismo que enseñaba la cabecera de siempre, pero
+    /// fuera del camino del índice, que sube a por B y Z).
+    private var header: some View {
+        CollapsibleHeader(
+            handleLabel: headerLabel,
+            connected: link.link.connected != nil,
+            onExpandedChange: { headerExpanded = $0 }
+        ) {
+            VStack(spacing: 8) {
+                HStack(spacing: 20) {
+                    if let c = link.link.connected {
+                        Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160)
+                    }
+                    // Reconectando, el punto latiendo: es la única señal de que
+                    // el servicio está rehaciendo la sesión (como en Android)
+                    if case .reconnecting(let pc, _) = link.link {
+                        ReconnectingLabel(pcName: pc, font: PepoFont.bodyMedium())
+                    }
+                    TextLink(title: tr("exit"), color: Pepo.error, action: onDisconnect).fixedSize()
+                }
+                if let c = link.link.connected {
+                    if showModeChips(c, showChips) {
+                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
+                    }
+                    // Aquí siempre: apagarlo devuelve el mando de siempre
+                    NunchukChip(link: c, compact: true)
+                }
+            }
+        }
+    }
+
+    /// Texto de la pastilla: lo mismo que decía la cabecera de siempre.
+    private var headerLabel: String {
+        switch link.link {
+        case .reconnecting(let pc, _): return tr("status_reconnecting", pc)
+        case .connected: return tr("mode_dolphin_nunchuk")
+        case .connecting: return tr("status_connecting")
+        default: return tr("status_disconnected")
         }
     }
 

@@ -77,6 +77,10 @@
     <string name="vol_sub">With the controller open: volume up = A, volume down = B trigger. Play with your phone’s physical buttons</string>
     <string name="sounds_title">Sounds</string>
     <string name="sounds_sub">Button beeps and the connect/disconnect melody (vibration stays)</string>
+    <string name="slide_press_title">Slide to press</string>
+    <string name="slide_press_sub">The button your finger slides over gets pressed; leaving it releases it and presses the next one</string>
+    <string name="sticky_press_title">Keep pressed when leaving the button</string>
+    <string name="sticky_press_sub">A pressed button stays pressed until you lift your finger, even if it drifts off</string>
     <string name="chips_title">Dolphin mode on the controller</string>
     <string name="chips_sub">Shows the Pointer/Dolphin selector when entering via Connect. Turn it off for a pointer-only controller, no selector</string>
     <string name="nunchuk_own_title">Nunchuk on this phone</string>
@@ -85,6 +89,9 @@
     <string name="notices_sub">"Dolphin set up…", "Cemu is open…": shown for a few seconds over the controller when the mode changes. Turn them off if they get in the way</string>
     <string name="nunchuk_chip">Nunchuk</string>
     <string name="mode_dolphin_nunchuk">Dolphin · Nunchuk</string>
+    <string name="header_controls">Controls</string>
+    <string name="header_show">Show controls</string>
+    <string name="header_hide">Hide controls</string>
     <string name="noscreen_title">GamePad without touch screen</string>
     <string name="noscreen_sub">Removes the Wii U GamePad\'s screen (and the second screen) so the buttons get bigger</string>
     <string name="fullscreen_title">GamePad screen full screen</string>

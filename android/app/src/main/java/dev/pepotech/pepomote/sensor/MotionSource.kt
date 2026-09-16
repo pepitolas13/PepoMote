@@ -36,9 +36,16 @@ object MotionSource {
         return on
     }
 
-    /** Elegido a mano (Ajustes): se guarda, se publica y llega al enlace vivo. */
+    /**
+     * Elegido a mano (Ajustes): se guarda, se publica y llega al enlace vivo.
+     * El [refresh] va en su propia línea aposta: dentro del argumento de la
+     * llamada segura `setTilt?.invoke(...)` no se evaluaba sin enlace vivo
+     * (`setTilt` null), así que los chips de Ajustes no se movían hasta
+     * volver a entrar.
+     */
     fun choose(context: Context, accel: Boolean) {
         AppPrefs.setMotionSource(context, if (accel) AppPrefs.MOTION_ACCEL else AppPrefs.MOTION_GYRO)
-        LinkState.setTilt?.invoke(refresh(context))
+        val on = refresh(context)
+        LinkState.setTilt?.invoke(on)
     }
 }

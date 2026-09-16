@@ -28,6 +28,7 @@ import dev.pepotech.pepomote.sensor.GyroDetect
 import dev.pepotech.pepomote.sensor.MotionSource
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
+import dev.pepotech.pepomote.ui.components.pressShield
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 /**
@@ -61,6 +62,9 @@ internal fun GyroWarnCard(link: UiLink, modifier: Modifier = Modifier) {
             .widthIn(max = 360.dp)
             .background(PepoColors.Card, RoundedCornerShape(14.dp))
             .border(1.5.dp, PepoColors.Warn, RoundedCornerShape(14.dp))
+            // la tarjeta se queda el dedo que no coja «Entendido»: va encima de
+            // los botones, y «Pulsar deslizando» los pulsaría a través
+            .pressShield()
             .padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp)

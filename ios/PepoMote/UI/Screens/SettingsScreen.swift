@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsScreen: View {
     @EnvironmentObject var model: AppModel
     @State private var sounds = AppPrefs.soundsEnabled
+    @State private var slidePress = AppPrefs.slidePress
+    @State private var stickyPress = AppPrefs.stickyPress
     @State private var dolphinChips = AppPrefs.showDolphinChips
     @State private var noScreen = AppPrefs.gamePadNoScreen
     @State private var fullScreen = AppPrefs.gamePadFullScreen
@@ -20,6 +22,15 @@ struct SettingsScreen: View {
                 VStack(spacing: 14) {
                     SettingRow(title: tr("sounds_title"), subtitle: tr("sounds_sub"), on: $sounds)
                         .onChange(of: sounds) { AppPrefs.soundsEnabled = $0 }
+                    // Los dos modos de pulsación: deslizar manda, y con él
+                    // encendido «Mantener al salir» ni se elige ni se aplica
+                    SettingRowWithSub(
+                        title: tr("slide_press_title"), subtitle: tr("slide_press_sub"), on: $slidePress,
+                        subTitle: tr("sticky_press_title"), subSubtitle: tr("sticky_press_sub"), subOn: $stickyPress,
+                        subEnabled: !slidePress
+                    )
+                    .onChange(of: slidePress) { AppPrefs.slidePress = $0 }
+                    .onChange(of: stickyPress) { AppPrefs.stickyPress = $0 }
                     SettingRow(title: tr("chips_title"), subtitle: tr("chips_sub"), on: $dolphinChips)
                         .onChange(of: dolphinChips) { AppPrefs.showDolphinChips = $0 }
                     // Nunchuk en el mismo móvil (Dolphin): stick, C y Z con el móvil de lado
@@ -131,9 +142,14 @@ private struct SettingRowWithSub: View {
     let subTitle: String
     let subSubtitle: String
     @Binding var subOn: Bool
+    /// Cuándo se puede tocar la subopción; de serie, con la principal
+    /// encendida («Mantener al salir del botón» es al revés: solo con «Pulsar
+    /// deslizando» apagado).
+    var subEnabled: Bool? = nil
 
     var body: some View {
-        VStack(spacing: 0) {
+        let active = subEnabled ?? on
+        return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).pepoTitle()
@@ -154,12 +170,12 @@ private struct SettingRowWithSub: View {
                 Toggle("", isOn: $subOn)
                     .labelsHidden()
                     .tint(Pepo.blue)
-                    .disabled(!on)
+                    .disabled(!active)
             }
             .padding(.leading, 30)
             .padding(.trailing, 18)
             .padding(.bottom, 16)
-            .opacity(on ? 1 : 0.5)
+            .opacity(active ? 1 : 0.5)
         }
         .frame(maxWidth: .infinity)
         .pepoCard()

@@ -136,6 +136,8 @@ struct GamePadScreen: View {
     @Environment(\.displayScale) private var displayScale
     @State private var keyboardOpen = false
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
+    /// Dónde está cada botón, para «Pulsar deslizando».
+    @StateObject private var press = PressRegistry()
 
     private var wantedMode: String { Route.wantedMode(link.link, link.intent) }
     private var switchPad: Bool { wantedMode == LinkState.modeSwitch }
@@ -157,9 +159,17 @@ struct GamePadScreen: View {
 
     var body: some View {
         GeometryReader { geo in
-            content(size: geo.size)
-                .frame(width: geo.size.width, height: geo.size.height)
+            ZStack {
+                // El primero: recoge los dedos que nacen fuera de los botones.
+                // Inerte mientras no hay mando (esperando el modo) o solo está
+                // la pantalla de Cemu
+                SlideCanvas(enabled: operative && !fullScreen)
+                content(size: geo.size)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .coordinateSpace(name: PressRegistry.padSpace)
+        .environmentObject(press)
         .background((fullScreen ? Color.black : Pepo.background).ignoresSafeArea())
         // Receptor anterior a 1.6: no confirma «solo pantalla» ni en el ok
         // ni con el eco; se avisa una vez (a los 2 s, por si el eco llega tarde)
@@ -201,6 +211,7 @@ struct GamePadScreen: View {
                     engine.rotation = Frame.rotation0
                 }
             }
+            press.releaseAll()
             ButtonState.shared.reset() // nada queda pulsado, inclinado ni tocado
         }
     }

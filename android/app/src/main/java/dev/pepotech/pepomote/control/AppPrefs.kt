@@ -161,6 +161,37 @@ object AppPrefs {
         UiSounds.enabled = value
     }
 
+    /**
+     * «Pulsar deslizando»: el botón por el que pasa el dedo se pulsa; al
+     * salir se suelta y se pulsa el siguiente (un dedo que nace en el vacío
+     * también pulsa al entrar). Apagado de serie; encendido manda sobre
+     * [stickyPress].
+     */
+    fun slidePress(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("slidePress", false)
+
+    fun setSlidePress(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("slidePress", value).apply()
+        PressMode.slide = value
+    }
+
+    /**
+     * «Mantener al salir del botón»: un botón pulsado sigue pulsado mientras
+     * no se levante el dedo, aunque se salga (el «2» de Mario Kart). Encendido
+     * de serie: iOS y Linux ya eran así.
+     */
+    fun stickyPress(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("stickyPress", true)
+
+    fun setStickyPress(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("stickyPress", value).apply()
+        PressMode.sticky = value
+    }
+
     const val LANG_SYSTEM = "system"
 
     /** Idioma: "system", "es" o "en". */

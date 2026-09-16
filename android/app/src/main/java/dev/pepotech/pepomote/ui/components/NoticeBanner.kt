@@ -52,6 +52,9 @@ fun NoticeBanner(modifier: Modifier = Modifier) {
             .widthIn(max = 440.dp)
             .background(PepoColors.Card, RoundedCornerShape(14.dp))
             .border(1.5.dp, PepoColors.Warn, RoundedCornerShape(14.dp))
+            // el aviso se queda el dedo: cae encima de los botones de arriba y
+            // «Pulsar deslizando» los pulsaría a través
+            .pressShield()
             .padding(horizontal = 16.dp, vertical = 10.dp),
         style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
         textAlign = TextAlign.Center

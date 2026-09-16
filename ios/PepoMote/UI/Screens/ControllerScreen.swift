@@ -82,6 +82,8 @@ struct ControllerScreen: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var link = LinkState.shared
     @State private var keyboardOpen = false
+    /// Dónde está cada botón, para «Pulsar deslizando».
+    @StateObject private var press = PressRegistry()
 
     /// Home del Mando de Wii: conectado y fuera del modo puntero.
     private var showHome: Bool { link.link.connected.map(showHomeButton) ?? false }
@@ -91,6 +93,8 @@ struct ControllerScreen: View {
             let wrapsNunchuk = link.link.connected.map { $0.supportsSwitch && showModeChips($0, showChips) && showNunchukChip($0) } ?? false
             let m = RemoteMetrics(size: geo.size, extraHeader: wrapsNunchuk && geo.size.width < 420 ? 37 : 0)
             ZStack {
+                // El primero: recoge los dedos que nacen fuera de los botones
+                SlideCanvas()
                 // La columna del mando y las tiras comparten anchura
                 ZStack {
                     column(m)
@@ -118,12 +122,17 @@ struct ControllerScreen: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
+        .coordinateSpace(name: PressRegistry.padSpace)
+        .environmentObject(press)
         .background(Pepo.background.ignoresSafeArea())
         .sheet(isPresented: $keyboardOpen) {
             KeyboardSheet { keyboardOpen = false }
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+            press.releaseAll() // nada queda pulsado al salir
+        }
     }
 
     private func column(_ m: RemoteMetrics) -> some View {

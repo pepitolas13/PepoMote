@@ -1,8 +1,6 @@
 package dev.pepotech.pepomote.ui.components
 
-import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,8 +15,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
@@ -27,7 +23,8 @@ import dev.pepotech.pepomote.ui.theme.PepoColors
 /**
  * Zona-gatillo: banda ancha a todo el ancho, como el gatillo trasero del
  * Wiimote. Por defecto es B (en modo puntero, el clic derecho); el Nunchuk la
- * usa para Z (azul) y, con otros colores, para C encima del stick.
+ * usa para Z (azul) y, con otros colores, para C encima del stick. Cómo se
+ * pulsa y se suelta lo decide `pressBit` con los ajustes de pulsación.
  */
 @Composable
 fun TriggerZone(
@@ -38,7 +35,6 @@ fun TriggerZone(
     pressedColor: Color = PepoColors.BlueHover,
     textColor: Color = PepoColors.OnAccent
 ) {
-    val view = LocalView.current
     var down by remember { mutableStateOf(false) }
 
     Box(
@@ -49,17 +45,7 @@ fun TriggerZone(
                 if (down) pressedColor else background,
                 RoundedCornerShape(24.dp)
             )
-            .pointerInput(bit) {
-                detectTapGestures(onPress = {
-                    down = true
-                    ButtonState.set(bit, true)
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    dev.pepotech.pepomote.control.UiSounds.blip()
-                    tryAwaitRelease()
-                    down = false
-                    ButtonState.set(bit, false)
-                })
-            },
+            .pressBit(bit) { down = it },
         contentAlignment = Alignment.Center
     ) {
         Text(

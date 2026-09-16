@@ -53,6 +53,13 @@ lado, como con un GamePad, y agitar el móvil es agitar el mando (y el
 Nunchuk, que comparte sensores). Al apagar el Nunchuk (chip o Ajustes) el mando
 vuelve a seguir al móvil: vertical, o NES de lado.
 
+Arriba, en el centro, no hay botones: solo una **pastilla con el modo**
+(«Dolphin + Nunchuk», por ejemplo), para que no quede nada justo encima de B
+ni de Z y C, donde suben los índices. Tócala y baja una tarjeta con el
+nombre del PC, los chips de modo, el chip **Nunchuk**, **Teclado** y
+**Salir**; se pliega sola a los 4 segundos, y mientras la estés usando no se
+pliega. Al entrar sale desplegada.
+
 La primera vez que sale el mando apaisado, la app pregunta encima «**¿El
 mando está bien así?**»: si tu móvil lo ha girado del revés, «Darle la
 vuelta»; cuando esté como quieres, «Así lo quiero», y se queda fijo hacia ese
@@ -85,6 +92,12 @@ flechas del PC y el cursor sigue el borde largo del móvil, como con el
 GamePad. Para pasar al mando de lado gira el móvil con el giro automático del
 sistema activo: con el bloqueo de giro puesto la app no gira (solo el GamePad
 y el mando + Nunchuk se ponen solos en apaisado).
+
+La cabecera es la misma que la del mando + Nunchuk: arriba en el centro solo
+está la **pastilla con el modo**, y tocarla despliega la tarjeta con el
+nombre del PC, los chips de modo, el chip **Nunchuk**, **Teclado** y
+**Salir**, que se pliega sola a los 4 segundos. Así el chip Nunchuk deja de
+estar pegado a Salir y no hay nada encima de los botones.
 
 La cruceta (en todos los mandos de la app) es de una pieza, como la del Mando
 de Wii: se puede deslizar el pulgar de una dirección a otra sin levantarlo,
