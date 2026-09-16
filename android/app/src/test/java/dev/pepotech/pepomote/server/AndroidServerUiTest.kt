@@ -28,6 +28,7 @@ import dev.pepotech.pepomote.ui.screens.HomeStatus
 import dev.pepotech.pepomote.ui.screens.HomeTone
 import dev.pepotech.pepomote.ui.screens.ModeChips
 import dev.pepotech.pepomote.ui.theme.PepoMoteTheme
+import kotlinx.coroutines.flow.flowOf
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
@@ -197,7 +198,7 @@ class AndroidServerUiTest {
     @Test fun sharedVpnLinkCanBePastedWithoutTouchingSavedPcPairings() {
         var connected: String? = null
         val link = ServerIdentity.pairUrl(ReceiverConfig("Android remoto", "test-only-qr-credential", "1234"), "100.100.10.2")
-        compose.setContent { PepoMoteTheme { PairScreen({}, {}, onPairLink = { connected = it }, discoverReceivers = { emptyList() }) } }
+        compose.setContent { PepoMoteTheme { PairScreen({}, {}, onPairLink = { connected = it }, discoverReceivers = { flowOf(emptyList()) }) } }
         compose.onNodeWithText("Introducir enlace").performScrollTo().performClick()
         compose.onNodeWithText("2. Pulsa Copiar enlace", substring = true).assertExists()
         compose.onNodeWithText("Enlace copiado del servidor").performTextInput("enlace incorrecto")
@@ -218,7 +219,7 @@ class AndroidServerUiTest {
         val restoration = StateRestorationTester(compose)
         restoration.setContent { PepoMoteTheme {
             PairScreen({}, {}, onDiscovered = { receiver, code -> connected = receiver to code },
-                discoverReceivers = { listOf(pc) })
+                discoverReceivers = { flowOf(listOf(pc)) })
         } }
         compose.onNodeWithText("Escanear QR").assertIsDisplayed()
         compose.onNodeWithText("Conectar con código").assertIsDisplayed()
@@ -238,7 +239,7 @@ class AndroidServerUiTest {
 
     @Test fun nearbyDesktopCardAlsoOpensCodeEntryDirectly() {
         val pc = ReceiverInfo("PC cercano", "192.168.1.8", 26761)
-        compose.setContent { PepoMoteTheme { PairScreen({}, {}, discoverReceivers = { listOf(pc) }) } }
+        compose.setContent { PepoMoteTheme { PairScreen({}, {}, discoverReceivers = { flowOf(listOf(pc)) }) } }
         compose.onNodeWithText("PC cercano").performScrollTo().performClick()
         compose.onNodeWithText("Código de conexión").assertIsDisplayed()
         compose.onNodeWithText("Escribe el código de 4 dígitos", substring = true).assertIsDisplayed()
@@ -248,7 +249,7 @@ class AndroidServerUiTest {
         val android = ReceiverInfo("Android anterior", "192.168.1.9", 26761, "android")
         var connected: String? = null
         compose.setContent { PepoMoteTheme {
-            PairScreen({}, {}, onDiscovered = { _, code -> connected = code }, discoverReceivers = { listOf(android) })
+            PairScreen({}, {}, onDiscovered = { _, code -> connected = code }, discoverReceivers = { flowOf(listOf(android)) })
         } }
         compose.onNodeWithText("Android anterior").performScrollTo().performClick()
         compose.onNodeWithText("Código de conexión").performTextInput("1234")

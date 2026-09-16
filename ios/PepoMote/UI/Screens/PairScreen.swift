@@ -6,6 +6,7 @@ import SwiftUI
 /// no reconoce el emparejamiento: se explica arriba, en rojo.
 struct PairScreen: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var linkState = LinkState.shared
     @State private var receivers: [ReceiverInfo] = []
     @State private var scanning = true
     @State private var forgetting: Pairing?
@@ -15,6 +16,8 @@ struct PairScreen: View {
     var body: some View {
         let reason = model.pairReason
         let unknown = PairList.unknown(receivers, saved)
+        // El PC de la sesión abierta sale en verde al momento, sin sondeo
+        let linkedToken = PairList.linkedToken(saved, current: currentToken, connectedName: linkState.link.connected?.pcName)
         return VStack(alignment: .leading, spacing: 0) {
             Spacer().frame(height: 24)
             Text(reason != nil ? tr("pair_title_other") : tr("channel_connect"))
@@ -39,7 +42,7 @@ struct PairScreen: View {
                             SavedPcCard(
                                 p: p,
                                 current: p.token == currentToken,
-                                online: PairList.isOnline(p, receivers),
+                                online: PairList.isOnline(p, receivers, linkedToken: linkedToken),
                                 onTap: { model.onSavedPcChosen(p) },
                                 onLongPress: { forgetting = p }
                             )
@@ -86,7 +89,9 @@ struct PairScreen: View {
         .task {
             while !Task.isCancelled {
                 scanning = true
-                let found = await Discovery.scan()
+                // Cada receptor sale según contesta; al acabar, la lista
+                // completa quita lo que ya no contesta
+                let found = await Discovery.scan { seen in receivers = PairList.merge(receivers, seen) }
                 if Task.isCancelled { break }
                 receivers = found
                 scanning = false

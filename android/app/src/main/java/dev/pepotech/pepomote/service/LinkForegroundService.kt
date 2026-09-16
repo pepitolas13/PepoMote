@@ -27,6 +27,8 @@ import dev.pepotech.pepomote.net.UdpSender
 import dev.pepotech.pepomote.sensor.MotionEngine
 import dev.pepotech.pepomote.sensor.MotionSource
 import dev.pepotech.pepomote.sensor.SenderKind
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -483,12 +485,18 @@ class LinkForegroundService : Service() {
      * El token no cambia: vive en el PC.
      */
     private fun relocate(pairing: Pairing): Pairing {
+        // En cuanto contesta el PC con ese nombre desde otro sitio, vale: no
+        // hace falta esperar al final del sondeo
         val found = try {
-            runBlocking { Discovery.scan(1200) }
+            runBlocking {
+                Discovery.scan(1200)
+                    .mapNotNull { seen ->
+                        seen.firstOrNull { it.name == pairing.pcName && (it.host != pairing.host || it.tcpPort != pairing.port) }
+                    }
+                    .firstOrNull()
+            }
         } catch (_: Exception) {
-            emptyList()
-        }.firstOrNull {
-            it.name == pairing.pcName && (it.host != pairing.host || it.tcpPort != pairing.port)
+            null
         } ?: return pairing
         val moved = pairing.copy(host = found.host, port = found.tcpPort)
         PairStore.save(this, moved)

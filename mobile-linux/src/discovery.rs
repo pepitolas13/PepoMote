@@ -4,9 +4,14 @@
 //! - mDNS: el receptor anuncia `_pepomote._tcp.local.`.
 //! Bastantes routers/APs descartan el broadcast limitado, y algunos también el
 //! dirigido; el mDNS es multicast y suele pasar donde el broadcast no.
+//!
+//! Cada receptor se avisa según contesta ([`ScanEvent::Found`]): el PC de al
+//! lado sale en la lista en decenas de ms, sin esperar a que acabe el sondeo.
 
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -16,16 +21,82 @@ pub struct Receiver {
     pub port: u16,
 }
 
-/// Sondeo bloqueante durante `timeout`; llamar desde un hilo aparte.
-pub fn scan(timeout: Duration) -> Vec<Receiver> {
-    let mdns = std::thread::spawn(move || mdns_browse(timeout));
-    let mut found = broadcast_scan(timeout);
-    for r in mdns.join().unwrap_or_default() {
-        if !found.iter().any(|f| f.host == r.host) {
-            found.push(r);
+/// Lo que va soltando un sondeo: cada receptor nuevo según contesta (con la
+/// lista vista hasta el momento) y, al acabar, la lista completa.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScanEvent {
+    Found(Vec<Receiver>),
+    Done(Vec<Receiver>),
+}
+
+/// Lo visto en un sondeo, sin repetir IP, desde los dos hilos (broadcast y
+/// mDNS). Un receptor contesta a cada broadcast que le llega (el limitado y
+/// el dirigido): solo el primero cuenta como nuevo y avisa.
+struct Seen {
+    list: Mutex<Vec<Receiver>>,
+    tx: Option<Sender<ScanEvent>>,
+}
+
+impl Seen {
+    fn new(tx: Option<Sender<ScanEvent>>) -> Self {
+        Seen {
+            list: Mutex::new(Vec::new()),
+            tx,
         }
     }
-    found
+
+    fn add(&self, r: Receiver) {
+        let mut list = self.list.lock().unwrap_or_else(|e| e.into_inner());
+        if list.iter().any(|f| f.host == r.host) {
+            return;
+        }
+        list.push(r);
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(ScanEvent::Found(list.clone()));
+        }
+    }
+
+    fn snapshot(&self) -> Vec<Receiver> {
+        self.list.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+/// Sondeo bloqueante durante `timeout`; llamar desde un hilo aparte.
+pub fn scan(timeout: Duration) -> Vec<Receiver> {
+    scan_into(timeout, None)
+}
+
+/// Sondeo bloqueante que además va avisando por `tx` de cada receptor según
+/// contesta y, al acabar, manda la lista completa (ver [`ScanEvent`]).
+pub fn scan_into(timeout: Duration, tx: Option<Sender<ScanEvent>>) -> Vec<Receiver> {
+    let seen = Arc::new(Seen::new(tx));
+    let mdns = {
+        let seen = seen.clone();
+        std::thread::spawn(move || mdns_browse(timeout, &seen))
+    };
+    broadcast_scan(&broadcast_targets(), pmp::DEFAULT_PORT, timeout, &seen);
+    let _ = mdns.join();
+    let list = seen.snapshot();
+    if let Some(tx) = &seen.tx {
+        let _ = tx.send(ScanEvent::Done(list.clone()));
+    }
+    list
+}
+
+/// Lo visto en un sondeo a medias, encima de lo que ya se enseñaba: se añade
+/// y se actualiza por IP, y no se quita nada hasta que el sondeo acabe
+/// (entonces la lista completa reemplaza a esta), así la marca «en la red»
+/// no parpadea al empezar cada sondeo nuevo.
+pub fn merge(shown: &[Receiver], seen: &[Receiver]) -> Vec<Receiver> {
+    let mut out = shown.to_vec();
+    for r in seen {
+        if let Some(i) = out.iter().position(|s| s.host == r.host) {
+            out[i] = r.clone();
+        } else {
+            out.push(r.clone());
+        }
+    }
+    out
 }
 
 /// Direcciones de broadcast: la limitada más la dirigida de cada interfaz.
@@ -53,14 +124,12 @@ pub fn broadcast_targets() -> Vec<Ipv4Addr> {
     v
 }
 
-fn broadcast_scan(timeout: Duration) -> Vec<Receiver> {
-    let mut found: Vec<Receiver> = Vec::new();
+fn broadcast_scan(targets: &[Ipv4Addr], port: u16, timeout: Duration, seen: &Seen) {
     let Ok(sock) = UdpSocket::bind("0.0.0.0:0") else {
-        return found;
+        return;
     };
     let _ = sock.set_broadcast(true);
     let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
-    let targets = broadcast_targets();
     let deadline = Instant::now() + timeout;
     let mut last_probe = Instant::now() - Duration::from_secs(1);
     let mut buf = [0u8; 512];
@@ -68,29 +137,25 @@ fn broadcast_scan(timeout: Duration) -> Vec<Receiver> {
         // re-sondeo cada 500 ms: un datagrama perdido no debe dejar la lista vacía
         if last_probe.elapsed() >= Duration::from_millis(500) {
             last_probe = Instant::now();
-            for t in &targets {
-                let _ = sock.send_to(pmp::DISCOVER, (*t, pmp::DEFAULT_PORT));
+            for t in targets {
+                let _ = sock.send_to(pmp::DISCOVER, (*t, port));
             }
         }
         let Ok((n, from)) = sock.recv_from(&mut buf) else {
             continue;
         };
         if let Some(r) = parse_here(&buf[..n], from) {
-            if !found.iter().any(|f| f.host == r.host) {
-                found.push(r);
-            }
+            seen.add(r);
         }
     }
-    found
 }
 
-fn mdns_browse(timeout: Duration) -> Vec<Receiver> {
-    let mut out: Vec<Receiver> = Vec::new();
+fn mdns_browse(timeout: Duration, seen: &Seen) {
     let Ok(daemon) = mdns_sd::ServiceDaemon::new() else {
-        return out;
+        return;
     };
     let Ok(rx) = daemon.browse("_pepomote._tcp.local.") else {
-        return out;
+        return;
     };
     let deadline = Instant::now() + timeout;
     loop {
@@ -106,10 +171,10 @@ fn mdns_browse(timeout: Duration) -> Vec<Receiver> {
                     .unwrap_or_else(|| info.get_fullname().split('.').next().unwrap_or("PC").to_owned());
                 for addr in info.get_addresses() {
                     let host = addr.to_string();
-                    if host.contains(':') || out.iter().any(|r| r.host == host) {
-                        continue; // solo IPv4, sin repetir
+                    if host.contains(':') {
+                        continue; // solo IPv4
                     }
-                    out.push(Receiver {
+                    seen.add(Receiver {
                         name: name.clone(),
                         host,
                         port: info.get_port(),
@@ -121,7 +186,6 @@ fn mdns_browse(timeout: Duration) -> Vec<Receiver> {
         }
     }
     let _ = daemon.shutdown();
-    out
 }
 
 pub fn parse_here(buf: &[u8], from: SocketAddr) -> Option<Receiver> {
@@ -154,6 +218,15 @@ pub fn local_ipv4() -> Option<Ipv4Addr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
+
+    fn rx(name: &str, host: &str) -> Receiver {
+        Receiver {
+            name: name.into(),
+            host: host.into(),
+            port: 26761,
+        }
+    }
 
     #[test]
     fn parsea_here() {
@@ -175,5 +248,89 @@ mod tests {
     fn objetivos_de_broadcast_incluyen_el_limitado() {
         let t = broadcast_targets();
         assert!(t.contains(&Ipv4Addr::BROADCAST));
+    }
+
+    #[test]
+    fn lo_visto_no_repite_ip_y_avisa_solo_de_lo_nuevo() {
+        let (tx, events) = mpsc::channel();
+        let seen = Seen::new(Some(tx));
+        seen.add(rx("A", "192.168.1.5"));
+        seen.add(rx("A otra vez", "192.168.1.5"));
+        seen.add(rx("B", "192.168.1.6"));
+        assert_eq!(events.try_recv().unwrap(), ScanEvent::Found(vec![rx("A", "192.168.1.5")]));
+        assert_eq!(
+            events.try_recv().unwrap(),
+            ScanEvent::Found(vec![rx("A", "192.168.1.5"), rx("B", "192.168.1.6")])
+        );
+        assert!(events.try_recv().is_err(), "la misma IP no vuelve a avisar");
+        assert_eq!(seen.snapshot().len(), 2);
+    }
+
+    #[test]
+    fn merge_anade_y_actualiza_sin_quitar_nada() {
+        let shown = vec![rx("SALÓN-PC", "192.168.1.5"), rx("Viejo", "192.168.1.7")];
+        let seen = vec![
+            Receiver {
+                name: "SALON".into(),
+                host: "192.168.1.5".into(),
+                port: 26800,
+            },
+            rx("Nuevo", "192.168.1.8"),
+        ];
+        let merged = merge(&shown, &seen);
+        let hosts: Vec<&str> = merged.iter().map(|r| r.host.as_str()).collect();
+        assert_eq!(hosts, ["192.168.1.5", "192.168.1.7", "192.168.1.8"], "orden: lo enseñado y luego lo nuevo");
+        assert_eq!(merged[0], seen[0], "misma IP: se actualiza");
+        assert_eq!(merged[1].name, "Viejo", "un sondeo a medias no quita nada");
+        assert_eq!(merge(&shown, &[]), shown);
+        assert_eq!(merge(&[], &seen), seen);
+    }
+
+    /// Receptor falso en el loopback que contesta PMPHERE1 a cada sondeo.
+    fn fake_receiver(name: &'static str) -> u16 {
+        let sock = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = sock.local_addr().unwrap().port();
+        let _ = sock.set_read_timeout(Some(Duration::from_secs(5)));
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 64];
+            while let Ok((n, from)) = sock.recv_from(&mut buf) {
+                if &buf[..n] == pmp::DISCOVER {
+                    let reply = format!("PMPHERE1 {{\"pv\":1,\"name\":\"{name}\",\"tcp\":26761}}");
+                    let _ = sock.send_to(reply.as_bytes(), from);
+                }
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn el_primer_receptor_se_avisa_sin_esperar_al_final_del_sondeo() {
+        let port = fake_receiver("TORRE");
+        let (tx, events) = mpsc::channel();
+        let seen = Seen::new(Some(tx));
+        let t0 = Instant::now();
+        broadcast_scan(&[Ipv4Addr::LOCALHOST], port, Duration::from_millis(1500), &seen);
+        let total = t0.elapsed();
+        assert!(total >= Duration::from_millis(1400), "el sondeo entero sigue durando lo suyo ({total:?})");
+        // El aviso lleva su hora de llegada implícita: es el primer evento y
+        // el hilo lo mandó nada más recibir la respuesta, no al acabar
+        let first = events.try_recv().unwrap();
+        assert_eq!(first, ScanEvent::Found(vec![rx("TORRE", "127.0.0.1")]));
+        assert!(events.try_recv().is_err(), "el re-sondeo de los 500 ms no lo repite");
+        assert_eq!(seen.snapshot(), vec![rx("TORRE", "127.0.0.1")]);
+    }
+
+    #[test]
+    fn el_aviso_llega_antes_de_que_acabe_el_sondeo() {
+        let port = fake_receiver("TORRE");
+        let (tx, events) = mpsc::channel();
+        let t0 = Instant::now();
+        std::thread::spawn(move || {
+            let seen = Seen::new(Some(tx));
+            broadcast_scan(&[Ipv4Addr::LOCALHOST], port, Duration::from_millis(1500), &seen);
+        });
+        let first = events.recv_timeout(Duration::from_millis(700)).expect("el primer receptor sale mucho antes de los 1500 ms");
+        assert_eq!(first, ScanEvent::Found(vec![rx("TORRE", "127.0.0.1")]));
+        assert!(t0.elapsed() < Duration::from_millis(700));
     }
 }

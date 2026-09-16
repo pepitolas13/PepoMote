@@ -55,6 +55,7 @@ import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.net.ReceiverInfo
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
 
@@ -71,11 +72,13 @@ fun PairScreen(
     reason: String? = null,
     saved: List<Pairing> = emptyList(),
     currentToken: String? = null,
+    /** Token del PC con el que hay enlace vivo ahora mismo (null = ninguno): sale en verde sin esperar al sondeo. */
+    linkedToken: String? = null,
     onChoose: (Pairing) -> Unit = {},
     onForget: (Pairing) -> Unit = {},
     onDiscovered: (ReceiverInfo, String) -> Unit = { _, _ -> },
     onPairLink: (String) -> Unit = {},
-    discoverReceivers: suspend () -> List<ReceiverInfo> = { Discovery.scan() },
+    discoverReceivers: () -> Flow<List<ReceiverInfo>> = { Discovery.scan() },
 ) {
     var receivers by remember { mutableStateOf(listOf<ReceiverInfo>()) }
     var scanning by remember { mutableStateOf(true) }
@@ -88,11 +91,18 @@ fun PairScreen(
     var invalidLink by rememberSaveable { mutableStateOf(false) }
 
     // A modal owns the user's next action; resume discovery after it closes.
+    // Cada sondeo va enseñando lo que encuentra según contesta (el PC de al
+    // lado, en decenas de ms) y solo al acabar quita lo que ya no contesta.
     LaunchedEffect(enteringLink, pairingReceiver, forgetting) {
         if (enteringLink || pairingReceiver != null || forgetting != null) return@LaunchedEffect
         while (true) {
             scanning = true
-            receivers = discoverReceivers()
+            var complete = emptyList<ReceiverInfo>()
+            discoverReceivers().collect { seen ->
+                complete = seen
+                receivers = PairList.merge(receivers, seen)
+            }
+            receivers = complete
             scanning = false
             delay(2500)
         }
@@ -187,7 +197,7 @@ fun PairScreen(
                     SavedPcCard(
                         p,
                         current = p.token == currentToken,
-                        online = PairList.isOnline(p, receivers),
+                        online = PairList.isOnline(p, receivers, linkedToken),
                         onClick = {
                             if (PairList.isTemporaryCode(p)) {
                                 pairCode = ""

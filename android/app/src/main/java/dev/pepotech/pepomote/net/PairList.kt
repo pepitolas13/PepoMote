@@ -42,9 +42,37 @@ object PairList {
     fun nextCurrent(list: List<Pairing>, current: String?, forgotten: String): String? =
         if (current != forgotten && list.any { it.token == current }) current else list.firstOrNull()?.token
 
-    /** Un PC guardado se ve en la red (por nombre o por IP). */
-    fun isOnline(p: Pairing, receivers: List<ReceiverInfo>): Boolean =
-        receivers.any { it.name == p.pcName || it.host == p.host }
+    /**
+     * Un PC guardado se ve en la red (por nombre o por IP), o es el PC del
+     * enlace vivo (`linkedToken`): con ese hay sesión abierta ahora mismo y no
+     * hace falta esperar a que conteste al sondeo para darlo por visto.
+     */
+    fun isOnline(p: Pairing, receivers: List<ReceiverInfo>, linkedToken: String? = null): Boolean =
+        (linkedToken != null && p.token == linkedToken) || receivers.any { it.name == p.pcName || it.host == p.host }
+
+    /**
+     * Token del PC guardado con el que hay sesión abierta: el actual, y solo
+     * si su nombre es el del enlace (`connectedName`, null = sin sesión).
+     * Olvidado el PC del enlace, el «actual» pasa a ser otro PC, y ese no
+     * tiene sesión: no se le pone en verde por ello.
+     */
+    fun linkedToken(list: List<Pairing>, current: String?, connectedName: String?): String? {
+        if (connectedName == null) return null
+        return list.firstOrNull { it.token == current && it.pcName == connectedName }?.token
+    }
+
+    /**
+     * Lo visto en un sondeo a medias, encima de lo que ya se enseñaba: se
+     * añade y se actualiza por IP, y no se quita nada hasta que el sondeo
+     * acabe (entonces la lista completa reemplaza a esta), así el punto verde
+     * no parpadea al empezar cada sondeo nuevo.
+     */
+    fun merge(shown: List<ReceiverInfo>, seen: List<ReceiverInfo>): List<ReceiverInfo> {
+        val byHost = LinkedHashMap<String, ReceiverInfo>()
+        shown.forEach { byHost[it.host] = it }
+        seen.forEach { byHost[it.host] = it }
+        return byHost.values.toList()
+    }
 
     /** Receptores de la red que no son ninguno de los guardados. */
     fun unknown(receivers: List<ReceiverInfo>, list: List<Pairing>): List<ReceiverInfo> =

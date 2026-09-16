@@ -609,6 +609,8 @@ private fun Root(activity: MainActivity) {
                 },
                 saved = saved,
                 currentToken = current,
+                // El PC de la sesión abierta sale en verde al momento, sin sondeo
+                linkedToken = PairList.linkedToken(saved, current, (link as? UiLink.Connected)?.pcName),
                 onChoose = { activity.onSavedPcChosen(it) },
                 onPairLink = { activity.onPairContent(it) },
                 onForget = { activity.onForgetPc(it) },

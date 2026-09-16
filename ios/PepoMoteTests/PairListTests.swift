@@ -92,7 +92,62 @@ final class PairListTests: XCTestCase {
     }
 }
 
+final class PairOnlineTests: XCTestCase {
+    private let salon = Pairing(host: "192.168.1.5", port: 26761, token: "tok-salon", pcName: "SALÓN-PC")
+    private let cuarto = Pairing(host: "192.168.1.9", port: 26800, token: "tok-cuarto", pcName: "Cuarto")
+
+    func testElPcDelEnlaceVivoEstaOnlineSinEsperarAlSondeo() {
+        XCTAssertTrue(PairList.isOnline(salon, [], linkedToken: "tok-salon"), "sesión abierta con él: en verde con la lista aún vacía")
+        XCTAssertFalse(PairList.isOnline(cuarto, [], linkedToken: "tok-salon"), "el otro PC sigue esperando al sondeo")
+        XCTAssertFalse(PairList.isOnline(salon, [], linkedToken: nil), "sin enlace, solo el sondeo")
+        XCTAssertTrue(PairList.isOnline(cuarto, [ReceiverInfo(name: "Cuarto", host: "10.9.9.9", tcpPort: 26761)], linkedToken: "tok-salon"))
+    }
+
+    func testElTokenDelEnlaceEsElActualSoloSiSuNombreEsElDeLaSesion() {
+        let list = [salon, cuarto]
+        XCTAssertEqual(PairList.linkedToken(list, current: "tok-salon", connectedName: "SALÓN-PC"), "tok-salon", "sesión con el actual")
+        XCTAssertNil(PairList.linkedToken(list, current: "tok-salon", connectedName: nil), "sin sesión")
+        // Olvidado SALÓN con su sesión aún abierta, el actual pasa a ser Cuarto: sin sesión
+        XCTAssertNil(PairList.linkedToken([cuarto], current: "tok-cuarto", connectedName: "SALÓN-PC"), "el actual no es el PC de la sesión")
+        XCTAssertNil(PairList.linkedToken(list, current: nil, connectedName: "SALÓN-PC"), "sin PC actual")
+    }
+
+    func testMergeAnadeYActualizaSinQuitarNada() {
+        let shown = [ReceiverInfo(name: "SALÓN-PC", host: "192.168.1.5", tcpPort: 26761), ReceiverInfo(name: "Viejo", host: "192.168.1.7", tcpPort: 26761)]
+        let seen = [ReceiverInfo(name: "SALON", host: "192.168.1.5", tcpPort: 26800), ReceiverInfo(name: "Nuevo", host: "192.168.1.8", tcpPort: 26761)]
+        let merged = PairList.merge(shown, seen)
+        XCTAssertEqual(merged.map(\.host), ["192.168.1.5", "192.168.1.7", "192.168.1.8"], "orden: lo enseñado y luego lo nuevo")
+        XCTAssertEqual(merged[0], ReceiverInfo(name: "SALON", host: "192.168.1.5", tcpPort: 26800), "misma IP: se actualiza")
+        XCTAssertEqual(merged[1].name, "Viejo", "un sondeo a medias no quita nada")
+        XCTAssertEqual(PairList.merge(shown, []), shown)
+        XCTAssertEqual(PairList.merge([], seen), seen)
+    }
+}
+
 final class DiscoveryTests: XCTestCase {
+    func testFoundAvisaDeCadaIpNuevaEnLaColaPrincipalYSeCierra() {
+        let a = ReceiverInfo(name: "A", host: "192.168.1.5", tcpPort: 26761)
+        let aAgain = ReceiverInfo(name: "A otra vez", host: "192.168.1.5", tcpPort: 26761)
+        let b = ReceiverInfo(name: "B", host: "192.168.1.6", tcpPort: 26761)
+        let twice = expectation(description: "dos avisos, uno por IP nueva")
+        var snapshots: [[ReceiverInfo]] = []
+        var onMain: [Bool] = []
+        let found = Discovery.Found { list in
+            snapshots.append(list)
+            onMain.append(Thread.isMainThread)
+            if snapshots.count == 2 { twice.fulfill() }
+        }
+        found.add(a)
+        found.add(aAgain)
+        found.add(b)
+        wait(for: [twice], timeout: 2)
+        XCTAssertEqual(snapshots, [[a], [a, b]], "la misma IP no vuelve a avisar")
+        XCTAssertEqual(onMain, [true, true])
+        XCTAssertEqual(found.close(), [a, b])
+        found.add(ReceiverInfo(name: "Tarde", host: "192.168.1.7", tcpPort: 26761))
+        XCTAssertEqual(found.close(), [a, b], "cerrado el sondeo, lo que llega tarde se ignora")
+    }
+
     func testParseHere() {
         let r = Discovery.parseHere("PMPHERE1 {\"pv\":1,\"name\":\"SALON\",\"tcp\":26761}", from: "192.168.1.5")
         XCTAssertEqual(r, ReceiverInfo(name: "SALON", host: "192.168.1.5", tcpPort: 26761))

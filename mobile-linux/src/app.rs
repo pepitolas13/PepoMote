@@ -5,7 +5,7 @@
 
 use crate::buttons::Buttons;
 use crate::calib::{self, Axes};
-use crate::discovery::{self, Receiver};
+use crate::discovery::{self, Receiver, ScanEvent};
 use crate::inhibit::Inhibit;
 use crate::link::{self, Link, Role, Status};
 use crate::screen;
@@ -238,7 +238,7 @@ pub struct MobileApp {
     fake: bool,
     // Conectar
     discovered: Vec<Receiver>,
-    scan_rx: Option<mpsc::Receiver<Vec<Receiver>>>,
+    scan_rx: Option<mpsc::Receiver<ScanEvent>>,
     last_scan: Option<Instant>,
     // Código / IP a mano
     target: Option<Receiver>,
@@ -369,6 +369,13 @@ impl MobileApp {
         self.link
             .as_ref()
             .is_some_and(|l| matches!(l.status(), Status::Connected { .. } | Status::Connecting | Status::Reconnecting { .. }))
+    }
+
+    /// Hay sesión abierta ahora mismo (no arrancando ni rehaciéndose) con ese PC.
+    fn link_connected_to(&self, name: &str) -> bool {
+        self.link
+            .as_ref()
+            .is_some_and(|l| matches!(l.status(), Status::Connected { pc_name, .. } if pc_name == name))
     }
 
     /// Conecta (o cambia de modo si ya hay enlace) y va al mando.
@@ -603,6 +610,7 @@ impl MobileApp {
                     self.error = None;
                     self.pair_reason = Some(re_pair_reason(self.pairing.as_ref().map(|p| p.pc_name.as_str())));
                     self.discovered.clear();
+                    self.scan_rx = None; // lo que quedara en cola de un sondeo viejo no vale
                     self.last_scan = None;
                     self.screen = Screen::Pair;
                 } else if code == "io" && store::load_all().list.len() >= 2 {
@@ -614,6 +622,7 @@ impl MobileApp {
                         self.pairing.as_ref().map(|p| p.pc_name.as_str()).unwrap_or(tr!("pair.your_pc"))
                     ));
                     self.discovered.clear();
+                    self.scan_rx = None; // lo que quedara en cola de un sondeo viejo no vale
                     self.last_scan = None;
                     self.screen = Screen::Pair;
                 } else {
@@ -698,16 +707,34 @@ impl MobileApp {
     }
 
     fn poll_scan(&mut self) {
-        if let Some(rx) = &self.scan_rx {
-            if let Ok(list) = rx.try_recv() {
-                self.discovered = list;
-                self.scan_rx = None;
+        // El sondeo avisa de cada receptor según contesta (se añade sobre lo
+        // que ya se enseña) y al acabar manda la lista completa, que es la
+        // que quita lo que ya no contesta.
+        if let Some(rx) = self.scan_rx.take() {
+            let mut open = true;
+            loop {
+                match rx.try_recv() {
+                    Ok(ScanEvent::Found(seen)) => self.discovered = discovery::merge(&self.discovered, &seen),
+                    Ok(ScanEvent::Done(list)) => {
+                        self.discovered = list;
+                        open = false;
+                        break;
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        open = false;
+                        break;
+                    }
+                }
+            }
+            if open {
+                self.scan_rx = Some(rx);
             }
         }
         if self.scan_rx.is_none() && self.last_scan.is_none_or(|t| t.elapsed() > Duration::from_millis(2500)) {
             let (tx, rx) = mpsc::channel();
             std::thread::spawn(move || {
-                let _ = tx.send(discovery::scan(Duration::from_millis(1500)));
+                discovery::scan_into(Duration::from_millis(1500), Some(tx));
             });
             self.scan_rx = Some(rx);
             self.last_scan = Some(Instant::now());
@@ -890,6 +917,7 @@ impl MobileApp {
             Some(3) => {
                 self.after_pair_mode = None;
                 self.discovered.clear();
+                self.scan_rx = None; // lo que quedara en cola de un sondeo viejo no vale
                 self.last_scan = None;
                 self.pair_reason = None;
                 self.screen = Screen::Pair;
@@ -1040,7 +1068,11 @@ impl MobileApp {
             let mut forget: Option<String> = None;
             for p in &saved.list {
                 let current = saved.current.as_deref() == Some(p.token.as_str());
-                let online = self.discovered.iter().any(|r| r.name == p.pc_name || r.host == p.host);
+                // El PC de la sesión abierta está en la red seguro: sin esperar
+                // al sondeo (por nombre además de actual: olvidado el PC del
+                // enlace, el actual pasa a ser otro, y ese no tiene sesión)
+                let online = (current && self.link_connected_to(&p.pc_name))
+                    || self.discovered.iter().any(|r| r.name == p.pc_name || r.host == p.host);
                 ui.horizontal(|ui| {
                     let w = ui.available_width() - 84.0;
                     let label = format!(

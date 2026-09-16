@@ -63,9 +63,32 @@ enum PairList {
         return list.first?.token
     }
 
-    /// Un PC guardado se ve en la red (por nombre o por IP).
-    static func isOnline(_ p: Pairing, _ receivers: [ReceiverInfo]) -> Bool {
-        receivers.contains { $0.name == p.pcName || $0.host == p.host }
+    /// Un PC guardado se ve en la red (por nombre o por IP), o es el PC del
+    /// enlace vivo (`linkedToken`): con ese hay sesión abierta ahora mismo y
+    /// no hace falta esperar a que conteste al sondeo para darlo por visto.
+    static func isOnline(_ p: Pairing, _ receivers: [ReceiverInfo], linkedToken: String? = nil) -> Bool {
+        (linkedToken != nil && p.token == linkedToken) || receivers.contains { $0.name == p.pcName || $0.host == p.host }
+    }
+
+    /// Token del PC guardado con el que hay sesión abierta: el actual, y solo
+    /// si su nombre es el del enlace (`connectedName`, nil = sin sesión).
+    /// Olvidado el PC del enlace, el «actual» pasa a ser otro PC, y ese no
+    /// tiene sesión: no se le pone en verde por ello.
+    static func linkedToken(_ list: [Pairing], current: String?, connectedName: String?) -> String? {
+        guard let connectedName else { return nil }
+        return list.first { $0.token == current && $0.pcName == connectedName }?.token
+    }
+
+    /// Lo visto en un sondeo a medias, encima de lo que ya se enseñaba: se
+    /// añade y se actualiza por IP, y no se quita nada hasta que el sondeo
+    /// acabe (entonces la lista completa reemplaza a esta), así el punto verde
+    /// no parpadea al empezar cada sondeo nuevo.
+    static func merge(_ shown: [ReceiverInfo], _ seen: [ReceiverInfo]) -> [ReceiverInfo] {
+        var out = shown
+        for r in seen {
+            if let i = out.firstIndex(where: { $0.host == r.host }) { out[i] = r } else { out.append(r) }
+        }
+        return out
     }
 
     /// Receptores de la red que no son ninguno de los guardados.

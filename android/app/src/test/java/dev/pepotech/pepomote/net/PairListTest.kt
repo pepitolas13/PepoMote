@@ -78,6 +78,36 @@ class PairListTest {
         assertEquals(cuarto, refreshed[1])
     }
 
+    @Test
+    fun elPcDelEnlaceVivoEstaOnlineSinEsperarAlSondeo() {
+        assertTrue(PairList.isOnline(salon, emptyList(), linkedToken = "tok-salon"), "sesión abierta con él: en verde con la lista aún vacía")
+        assertFalse("el otro PC sigue esperando al sondeo", PairList.isOnline(cuarto, emptyList(), linkedToken = "tok-salon"))
+        assertFalse("sin enlace, solo el sondeo", PairList.isOnline(salon, emptyList(), linkedToken = null))
+        assertTrue(PairList.isOnline(cuarto, listOf(ReceiverInfo("Cuarto & Co = raro", "10.9.9.9", 26761)), linkedToken = "tok-salon"))
+    }
+
+    @Test
+    fun elTokenDelEnlaceEsElActualSoloSiSuNombreEsElDeLaSesion() {
+        val list = listOf(salon, cuarto)
+        assertEquals("tok-salon", PairList.linkedToken(list, "tok-salon", "SALÓN-PC"), "sesión con el actual")
+        assertNull("sin sesión", PairList.linkedToken(list, "tok-salon", null))
+        // Olvidado SALÓN con su sesión aún abierta, el actual pasa a ser Cuarto: sin sesión
+        assertNull("el actual no es el PC de la sesión", PairList.linkedToken(listOf(cuarto), "tok-cuarto", "SALÓN-PC"))
+        assertNull("sin PC actual", PairList.linkedToken(list, null, "SALÓN-PC"))
+    }
+
+    @Test
+    fun mergeAnadeYActualizaSinQuitarNada() {
+        val shown = listOf(ReceiverInfo("SALÓN-PC", "192.168.1.5", 26761), ReceiverInfo("Viejo", "192.168.1.7", 26761))
+        val seen = listOf(ReceiverInfo("SALON", "192.168.1.5", 26800), ReceiverInfo("Nuevo", "192.168.1.8", 26761))
+        val merged = PairList.merge(shown, seen)
+        assertEquals(listOf("192.168.1.5", "192.168.1.7", "192.168.1.8"), merged.map { it.host }, "orden: lo enseñado y luego lo nuevo")
+        assertEquals(ReceiverInfo("SALON", "192.168.1.5", 26800), merged[0], "misma IP: se actualiza")
+        assertEquals("Viejo", merged[1].name, "un sondeo a medias no quita nada")
+        assertEquals(shown, PairList.merge(shown, emptyList()))
+        assertEquals(seen, PairList.merge(emptyList(), seen))
+    }
+
     private fun assertEquals(expected: Int, actual: Int, message: String) =
         org.junit.Assert.assertEquals(message, expected.toLong(), actual.toLong())
 

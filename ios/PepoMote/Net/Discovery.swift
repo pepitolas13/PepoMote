@@ -13,49 +13,106 @@ struct ReceiverInfo: Equatable {
 /// mDNS) y, de respaldo, el broadcast UDP `PMPDISCOVER1` → `PMPHERE1`, que en
 /// iOS 14+ suele fallar sin la entitlement de multicast: se intenta y, si el
 /// sistema lo rechaza, no pasa nada.
+///
+/// Cada receptor se avisa según aparece (`onFound`, en la cola principal, con
+/// la lista vista hasta el momento): el PC de al lado sale en decenas de ms,
+/// sin esperar a que acabe el sondeo. Lo devuelto es la lista completa.
 enum Discovery {
-    static func scan(timeoutMs: Int = 1500) async -> [ReceiverInfo] {
-        async let bonjour = scanBonjour(timeoutMs: timeoutMs)
-        async let broadcast = scanBroadcast(timeoutMs: timeoutMs)
-        var found: [ReceiverInfo] = []
-        for r in await broadcast where !found.contains(where: { $0.host == r.host }) { found.append(r) }
-        for r in await bonjour where !found.contains(where: { $0.host == r.host }) { found.append(r) }
-        return found
+    static func scan(timeoutMs: Int = 1500, onFound: @escaping ([ReceiverInfo]) -> Void = { _ in }) async -> [ReceiverInfo] {
+        let found = Found(onFound)
+        async let bonjour: Void = scanBonjour(timeoutMs: timeoutMs, into: found)
+        async let broadcast: Void = scanBroadcast(timeoutMs: timeoutMs, into: found)
+        _ = await (bonjour, broadcast)
+        return found.close()
+    }
+
+    /// Lo visto en un sondeo, sin repetir IP, desde cualquier hilo (el
+    /// broadcast y cada resolve de Bonjour van por el suyo). Cerrado el
+    /// sondeo, lo que llegue tarde (un resolve rezagado) se ignora.
+    final class Found: @unchecked Sendable {
+        private let lock = NSLock()
+        private var list: [ReceiverInfo] = []
+        private var closed = false
+        private let onFound: ([ReceiverInfo]) -> Void
+
+        init(_ onFound: @escaping ([ReceiverInfo]) -> Void) {
+            self.onFound = onFound
+        }
+
+        func add(_ r: ReceiverInfo) {
+            lock.lock()
+            guard !closed, !list.contains(where: { $0.host == r.host }) else {
+                lock.unlock()
+                return
+            }
+            list.append(r)
+            let snapshot = list
+            lock.unlock()
+            DispatchQueue.main.async { self.onFound(snapshot) }
+        }
+
+        func close() -> [ReceiverInfo] {
+            lock.lock()
+            defer { lock.unlock() }
+            closed = true
+            return list
+        }
     }
 
     // MARK: - Bonjour
 
-    private final class ResultBox {
-        var latest = Set<NWBrowser.Result>()
+    /// Solo se toca desde la cola serie del sondeo.
+    private final class SeenBox {
+        var endpoints = Set<NWEndpoint>()
+        /// Resolves en marcha: se esperan al acabar el plazo, que el servicio
+        /// que apareció justo antes no se pierda por resolverse tarde.
+        var resolving: [Task<Void, Never>] = []
     }
 
-    private static func scanBonjour(timeoutMs: Int) async -> [ReceiverInfo] {
-        let results: Set<NWBrowser.Result> = await withCheckedContinuation { cont in
-            let box = ResultBox()
+    private static func scanBonjour(timeoutMs: Int, into found: Found) async {
+        let pending: [Task<Void, Never>] = await withCheckedContinuation { (cont: CheckedContinuation<[Task<Void, Never>], Never>) in
+            let seen = SeenBox()
             let params = NWParameters()
             params.includePeerToPeer = false
             let browser = NWBrowser(for: .bonjourWithTXTRecord(type: "_pepomote._tcp", domain: nil), using: params)
             let q = DispatchQueue(label: "pepomote.discover")
-            browser.browseResultsChangedHandler = { results, _ in box.latest = results }
+            // Cada servicio nuevo se resuelve (IP:puerto) en cuanto aparece, no
+            // al acabar el sondeo: así el receptor sale en la lista al momento.
+            browser.browseResultsChangedHandler = { results, _ in
+                for r in results {
+                    guard case .service = r.endpoint, !seen.endpoints.contains(r.endpoint) else { continue }
+                    seen.endpoints.insert(r.endpoint)
+                    let name = bonjourName(r)
+                    seen.resolving.append(Task {
+                        if let (host, port) = await resolve(r.endpoint) {
+                            found.add(ReceiverInfo(name: name, host: host, tcpPort: port))
+                        }
+                    })
+                }
+            }
             browser.stateUpdateHandler = { _ in }
             browser.start(queue: q)
             q.asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) {
                 browser.cancel()
-                cont.resume(returning: box.latest)
+                cont.resume(returning: seen.resolving)
             }
         }
-        var out: [ReceiverInfo] = []
-        for r in results {
-            guard case .service(let name, _, _, _) = r.endpoint else { continue }
-            var pcName = name.hasPrefix("PepoMote-") ? String(name.dropFirst("PepoMote-".count)) : name
-            if case .bonjour(let txt) = r.metadata, let n = txt.dictionary["name"], !n.isEmpty {
-                pcName = n
-            }
-            if let (host, port) = await resolve(r.endpoint) {
-                out.append(ReceiverInfo(name: pcName, host: host, tcpPort: port))
-            }
+        // Un resolve que empezó dentro del plazo acaba (2 s como mucho), como
+        // antes, que se resolvía todo al final
+        for t in pending { await t.value }
+    }
+
+    /// Nombre del PC de un resultado Bonjour: el TXT `name` si viene; si no,
+    /// el del servicio sin el prefijo `PepoMote-`.
+    private static func bonjourName(_ r: NWBrowser.Result) -> String {
+        var pcName = "PC"
+        if case .service(let name, _, _, _) = r.endpoint {
+            pcName = name.hasPrefix("PepoMote-") ? String(name.dropFirst("PepoMote-".count)) : name
         }
-        return out
+        if case .bonjour(let txt) = r.metadata, let n = txt.dictionary["name"], !n.isEmpty {
+            pcName = n
+        }
+        return pcName
     }
 
     /// IP:puerto de un servicio Bonjour: se conecta (IPv4) y lee el extremo real.
@@ -124,17 +181,18 @@ enum Discovery {
         return ReceiverInfo(name: name, host: host, tcpPort: port)
     }
 
-    private static func scanBroadcast(timeoutMs: Int) async -> [ReceiverInfo] {
-        await withCheckedContinuation { cont in
+    private static func scanBroadcast(timeoutMs: Int, into found: Found) async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             DispatchQueue.global(qos: .utility).async {
-                cont.resume(returning: broadcastSync(timeoutMs: timeoutMs))
+                broadcastSync(timeoutMs: timeoutMs, into: found)
+                cont.resume()
             }
         }
     }
 
-    private static func broadcastSync(timeoutMs: Int) -> [ReceiverInfo] {
+    private static func broadcastSync(timeoutMs: Int, into found: Found) {
         let fd = socket(AF_INET, SOCK_DGRAM, 0)
-        if fd < 0 { return [] }
+        if fd < 0 { return }
         defer { Darwin.close(fd) }
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, socklen_t(MemoryLayout<Int32>.size))
@@ -155,7 +213,6 @@ enum Discovery {
                 }
             }
         }
-        var found: [ReceiverInfo] = []
         var buf = [UInt8](repeating: 0, count: 1024)
         let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
         while Date() < deadline {
@@ -172,11 +229,10 @@ enum Discovery {
             guard inet_ntop(AF_INET, &a, &ip, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
             let host = String(cString: ip)
             let text = String(decoding: buf[0..<n], as: UTF8.self)
-            if let r = parseHere(text, from: host), !found.contains(where: { $0.host == host }) {
-                found.append(r)
-            }
+            // Un receptor contesta a cada broadcast que le llega (el limitado y
+            // el dirigido): `Found` se queda solo con el primero por IP.
+            if let r = parseHere(text, from: host) { found.add(r) }
         }
-        return found
     }
 
     /// 255.255.255.255 y el broadcast dirigido de cada interfaz activa.
