@@ -121,7 +121,13 @@ final class ScreenshotTests: XCTestCase {
             LinkState.shared.publish(connected(mode: LinkState.modeCemu))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-\(dev)", size)
             AppModel.shared.gamePadSide = .unset
+            // Con el modo aún sin confirmar la tarjeta de la cabecera no se
+            // pliega sola y la pregunta del lado se enseña debajo de ella
+            LinkState.shared.publish(connected(mode: LinkState.modePointer))
+            LinkState.shared.requestMode(LinkState.modeCemu)
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-ask-\(dev)", size)
+            LinkState.shared.clearIntent()
+            LinkState.shared.pendingMode = nil
             AppModel.shared.gamePadSide = .left
             LinkState.shared.publish(connected(mode: LinkState.modeCemu, pad: LinkState.padPro, slot: 1))
             try shoot(GamePadScreen(onDisconnect: {}), "gamepad-pro-\(dev)", size)

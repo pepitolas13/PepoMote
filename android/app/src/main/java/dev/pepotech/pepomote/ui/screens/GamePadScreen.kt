@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -60,7 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -81,22 +82,24 @@ import dev.pepotech.pepomote.service.Route
 import dev.pepotech.pepomote.service.ScreenLink
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
+import dev.pepotech.pepomote.ui.components.CollapsibleHeader
 import dev.pepotech.pepomote.ui.components.FitRect
 import dev.pepotech.pepomote.ui.components.FullScreenMetrics
-import dev.pepotech.pepomote.ui.components.HeaderSlot
+import dev.pepotech.pepomote.ui.components.GamePadHeaderText
+import dev.pepotech.pepomote.ui.components.HeaderCollapse
 import dev.pepotech.pepomote.ui.components.KeyboardButton
 import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.LocalPressRegistry
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
-import dev.pepotech.pepomote.ui.components.PriorityRow
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.ShoulderButton
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import dev.pepotech.pepomote.ui.components.padMetrics
 import dev.pepotech.pepomote.ui.components.rememberPressRegistry
+import dev.pepotech.pepomote.ui.components.rememberScreenReader
 import dev.pepotech.pepomote.ui.components.slideCanvas
 import dev.pepotech.pepomote.control.AppPrefs
 import kotlin.math.roundToInt
@@ -213,6 +216,16 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     // hay botones) la capa no pulsa nada
     SideEffect { press.enabled = operative && !fullScreen }
 
+    // La cabecera plegable avisa de si está desplegada (la pregunta del lado
+    // ocupa el mismo sitio) y de cuánto mide, para poner la pregunta justo
+    // debajo cuando la cabecera no se va a plegar sola
+    var headerExpanded by remember { mutableStateOf(true) }
+    var headerBox by remember { mutableStateOf(0.dp) }
+    // Con lector de pantalla la cabecera se queda abierta hasta que la cierren:
+    // ahí la pregunta no puede esperar a que se pliegue o no saldría nunca
+    // Sin el eco del modo la tarjeta no se pliega sola (ver GamePadCollapsibleHeader)
+    val autoCollapse = operative && HeaderCollapse.autoCollapses(link is UiLink.Connected, rememberScreenReader())
+
     CompositionLocalProvider(LocalPressRegistry provides press) {
         BoxWithConstraints(
             modifier = Modifier
@@ -229,7 +242,6 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             // dé pads más grandes
             val m = padMetrics(maxWidth.value, maxHeight.value, noScreenPref, pro, switchPad)
             val gap = m.gap.dp
-            val screenW = maxWidth
             val k = m.k
             val headerH = m.headerH.dp
             val selectorH = m.selectorH.dp
@@ -268,15 +280,9 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             if (fullScreen) {
                 FullScreenGamePad(screen, showKeyboard = fullScreenKb, onKeyboard = { keyboardOpen = true })
             } else Column(Modifier.fillMaxSize()) {
-                GamePadHeader(
-                    link, operative, headerH, screen,
-                    width = screenW,
-                    wantedMode = wantedMode,
-                    onKeyboard = if (operative && (link as? UiLink.Connected)?.textInput != false) {
-                        { keyboardOpen = true }
-                    } else null,
-                    onDisconnect = onDisconnect
-                )
+                // El hueco de la cabecera: la de verdad va al final del Box,
+                // por encima de todo, y aquí solo se le guarda el sitio
+                Spacer(Modifier.height(headerH))
                 Spacer(Modifier.height(gap))
                 // Qué mando soy en Cemu: debajo de la cabecera, centrado
                 Box(
@@ -489,12 +495,22 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                 }
             }
 
-            if (sideSaved == LandscapeSide.Unset) {
+            // La pregunta del lado va donde la cabecera desplegada: se espera a
+            // que se pliegue (si no, una encima de la otra) y, cuando no se
+            // pliega sola, se pone justo bajo la tarjeta. A pantalla completa
+            // no hay cabecera y la pregunta sale sin más
+            if (sideSaved == LandscapeSide.Unset && (fullScreen || !headerExpanded || !autoCollapse)) {
                 val shown = LandscapeSide.effective(LandscapeSide.current(rotation), sideProvisional)
                 SideAskCard(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = if (fullScreen) 8.dp else headerH + gap),
+                        .padding(
+                            top = when {
+                                fullScreen -> 8.dp
+                                headerExpanded -> headerBox + 4.dp
+                                else -> headerH + gap
+                            }
+                        ),
                     title = stringResource(if (switchPad) R.string.side_ask_switch else R.string.side_ask_gamepad),
                     onFlip = { GamePadSide.setProvisional(shown.flipped()) },
                     onKeep = { GamePadSide.save(context, shown) }
@@ -512,6 +528,26 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                     onSend = { LinkState.sendText?.invoke(it) },
                     onClose = { keyboardOpen = false },
                     switchPad = switchPad
+                )
+            }
+
+            // Cabecera plegable, la última del Box: desplegada tapa al
+            // selector, a los controles y a los avisos (y no al revés). A
+            // pantalla completa no hay cabecera: manda el mando del PC
+            if (!fullScreen) {
+                GamePadCollapsibleHeader(
+                    link = link,
+                    operative = operative,
+                    wantedMode = wantedMode,
+                    screen = screen,
+                    onKeyboard = if (operative && (link as? UiLink.Connected)?.textInput != false) {
+                        { keyboardOpen = true }
+                    } else null,
+                    onExpandedChange = { headerExpanded = it },
+                    onDisconnect = onDisconnect,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .onSizeChanged { headerBox = with(density) { it.height.toDp() } }
                 )
             }
         }
@@ -634,110 +670,130 @@ private fun FullScreenTouch(screen: ScreenClient<Bitmap>?, modifier: Modifier) {
 }
 
 /**
- * Cabecera compacta: PC · «J1 · GamePad» / «J2 · Pro Controller» · ritmo de
- * la doble pantalla («pantalla · 30 fps», media de 1 s) · chips de modo
- * (Jugador 1) · «Teclado» (con el modo confirmado) · Salir.
+ * Cabecera plegable del GamePad (Wii U, Pro Controller y Switch): en la banda
+ * de cabecera, centrada, la pastilla con el modo («Wii U», «Switch») y, a su
+ * lado, «Teclado», que se ve siempre y está a un toque mientras se juega.
  *
- * Lo que no cabe lo decide [PriorityRow]: primero cae el ritmo de la pantalla,
- * luego el nombre del PC, luego el estado (que antes se encoge con puntos
- * suspensivos) y, en último extremo, los chips y «Teclado»; «Salir» nunca.
+ * Al tocar la pastilla se despliega la tarjeta con lo que antes iba apretado
+ * en una línea: el PC y «Salir», el estado («J1 · GamePad · 23 ms», o
+ * «Activando Wii U…») con el ritmo de la doble pantalla, y los chips de modo
+ * del Jugador 1. El teclado no entra en la tarjeta: se queda fuera.
  */
 @Composable
-internal fun GamePadHeader(
+internal fun GamePadCollapsibleHeader(
     link: UiLink,
     operative: Boolean,
-    height: Dp,
+    wantedMode: String,
     screen: ScreenClient<Bitmap>?,
-    width: Dp,
-    wantedMode: String = LinkState.MODE_CEMU,
     onKeyboard: (() -> Unit)?,
+    onExpandedChange: (Boolean) -> Unit,
+    onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    CollapsibleHeader(
+        link = link,
+        label = GamePadHeaderText.handle(
+            connected = link is UiLink.Connected,
+            connecting = link is UiLink.Connecting,
+            // el modo que se quiere: Wii U ya se lee aunque falte el eco
+            mode = modeLabel(wantedMode),
+            connectingText = stringResource(R.string.status_connecting),
+            disconnectedText = stringResource(R.string.status_disconnected)
+        ),
+        modifier = modifier,
+        // los 44 dp de la caja táctil de la pastilla son justo la banda de
+        // cabecera (38) y su hueco (6): nada de debajo se mueve
+        topPadding = 0.dp,
+        beside = {
+            // Texto para el teclado en pantalla de Cemu (GamePad y Pro): al
+            // lado de la pastilla, nunca dentro de la tarjeta. Con la letra
+            // grande no puede estirar la fila más allá de la banda (44 dp)
+            if (onKeyboard != null) {
+                KeyboardButton(compact = true, modifier = Modifier.heightIn(max = 44.dp), onClick = onKeyboard)
+            }
+        },
+        onExpandedChange = onExpandedChange,
+        // Esperando el eco del modo el mando está inerte: la tarjeta se queda
+        // (es lo que explica el «Activando…» y donde están los chips y Salir)
+        autoCollapse = operative
+    ) {
+        GamePadHeaderCard(link, operative, wantedMode, screen, onDisconnect)
+    }
+}
+
+/** Las filas de la tarjeta del GamePad, una debajo de otra. */
+@Composable
+private fun GamePadHeaderCard(
+    link: UiLink,
+    operative: Boolean,
+    wantedMode: String,
+    screen: ScreenClient<Bitmap>?,
     onDisconnect: () -> Unit
 ) {
-    // El estado se acorta antes de recortarse: en móviles estrechos fuera el
-    // nombre del mando y el RTT («J1 · GamePad · 23 ms» → «J1»)
-    val showPad = width >= 560.dp
-    val showRtt = width >= 700.dp
-    PriorityRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(height)
-            .padding(horizontal = 4.dp),
-        spacing = 8.dp
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        when (link) {
-            is UiLink.Connected -> {
-                Text(
-                    link.pcName,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .layoutId(HeaderSlot.Pc)
-                        .widthIn(max = 160.dp)
-                )
-                val padName = if (wantedMode == LinkState.MODE_SWITCH || link.pad == LinkState.PAD_PRO)
-                    stringResource(R.string.pro_controller) else stringResource(R.string.gamepad)
-                val activating = stringResource(if (wantedMode == LinkState.MODE_SWITCH) R.string.activating_switch else R.string.activating_wiiu)
-                Text(
-                    if (operative) buildString {
-                        append("J${link.player}")
-                        if (showPad) {
-                            append(" · ")
-                            append(padName)
-                        }
-                        if (showRtt) link.rttMs?.let { append(" · ${"%.0f".format(it)} ms") }
-                    } else activating,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.layoutId(HeaderSlot.Status)
-                )
-                // Barato: el cliente lo publica una vez por segundo
-                val fps = screen?.fps?.collectAsState()?.value ?: 0
-                if (fps > 0) {
-                    Text(
-                        stringResource(R.string.screen_fps, fps),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
-                        maxLines = 1,
-                        modifier = Modifier.layoutId(HeaderSlot.Fps)
-                    )
-                }
-                if (link.slot == 0) {
-                    // Mientras se espera el eco, Wii U ya va marcado (es lo pedido)
-                    ModeChips(
-                        current = if (operative) link.mode else wantedMode,
-                        supportsCemu = link.supportsCemu,
-                        supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android",
-                        compact = true,
-                        modifier = Modifier.layoutId(HeaderSlot.Chips)
-                    )
-                }
-                // Texto para el teclado en pantalla de Cemu (GamePad y Pro)
-                if (onKeyboard != null) {
-                    KeyboardButton(compact = true, modifier = Modifier.layoutId(HeaderSlot.Keyboard), onClick = onKeyboard)
-                }
-            }
-
-            is UiLink.Connecting -> Text(
-                stringResource(R.string.status_connecting),
-                style = MaterialTheme.typography.titleMedium,
+        if (link is UiLink.Reconnecting) {
+            ReconnectingLabel(link, MaterialTheme.typography.bodyMedium)
+        } else {
+            Text(
+                when (link) {
+                    is UiLink.Connected -> link.pcName
+                    is UiLink.Connecting -> stringResource(R.string.status_connecting)
+                    else -> stringResource(R.string.status_disconnected)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                // un nombre de PC largo no echa a «Salir» fuera de la tarjeta
+                modifier = Modifier.widthIn(max = 160.dp),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.layoutId(HeaderSlot.Status)
-            )
-
-            is UiLink.Reconnecting -> ReconnectingLabel(link, modifier = Modifier.layoutId(HeaderSlot.Status))
-
-            else -> Text(
-                stringResource(R.string.status_disconnected),
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.layoutId(HeaderSlot.Status)
+                overflow = TextOverflow.Ellipsis
             )
         }
-        TextButton(onClick = onDisconnect, modifier = Modifier.layoutId(HeaderSlot.Exit)) {
+        TextButton(onClick = onDisconnect) {
             Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+    if (link is UiLink.Connected) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val padName = if (wantedMode == LinkState.MODE_SWITCH || link.pad == LinkState.PAD_PRO)
+                stringResource(R.string.pro_controller) else stringResource(R.string.gamepad)
+            Text(
+                GamePadHeaderText.status(
+                    operative = operative,
+                    player = link.player,
+                    padName = padName,
+                    rttMs = link.rttMs,
+                    activating = stringResource(
+                        if (wantedMode == LinkState.MODE_SWITCH) R.string.activating_switch else R.string.activating_wiiu
+                    )
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            // Barato: el cliente lo publica una vez por segundo
+            val fps = screen?.fps?.collectAsState()?.value ?: 0
+            if (fps > 0) {
+                Text(
+                    stringResource(R.string.screen_fps, fps),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                    maxLines = 1
+                )
+            }
+        }
+        if (link.slot == 0) {
+            // Mientras se espera el eco, Wii U ya va marcado (es lo pedido)
+            ModeChips(
+                current = if (operative) link.mode else wantedMode,
+                supportsCemu = link.supportsCemu,
+                supportsSwitch = link.supportsSwitch,
+                androidReceiver = link.platform == "android",
+                compact = true
+            )
         }
     }
 }

@@ -47,13 +47,27 @@ AppImage) en los sitios habituales (Escritorio, Descargas, Documentos,
 y la guarda. Si vive en un sitio raro, escríbela en **Ajustes → Carpeta de
 Cemu** o pulsa **Detectar**. Sin rastro de Cemu no se escribe nada.
 
+## La cabecera del GamePad
+
+En **Android** y en **iPhone/iPad**, arriba, en el centro, hay una **pastilla
+con el modo** («Wii U») y, pegado a ella, el botón **Teclado**, que se queda
+siempre a la vista para tenerlo a un toque mientras juegas. Toca la pastilla y
+baja una tarjeta con el nombre del PC, el jugador y el pad (con los ms y, si
+la tienes, los fps de la pantalla), los chips de modo y **Salir**; se pliega
+sola a los 4 segundos, y mientras la estés usando no se pliega. Al entrar sale
+desplegada, y también si se cae la conexión. Los botones del mando no se
+mueven: la tarjeta se dibuja encima y tocar su fondo no pulsa lo que tapa.
+
+En **Linux móvil** la cabecera sigue como estaba: los chips **Salir**, el
+giro, **Teclado** y el modo, arriba a la derecha y siempre a la vista.
+
 ## Mando Wii dentro de Cemu
 
 Juegos de Wii U que se juegan con el mando de Wii (Wii Sports Club, Wii Party
 U, Mario Party 10, Nintendo Land…): en el móvil, dentro del modo Wii U, el
 selector **«En Cemu soy: GamePad / Mando de Wii»** (está en la pantalla del
-GamePad, bajo la cabecera). Con **Mando de Wii** ese móvil pasa al layout de Wii
-de siempre y en Cemu su perfil es un **Wiimote** emulado con MotionPlus; el
+GamePad, bajo la pastilla de la cabecera). Con **Mando de Wii** ese móvil pasa
+al layout de Wii de siempre y en Cemu su perfil es un **Wiimote** emulado con MotionPlus; el
 puntero se apunta como en modo puntero (recentra con la diana, también de
 lado) y llega a Cemu por el táctil DSU. Un segundo móvil en modo **Nunchuk**
 se le acopla igual que en Dolphin (stick, C, Z). El mismo selector, marcando
@@ -138,9 +152,11 @@ responde al tacto igual que la pantalla de la Wii U. Sin sticks ni botones:
 está pensada para jugar con un **mando de verdad conectado al PC** (XInput,
 DualShock, Pro Controller…) y el móvil delante como pantalla táctil. La
 subopción «**Botón de teclado**» (encendida de serie) deja un botón pequeño
-arriba a la derecha para escribir en el teclado en pantalla de Cemu. Para
-salir: Atrás en Android, la ✕ pequeña arriba a la izquierda en iPhone y en
-Linux móvil. Los avisos del PC siguen saliendo arriba.
+arriba a la derecha para escribir en el teclado en pantalla de Cemu. Esta
+pantalla no lleva cabecera ni pastilla: para salir, Atrás en Android y la ✕
+pequeña arriba a la izquierda en iPhone y en Linux móvil (en el GamePad
+normal, «Salir» está dentro de la tarjeta de la pastilla). Los avisos del PC
+siguen saliendo arriba.
 
 Lo que hace el receptor: el móvil se anuncia como «solo pantalla» y PepoMote,
 en vez de sustituir tu `controllerProfiles/controller0.xml`, lo **fusiona**:
@@ -167,9 +183,11 @@ Cuando un juego pide texto (el nombre en *Zelda: The Wind Waker HD*, un
 mensaje en Miiverse…), Cemu enseña su teclado en pantalla, y ese teclado
 **no reacciona a la pantalla táctil**: en Cemu solo se maneja con el teclado
 del PC. Por eso el móvil tiene, en modo Wii U (GamePad, Pro o Mando de Wii),
-un botón **Teclado** que abre un cuadro de texto: escribe con el teclado del
-móvil y pulsa **Aceptar** (escribe y confirma), **Escribir** (escribe sin
-confirmar) o **Borrar** (borra un carácter en Cemu). El receptor manda las
+un botón **Teclado** que abre un cuadro de texto (en el GamePad y el Pro está
+al lado de la pastilla, siempre a la vista; en el Mando de Wii de lado, dentro
+de la tarjeta de la cabecera, y en vertical arriba como siempre): escribe con
+el teclado del móvil y pulsa **Aceptar** (escribe y confirma), **Escribir**
+(escribe sin confirmar) o **Borrar** (borra un carácter en Cemu). El receptor manda las
 teclas a la ventana de Cemu; en Linux las escribe con el teclado virtual de
 PepoMote, así que Cemu debe tener el foco.
 

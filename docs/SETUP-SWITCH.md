@@ -34,9 +34,23 @@ Controller automáticamente. Ya no hay selector de tipos de mando en Switch.
 pantalla táctil, transmisión de vídeo ni micrófono de Wii U. El rol Nunchuk no
 forma parte de los mandos de Switch.
 
+## La cabecera del mando
+
+En **Android** y en **iPhone/iPad**, arriba, en el centro, hay una **pastilla
+con el modo** («Switch») y, pegado a ella, el botón **Teclado**, que se queda
+siempre a la vista para tenerlo a un toque mientras juegas. Toca la pastilla y
+baja una tarjeta con el nombre del PC, el jugador y el pad, los chips de modo
+y **Salir**; se pliega sola a los 4 segundos, y mientras la estés usando no se
+pliega. Al entrar sale desplegada, y también si se cae la conexión.
+
+En **Linux móvil** la cabecera sigue como estaba: los chips **Salir**, el
+giro, **Teclado** y el modo, arriba a la derecha y siempre a la vista.
+
 ## Teclado
 
-Cuando el juego abra su teclado, toca **Teclado** en la cabecera del mando.
+Cuando el juego abra su teclado, toca **Teclado**: en Android y en iPhone/iPad
+está al lado de la pastilla de la cabecera; en Linux móvil, entre los chips de
+arriba a la derecha.
 En Windows y macOS, PepoMote activa la ventana de Eden antes de enviar el texto.
 En Linux, deja el diálogo de Eden en primer plano. Si Eden está cerrado, el
 receptor no envía texto de Switch a otra aplicación.

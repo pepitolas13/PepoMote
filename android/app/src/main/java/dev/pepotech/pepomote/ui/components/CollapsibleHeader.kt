@@ -14,7 +14,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -43,6 +45,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.service.LinkState
@@ -80,6 +83,46 @@ object HeaderCollapse {
 }
 
 /**
+ * Los dos textos de la cabecera plegable del GamePad (Wii U, Pro y Switch),
+ * ya traducidos por quien llama. Sin Compose: se prueban en la JVM.
+ */
+object GamePadHeaderText {
+    /**
+     * Lo que dice la pastilla: con el enlace vivo, el modo que se quiere
+     * («Wii U», «Switch»), que es lo que se está jugando aunque el eco del
+     * receptor aún no haya llegado; si no, el estado del enlace.
+     *
+     * Reconectando no es asunto suyo: la pastilla pinta entonces el punto
+     * latiendo ([ReconnectingLabel]) y no este texto, así que aquí ese caso
+     * se reduce a «sin conexión».
+     */
+    fun handle(connected: Boolean, connecting: Boolean, mode: String, connectingText: String, disconnectedText: String): String = when {
+        connected -> mode
+        connecting -> connectingText
+        else -> disconnectedText
+    }
+
+    /**
+     * La línea de estado de la tarjeta, la de siempre: «J1 · GamePad» con el
+     * ida y vuelta cuando se sabe («J1 · GamePad · 23 ms»). Sin el modo
+     * confirmado todavía, el aviso de que se está activando.
+     *
+     * En la tarjeta hay sitio de sobra, así que aquí no se recorta nada por
+     * ancho (la cabecera de una línea sí lo hacía).
+     */
+    fun status(operative: Boolean, player: Int, padName: String, rttMs: Float?, activating: String): String {
+        if (!operative) return activating
+        return buildString {
+            append("J")
+            append(player)
+            append(" · ")
+            append(padName)
+            if (rttMs != null) append(" · ${"%.0f".format(rttMs)} ms")
+        }
+    }
+}
+
+/**
  * ¿Hay ahora mismo un lector de pantalla explorando por toque (TalkBack)? Se
  * mira en vivo, no una vez al entrar: encenderlo con el mando ya abierto
  * desactiva el pliegue automático en el acto, y apagarlo lo vuelve a activar
@@ -102,15 +145,83 @@ fun rememberScreenReader(): Boolean {
 }
 
 /**
- * Cabecera plegable de los mandos apaisados (mando + Nunchuk y mando de
- * lado): una pastilla con el modo que, al tocarla, despliega la tarjeta con
- * el nombre del PC, los chips, el Nunchuk, el selector de mando y «Salir».
+ * El mecanismo de la cabecera plegable, sin decidir qué va dentro: la
+ * pastilla ([label], y a su lado lo que pida [beside], que se ve siempre) y,
+ * debajo, la tarjeta que dibuje [card] con el marco de siempre.
  *
  * Nace desplegada y se pliega sola a los cuatro segundos
  * ([HeaderCollapse.AUTO_MS]), para que la tarjeta no quede encima de los
- * botones que van bajo los índices (B, Z, C). Cualquier toque dentro de la
- * tarjeta reinicia la cuenta sin robarle el toque a nadie
- * ([PointerEventPass.Initial], sin consumir).
+ * botones que hay debajo. Cualquier toque dentro de la tarjeta reinicia la
+ * cuenta sin robarle el toque a nadie ([PointerEventPass.Initial], sin
+ * consumir). [card] recibe el «pliégate» por si algo de dentro (el teclado)
+ * tiene que quitar la tarjeta de en medio.
+ *
+ * [topPadding]: el hueco sobre la caja táctil de 44 dp de la pastilla. Los
+ * mandos de lado le dan 6 dp; el GamePad, 0, que así sus 44 dp son justo la
+ * banda de cabecera y el hueco que ya tenía el layout.
+ */
+@Composable
+fun CollapsibleHeader(
+    link: UiLink,
+    label: String,
+    modifier: Modifier = Modifier,
+    topPadding: Dp = 6.dp,
+    beside: @Composable RowScope.() -> Unit = {},
+    onExpandedChange: (Boolean) -> Unit = {},
+    // Además de las reglas de HeaderCollapse: el GamePad no se pliega solo
+    // mientras espera el eco del modo (el mando está inerte y la tarjeta es
+    // lo único que explica por qué, con los chips y «Salir» a mano)
+    autoCollapse: Boolean = true,
+    card: @Composable (collapse: () -> Unit) -> Unit
+) {
+    var expanded by rememberSaveable { mutableStateOf(true) }
+    // Cada toque dentro de la tarjeta sube el contador y con él vuelve a
+    // empezar la cuenta atrás del pliegue
+    var touches by remember { mutableIntStateOf(0) }
+
+    val screenReader = rememberScreenReader()
+    val auto = autoCollapse && HeaderCollapse.autoCollapses(link is UiLink.Connected, screenReader)
+    LaunchedEffect(expanded, touches, auto) {
+        if (expanded && auto) {
+            delay(HeaderCollapse.AUTO_MS)
+            expanded = false
+        }
+    }
+    // Se cayó el enlace: la cabecera vuelve sola (hay que poder salir)
+    val wantsExpanded = HeaderCollapse.expandsOn(link)
+    LaunchedEffect(wantsExpanded) {
+        if (wantsExpanded) expanded = true
+    }
+    val notify by rememberUpdatedState(onExpandedChange)
+    LaunchedEffect(expanded) { notify(expanded) }
+
+    Column(
+        modifier = modifier.padding(top = topPadding),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            HeaderHandle(link, label, expanded) { expanded = !expanded }
+            beside()
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn(tween(140)) + expandVertically(tween(160)),
+            exit = fadeOut(tween(120)) + shrinkVertically(tween(140))
+        ) {
+            HeaderCardFrame(onTouch = { touches++ }) {
+                card { expanded = false }
+            }
+        }
+    }
+}
+
+/**
+ * Cabecera plegable de los mandos de Wii apaisados (mando + Nunchuk y mando
+ * de lado): la pastilla con el modo y, dentro de la tarjeta, el nombre del
+ * PC, los chips, el Nunchuk, el selector de mando y «Salir».
  *
  * [alwaysNunchukChip]: el chip «Nunchuk» siempre (el mando + Nunchuk, donde
  * es la forma de volver al mando de siempre); si no, con las reglas de
@@ -128,46 +239,19 @@ fun CollapsibleHeader(
     onExpandedChange: (Boolean) -> Unit = {},
     onDisconnect: () -> Unit
 ) {
-    var expanded by rememberSaveable { mutableStateOf(true) }
-    // Cada toque dentro de la tarjeta sube el contador y con él vuelve a
-    // empezar la cuenta atrás del pliegue
-    var touches by remember { mutableIntStateOf(0) }
-
-    val screenReader = rememberScreenReader()
-    val auto = HeaderCollapse.autoCollapses(link is UiLink.Connected, screenReader)
-    LaunchedEffect(expanded, touches, auto) {
-        if (expanded && auto) {
-            delay(HeaderCollapse.AUTO_MS)
-            expanded = false
-        }
-    }
-    // Se cayó el enlace: la cabecera vuelve sola (hay que poder salir)
-    val wantsExpanded = HeaderCollapse.expandsOn(link)
-    LaunchedEffect(wantsExpanded) {
-        if (wantsExpanded) expanded = true
-    }
-    val notify by rememberUpdatedState(onExpandedChange)
-    LaunchedEffect(expanded) { notify(expanded) }
-
-    Column(
-        modifier = modifier.padding(top = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        HeaderHandle(link, expanded) { expanded = !expanded }
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn(tween(140)) + expandVertically(tween(160)),
-            exit = fadeOut(tween(120)) + shrinkVertically(tween(140))
-        ) {
-            HeaderCard(
-                link = link,
-                showChips = showChips,
-                alwaysNunchukChip = alwaysNunchukChip,
-                onKeyboard = onKeyboard?.let { open -> { expanded = false; open() } },
-                onTouch = { touches++ },
-                onDisconnect = onDisconnect
-            )
-        }
+    CollapsibleHeader(
+        link = link,
+        label = handleLabel(link),
+        modifier = modifier,
+        onExpandedChange = onExpandedChange
+    ) { collapse ->
+        HeaderCard(
+            link = link,
+            showChips = showChips,
+            alwaysNunchukChip = alwaysNunchukChip,
+            onKeyboard = onKeyboard?.let { open -> { collapse(); open() } },
+            onDisconnect = onDisconnect
+        )
     }
 }
 
@@ -176,12 +260,12 @@ fun CollapsibleHeader(
  * con una píldora visible de 26 dp dentro, el modo y la flecha.
  */
 @Composable
-private fun HeaderHandle(link: UiLink, expanded: Boolean, onToggle: () -> Unit) {
+private fun HeaderHandle(link: UiLink, label: String, expanded: Boolean, onToggle: () -> Unit) {
     val state = stringResource(if (expanded) R.string.header_hide else R.string.header_show)
     // Plegada, la pastilla es lo único que se ve del enlace: el lector tiene
     // que decir también el modo («Controles · Dolphin · Nunchuk»), que si no
     // el modo y el estado del enlace se quedan fuera del lector y de la voz
-    val name = stringResource(R.string.header_controls) + " · " + handleSpoken(link)
+    val name = stringResource(R.string.header_controls) + " · " + handleSpoken(link, label)
     Box(
         modifier = Modifier
             .height(44.dp)
@@ -207,7 +291,7 @@ private fun HeaderHandle(link: UiLink, expanded: Boolean, onToggle: () -> Unit) 
                 ReconnectingLabel(link, style, Modifier.weight(1f, fill = false))
             } else {
                 Text(
-                    handleLabel(link),
+                    label,
                     style = style,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -221,15 +305,15 @@ private fun HeaderHandle(link: UiLink, expanded: Boolean, onToggle: () -> Unit) 
 
 /**
  * Lo que se lee de la pastilla: lo mismo que se ve. Reconectando, el texto
- * del punto latiendo ([ReconnectingLabel]), que no es el de [handleLabel].
+ * del punto latiendo ([ReconnectingLabel]), que no es el de la pastilla.
  */
 @Composable
-private fun handleSpoken(link: UiLink): String = when (link) {
+private fun handleSpoken(link: UiLink, label: String): String = when (link) {
     is UiLink.Reconnecting -> stringResource(R.string.status_reconnecting, link.pcName)
-    else -> handleLabel(link)
+    else -> label
 }
 
-/** Lo que dice la pastilla plegada: el modo, tal cual lo decía la cabecera. */
+/** Lo que dice la pastilla de los mandos de Wii: el modo, como siempre. */
 @Composable
 private fun handleLabel(link: UiLink): String = when {
     link !is UiLink.Connected -> stringResource(
@@ -242,18 +326,11 @@ private fun handleLabel(link: UiLink): String = when {
 }
 
 /**
- * La tarjeta: las mismas filas que tenía la cabecera de siempre, una debajo
- * de otra ahora que no hay que meterlas en una línea.
+ * El marco de la tarjeta, igual para todas las cabeceras plegables: bajo la
+ * pastilla, centrada, con tope de ancho, y con los dedos vigilados.
  */
 @Composable
-private fun HeaderCard(
-    link: UiLink,
-    showChips: Boolean,
-    alwaysNunchukChip: Boolean,
-    onKeyboard: (() -> Unit)?,
-    onTouch: () -> Unit,
-    onDisconnect: () -> Unit
-) {
+private fun HeaderCardFrame(onTouch: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(14.dp)
     Column(
         modifier = Modifier
@@ -276,52 +353,66 @@ private fun HeaderCard(
             .pressShield()
             .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        content = content
+    )
+}
+
+/**
+ * La tarjeta de los mandos de Wii: las mismas filas que tenía la cabecera de
+ * siempre, una debajo de otra ahora que no hay que meterlas en una línea.
+ */
+@Composable
+private fun HeaderCard(
+    link: UiLink,
+    showChips: Boolean,
+    alwaysNunchukChip: Boolean,
+    onKeyboard: (() -> Unit)?,
+    onDisconnect: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
-        ) {
-            if (link is UiLink.Reconnecting) {
-                ReconnectingLabel(link, MaterialTheme.typography.bodyMedium)
-            } else {
-                Text(
-                    when (link) {
-                        is UiLink.Connected -> link.pcName
-                        is UiLink.Connecting -> stringResource(R.string.status_connecting)
-                        else -> stringResource(R.string.status_disconnected)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    // un nombre de PC largo no echa a «Salir» fuera de la tarjeta
-                    modifier = Modifier.widthIn(max = 160.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            // Modo Wii U: texto para el teclado en pantalla de Cemu
-            if (onKeyboard != null && link is UiLink.Connected && link.mode == LinkState.MODE_CEMU) {
-                KeyboardButton(compact = true, onClick = onKeyboard)
-            }
-            TextButton(onClick = onDisconnect) {
-                Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
-            }
+        if (link is UiLink.Reconnecting) {
+            ReconnectingLabel(link, MaterialTheme.typography.bodyMedium)
+        } else {
+            Text(
+                when (link) {
+                    is UiLink.Connected -> link.pcName
+                    is UiLink.Connecting -> stringResource(R.string.status_connecting)
+                    else -> stringResource(R.string.status_disconnected)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                // un nombre de PC largo no echa a «Salir» fuera de la tarjeta
+                modifier = Modifier.widthIn(max = 160.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
-        if (link is UiLink.Connected) {
-            if (showModeChips(link, showChips)) {
-                ModeChips(
-                    current = link.mode,
-                    supportsCemu = link.supportsCemu,
-                    supportsSwitch = link.supportsSwitch,
-                    androidReceiver = link.platform == "android",
-                    compact = true
-                )
-            }
-            if (alwaysNunchukChip || showNunchukChip(link)) {
-                NunchukChip(link, compact = true)
-            }
-            if (isWiiUAsWiimote(link)) {
-                PadSelector(link, compact = true)
-            }
+        // Modo Wii U: texto para el teclado en pantalla de Cemu
+        if (onKeyboard != null && link is UiLink.Connected && link.mode == LinkState.MODE_CEMU) {
+            KeyboardButton(compact = true, onClick = onKeyboard)
+        }
+        TextButton(onClick = onDisconnect) {
+            Text(stringResource(R.string.exit), color = PepoColors.Error, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+    if (link is UiLink.Connected) {
+        if (showModeChips(link, showChips)) {
+            ModeChips(
+                current = link.mode,
+                supportsCemu = link.supportsCemu,
+                supportsSwitch = link.supportsSwitch,
+                androidReceiver = link.platform == "android",
+                compact = true
+            )
+        }
+        if (alwaysNunchukChip || showNunchukChip(link)) {
+            NunchukChip(link, compact = true)
+        }
+        if (isWiiUAsWiimote(link)) {
+            PadSelector(link, compact = true)
         }
     }
 }

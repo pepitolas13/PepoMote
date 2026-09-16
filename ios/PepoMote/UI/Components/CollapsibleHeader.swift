@@ -42,6 +42,32 @@ enum HeaderCollapse {
     }
 }
 
+/// Los dos textos de la cabecera plegable del GamePad (Wii U, Pro y Switch),
+/// ya traducidos por quien llama. Sin SwiftUI: se prueban solos, con los
+/// mismos vectores que Android (`GamePadHeaderText` / `GamePadHeaderTextTest`).
+enum GamePadHeaderText {
+    /// Lo que dice la pastilla: con el enlace vivo, el modo que se quiere
+    /// («Wii U», «Switch»), que es lo que se está jugando aunque el eco del
+    /// receptor aún no haya llegado; si no, el estado del enlace.
+    static func handle(connected: Bool, connecting: Bool, mode: String, connectingText: String, disconnectedText: String) -> String {
+        if connected { return mode }
+        return connecting ? connectingText : disconnectedText
+    }
+
+    /// La línea de estado de la tarjeta, la de siempre: «J1 · GamePad» con el
+    /// ida y vuelta cuando se sabe («J1 · GamePad · 23 ms»). Sin el modo
+    /// confirmado todavía, el aviso de que se está activando.
+    ///
+    /// En la tarjeta hay sitio de sobra, así que aquí no se recorta nada por
+    /// ancho (la cabecera de una línea sí lo hacía).
+    static func status(operative: Bool, player: Int, padName: String, rttMs: Float?, activating: String) -> String {
+        if !operative { return activating }
+        var s = "J\(player) · \(padName)"
+        if let rtt = rttMs { s += " · \(String(format: "%.0f", rtt)) ms" }
+        return s
+    }
+}
+
 /// Plegar la tarjeta desde dentro: abrir el teclado la pliega (tapa la
 /// pantalla, y al volver el mando queda despejado).
 struct HeaderCollapseAction {
@@ -65,15 +91,24 @@ extension EnvironmentValues {
 /// y «Salir». Entra abierta, se pliega sola a los 4 s y se vuelve a abrir
 /// tocando la pastilla, para que nada quede encima de B/Z/C mientras se juega.
 ///
+/// Al lado de la pastilla puede ir algo que NUNCA se pliega (`beside`): el
+/// GamePad pone ahí «Teclado», que jugando tiene que estar a un toque.
+///
 /// Va la última de la pantalla (`.overlay(alignment: .top)`): la tarjeta gana
 /// a los botones que tape.
-struct CollapsibleHeader<Panel: View>: View {
+struct CollapsibleHeader<Panel: View, Beside: View>: View {
     /// Texto de la pastilla (el modo, el mismo de la cabecera de siempre).
     private let handleLabel: String
     /// Hay PC al otro lado: sin él la tarjeta no se pliega sola.
     private let connected: Bool
+    /// Aire sobre la pastilla. El GamePad lo pone a 0: así la caja táctil (44)
+    /// ocupa justo la banda de la cabecera y su hueco (38 + 6) y nada de lo de
+    /// abajo se mueve.
+    private let topPadding: CGFloat
     /// Para que la pantalla sepa si la tarjeta tapa algo (la pregunta del lado).
     private let onExpandedChange: ((Bool) -> Void)?
+    /// Lo que va junto a la pastilla, siempre a la vista.
+    private let beside: () -> Beside
     private let panel: () -> Panel
 
     @ObservedObject private var link = LinkState.shared
@@ -85,23 +120,39 @@ struct CollapsibleHeader<Panel: View>: View {
     init(
         handleLabel: String,
         connected: Bool,
+        topPadding: CGFloat = 6,
         onExpandedChange: ((Bool) -> Void)? = nil,
+        @ViewBuilder beside: @escaping () -> Beside,
         @ViewBuilder panel: @escaping () -> Panel
     ) {
         self.handleLabel = handleLabel
         self.connected = connected
+        self.topPadding = topPadding
         self.onExpandedChange = onExpandedChange
+        self.beside = beside
         self.panel = panel
     }
 
     var body: some View {
         VStack(spacing: 4) {
-            handle
+            // Pastilla y lo de al lado, centrados como un bloque
+            HStack(spacing: 8) {
+                handle
+                beside()
+            }
+            // Sin aire arriba, la fila entera (también lo de al lado, que
+            // crece con la letra grande) se queda en la banda de 44
+            .frame(height: topPadding == 0 ? HeaderCollapse.handleHeight : nil)
             if expanded { card }
         }
-        .padding(.top, 6)
+        .padding(.top, topPadding)
         .frame(maxWidth: .infinity, alignment: .top)
-        .onAppear { poke() }
+        .onAppear {
+            // La pantalla se entera del estado inicial: si la cabecera se
+            // quita y vuelve (pantalla completa del GamePad), nace abierta
+            onExpandedChange?(expanded)
+            poke()
+        }
         // Al salir de la pantalla no se queda ninguna cuenta atrás viva
         .onDisappear { cancelCollapse() }
         .onChange(of: connected) { _ in poke() }
@@ -124,7 +175,10 @@ struct CollapsibleHeader<Panel: View>: View {
                 .frame(width: HeaderCollapse.handleWidth(textWidth: Self.textWidth(text)), height: pill)
                 .background(Pepo.card.opacity(0.85))
                 .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .frame(height: Swift.max(HeaderCollapse.handleHeight, pill))
+                // Sin aire arriba (el GamePad) la caja táctil no puede crecer
+                // con la letra grande: 44 es justo la banda más su hueco, y de
+                // ahí para abajo empieza el selector de mando
+                .frame(height: topPadding == 0 ? HeaderCollapse.handleHeight : Swift.max(HeaderCollapse.handleHeight, pill))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -201,5 +255,26 @@ struct CollapsibleHeader<Panel: View>: View {
     private func poke() {
         guard expanded else { return }
         scheduleCollapse()
+    }
+}
+
+/// Cabecera sin nada al lado de la pastilla: los dos mandos de Wii apaisados,
+/// que la llaman igual que siempre.
+extension CollapsibleHeader where Beside == EmptyView {
+    init(
+        handleLabel: String,
+        connected: Bool,
+        topPadding: CGFloat = 6,
+        onExpandedChange: ((Bool) -> Void)? = nil,
+        @ViewBuilder panel: @escaping () -> Panel
+    ) {
+        self.init(
+            handleLabel: handleLabel,
+            connected: connected,
+            topPadding: topPadding,
+            onExpandedChange: onExpandedChange,
+            beside: { EmptyView() },
+            panel: panel
+        )
     }
 }

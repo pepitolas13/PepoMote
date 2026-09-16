@@ -529,12 +529,17 @@ De paso, en **Ajustes → Sensor del puntero** la elección entre Giroscopio y
 Acelerómetro se aplica al momento; antes había que salir y volver a entrar
 en Ajustes para ver el cambio.
 
-**¿Y «Salir»?** En los mandos apaisados (el de lado y el mando + Nunchuk) la
-cabecera es una pastilla con el modo, arriba en el centro. Tócala y baja la
-tarjeta con el nombre del PC, los chips de modo, el chip **Nunchuk**,
-**Teclado** y **Salir**; se pliega sola a los 4 segundos sin tocarla. En los
-mandos verticales y en el GamePad los botones siguen a la vista como
-siempre.
+**¿Y «Salir»?** En **Android** y en **iPhone/iPad**, en los mandos apaisados
+(el de lado, el mando + Nunchuk y el mando de Wii U / Switch) la cabecera es
+una pastilla con el modo, arriba en el centro. Tócala y baja la tarjeta, que
+se pliega sola a los 4 segundos sin tocarla: en los mandos de Wii lleva el
+nombre del PC, los chips de modo, el chip **Nunchuk**, **Teclado** y
+**Salir**; en el mando de Wii U / Switch lleva el nombre del PC, el jugador y
+el pad (con los ms y, si la tienes, los fps de la pantalla), los chips de modo
+y **Salir**, y el botón **Teclado** se queda justo al lado de la pastilla,
+siempre a la vista para tenerlo a un toque mientras juegas. En los mandos
+verticales los botones siguen a la vista como siempre, y en **Linux móvil** la
+cabecera sigue como estaba, con sus chips arriba a la derecha.
 
 ## Cruceta y volumen en modo puntero
 

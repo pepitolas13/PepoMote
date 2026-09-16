@@ -138,6 +138,21 @@ struct GamePadScreen: View {
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
     /// Dónde está cada botón, para «Pulsar deslizando».
     @StateObject private var press = PressRegistry()
+    /// La tarjeta de la cabecera está abierta: la pregunta del lado espera a
+    /// que se pliegue.
+    @State private var headerExpanded = true
+    /// Lo que mide la cabecera ahora: la pregunta del lado se pone justo debajo
+    /// cuando la cabecera no se va a plegar sola.
+    @State private var headerBox: CGFloat = 0
+    /// Con VoiceOver la cabecera se queda abierta hasta que la cierren.
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+
+    /// ¿Se va a plegar sola la cabecera? Si no, la pregunta del lado no puede
+    /// esperar a que se pliegue o no saldría nunca.
+    private var autoCollapse: Bool {
+        // Sin el eco del modo la tarjeta no se pliega sola (ver `header`)
+        HeaderCollapse.autoCollapses(connected: link.link.connected != nil && operative, screenReader: voiceOver)
+    }
 
     private var wantedMode: String { Route.wantedMode(link.link, link.intent) }
     private var switchPad: Bool { wantedMode == LinkState.modeSwitch }
@@ -239,7 +254,7 @@ struct GamePadScreen: View {
                     onKeyboard: { keyboardOpen = true }, onDisconnect: onDisconnect
                 )
             } else {
-                normalContent(m: m, connected: connected, operative: operative, onKeyboard: onKeyboard)
+                normalContent(m: m, connected: connected, operative: operative)
             }
         }
         .onChange(of: wantScreen) { want in
@@ -253,27 +268,84 @@ struct GamePadScreen: View {
             else { screenLink.release() }
         }
         // Primera vez: el lado del apaisado lo ha elegido iOS; se pregunta si es
-        // el bueno y se guarda para siempre (Ajustes; aparte del mando + Nunchuk)
+        // el bueno y se guarda para siempre (Ajustes; aparte del mando + Nunchuk).
+        // Con la tarjeta de la cabecera abierta se espera a que se pliegue (si
+        // no, se solaparían) y, cuando no se pliega sola, se pone debajo
         .overlay(alignment: .top) {
-            if model.gamePadSide == .unset {
+            if model.gamePadSide == .unset, fullScreen || !headerExpanded || !autoCollapse {
                 let shown = LandscapeSide.effective(saved: LandscapeSide.current(OrientationLock.current), provisional: model.gamePadSideProvisional)
                 SideAskCard(
                     title: tr(switchPad ? "side_ask" : "side_ask_gamepad"),
                     onFlip: { model.gamePadSideProvisional = shown.flipped },
                     onKeep: { model.saveGamePadSide(shown) }
                 )
-                .padding(.top, fullScreen ? 8 : m.headerH + m.gap)
+                .padding(.top, fullScreen ? 8 : (headerExpanded ? headerBox + 4 : m.headerH + m.gap))
+            }
+        }
+        // La última: la tarjeta desplegada gana al selector, a los controles y
+        // al aviso. A pantalla completa no hay cabecera
+        .overlay(alignment: .top) {
+            if !fullScreen {
+                header(operative: operative, onKeyboard: onKeyboard).background(
+                    GeometryReader { g in
+                        Color.clear
+                            .onAppear { headerBox = g.size.height }
+                            .onChange(of: g.size.height) { h in headerBox = h }
+                    }
+                    .allowsHitTesting(false)
+                )
             }
         }
     }
 
-    private func normalContent(m: PadMetrics, connected: ConnectedLink?, operative: Bool, onKeyboard: (() -> Void)?) -> some View {
+    /// Cabecera plegable: la pastilla con el modo y, a su lado y siempre a la
+    /// vista, «Teclado» (jugando tiene que estar a un toque). Desplegada, la
+    /// tarjeta con el PC, el estado, los chips y «Salir».
+    private func header(operative: Bool, onKeyboard: (() -> Void)?) -> some View {
+        CollapsibleHeader(
+            handleLabel: headerLabel,
+            // Esperando el eco del modo el mando está inerte: la tarjeta se
+            // queda (es lo que explica el «Activando…» y donde están los
+            // chips y Salir), así que para plegarse sola hace falta el modo
+            connected: link.link.connected != nil && operative,
+            topPadding: 0,
+            onExpandedChange: { headerExpanded = $0 },
+            beside: {
+                if let onKeyboard {
+                    KeyboardButton(compact: true, action: onKeyboard).fixedSize()
+                }
+            }
+        ) {
+            GamePadHeaderCard(
+                link: link.link, operative: operative, wantedMode: wantedMode,
+                screen: switchPad ? nil : screenLink.client, onDisconnect: onDisconnect
+            )
+        }
+    }
+
+    /// Texto de la pastilla: el modo pedido («Wii U» o «Switch»), lo mismo que
+    /// decía la cabecera de siempre.
+    private var headerLabel: String {
+        // Rehaciéndose la sesión, el nombre del PC con su intento: eso no es
+        // un texto compartido con Android, lo pinta la pastilla aquí
+        if case .reconnecting(let pc, _) = link.link { return tr("status_reconnecting", pc) }
+        var connecting = false
+        if case .connecting = link.link { connecting = true }
+        return GamePadHeaderText.handle(
+            connected: link.link.connected != nil,
+            connecting: connecting,
+            mode: modeLabel(wantedMode),
+            connectingText: tr("status_connecting"),
+            disconnectedText: tr("status_disconnected")
+        )
+    }
+
+    private func normalContent(m: PadMetrics, connected: ConnectedLink?, operative: Bool) -> some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
-                GamePadHeader(
-                    link: link.link, operative: operative, wantedMode: wantedMode, height: m.headerH, width: m.w,
-                    screen: switchPad ? nil : screenLink.client, onKeyboard: onKeyboard, onDisconnect: onDisconnect
-                )
+                // El hueco de la cabecera: la pastilla y su tarjeta van encima
+                // de todo, en la capa de arriba, sin mover nada de esto
+                Spacer().frame(height: m.headerH)
                 Spacer().frame(height: m.gap)
                 // Qué mando soy en Cemu: debajo de la cabecera, centrado
                 ZStack {
@@ -463,76 +535,66 @@ private struct CenterColumn: View {
     }
 }
 
-/// Cabecera compacta: PC · «J1 · GamePad» / «J2 · Pro Controller» · ritmo de
-/// la doble pantalla · chips de modo (Jugador 1) · «Teclado» · Salir. Si no
-/// cabe todo, cae primero el ritmo de la pantalla, luego el nombre del PC,
-/// luego el estado; los chips y «Teclado» solo en último extremo; «Salir» nunca.
-struct GamePadHeader: View {
+/// Tarjeta de la cabecera plegable: el PC y «Salir», debajo el estado
+/// («J1 · GamePad · 23 ms» o «Activando Wii U…») con el ritmo de la doble
+/// pantalla, y debajo los chips de modo (Jugador 1). Aquí cabe todo, así que
+/// ya no hay puertas de anchura. «Teclado» NO va dentro: va junto a la
+/// pastilla, siempre a la vista.
+private struct GamePadHeaderCard: View {
     let link: UiLink
     let operative: Bool
     let wantedMode: String
-    let height: CGFloat
-    let width: CGFloat
     let screen: ScreenClient?
-    let onKeyboard: (() -> Void)?
     let onDisconnect: () -> Void
 
-    /// «J1 · GamePad · 23 ms», acortado en móviles estrechos antes de recortarse.
+    /// «J1 · GamePad · 23 ms»; sin el modo confirmado, «Activando Wii U…».
     private func statusText(_ c: ConnectedLink) -> String {
-        if !operative { return tr(wantedMode == LinkState.modeSwitch ? "activating_switch" : "activating_wiiu") }
-        var s = "J\(c.player)"
-        if width >= 850 { s += " · " + (wantedMode == LinkState.modeSwitch ? switchPadLabel(c.pad) : c.pad == LinkState.padPro ? tr("pro_controller") : tr("gamepad")) }
-        if width >= 700, let rtt = c.rttMs { s += " · \(String(format: "%.0f", rtt)) ms" }
-        return s
+        let padName = wantedMode == LinkState.modeSwitch
+            ? switchPadLabel(c.pad)
+            : (c.pad == LinkState.padPro ? tr("pro_controller") : tr("gamepad"))
+        return GamePadHeaderText.status(
+            operative: operative,
+            player: c.player,
+            padName: padName,
+            rttMs: c.rttMs,
+            activating: tr(wantedMode == LinkState.modeSwitch ? "activating_switch" : "activating_wiiu")
+        )
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            switch link {
-            case .connected(let c):
-                if width >= (c.supportsSwitch ? 1000 : 700) {
-                Text(c.pcName)
-                    .pepoTitle()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 160, alignment: .leading)
-                    .layoutPriority(0)
+        VStack(spacing: 8) {
+            HStack(spacing: 20) {
+                switch link {
+                case .connected(let c):
+                    Text(c.pcName)
+                        .pepoBody()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 160)
+                case .connecting:
+                    Text(tr("status_connecting")).pepoBody().lineLimit(1)
+                case .reconnecting(let pc, _):
+                    // Reconectando, el punto latiendo: es la única señal de que
+                    // el servicio está rehaciendo la sesión (como en Android)
+                    ReconnectingLabel(pcName: pc, font: PepoFont.bodyMedium())
+                default:
+                    Text(tr("status_disconnected")).pepoBody().lineLimit(1)
                 }
-                if width >= 700 || c.slot != 0 {
-                Text(statusText(c))
-                    .pepoBody()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(1)
-                }
-                if let screen {
-                    FpsLabel(client: screen).layoutPriority(-1)
-                }
-                Spacer(minLength: 0)
-                if c.slot == 0 {
-                    // Mientras se espera el eco, Wii U ya va marcado (es lo pedido)
-                    ModeChips(current: wantedMode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
-                        .layoutPriority(2)
-                }
-                if let onKeyboard {
-                    KeyboardButton(compact: true, action: onKeyboard).fixedSize().layoutPriority(3)
-                }
-            case .connecting:
-                Text(tr("status_connecting")).pepoTitle().lineLimit(1)
-                Spacer(minLength: 0)
-            case .reconnecting(let pc, _):
-                ReconnectingLabel(pcName: pc)
-                Spacer(minLength: 0)
-            default:
-                Text(tr("status_disconnected")).pepoTitle().lineLimit(1)
-                Spacer(minLength: 0)
+                TextLink(title: tr("exit"), color: Pepo.error, action: onDisconnect).fixedSize()
             }
-            TextLink(title: tr("exit"), color: Pepo.error, action: onDisconnect)
-                .fixedSize()
-                .layoutPriority(4)
+            if case .connected(let c) = link {
+                HStack(spacing: 8) {
+                    Text(statusText(c)).pepoBody().lineLimit(1).truncationMode(.tail)
+                    if let screen {
+                        FpsLabel(client: screen)
+                    }
+                }
+                if c.slot == 0 {
+                    // Mientras se espera el eco va marcado el modo pedido (es lo pedido)
+                    ModeChips(current: operative ? c.mode : wantedMode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
+                }
+            }
         }
-        .padding(.horizontal, 4)
-        .frame(height: height)
     }
 }
 

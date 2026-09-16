@@ -94,4 +94,16 @@ final class PadMetricsTests: XCTestCase {
         XCTAssertEqual(ipad13.padSize, 403.4, accuracy: 0.5, "lo limita la altura")
         XCTAssertEqual(ipad13.centerW, 260.2, accuracy: 0.5)
     }
+
+    /// La cabecera plegable del GamePad: la caja táctil de la pastilla (44,
+    /// con `topPadding` 0) tiene que ocupar justo la banda de la cabecera más
+    /// su hueco, para que el selector y los controles no se muevan ni un punto.
+    func testLaPastillaDelGamePadCabeEnLaBandaDeLaCabecera() {
+        for size in [sz(852, 393), sz(734, 393), sz(1376, 1032)] {
+            let m = PadMetrics(size: size)
+            XCTAssertEqual(m.headerH, 38)
+            XCTAssertEqual(m.gap, 6)
+            XCTAssertEqual(m.headerH + m.gap, HeaderCollapse.handleHeight, "la pastilla no puede pasar del selector")
+        }
+    }
 }
