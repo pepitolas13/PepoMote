@@ -27,6 +27,7 @@ mod procs;
 mod pairing;
 mod pointer;
 mod ports;
+mod retroarch;
 mod screen;
 mod singleton;
 mod sound;
@@ -102,6 +103,9 @@ fn main() {
     let pairing = pairing::PairingInfo::generate();
 
     let dsu = dsu::start(shared.clone());
+    // El enlace con RetroArch (mando en red + interfaz de comandos) vive
+    // siempre: sondea en silencio y solo habla en modo RetroArch
+    let _ = retroarch::start(shared.clone());
     let hub = screen::ScreenHub::new(shared.clone());
     net::start(shared.clone(), pairing.clone(), dsu, hub);
     screen::start_minder(shared.clone());

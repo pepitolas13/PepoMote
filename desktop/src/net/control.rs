@@ -7,6 +7,7 @@ use crate::state::LockTolerant;
 use super::{broadcast, free_slot, ghosts_of, send_line, Session, Sessions};
 use crate::pairing::PairingInfo;
 use crate::screen::ScreenHub;
+use crate::retroarch::RetroPadKind;
 use crate::state::{pad_state, PadState, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState, SwitchPad};
 use rand::Rng;
 use serde_json::{json, Value};
@@ -79,6 +80,24 @@ fn auto_configure(shared: &SharedState, sessions: &Sessions) {
     crate::dolphin::maybe_auto_configure(shared);
     crate::cemu::maybe_auto_configure(shared);
     crate::eden::maybe_auto_configure(shared);
+    crate::retroarch::maybe_auto_configure(shared);
+    // El enlace con RetroArch sabe qué móviles son mando ahora (para soltar
+    // todo cuando uno se va y callar en los demás modos)
+    sync_retroarch_presence(shared);
+}
+
+/// Qué slots son un mando de RetroArch ahora mismo (modo RetroArch y papel
+/// de mando): el enlace suelta lo que tuviera pulsado quien deja de serlo.
+fn sync_retroarch_presence(shared: &SharedState) {
+    let Some(link) = crate::retroarch::link() else { return };
+    let (mode, players) = {
+        let s = shared.lock_tolerant();
+        (s.mode, s.players.clone())
+    };
+    for (slot, p) in players.iter().enumerate() {
+        let present = mode == Mode::RetroArch && p.as_ref().is_some_and(|p| p.role == Role::Wiimote);
+        link.set_present(slot as u8, present);
+    }
 }
 
 /// El PC cambia el modo por su cuenta (modo automático: se abrió o cerró
@@ -182,6 +201,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     let screen_only = role == Role::Wiimote && hello["screen_only"].as_bool() == Some(true);
     // Modo Switch: qué mando de Switch quiere ser (ausente o de Wii U = Pro Controller)
     let switch_pad = hello["pad"].as_str().and_then(SwitchPad::parse).unwrap_or_default();
+    // Modo RetroArch: RetroPad, mando de NES o pistola (ausente o de otro modo = RetroPad)
+    let retro_pad = hello["pad"].as_str().and_then(RetroPadKind::parse).unwrap_or_default();
 
     let session_id: u32 = rand::thread_rng().gen();
     let (slot, evicted_slots) = {
@@ -244,6 +265,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             own_nunchuk,
             screen_only,
             switch_pad,
+            retro_pad,
             tilt: false,
         });
         if !s.injection_error {
@@ -332,6 +354,11 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                             (Mode::Cemu,Some(value @ ("wiimote" | "gamepad" | "pro")))=> {
                                 let wii=value=="wiimote"; let changed=p.pad_wii!=wii;p.pad_wii=wii;changed
                             }
+                            (Mode::RetroArch,Some(value)) => {
+                                if let Some(kind)=RetroPadKind::parse(value) {
+                                    let changed=p.retro_pad!=kind; p.retro_pad=kind; changed
+                                } else {false}
+                            }
                             _=>false,
                         }
                     } else {false}
@@ -343,6 +370,21 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 }
                 let _=send(&writer,&pad_message(effective));
                 if changed {auto_configure(shared,sessions);}
+            }
+            Some("hotkey") => {
+                // Tecla rápida de RetroArch (menú, guardar/cargar estado,
+                // avance rápido…): solo en modo RetroArch; las de mantener
+                // llevan `down` true/false, las demás disparan con `down` true
+                let name = msg["name"].as_str().unwrap_or("");
+                let down = msg["down"].as_bool().unwrap_or(true);
+                let in_mode = shared.lock_tolerant().mode == Mode::RetroArch;
+                let ok = in_mode
+                    && role == Role::Wiimote
+                    && crate::retroarch::link().is_some_and(|l| l.hotkey(slot, name, down));
+                if debug() {
+                    eprintln!("[control] {device_name} (slot {slot}) hotkey {name} {down} → {ok}");
+                }
+                let _ = send(&writer, &json!({"m":"hotkey","name":name,"down":down,"ok":ok}));
             }
             Some("nunchuk") => {
                 // Nunchuk en el mismo móvil (modo Dolphin): el mando manda
@@ -412,6 +454,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 // el foco) desde el hilo de telemetría
                 if let Some(t) = msg["text"].as_str().filter(|t| !t.is_empty()) {
                     let target = shared.lock_tolerant().mode;
+                    // RetroArch: a su ventana (se activa desde telemetría)
                     let wiiu = target == Mode::Cemu;
                     let to_os = if wiiu {
                         // sin camino directo a la ventana (Linux): al SO, pero
@@ -459,6 +502,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         (empty, player, was_screen_only)
     };
     crate::sound::disconnect_chime(player);
+    // Un mando de RetroArch que se va con algo pulsado: el enlace lo suelta
+    sync_retroarch_presence(shared);
     if !empty {
         auto_configure(shared, sessions);
     } else if was_screen_only {

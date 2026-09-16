@@ -131,7 +131,7 @@ pub fn run(
     // Botones que el SO ve pulsados ahora mismo (solo inyecta el Jugador 1).
     // Si su sesión muere o el modo deja de ser puntero con A/B/tecla
     // sostenidos, hay que soltarlos: si no, el clic queda atascado en el SO.
-    let mut held: u32 = 0;
+    let mut held = OsHeld::default();
     // Volumen mantenido: la repetición en curso (nace y muere con `held`)
     let mut repeat: Option<Repeat> = None;
     // El motor de puntero pertenece al Jugador 1: se resetea si cambia su
@@ -224,10 +224,18 @@ pub fn run(
         if !pending.is_empty() {
             if let Some(inj) = injector.as_deref_mut() {
                 for (target, t) in &pending {
-                    if *target != Mode::Switch || crate::eden::focus_keyboard() {
+                    // Eden y RetroArch: a su ventana, activada antes (donde
+                    // el SO lo permite); si no está, se avisa y no se teclea
+                    // en otra aplicación
+                    let (focused, unavailable) = match *target {
+                        Mode::Switch => (crate::eden::focus_keyboard(), tr!("eden.keyboard_unavailable")),
+                        Mode::RetroArch => (crate::retroarch::focus_keyboard(), tr!("retroarch.keyboard_unavailable")),
+                        _ => (true, ""),
+                    };
+                    if focused {
                         inj.type_text(t);
                     } else {
-                        super::notify_all(tr!("eden.keyboard_unavailable"));
+                        super::notify_all(unavailable);
                     }
                 }
             }
@@ -243,7 +251,7 @@ pub fn run(
                 // (en macOS, `alive` = el permiso de Accesibilidad sigue dado)
                 crate::log_line!("Inyección de entrada: el inyector ha muerto; se vuelve a crear");
                 injector = None;
-                held = 0;
+                held = OsHeld::default();
                 repeat = None;
                 injector_err_seen = None;
                 let mut s = shared.lock_tolerant();
@@ -310,7 +318,7 @@ pub fn run(
         // Volumen mantenido: re-toque periódico (tras cada paquete y, sin
         // paquetes, cada 100 ms por el timeout de lectura)
         if let Some(inj) = injector.as_deref_mut() {
-            repeat_tick(&mut repeat, held, inj, Instant::now());
+            repeat_tick(&mut repeat, held.bits, inj, Instant::now());
         }
 
         let (len, from) = match socket.recv_from(&mut buf) {
@@ -379,23 +387,40 @@ pub fn run(
                     }
                 }
 
-                let (mode, sens_deg, abs_mode, pad_wii, own_nunchuk) = {
+                let (mode, sens_deg, abs_mode, pad_wii, own_nunchuk, retro_pad) = {
                     let mut s = shared.lock_tolerant();
                     let mut pad_wii = false;
                     let mut own_nunchuk = false;
+                    let mut retro_pad = crate::retroarch::RetroPadKind::RetroPad;
                     if let Some(pl) = s.players[slot as usize].as_mut() {
                         pl.battery_pct = p.battery_pct;
                         pl.tilt = p.flags & codec::FLAG_TILT != 0;
                         pad_wii = pl.pad_wii;
                         own_nunchuk = pl.own_nunchuk;
+                        retro_pad = pl.retro_pad;
                     }
-                    (s.mode, s.config.sens_deg, s.config.abs_mode, pad_wii, own_nunchuk)
+                    (s.mode, s.config.sens_deg, s.config.abs_mode, pad_wii, own_nunchuk, retro_pad)
                 };
 
-                if mode.feeds_dsu() {
-                    // Cambio a Dolphin/Cemu con algo sostenido: soltarlo en el SO
+                // RetroArch: botones y sticks al mando en red (el enlace los
+                // dosifica a un datagrama por fotograma). La pistola del
+                // Jugador 1 además apunta con el ratón del SO, más abajo.
+                let gun = mode == Mode::RetroArch && retro_pad.points() && role == Role::Wiimote;
+                if mode == Mode::RetroArch {
+                    if let Some(link) = crate::retroarch::link() {
+                        if role == Role::Wiimote {
+                            link.push_input(slot, retro_pad, &p);
+                        }
+                    }
+                }
+
+                if mode.feeds_dsu() || (mode == Mode::RetroArch && !(gun && slot == 0)) {
+                    // Cambio a Dolphin/Cemu/RetroArch con algo sostenido: soltarlo en el SO
                     if let Some(inj) = injector.as_deref_mut() {
                         release_all(inj, &mut held);
+                    }
+                    if mode == Mode::RetroArch {
+                        continue;
                     }
                     // Todos los jugadores al DSU, cada uno en su slot, INLINE
                     if let Some(dsu) = &dsu {
@@ -449,8 +474,8 @@ pub fn run(
                         );
                     }
                 } else if slot == 0 && role == Role::Wiimote {
-                    // Modo puntero: el SO tiene UN cursor y es del Jugador 1
-                    // (un Nunchuk nunca mueve el cursor)
+                    // Modo puntero (o pistola de RetroArch): el SO tiene UN
+                    // cursor y es del Jugador 1 (un Nunchuk nunca mueve el cursor)
                     let Some(inj) = injector.as_deref_mut() else {
                         continue; // sin inyector aún: se está reintentando
                     };
@@ -475,7 +500,14 @@ pub fn run(
                     if p.touch_scroll_dy != 0 {
                         inj.wheel(p.touch_scroll_dy as i32 * 4);
                     }
-                    apply_buttons(inj, &mut held, p.buttons);
+                    // Pistola de luz: B es el gatillo (clic izquierdo) y A la
+                    // recarga fuera de pantalla (clic derecho); el resto va al
+                    // RetroPad por el enlace, no al SO
+                    if gun {
+                        apply_buttons_map(inj, &mut held, p.buttons & crate::retroarch::GUN_MOUSE_BITS, &GUN_MAP);
+                    } else {
+                        apply_buttons(inj, &mut held, p.buttons);
+                    }
                 }
                 // slot > 0 en modo puntero: se ignora (apunta el Jugador 1)
             }
@@ -571,13 +603,48 @@ impl IrPointer {
     }
 }
 
-/// Inyecta los flancos entre lo que el SO ve pulsado (`held`) y `target`.
-fn apply_buttons(injector: &mut dyn input::Injector, held: &mut u32, target: u32) {
-    let changed = target ^ *held;
+/// Pistola de luz de RetroArch (Mando Wii apuntando): B = gatillo, A =
+/// recarga fuera de pantalla, con los enlaces por defecto de RetroArch
+/// (`gun_trigger_mbtn = 1`, `gun_offscreen_shot_mbtn = 2`).
+const GUN_MAP: [(u32, Action); 2] = [
+    (codec::BTN_B, Action::Mouse(MouseButton::Left)),
+    (codec::BTN_A, Action::Mouse(MouseButton::Right)),
+];
+
+/// Lo que el SO ve pulsado ahora mismo y con qué tabla se pulsó (puntero o
+/// pistola): al cambiar de tabla se suelta primero con la antigua, que es la
+/// que sabe qué botón del SO corresponde a cada bit.
+struct OsHeld {
+    bits: u32,
+    map: &'static [(u32, Action)],
+}
+
+impl Default for OsHeld {
+    fn default() -> Self {
+        Self { bits: 0, map: &BUTTON_MAP }
+    }
+}
+
+/// Inyecta los flancos entre lo que el SO ve pulsado (`held`) y `target`
+/// con la tabla del puntero.
+fn apply_buttons(injector: &mut dyn input::Injector, held: &mut OsHeld, target: u32) {
+    apply_buttons_map(injector, held, target, &BUTTON_MAP);
+}
+
+/// Como [`apply_buttons`] con la tabla `map`.
+fn apply_buttons_map(injector: &mut dyn input::Injector, held: &mut OsHeld, target: u32, map: &'static [(u32, Action)]) {
+    if !std::ptr::eq(held.map, map) {
+        if held.bits != 0 {
+            let old = held.map;
+            apply_buttons_map(injector, held, 0, old);
+        }
+        held.map = map;
+    }
+    let changed = target ^ held.bits;
     if changed == 0 {
         return;
     }
-    for (bit, action) in BUTTON_MAP.iter() {
+    for (bit, action) in map.iter() {
         if changed & bit != 0 {
             let down = target & bit != 0;
             match action {
@@ -586,12 +653,13 @@ fn apply_buttons(injector: &mut dyn input::Injector, held: &mut u32, target: u32
             }
         }
     }
-    *held = target;
+    held.bits = target;
 }
 
 /// Suelta todo lo que siga pulsado en el SO.
-fn release_all(injector: &mut dyn input::Injector, held: &mut u32) {
-    apply_buttons(injector, held, 0);
+fn release_all(injector: &mut dyn input::Injector, held: &mut OsHeld) {
+    let map = held.map;
+    apply_buttons_map(injector, held, 0, map);
 }
 
 #[cfg(windows)]
@@ -659,10 +727,10 @@ mod tests {
     /// Pulsa y suelta `bit`; devuelve las teclas que salieron.
     fn tap(bit: u32) -> Vec<(KeyCode, bool)> {
         let mut inj = Fake::default();
-        let mut held = 0;
+        let mut held = OsHeld::default();
         apply_buttons(&mut inj, &mut held, bit);
         apply_buttons(&mut inj, &mut held, 0);
-        assert_eq!(held, 0);
+        assert_eq!(held.bits, 0);
         inj.keys
     }
 
@@ -684,7 +752,7 @@ mod tests {
     #[test]
     fn a_y_b_son_los_clics_y_prev_va_en_la_tabla() {
         let mut inj = Fake::default();
-        let mut held = 0;
+        let mut held = OsHeld::default();
         apply_buttons(&mut inj, &mut held, codec::BTN_A | codec::BTN_B);
         apply_buttons(&mut inj, &mut held, 0);
         assert_eq!(
@@ -702,27 +770,27 @@ mod tests {
     #[test]
     fn mantener_volumen_repite_tras_el_retardo_y_para_al_soltar() {
         let mut inj = Fake::default();
-        let mut held = 0;
+        let mut held = OsHeld::default();
         let mut rep = None;
         let t0 = Instant::now();
         apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_UP);
         for t in [0, 100, 200, 349] {
-            repeat_tick(&mut rep, held, &mut inj, t0 + ms(t));
+            repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(t));
         }
         assert_eq!(inj.keys, vec![(KeyCode::VolumeUp, true)], "antes del retardo, solo el flanco");
         for t in [350, 450, 550] {
-            repeat_tick(&mut rep, held, &mut inj, t0 + ms(t));
+            repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(t));
         }
         assert_eq!(inj.keys.len(), 7, "tres re-toques (soltar + pulsar)");
         assert_eq!(&inj.keys[1..3], &[(KeyCode::VolumeUp, false), (KeyCode::VolumeUp, true)]);
         assert_eq!(inj.keys.last(), Some(&(KeyCode::VolumeUp, true)), "tras un re-toque la tecla queda pulsada");
         // un tic antes de tiempo no hace nada
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(600));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(600));
         assert_eq!(inj.keys.len(), 7);
         apply_buttons(&mut inj, &mut held, 0);
         assert_eq!(inj.keys.last(), Some(&(KeyCode::VolumeUp, false)));
         let n = inj.keys.len();
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(2000));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(2000));
         assert_eq!(inj.keys.len(), n, "soltado: no repite más");
         assert!(rep.is_none());
     }
@@ -730,14 +798,14 @@ mod tests {
     #[test]
     fn un_toque_corto_no_repite() {
         let mut inj = Fake::default();
-        let mut held = 0;
+        let mut held = OsHeld::default();
         let mut rep = None;
         let t0 = Instant::now();
         apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_DOWN);
-        repeat_tick(&mut rep, held, &mut inj, t0);
+        repeat_tick(&mut rep, held.bits, &mut inj, t0);
         apply_buttons(&mut inj, &mut held, 0);
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(80));
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(400));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(80));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(400));
         assert_eq!(inj.keys, vec![(KeyCode::VolumeDown, true), (KeyCode::VolumeDown, false)]);
     }
 
@@ -745,22 +813,22 @@ mod tests {
     fn mas_y_menos_repiten_como_las_teclas_de_volumen() {
         for (bit, key) in [(codec::BTN_PLUS, KeyCode::VolumeUp), (codec::BTN_MINUS, KeyCode::VolumeDown)] {
             let mut inj = Fake::default();
-            let mut held = 0;
+            let mut held = OsHeld::default();
             let mut rep = None;
             let t0 = Instant::now();
             apply_buttons(&mut inj, &mut held, bit);
-            repeat_tick(&mut rep, held, &mut inj, t0);
-            repeat_tick(&mut rep, held, &mut inj, t0 + ms(350));
+            repeat_tick(&mut rep, held.bits, &mut inj, t0);
+            repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(350));
             assert_eq!(inj.keys, vec![(key, true), (key, false), (key, true)]);
         }
         // lo que no es volumen no repite
         let mut inj = Fake::default();
-        let mut held = 0;
+        let mut held = OsHeld::default();
         let mut rep = None;
         let t0 = Instant::now();
         apply_buttons(&mut inj, &mut held, codec::BTN_DPAD_LEFT | codec::BTN_MEDIA_NEXT);
-        repeat_tick(&mut rep, held, &mut inj, t0);
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(1000));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0);
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(1000));
         assert_eq!(inj.keys.len(), 2);
         assert!(rep.is_none());
     }
@@ -768,17 +836,17 @@ mod tests {
     #[test]
     fn soltar_todo_corta_la_repeticion() {
         let mut inj = Fake::default();
-        let mut held = 0;
+        let mut held = OsHeld::default();
         let mut rep = None;
         let t0 = Instant::now();
         apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_DOWN);
-        repeat_tick(&mut rep, held, &mut inj, t0);
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(350));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0);
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(350));
         release_all(&mut inj, &mut held);
-        assert_eq!(held, 0);
+        assert_eq!(held.bits, 0);
         assert_eq!(inj.keys.last(), Some(&(KeyCode::VolumeDown, false)));
         let n = inj.keys.len();
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(450));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(450));
         assert_eq!(inj.keys.len(), n);
         assert!(rep.is_none());
     }
@@ -786,18 +854,18 @@ mod tests {
     #[test]
     fn cambiar_de_tecla_reinicia_el_retardo() {
         let mut inj = Fake::default();
-        let mut held = 0;
+        let mut held = OsHeld::default();
         let mut rep = None;
         let t0 = Instant::now();
         apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_UP);
-        repeat_tick(&mut rep, held, &mut inj, t0);
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(350)); // primer re-toque de vol+
+        repeat_tick(&mut rep, held.bits, &mut inj, t0);
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(350)); // primer re-toque de vol+
         apply_buttons(&mut inj, &mut held, codec::BTN_MEDIA_VOL_DOWN); // suelta vol+, pulsa vol−
         let n = inj.keys.len();
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(420));
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(700));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(420));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(700));
         assert_eq!(inj.keys.len(), n, "vol− aún en su retardo");
-        repeat_tick(&mut rep, held, &mut inj, t0 + ms(770));
+        repeat_tick(&mut rep, held.bits, &mut inj, t0 + ms(770));
         assert_eq!(&inj.keys[n..], &[(KeyCode::VolumeDown, false), (KeyCode::VolumeDown, true)]);
     }
 }

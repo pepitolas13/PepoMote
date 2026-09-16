@@ -13,7 +13,9 @@ PEPOMOTE_CONFIG_DIR=<dir>\config  (settings.json y token.txt propios)
 PEPOMOTE_DOLPHIN_DIR=<dir>\dolphin
 PEPOMOTE_CEMU_DIR=<dir>\appdata\Cemu
 PEPOMOTE_EDEN_DIR=<dir>\eden
+PEPOMOTE_RETROARCH_DIR=<dir>\retroarch
 PEPOMOTE_PORT=26771 PEPOMOTE_DSU_PORT=26770
+PEPOMOTE_RETROARCH_PORT=26773 PEPOMOTE_RETROARCH_CMD_PORT=26778
 PEPOMOTE_PAIR_CODE=1234 PEPOMOTE_ASSUME_EMULATOR_CLOSED=1 PEPOMOTE_NO_TRAY=1
 PepoMote.exe
 ```
@@ -30,6 +32,18 @@ en el entorno:
   Dolphin.
 - `python e2e_nunchuk.py` — Nunchuk en modo Dolphin: slots, emparejamiento,
   stick/C/Z en su pad DSU.
+- `python e2e_retroarch.py` — modo RetroArch contra un RetroArch FALSO (el
+  propio script escucha en el puerto base del mando en red y en el de
+  comandos, consume un datagrama por jugador y fotograma a 60 fps como
+  `input_driver.c` y contesta `VERSION`/`GET_STATUS`): `retroarch.cfg`
+  escrito con copia byte a byte e idempotente, vocabulario `pad`
+  (retropad/nes/gun), sondas y `SHOW_MSG`, botón al fotograma siguiente y
+  latch, sin cola (nunca dos datagramas esperando), sticks (escala y signo),
+  los 16 botones del RetroPad, Home → `MENU_TOGGLE`, Capturar →
+  `FAST_FORWARD_HOLD` cada fotograma, `hotkey` (un toque y mantener),
+  refresco que sobrevive al vaciado por fotograma de Windows, segundo
+  jugador en su puerto con mando de NES, soltar al irse el móvil o al cambiar
+  de modo, y resincronización tras un RetroArch mudo.
 - `python e2e_dolphin_ir.py` — puntero IR del perfil Wii (Dolphin ≥ 2407,
   `protocol/DSU.md`): el sentido de los ejes cruzado con el Mando Wii de
   Cemu (mismo motor), yaw/pitch/roll con giroscopio y quaternion coherentes,

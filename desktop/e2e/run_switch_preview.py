@@ -1,7 +1,8 @@
-"""Build-independent runner for local, isolated Switch/Cemu/Nunchuk checks.
+"""Build-independent runner for local, isolated RetroArch/Switch/Cemu/Nunchuk checks.
 
 Usage: python run_switch_preview.py <PepoMote.exe> [output-directory]
 All settings/emulator directories and ports are isolated from the user's.
+PEPOMOTE_E2E_SUITES=e2e_retroarch,e2e_eden picks the suites (default: all).
 """
 import json
 import os
@@ -25,7 +26,10 @@ def free_ports():
         held = []
         try:
             for typ, p in [(socket.SOCK_STREAM, port), (socket.SOCK_DGRAM, port),
-                           (socket.SOCK_DGRAM, port+1), (socket.SOCK_DGRAM, port-1)]:
+                           (socket.SOCK_DGRAM, port+1), (socket.SOCK_DGRAM, port-1),
+                           (socket.SOCK_DGRAM, port+2), (socket.SOCK_DGRAM, port+3),
+                           (socket.SOCK_DGRAM, port+4), (socket.SOCK_DGRAM, port+5),
+                           (socket.SOCK_DGRAM, port+7)]:
                 s = socket.socket(socket.AF_INET, typ)
                 held.append(s)
                 s.bind(("127.0.0.1", p))
@@ -48,15 +52,17 @@ def run_suite(name):
         "PEPOMOTE_DOLPHIN_DIR": base / "dolphin",
         "PEPOMOTE_CEMU_DIR": base / "appdata" / "Cemu",
         "PEPOMOTE_EDEN_DIR": base / "eden",
+        "PEPOMOTE_RETROARCH_DIR": base / "retroarch",
     }.items():
         path.mkdir(parents=True, exist_ok=True)
         env[key] = str(path)
     env.update(PEPOMOTE_PORT=str(port), PEPOMOTE_DSU_PORT=str(port-1),
+               PEPOMOTE_RETROARCH_PORT=str(port+2), PEPOMOTE_RETROARCH_CMD_PORT=str(port+7),
                PEPOMOTE_PAIR_CODE="1234", PEPOMOTE_ASSUME_EMULATOR_CLOSED="1",
                PEPOMOTE_NO_TRAY="1", PEPOMOTE_NO_UI="1", PYTHONIOENCODING="utf-8")
     (base / "config" / "settings.json").write_text(json.dumps({
         "sens_deg": 40, "abs_mode": True, "auto_mode": False,
-        "auto_dolphin": True, "auto_cemu": True, "auto_eden": True,
+        "auto_dolphin": True, "auto_cemu": True, "auto_eden": True, "auto_retroarch": True,
         "update_check": False, "lang": "es",
     }), encoding="utf-8")
     (base / "eden" / "qt-config.ini").write_bytes((HERE / "fixtures" / "qt-config.ini").read_bytes())
@@ -98,6 +104,9 @@ def run_suite(name):
 
 if not BIN.is_file():
     raise SystemExit(f"Executable does not exist: {BIN}")
-for suite in ["e2e_eden", "e2e_cemu", "e2e_nunchuk"]:
+# PEPOMOTE_E2E_SUITES=e2e_retroarch,e2e_eden limita las suites (la CI corre solo
+# las que no dependen de rutas de Windows)
+SUITES = [s for s in os.environ.get("PEPOMOTE_E2E_SUITES", "e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk").split(",") if s]
+for suite in SUITES:
     run_suite(suite)
 print("All isolated integration suites passed", flush=True)

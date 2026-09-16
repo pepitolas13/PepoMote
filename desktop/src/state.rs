@@ -88,6 +88,11 @@ pub enum Mode {
     /// giroscopio para Eden, que lee el DSU con su engine `cemuhookudp`.
     /// Como Cemu pero se configura Eden (`qt-config.ini`).
     Switch,
+    /// RetroArch: el móvil es un RetroPad (o un mando de NES, o una pistola
+    /// de luz) por el «mando en red» de RetroArch (UDP 55400 + jugador), sin
+    /// DSU; las teclas rápidas van por su interfaz de comandos (UDP 55355).
+    /// Se configura `retroarch.cfg` con RetroArch cerrado.
+    RetroArch,
 }
 
 impl Mode {
@@ -98,6 +103,7 @@ impl Mode {
             Mode::Dolphin => "dolphin",
             Mode::Cemu => "cemu",
             Mode::Switch => "switch",
+            Mode::RetroArch => "retroarch",
         }
     }
 
@@ -108,13 +114,14 @@ impl Mode {
             Some("dolphin") => Mode::Dolphin,
             Some("cemu") => Mode::Cemu,
             Some("switch") => Mode::Switch,
+            Some("retroarch") => Mode::RetroArch,
             _ => Mode::Pointer,
         }
     }
 
     /// Modos que soporta este receptor (`ok.modes`, para que el móvil sepa
-    /// si puede ofrecer Wii U y Switch).
-    pub const ALL: [Mode; 4] = [Mode::Pointer, Mode::Dolphin, Mode::Cemu, Mode::Switch];
+    /// si puede ofrecer Wii U, Switch y RetroArch).
+    pub const ALL: [Mode; 5] = [Mode::Pointer, Mode::Dolphin, Mode::Cemu, Mode::Switch, Mode::RetroArch];
 
     /// En estos modos el receptor alimenta el DSU y no inyecta nada en el SO.
     pub fn feeds_dsu(self) -> bool {
@@ -145,7 +152,14 @@ pub struct Config {
     /// Restauración explícita pendiente, conservada aunque se reinicie el receptor.
     #[serde(default)]
     pub eden_restore_pending: bool,
-    /// Cambiar de modo solo al abrir o cerrar Dolphin, Cemu o Eden.
+    /// Configurar RetroArch solo (mando en red y comandos en retroarch.cfg)
+    /// en modo RetroArch.
+    #[serde(default = "default_true")]
+    pub auto_retroarch: bool,
+    /// Restauración explícita de retroarch.cfg pendiente (sobrevive al reinicio).
+    #[serde(default)]
+    pub retroarch_restore_pending: bool,
+    /// Cambiar de modo solo al abrir o cerrar Dolphin, Cemu, Eden o RetroArch.
     #[serde(default = "default_true")]
     pub auto_mode: bool,
     /// Al cerrar el emulador activo, volver al puntero (o al otro abierto).
@@ -164,6 +178,11 @@ pub struct Config {
     /// `user` al lado) guarda su configuración ahí. "" = detectar sola.
     #[serde(default)]
     pub eden_dir: String,
+    /// Carpeta de RetroArch (la del retroarch.exe, la que contiene
+    /// retroarch.cfg, o el propio archivo). "" = detectar sola; en Windows se
+    /// aprende al verlo abierto (su configuración portable vive ahí).
+    #[serde(default)]
+    pub retroarch_dir: String,
     /// Linux: ya se ofreció la auto-reparación (firewall/uinput) una vez.
     /// Evita re-abrir el diálogo de contraseña en cada arranque si se canceló.
     #[serde(default)]
@@ -206,11 +225,14 @@ impl Default for Config {
             auto_cemu: true,
             auto_eden: true,
             eden_restore_pending: false,
+            auto_retroarch: true,
+            retroarch_restore_pending: false,
             auto_mode: true,
             return_to_pointer: false,
             cemu_dir: String::new(),
             dolphin_dir: String::new(),
             eden_dir: String::new(),
+            retroarch_dir: String::new(),
             fix_attempted: false,
             firewall_opened_port: None,
             screen: String::new(),
@@ -290,6 +312,9 @@ pub struct PlayerInfo {
     pub screen_only: bool,
     /// Modo Switch: Pro Controller. Los nombres antiguos se normalizan al leerlos.
     pub switch_pad: SwitchPad,
+    /// Modo RetroArch: RetroPad apaisado, mando de NES (Mando Wii de lado) o
+    /// pistola de luz (Mando Wii apuntando). Del `hello` o del mensaje `pad`.
+    pub retro_pad: crate::retroarch::RetroPadKind,
     /// Sus INPUT piden apuntado por inclinación (flags bit4): el móvil no
     /// tiene giroscopio real (o eligió el acelerómetro en Ajustes).
     pub tilt: bool,
@@ -453,13 +478,20 @@ pub fn cemu_layout(players: &[Option<PlayerInfo>]) -> Vec<CemuPlayer> {
 /// `nunchuk`: no tiene papel); en los demás modos el vocabulario de Cemu
 /// ([`effective_pad_cemu`]), también en puntero y Dolphin (como siempre).
 pub fn effective_pad(mode: Mode, players: &[Option<PlayerInfo>], slot: u8) -> &'static str {
-    if mode != Mode::Switch {
-        return effective_pad_cemu(players, slot);
-    }
-    match players.get(slot as usize).and_then(|p| p.as_ref()) {
-        Some(p) if p.role == Role::Wiimote => p.switch_pad.as_str(),
-        Some(_) => "nunchuk",
-        None => SwitchPad::Pro.as_str(),
+    match mode {
+        Mode::Switch => match players.get(slot as usize).and_then(|p| p.as_ref()) {
+            Some(p) if p.role == Role::Wiimote => p.switch_pad.as_str(),
+            Some(_) => "nunchuk",
+            None => SwitchPad::Pro.as_str(),
+        },
+        // RetroArch: lo que el móvil pidió (RetroPad si nada); un Nunchuk no
+        // tiene papel
+        Mode::RetroArch => match players.get(slot as usize).and_then(|p| p.as_ref()) {
+            Some(p) if p.role == Role::Wiimote => p.retro_pad.as_str(),
+            Some(_) => "nunchuk",
+            None => crate::retroarch::RetroPadKind::RetroPad.as_str(),
+        },
+        _ => effective_pad_cemu(players, slot),
     }
 }
 
@@ -590,6 +622,14 @@ pub struct Shared {
     pub cemu_screen_status: Option<CfgStatus>,
     /// Resultado del último intento de configurar Eden (para la UI).
     pub eden_cfg_status: Option<CfgStatus>,
+    /// RetroArch estaba abierto: su retroarch.cfg se escribe en cuanto se cierre.
+    pub retroarch_pending: bool,
+    pub retroarch_manual_pending: bool,
+    pub retroarch_restore_pending: bool,
+    /// Resultado del último intento de configurar RetroArch (para la UI).
+    pub retroarch_cfg_status: Option<CfgStatus>,
+    /// Qué se sabe de RetroArch ahora mismo (responde, versión, qué corre).
+    pub retroarch_live: crate::retroarch::Live,
     /// Texto que un móvil quiere teclear en el PC (teclado en pantalla de
     /// Cemu) y que el inyector del SO aún no ha escrito.
     pub text_queue: Vec<(Mode, String)>,
@@ -631,6 +671,7 @@ impl Shared {
     pub fn new() -> Self {
         let config = Config::load();
         let restore = config.eden_restore_pending;
+        let ra_restore = config.retroarch_restore_pending;
         Self {
             status: LinkStatus::Waiting,
             mode: Mode::Pointer,
@@ -651,6 +692,11 @@ impl Shared {
             cemu_cfg_status: None,
             cemu_screen_status: None,
             eden_cfg_status: None,
+            retroarch_pending: ra_restore,
+            retroarch_manual_pending: false,
+            retroarch_restore_pending: ra_restore,
+            retroarch_cfg_status: None,
+            retroarch_live: crate::retroarch::Live::default(),
             text_queue: Vec::new(),
             last_error: None,
             injection_error: false,
@@ -758,6 +804,7 @@ mod tests {
             own_nunchuk: false,
             screen_only: false,
             switch_pad: SwitchPad::Pro,
+            retro_pad: crate::retroarch::RetroPadKind::RetroPad,
             tilt: false,
         })
     }
@@ -789,8 +836,10 @@ mod tests {
         for m in Mode::ALL {
             assert_eq!(Mode::parse(Some(m.as_str())), m);
         }
-        assert_eq!(Mode::ALL.len(), 4);
+        assert_eq!(Mode::ALL.len(), 5);
+        assert_eq!(Mode::parse(Some("retroarch")), Mode::RetroArch);
         assert!(Mode::Cemu.feeds_dsu() && Mode::Dolphin.feeds_dsu() && Mode::Switch.feeds_dsu() && !Mode::Pointer.feeds_dsu());
+        assert!(!Mode::RetroArch.feeds_dsu(), "RetroArch va por su mando en red, no por el DSU");
     }
 
     #[test]

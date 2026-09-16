@@ -118,6 +118,8 @@ struct Snapshot {
     cemu_status: Option<CfgStatus>,
     cemu_screen: Option<CfgStatus>,
     eden_status: Option<CfgStatus>,
+    retroarch_status: Option<CfgStatus>,
+    retroarch_live: crate::retroarch::Live,
     error: Option<String>,
     port_notice: Option<String>,
     firewall: Option<crate::firewall::FirewallIssue>,
@@ -193,6 +195,8 @@ impl eframe::App for PepoMoteApp {
                 cemu_status: s.cemu_cfg_status.clone(),
                 cemu_screen: s.cemu_screen_status.clone(),
                 eden_status: s.eden_cfg_status.clone(),
+                retroarch_status: s.retroarch_cfg_status.clone(),
+                retroarch_live: s.retroarch_live.clone(),
                 error: s.last_error.clone(),
                 port_notice: s.port_notice.clone(),
                 firewall: s.firewall,
@@ -258,6 +262,8 @@ impl eframe::App for PepoMoteApp {
                                     self.ui_cemu(ui, &snap);
                                 } else if snap.mode == Mode::Switch {
                                     self.ui_switch(ui, &snap);
+                                } else if snap.mode == Mode::RetroArch {
+                                    self.ui_retroarch(ui, &snap);
                                 }
                                 if snap.player_count < crate::net::MAX_PLAYERS {
                                     ui.add_space(12.0);
@@ -629,6 +635,38 @@ impl PepoMoteApp {
         ui.label(RichText::new(tr!("win.switch_help")).size(11.0).color(theme::text_dim()));
     }
 
+    fn ui_retroarch(&self, ui: &mut egui::Ui, snap: &Snapshot) {
+        ui.add_space(8.0);
+        // Estado vivo: responde (y qué corre), abierto pero mudo, o cerrado
+        let live = &snap.retroarch_live;
+        let (text, color) = if live.reachable {
+            let what = match &live.activity {
+                Some(crate::retroarch::Activity::Playing { core, content }) => tr!("win.retroarch_playing", content, core),
+                Some(crate::retroarch::Activity::Paused { core, content }) => tr!("win.retroarch_paused", content, core),
+                _ => tr!("win.retroarch_menu").to_owned(),
+            };
+            let version = live.version.clone().unwrap_or_default();
+            (tr!("win.retroarch_live", version, what, live.polls_per_sec.round() as i64), theme::ok())
+        } else if live.degraded {
+            (tr!("win.retroarch_degraded").to_owned(), theme::warn())
+        } else {
+            (tr!("win.retroarch_waiting").to_owned(), theme::blue())
+        };
+        ui.label(RichText::new(text).size(13.0).color(color));
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(RichText::new(tr!("win.configure_retroarch")).size(13.0)).clicked() {
+                crate::retroarch::configure_now(&self.shared);
+            }
+            if ui.button(RichText::new(tr!("win.restore_retroarch")).size(13.0)).clicked() {
+                crate::retroarch::restore_now(&self.shared);
+            }
+        });
+        if let Some(st) = &snap.retroarch_status {
+            ui.label(RichText::new(&st.text).size(12.0).color(if st.ok { theme::ok() } else { theme::warn() }));
+        }
+        ui.label(RichText::new(tr!("win.retroarch_help")).size(11.0).color(theme::text_dim()));
+    }
+
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
         let mut config = self.shared.lock_tolerant().config.clone();
         let before = config.clone();
@@ -668,6 +706,8 @@ impl PepoMoteApp {
             ui.add_space(4.0);
             ui.checkbox(&mut config.auto_eden, RichText::new(tr!("cfg.auto_eden")).size(13.0));
             ui.add_space(4.0);
+            ui.checkbox(&mut config.auto_retroarch, RichText::new(tr!("cfg.auto_retroarch")).size(13.0));
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.checkbox(
                     &mut config.auto_mode,
@@ -706,6 +746,12 @@ impl PepoMoteApp {
                 if ui.button(RichText::new(tr!("cfg.detect")).size(12.0)).clicked() {crate::eden::detect_now(&self.shared);}
             });
             ui.label(RichText::new(tr!("cfg.eden_folder_help")).size(11.0).color(theme::text_dim()));
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(tr!("cfg.retroarch_folder")).size(13.0).color(theme::text_dim()));
+                ui.add(egui::TextEdit::singleline(&mut config.retroarch_dir).desired_width(200.0).hint_text(tr!("cfg.auto_hint")));
+                if ui.button(RichText::new(tr!("cfg.detect")).size(12.0)).clicked() {crate::retroarch::detect_now(&self.shared);}
+            });
+            ui.label(RichText::new(tr!("cfg.retroarch_folder_help")).size(11.0).color(theme::text_dim()));
             ui.horizontal(|ui| {
                 ui.label(RichText::new(tr!("cfg.dolphin_folder")).size(13.0).color(theme::text_dim()));
                 ui.add(
@@ -885,6 +931,7 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         Mode::Dolphin => tr!("win.mode_dolphin"),
         Mode::Cemu => tr!("win.mode_cemu"),
         Mode::Switch => tr!("win.mode_switch"),
+        Mode::RetroArch => tr!("win.mode_retroarch"),
     };
     let cemu = snap.mode == Mode::Cemu;
     let cemu_layout = crate::state::cemu_layout(&snap.players);
@@ -918,6 +965,16 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         let badge = if snap.mode==Mode::Switch {
             if p.role==crate::state::Role::Nunchuk {tr!("win.badge_nunchuk_switch") .to_owned()}
             else {tr!("win.badge_switch_pro", number)}
+        } else if snap.mode == Mode::RetroArch {
+            if p.role == crate::state::Role::Nunchuk {
+                tr!("win.badge_nunchuk_retroarch").to_owned()
+            } else {
+                match p.retro_pad {
+                    crate::retroarch::RetroPadKind::RetroPad => tr!("win.badge_retropad", number),
+                    crate::retroarch::RetroPadKind::Nes => tr!("win.badge_retro_nes", number),
+                    crate::retroarch::RetroPadKind::Gun => tr!("win.badge_retro_gun", number),
+                }
+            }
         } else if p.role == crate::state::Role::Nunchuk {
             if cemu && !cemu_layout.iter().any(|c| c.nunchuk_slot == Some(i as u8)) {
                 tr!("win.badge_nunchuk_unused", number)

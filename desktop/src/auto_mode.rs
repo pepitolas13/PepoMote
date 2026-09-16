@@ -19,6 +19,7 @@ pub struct EmuState {
     pub dolphin: bool,
     pub cemu: bool,
     pub eden: bool,
+    pub retroarch: bool,
 }
 
 /// Por qué cambia el modo (para el aviso a los móviles y el log).
@@ -30,6 +31,8 @@ pub enum Reason {
     CemuClosed,
     EdenOpened,
     EdenClosed,
+    RetroArchOpened,
+    RetroArchClosed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,12 +52,16 @@ pub fn next(prev: EmuState, now: EmuState, mode: Mode, enabled: bool, return_to_
         Change { mode: Mode::Cemu, reason: Reason::CemuOpened }
     } else if !prev.eden && now.eden {
         Change { mode: Mode::Switch, reason: Reason::EdenOpened }
+    } else if !prev.retroarch && now.retroarch {
+        Change { mode: Mode::RetroArch, reason: Reason::RetroArchOpened }
     } else if return_to_pointer && prev.dolphin && !now.dolphin && mode == Mode::Dolphin {
         Change { mode: fallback(now), reason: Reason::DolphinClosed }
     } else if return_to_pointer && prev.cemu && !now.cemu && mode == Mode::Cemu {
         Change { mode: fallback(now), reason: Reason::CemuClosed }
     } else if return_to_pointer && prev.eden && !now.eden && mode == Mode::Switch {
         Change { mode: fallback(now), reason: Reason::EdenClosed }
+    } else if return_to_pointer && prev.retroarch && !now.retroarch && mode == Mode::RetroArch {
+        Change { mode: fallback(now), reason: Reason::RetroArchClosed }
     } else {
         return None;
     };
@@ -62,7 +69,7 @@ pub fn next(prev: EmuState, now: EmuState, mode: Mode, enabled: bool, return_to_
 }
 
 fn fallback(now: EmuState) -> Mode {
-    if now.dolphin {Mode::Dolphin} else if now.cemu {Mode::Cemu} else if now.eden {Mode::Switch} else {Mode::Pointer}
+    if now.dolphin {Mode::Dolphin} else if now.cemu {Mode::Cemu} else if now.eden {Mode::Switch} else if now.retroarch {Mode::RetroArch} else {Mode::Pointer}
 }
 
 /// Aviso para los móviles (y el log).
@@ -72,14 +79,22 @@ pub fn notice(c: Change) -> &'static str {
         (Reason::CemuOpened, _) => tr!("auto.cemu_opened"),
         (Reason::DolphinClosed, Mode::Cemu) => tr!("auto.dolphin_closed_cemu"),
         (Reason::DolphinClosed, Mode::Switch) => tr!("auto.dolphin_closed_eden"),
+        (Reason::DolphinClosed, Mode::RetroArch) => tr!("auto.dolphin_closed_retroarch"),
         (Reason::DolphinClosed, _) => tr!("auto.dolphin_closed"),
         (Reason::CemuClosed, Mode::Dolphin) => tr!("auto.cemu_closed_dolphin"),
         (Reason::CemuClosed, Mode::Switch) => tr!("auto.cemu_closed_eden"),
         (Reason::EdenOpened, _) => tr!("auto.eden_opened"),
         (Reason::EdenClosed, Mode::Dolphin) => tr!("auto.eden_closed_dolphin"),
         (Reason::EdenClosed, Mode::Cemu) => tr!("auto.eden_closed_cemu"),
+        (Reason::EdenClosed, Mode::RetroArch) => tr!("auto.eden_closed_retroarch"),
         (Reason::EdenClosed, _) => tr!("auto.eden_closed"),
+        (Reason::CemuClosed, Mode::RetroArch) => tr!("auto.cemu_closed_retroarch"),
         (Reason::CemuClosed, _) => tr!("auto.cemu_closed"),
+        (Reason::RetroArchOpened, _) => tr!("auto.retroarch_opened"),
+        (Reason::RetroArchClosed, Mode::Dolphin) => tr!("auto.retroarch_closed_dolphin"),
+        (Reason::RetroArchClosed, Mode::Cemu) => tr!("auto.retroarch_closed_cemu"),
+        (Reason::RetroArchClosed, Mode::Switch) => tr!("auto.retroarch_closed_eden"),
+        (Reason::RetroArchClosed, _) => tr!("auto.retroarch_closed"),
     }
 }
 
@@ -127,7 +142,9 @@ fn observe(shared: &SharedState) -> EmuState {
     crate::cemu::learn_dir(shared, cemu_dir);
     let (eden, eden_dir) = crate::eden::running_exe();
     crate::eden::learn_dir(shared, eden_dir);
-    EmuState { dolphin, cemu, eden }
+    let (retroarch, retroarch_dir) = crate::retroarch::running_exe();
+    crate::retroarch::learn_dir(shared, retroarch_dir);
+    EmuState { dolphin, cemu, eden, retroarch }
 }
 
 /// Vigilante de emuladores (hilo `emu-watch`, cada 2 s): aplica lo que quedó
@@ -143,9 +160,9 @@ pub fn start_watcher(shared: SharedState) {
         loop {
             std::thread::sleep(Duration::from_secs(2));
             let sample = observe(&shared);
-            let (dolphin_pending, cemu_pending, cemu_cleanup, eden_pending) = {
+            let (dolphin_pending, cemu_pending, cemu_cleanup, eden_pending, retroarch_pending) = {
                 let s = shared.lock().unwrap_or_else(|e| e.into_inner());
-                (s.dolphin_pending, s.cemu_pending, s.cemu_cleanup_pending, s.eden_pending)
+                (s.dolphin_pending, s.cemu_pending, s.cemu_cleanup_pending, s.eden_pending, s.retroarch_pending)
             };
             if dolphin_pending && !sample.dolphin {
                 crate::dolphin::apply_pending(&shared);
@@ -155,6 +172,9 @@ pub fn start_watcher(shared: SharedState) {
             }
             if eden_pending && !sample.eden {
                 crate::eden::apply_pending(&shared);
+            }
+            if retroarch_pending && !sample.retroarch {
+                crate::retroarch::apply_pending(&shared);
             }
             if cemu_cleanup && !sample.cemu {
                 crate::cemu::apply_cleanup_pending(&shared);
@@ -177,10 +197,11 @@ pub fn start_watcher(shared: SharedState) {
 mod tests {
     use super::*;
 
-    const NONE: EmuState = EmuState { dolphin: false, cemu: false, eden: false };
-    const DOLPHIN: EmuState = EmuState { dolphin: true, cemu: false, eden: false };
-    const CEMU: EmuState = EmuState { dolphin: false, cemu: true, eden: false };
-    const BOTH: EmuState = EmuState { dolphin: true, cemu: true, eden: false };
+    const NONE: EmuState = EmuState { dolphin: false, cemu: false, eden: false, retroarch: false };
+    const DOLPHIN: EmuState = EmuState { dolphin: true, ..NONE };
+    const CEMU: EmuState = EmuState { cemu: true, ..NONE };
+    const BOTH: EmuState = EmuState { dolphin: true, cemu: true, ..NONE };
+    const RETROARCH: EmuState = EmuState { retroarch: true, ..NONE };
 
     fn change(prev: EmuState, now: EmuState, mode: Mode) -> Option<(Mode, Reason)> {
         next(prev, now, mode, true, true).map(|c| (c.mode, c.reason))
@@ -210,6 +231,31 @@ mod tests {
         assert_eq!(change(all,eden,Mode::Cemu),Some((Mode::Switch,Reason::CemuClosed)));
         assert_eq!(change(NONE,all,Mode::Pointer),Some((Mode::Dolphin,Reason::DolphinOpened)));
         assert_eq!(change(eden,NONE,Mode::Pointer),None);
+    }
+
+    #[test]
+    fn retroarch_abre_cierra_y_cede_a_los_demas() {
+        assert_eq!(change(NONE, RETROARCH, Mode::Pointer), Some((Mode::RetroArch, Reason::RetroArchOpened)));
+        assert_eq!(change(NONE, RETROARCH, Mode::Switch), Some((Mode::RetroArch, Reason::RetroArchOpened)));
+        assert_eq!(change(RETROARCH, NONE, Mode::RetroArch), Some((Mode::Pointer, Reason::RetroArchClosed)));
+        assert_eq!(next(RETROARCH, NONE, Mode::RetroArch, true, false), None, "cerrar conserva el modo por defecto");
+        // los demás abiertos a la vez: lo que se abre manda; al cerrar RetroArch, el que quede
+        let ra_dolphin = EmuState { retroarch: true, ..DOLPHIN };
+        assert_eq!(change(NONE, ra_dolphin, Mode::Pointer), Some((Mode::Dolphin, Reason::DolphinOpened)));
+        assert_eq!(change(RETROARCH, ra_dolphin, Mode::RetroArch), Some((Mode::Dolphin, Reason::DolphinOpened)));
+        assert_eq!(change(ra_dolphin, DOLPHIN, Mode::RetroArch), Some((Mode::Dolphin, Reason::RetroArchClosed)));
+        assert_eq!(change(ra_dolphin, RETROARCH, Mode::Dolphin), Some((Mode::RetroArch, Reason::DolphinClosed)));
+        let ra_eden = EmuState { retroarch: true, eden: true, ..NONE };
+        assert_eq!(change(ra_eden, RETROARCH, Mode::Switch), Some((Mode::RetroArch, Reason::EdenClosed)));
+        assert_eq!(change(ra_eden, EmuState { eden: true, ..NONE }, Mode::RetroArch), Some((Mode::Switch, Reason::RetroArchClosed)));
+        // cerrar RetroArch cuando no manda no cambia nada
+        assert_eq!(change(RETROARCH, NONE, Mode::Pointer), None);
+        assert_eq!(change(ra_dolphin, DOLPHIN, Mode::Dolphin), None);
+        let n = |p, now, m| notice(next(p, now, m, true, true).unwrap());
+        assert_eq!(n(NONE, RETROARCH, Mode::Pointer), "RetroArch abierto: modo RetroArch");
+        assert_eq!(n(RETROARCH, NONE, Mode::RetroArch), "RetroArch cerrado: modo puntero");
+        assert_eq!(n(ra_dolphin, DOLPHIN, Mode::RetroArch), "RetroArch cerrado: modo Dolphin (Dolphin sigue abierto)");
+        assert_eq!(n(ra_dolphin, RETROARCH, Mode::Dolphin), "Dolphin cerrado: modo RetroArch (RetroArch sigue abierto)");
     }
 
     #[test]
@@ -264,7 +310,7 @@ mod tests {
 
     #[test]
     fn sin_flanco_nada() {
-        for s in [NONE, DOLPHIN, CEMU, BOTH] {
+        for s in [NONE, DOLPHIN, CEMU, BOTH, RETROARCH] {
             for m in Mode::ALL {
                 assert_eq!(change(s, s, m), None, "{s:?} {m:?}");
             }
