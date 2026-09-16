@@ -62,6 +62,34 @@ object AppPrefs {
             .edit().putBoolean("ownNunchuk", value).apply()
     }
 
+    const val MOTION_AUTO = ""
+    const val MOTION_GYRO = "gyro"
+    const val MOTION_ACCEL = "accel"
+
+    /**
+     * Sensor con el que el puntero mueve el cursor: "" (automático: giroscopio
+     * si es real, si no acelerómetro), "gyro" o "accel"
+     * ([dev.pepotech.pepomote.sensor.MotionSource]).
+     */
+    fun motionSource(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("motionSource", MOTION_AUTO) ?: MOTION_AUTO
+
+    fun setMotionSource(context: Context, value: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString("motionSource", value).apply()
+    }
+
+    /** El aviso de «sin giroscopio real» del modo puntero ya se enseñó (una vez por instalación). */
+    fun gyroWarnShown(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("gyroWarnShown", false)
+
+    fun setGyroWarnShown(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("gyroWarnShown", true).apply()
+    }
+
     /**
      * Lado de un mando apaisado fijo ([dev.pepotech.pepomote.service.LandscapeSide]):
      * "" hasta que se elige la primera vez; "left", "right" o "sensor"

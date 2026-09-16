@@ -85,29 +85,98 @@ fun PrecisionPill(modifier: Modifier) {
 }
 
 /**
- * Mantener = bit de precisión; háptico y tic al activar. El gesto sigue al
- * dedo hasta que lo levanta, aunque se salga de la tira (como la de scroll);
- * el `finally` suelta el bit también si el gesto se cancela (ACTION_CANCEL,
- * cambio de pantalla): sin él el puntero se quedaría al 40 % para siempre.
+ * Acercar (PROTOCOL.md §4.2, bit 30): mientras se mantiene, el receptor
+ * acerca el Mando de Wii emulado a la pantalla (juegos de Wii que piden
+ * acercar el mando, como los microjuegos de WarioWare). Ocupa el sitio de la
+ * precisión en modo Dolphin, donde esta no hace nada. Mismo gesto: mantener,
+ * aunque el dedo se salga.
  */
+@Composable
+fun NearStrip(modifier: Modifier, glyph: Dp = 16.dp) {
+    val view = LocalView.current
+    var active by remember { mutableStateOf(false) }
+    Box(
+        modifier = modifier
+            .padding(start = 6.dp)
+            .background(
+                if (active) PepoColors.Glow else PepoColors.CardBorder,
+                RoundedCornerShape(15.dp)
+            )
+            .holdBit(view, ButtonState.NEAR) { active = it },
+        contentAlignment = Alignment.Center
+    ) {
+        NearGlyph(PepoColors.TextDim, glyph)
+    }
+}
+
+/** Píldora «Acercar» de los mandos apaisados en Dolphin (mismo gesto: mantener). */
+@Composable
+fun NearPill(modifier: Modifier) {
+    val view = LocalView.current
+    var active by remember { mutableStateOf(false) }
+    Row(
+        modifier = modifier
+            .height(34.dp)
+            .background(
+                if (active) PepoColors.Glow else PepoColors.CardBorder,
+                RoundedCornerShape(17.dp)
+            )
+            .holdBit(view, ButtonState.NEAR) { active = it }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        NearGlyph(PepoColors.TextDim, 14.dp)
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.near), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** Mantener = bit de precisión (ver `holdBit`). */
 private fun Modifier.precisionHold(view: View, onActive: (Boolean) -> Unit): Modifier =
-    pointerInput(Unit) {
+    holdBit(view, ButtonState.PRECISION, onActive)
+
+/**
+ * Mantener = un bit sostenido (precisión, acercar); háptico y tic al
+ * activar. El gesto sigue al dedo hasta que lo levanta, aunque se salga de
+ * la tira (como la de scroll); el `finally` suelta el bit también si el
+ * gesto se cancela (ACTION_CANCEL, cambio de pantalla): sin él el puntero se
+ * quedaría al 40 % (o el mando pegado a la pantalla) para siempre. Clave
+ * `bit`: si la tira cambia de bit al cambiar de modo, el gesto se rehace.
+ */
+private fun Modifier.holdBit(view: View, bit: Int, onActive: (Boolean) -> Unit): Modifier =
+    pointerInput(bit) {
         awaitEachGesture {
             val down = awaitFirstDown()
             down.consume()
             try {
                 onActive(true)
-                ButtonState.set(ButtonState.PRECISION, true)
+                ButtonState.set(bit, true)
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 UiSounds.tick()
                 // hasta levantar el dedo: sin umbral de arrastre ni límites
                 drag(down.id) { it.consume() }
             } finally {
                 onActive(false)
-                ButtonState.set(ButtonState.PRECISION, false)
+                ButtonState.set(bit, false)
             }
         }
     }
+
+/** Pantalla (barra arriba) y flecha que se le acerca: el glifo de «Acercar». */
+@Composable
+private fun NearGlyph(color: Color, size: Dp) {
+    Canvas(Modifier.size(size)) {
+        val px = size.toPx()
+        val stroke = px * 0.11f
+        val cx = px / 2f
+        // la pantalla: barra horizontal arriba
+        drawLine(color, Offset(px * 0.15f, px * 0.14f), Offset(px * 0.85f, px * 0.14f), strokeWidth = stroke, cap = StrokeCap.Round)
+        // la flecha: asta y punta hacia la barra
+        drawLine(color, Offset(cx, px * 0.90f), Offset(cx, px * 0.34f), strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(cx - px * 0.22f, px * 0.54f), Offset(cx, px * 0.32f), strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(cx + px * 0.22f, px * 0.54f), Offset(cx, px * 0.32f), strokeWidth = stroke, cap = StrokeCap.Round)
+    }
+}
 
 /** Mirilla de francotirador: aro, cuatro marcas que lo cruzan y punto central. */
 @Composable

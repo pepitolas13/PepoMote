@@ -4,7 +4,7 @@
 use crate::state::LockTolerant;
 use super::codec::{self, Packet};
 use super::Sessions;
-use crate::dsu::{Dsu, DsuProfile, MotionSample};
+use crate::dsu::{wii_ir, Dsu, DsuProfile, MotionSample, WiiIr};
 use crate::input::{self, KeyCode, MouseButton};
 use crate::pairing::PairingInfo;
 use crate::pointer::{PointerEngine, PointerOutput};
@@ -379,14 +379,17 @@ pub fn run(
                     }
                 }
 
-                let (mode, sens_deg, abs_mode, pad_wii) = {
+                let (mode, sens_deg, abs_mode, pad_wii, own_nunchuk) = {
                     let mut s = shared.lock_tolerant();
                     let mut pad_wii = false;
+                    let mut own_nunchuk = false;
                     if let Some(pl) = s.players[slot as usize].as_mut() {
                         pl.battery_pct = p.battery_pct;
+                        pl.tilt = p.flags & codec::FLAG_TILT != 0;
                         pad_wii = pl.pad_wii;
+                        own_nunchuk = pl.own_nunchuk;
                     }
-                    (s.mode, s.config.sens_deg, s.config.abs_mode, pad_wii)
+                    (s.mode, s.config.sens_deg, s.config.abs_mode, pad_wii, own_nunchuk)
                 };
 
                 if mode.feeds_dsu() {
@@ -396,7 +399,7 @@ pub fn run(
                     }
                     // Todos los jugadores al DSU, cada uno en su slot, INLINE
                     if let Some(dsu) = &dsu {
-                        let (profile, touch) = match mode {
+                        let (profile, touch, wii_ir) = match mode {
                             Mode::Cemu => {
                                 let touch = if role == Role::Wiimote && pad_wii {
                                     // Mando Wii en Cemu: su puntero IR es el
@@ -408,12 +411,23 @@ pub fn run(
                                 } else {
                                     gamepad_touch(&p)
                                 };
-                                (DsuProfile::WiiU, touch)
+                                (DsuProfile::WiiU, touch, None)
                             }
                             // Switch: el mismo paquete de 80 bytes que el
                             // GamePad, sin táctil (Eden no lo usa)
-                            Mode::Switch => (DsuProfile::Switch, None),
-                            _ => (DsuProfile::Wii, None),
+                            Mode::Switch => (DsuProfile::Switch, None, None),
+                            // Dolphin: los puntos IR del Mando Wii los genera
+                            // el receptor (perfil IRPassthrough, dsu/wii_ir.rs);
+                            // un Nunchuk no apunta
+                            _ => {
+                                let wii_ir = (role == Role::Wiimote).then(|| {
+                                    ir_engines
+                                        .entry(p.session_id)
+                                        .or_default()
+                                        .apply_wii(&p, screen_w, own_nunchuk)
+                                });
+                                (DsuProfile::Wii, None, wii_ir.flatten())
+                            }
                         };
                         dsu.push(
                             slot,
@@ -429,6 +443,7 @@ pub fn run(
                                 stick_rx: p.stick_rx,
                                 stick_ry: p.stick_ry,
                                 touch,
+                                wii_ir,
                                 profile,
                             },
                         );
@@ -483,38 +498,76 @@ fn gamepad_touch(p: &codec::InputPacket) -> Option<(u16, u16)> {
     Some((scale(p.touch_x, DSU_TOUCH_W), scale(p.touch_y, DSU_TOUCH_H)))
 }
 
-/// Puntero IR de un Mando Wii dentro de Cemu: el mismo motor absoluto que
-/// mueve el cursor del PC, pero su salida va al touchpad DSU. Fuera de la
-/// pantalla (con margen) el toque se apaga y el juego esconde el cursor.
+/// Puntero IR de un Mando Wii dentro de un emulador: el mismo motor absoluto
+/// que mueve el cursor del PC, pero su salida va por el DSU. En Cemu es el
+/// touchpad (Cemu lo lee como posición; fuera de la pantalla, con margen, el
+/// toque se apaga y el juego esconde el cursor). En Dolphin son los dos
+/// puntos de la barra sensora (dsu/wii_ir.rs), con la rampa de «acercar» y
+/// el roll del móvil.
 struct IrPointer {
     engine: PointerEngine,
-    last: Option<(u16, u16)>,
+    /// Último apuntado absoluto: (yaw, pitch) en grados respecto al
+    /// recentrado, positivo = derecha / arriba. Lo comparten Cemu y Dolphin:
+    /// el motor calla mientras el móvil está quieto («congelado»), así que al
+    /// cambiar de modo sin moverlo el puntero sigue donde estaba.
+    last_angles: Option<(f32, f32)>,
+    /// Dolphin: rampa de niveles del bit «acercar».
+    near: wii_ir::NearRamp,
 }
 
 impl Default for IrPointer {
     fn default() -> Self {
-        Self { engine: PointerEngine::new(), last: None }
+        Self { engine: PointerEngine::new(), last_angles: None, near: wii_ir::NearRamp::new() }
     }
 }
 
 impl IrPointer {
-    fn apply(&mut self, p: &codec::InputPacket, sens_deg: f32, aspect: f32, screen_w: f32) -> Option<(u16, u16)> {
+    /// Pasa el paquete por el motor y devuelve el apuntado en grados. La
+    /// salida absoluta del motor es lineal en `sens_deg` (grados que cubre el
+    /// ancho, y `sens_deg / aspect` el alto), así que se deshace aquí. Sin
+    /// quaternion (salida relativa) no hay apuntado absoluto que dar;
+    /// congelado en reposo se mantiene el último.
+    fn track(&mut self, p: &codec::InputPacket, sens_deg: f32, aspect: f32, screen_w: f32) -> Option<(f32, f32)> {
         match self.engine.apply(p, sens_deg, aspect, true, screen_w, false) {
             PointerOutput::Abs { nx, ny } => {
-                let on_screen = (-0.05..=1.05).contains(&nx) && (-0.05..=1.05).contains(&ny);
-                self.last = on_screen.then(|| {
-                    (
-                        (nx.clamp(0.0, 1.0) * DSU_TOUCH_W).round() as u16,
-                        (ny.clamp(0.0, 1.0) * DSU_TOUCH_H).round() as u16,
-                    )
-                });
+                self.last_angles = Some(((nx - 0.5) * sens_deg, (0.5 - ny) * sens_deg / aspect));
             }
-            // sin quaternion no hay apuntado absoluto que dar
-            PointerOutput::Rel { .. } => self.last = None,
-            // congelado en reposo: se mantiene la última posición
+            PointerOutput::Rel { .. } => self.last_angles = None,
             PointerOutput::None => {}
         }
-        self.last
+        self.last_angles
+    }
+
+    /// Dolphin: los puntos IR de este paquete (`wii_ir::encode`, la cámara
+    /// que Dolphin sintetiza). `own_nunchuk`: Left X es el stick del Nunchuk
+    /// propio, el par va sin roll. Sin quaternion utilizable el roll es 0.
+    fn apply_wii(&mut self, p: &codec::InputPacket, screen_w: f32, own_nunchuk: bool) -> Option<WiiIr> {
+        let angles = self.track(p, wii_ir::SENS_DEG, wii_ir::ASPECT, screen_w);
+        let level = self.near.update(p.buttons & codec::BTN_NEAR != 0, Instant::now());
+        let roll = if own_nunchuk {
+            None
+        } else if p.flags & codec::FLAG_QUAT_VALID != 0 && p.flags & codec::FLAG_TILT == 0 {
+            Some(wii_ir::roll_rad(p.quat))
+        } else {
+            Some(0.0)
+        };
+        let (yaw, pitch) = angles?;
+        wii_ir::encode(yaw, pitch, level, roll)
+    }
+
+    /// Cemu: el puntero como toque del touchpad DSU; fuera de la pantalla
+    /// (con margen) el toque se apaga y el juego esconde el cursor.
+    fn apply(&mut self, p: &codec::InputPacket, sens_deg: f32, aspect: f32, screen_w: f32) -> Option<(u16, u16)> {
+        let (yaw, pitch) = self.track(p, sens_deg, aspect, screen_w)?;
+        let nx = 0.5 + yaw / sens_deg;
+        let ny = 0.5 - pitch * aspect / sens_deg;
+        let on_screen = (-0.05..=1.05).contains(&nx) && (-0.05..=1.05).contains(&ny);
+        on_screen.then(|| {
+            (
+                (nx.clamp(0.0, 1.0) * DSU_TOUCH_W).round() as u16,
+                (ny.clamp(0.0, 1.0) * DSU_TOUCH_H).round() as u16,
+            )
+        })
     }
 }
 

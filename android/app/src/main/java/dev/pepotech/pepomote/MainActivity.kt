@@ -48,6 +48,7 @@ import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.control.UpdateCheck
+import dev.pepotech.pepomote.service.RotationSuggester
 import dev.pepotech.pepomote.service.UpdateNotice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -339,6 +340,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemBars()
+        RotationSuggester.start(this)
+    }
+
+    override fun onPause() {
+        RotationSuggester.stop()
+        super.onPause()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -494,11 +501,12 @@ private fun Root(activity: MainActivity) {
     }
 
     // Orientación: el GamePad y el mando + Nunchuk de Dolphin van fijos en
-    // apaisado; todo lo demás gira únicamente si el giro automático del
-    // sistema está activo (con el bloqueo de giro puesto, la app no gira).
-    // Cada uno de los dos va hacia su lado elegido (Ajustes, o el que se
-    // confirme la primera vez: hasta entonces, el sensor). Al salir del
-    // mando, como estaba.
+    // apaisado; todo lo demás gira si el giro automático del sistema está
+    // activo y, con el bloqueo de giro puesto, solo si el usuario acepta la
+    // propuesta de girar (RotationSuggester: el móvil nota que lo has girado
+    // y te lo propone; nunca gira solo). Cada uno de los dos apaisados fijos
+    // va hacia su lado elegido (Ajustes, o el que se confirme la primera vez:
+    // hasta entonces, el sensor). Al salir del mando, como estaba.
     val padIntent by LinkState.intent.collectAsState()
     val nunchukSaved by NunchukSide.saved.collectAsState()
     val nunchukProvisional by NunchukSide.provisional.collectAsState()
@@ -510,9 +518,14 @@ private fun Root(activity: MainActivity) {
         Route.wiiLandscapeNunchuk(link) -> LandscapeSide.effective(nunchukSaved, nunchukProvisional)
         else -> LandscapeSide.effective(gamePadSaved, gamePadProvisional)
     }
-    LaunchedEffect(wantLandscape, landscapeSide) {
+    val freeOrientation = activity.currentScreen == Screen.Controller && !wantLandscape
+    LaunchedEffect(freeOrientation) {
+        RotationSuggester.active = freeOrientation
+    }
+    val acceptedOrientation by RotationSuggester.accepted.collectAsState()
+    LaunchedEffect(wantLandscape, landscapeSide, acceptedOrientation) {
         activity.requestedOrientation = when {
-            !wantLandscape -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            !wantLandscape -> acceptedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             else -> when (landscapeSide.orientation) {
                 LandscapeOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                 LandscapeOrientation.ReverseLandscape -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE

@@ -20,8 +20,8 @@ const MSG_VERSION: u32 = 0x100000;
 const MSG_PORT_INFO: u32 = 0x100001;
 const MSG_PAD_DATA: u32 = 0x100002;
 
-/// Clientes con registro caducable: Dolphin re-pide cada 1 s.
-const CLIENT_TTL: Duration = Duration::from_secs(3);
+use super::CLIENT_TTL;
+
 /// Con más de esto sin muestras del móvil, ese slot se reporta desconectado.
 const PAD_TTL: Duration = Duration::from_secs(1);
 
@@ -100,13 +100,10 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
                         }
                     }
                     MSG_PAD_DATA => {
-                        clients.lock_tolerant().insert(
-                            from,
-                            Client {
-                                last_seen: Instant::now(),
-                                slots: subscribed_slots(payload),
-                            },
-                        );
+                        // Se ACUMULA con lo que ese cliente ya pidió (Cemu pide
+                        // un pad por petición, desde un solo socket)
+                        let mask = subscribed_slots(payload);
+                        clients.lock_tolerant().entry(from).or_insert_with(Client::new).register(mask, Instant::now());
                     }
                     _ => {}
                 }
@@ -115,8 +112,9 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
 
         if last_sweep.elapsed() > Duration::from_secs(1) {
             last_sweep = Instant::now();
+            let now = Instant::now();
             let mut c = clients.lock_tolerant();
-            c.retain(|_, cl| cl.last_seen.elapsed() < CLIENT_TTL);
+            c.retain(|_, cl| cl.alive(CLIENT_TTL, now));
             shared.lock_tolerant().dsu_clients = c.len();
         }
     }
@@ -197,7 +195,7 @@ pub fn pad_data_packet(
         DsuProfile::WiiU => mapping::buttons_to_dsu_wiiu(sample.buttons),
         DsuProfile::Switch => mapping::buttons_to_dsu_switch(sample.buttons),
     };
-    // Botón Touch: en Wii es el pulso de recentrado (IMUPointer/Recenter);
+    // Botón Touch: en Wii es el pulso de recentrado (IMUIR/Recenter);
     // en Wii U es Home (Cemu lo lee como botón 16 e ignora el PS); en Switch
     // es Capturar (Eden: TouchHardPress). El pulso nunca llega a Cemu ni a Eden.
     let touch_btn = match sample.profile {
@@ -211,6 +209,37 @@ pub fn pad_data_packet(
         DsuProfile::WiiU | DsuProfile::Switch => b.touch,
     };
 
+    // Sticks LX LY RX RY (0-255, neutro 128; Y: 255 = arriba, "Left Y+" en
+    // Dolphin y AxisY+ en Cemu; Eden lee (v − 127) / 127, neutro 127):
+    // izquierdo = Nunchuk / stick izquierdo del GamePad, derecho = stick
+    // derecho del GamePad (neutro si no hay)
+    let center = sample.profile.stick_center();
+    let axis = |v: i8| (center + v as i32).clamp(0, 255) as u8;
+    let mut b1 = b.b1;
+    let mut sticks = [axis(sample.stick_x), axis(sample.stick_y), axis(sample.stick_rx), axis(sample.stick_ry)];
+    let mut shoulders = b.shoulders;
+    // Perfil Wii: el puntero IR que genera el receptor viaja en los bytes que
+    // ese perfil deja libres (protocol/DSU.md, «Puntero IR»): X del punto
+    // medio en Right X (mitad alta, 7 bits) + L2 (8 bits), Y en Right Y + R2,
+    // nivel de distancia en los bits L3/R3 y roll en Left X. Sin puntero
+    // (fuera de pantalla, sin quaternion) Right X = 0 es el centinela con el
+    // que el perfil apaga los dos puntos.
+    if sample.profile == DsuProfile::Wii {
+        match sample.wii_ir {
+            Some(ir) => {
+                sticks[2] = 128 + (ir.x >> 8).min(127) as u8;
+                sticks[3] = 128 + (ir.y >> 8).min(127) as u8;
+                shoulders[3] = (ir.x & 0xFF) as u8; // L2
+                shoulders[2] = (ir.y & 0xFF) as u8; // R2
+                b1 |= (ir.level & 0b11) << 1; // L3 = bit 1, R3 = bit 2
+                if let Some(r) = ir.roll {
+                    sticks[0] = r;
+                }
+            }
+            None => sticks[2] = 0,
+        }
+    }
+
     let mut p = Vec::with_capacity(84);
     p.extend_from_slice(&MSG_PAD_DATA.to_le_bytes());
     p.extend_from_slice(&pad_info(
@@ -220,20 +249,14 @@ pub fn pad_data_packet(
     ));
     p.push(1); // connected
     p.extend_from_slice(&counter.to_le_bytes());
-    p.push(b.b1);
+    p.push(b1);
     p.push(b.b2);
     p.push(b.ps);
     p.push(touch_btn);
-    // Sticks LX LY RX RY (0-255, neutro 128; Y: 255 = arriba, "Left Y+" en
-    // Dolphin y AxisY+ en Cemu; Eden lee (v − 127) / 127, neutro 127):
-    // izquierdo = Nunchuk / stick izquierdo del GamePad, derecho = stick
-    // derecho del GamePad (neutro si no hay)
-    let center = sample.profile.stick_center();
-    let axis = |v: i8| (center + v as i32).clamp(0, 255) as u8;
-    p.extend_from_slice(&[axis(sample.stick_x), axis(sample.stick_y), axis(sample.stick_rx), axis(sample.stick_ry)]);
+    p.extend_from_slice(&sticks);
     p.extend_from_slice(&b.dpad); // analógico L D R U ("Pad W/S/E/N")
     p.extend_from_slice(&b.face); // analógico square cross circle triangle
-    p.extend_from_slice(&b.shoulders); // analógico R1 L1 R2 L2 (Wii U: ZR/ZL en R2/L2)
+    p.extend_from_slice(&shoulders); // analógico R1 L1 R2 L2 (Wii U: ZR/ZL en R2/L2)
     // Touch 1: activo, id, x u16, y u16 (Cemu: pantalla táctil / puntero IR)
     match sample.touch {
         Some((x, y)) => {
@@ -260,6 +283,7 @@ pub fn pad_data_packet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsu::WiiIr;
 
     fn sample() -> MotionSample {
         MotionSample {
@@ -274,6 +298,7 @@ mod tests {
             stick_rx: 0,
             stick_ry: 0,
             touch: None,
+            wii_ir: None,
             profile: DsuProfile::Wii,
         }
     }
@@ -365,7 +390,7 @@ mod tests {
         s.stick_y = -50;
         let out = pad_data_packet(3, &s, false, 1);
         assert_eq!(out[20], 3); // slot del Nunchuk
-        assert_eq!(&out[40..44], &[228, 78, 128, 128], "LX/LY = 128 + stick, derecho neutro");
+        assert_eq!(&out[40..44], &[228, 78, 0, 128], "LX/LY = 128 + stick; Right X = 0 (sin puntero IR), RY neutro");
         assert_eq!(out[53], 0xFF, "C → L1 analógico");
         assert_eq!(out[52], 0xFF, "Z → R1 analógico");
         assert_eq!(&out[48..52], &[0u8; 4], "A/B intactos");
@@ -375,6 +400,55 @@ mod tests {
         s.stick_y = 127;
         let out = pad_data_packet(3, &s, false, 2);
         assert_eq!(&out[40..42], &[1, 255]);
+    }
+
+    #[test]
+    fn pad_data_puntero_ir_del_perfil_wii() {
+        let mut s = sample();
+        s.wii_ir = Some(WiiIr { x: 0x2ABC, y: 0x1234, level: 3, roll: Some(200) });
+        let out = pad_data_packet(0, &s, false, 1);
+        assert_eq!(&out[40..44], &[200, 128, 128 + 0x2A, 128 + 0x12], "LX = roll, RX/RY = 128 + byte alto");
+        assert_eq!((out[55], out[54]), (0xBC, 0x34), "L2/R2 = byte bajo de X/Y");
+        assert_eq!(out[36] & 0b110, 0b110, "nivel 3 = L3 + R3");
+        // nivel 1: solo L3; sin roll, Left X sigue siendo el stick (neutro)
+        s.wii_ir = Some(WiiIr { x: 0, y: 32767, level: 1, roll: None });
+        let out = pad_data_packet(0, &s, false, 2);
+        assert_eq!(&out[40..44], &[128, 128, 128, 255]);
+        assert_eq!((out[55], out[54]), (0, 0xFF));
+        assert_eq!(out[36] & 0b110, 0b010);
+        // sin puntero: centinela Right X = 0 y lo demás neutro
+        s.wii_ir = None;
+        let out = pad_data_packet(0, &s, false, 3);
+        assert_eq!(&out[40..44], &[128, 128, 0, 128]);
+        assert_eq!((out[55], out[54]), (0, 0));
+        assert_eq!(out[36] & 0b110, 0);
+        // en Wii U el puntero IR va por el táctil: estos bytes no se tocan
+        s.profile = DsuProfile::WiiU;
+        s.wii_ir = Some(WiiIr { x: 0x2ABC, y: 0x1234, level: 3, roll: Some(200) });
+        let out = pad_data_packet(0, &s, false, 4);
+        assert_eq!(&out[40..44], &[128; 4]);
+        assert_eq!((out[55], out[54]), (0, 0));
+        assert_eq!(out[36] & 0b110, 0);
+    }
+
+    /// El perfil reconstruye X con `Right X+`·32512 + `L2`·255 sobre 32767
+    /// (Dolphin: `Right X+` = (byte − 128)/127 con los negativos a 0, `L2` =
+    /// byte/255): tiene que salir la misma X con error muy por debajo de un
+    /// píxel de cámara (1023 × 767).
+    #[test]
+    fn el_puntero_ir_se_reconstruye_en_dolphin_sin_perder_pixeles() {
+        for x in [0u16, 1, 255, 256, 12345, 32511, 32512, 32766, 32767] {
+            let y = 32767 - x;
+            let mut s = sample();
+            s.wii_ir = Some(WiiIr { x, y, level: 0, roll: None });
+            let out = pad_data_packet(0, &s, false, 1);
+            let plus = |byte: u8| ((byte as f64 - 128.0) / 127.0).max(0.0);
+            let mx = (plus(out[42]) * 32512.0 + out[55] as f64 / 255.0 * 255.0) / 32767.0;
+            let my = (plus(out[43]) * 32512.0 + out[54] as f64 / 255.0 * 255.0) / 32767.0;
+            assert!((mx - x as f64 / 32767.0).abs() * 1023.0 < 0.01, "x={x} mx={mx}");
+            assert!((my - y as f64 / 32767.0).abs() * 767.0 < 0.01, "y={y} my={my}");
+            assert!(out[42] != 0, "un punto visible nunca manda el centinela");
+        }
     }
 
     #[test]
@@ -403,7 +477,7 @@ mod tests {
         assert_eq!(u32::from_le_bytes(out[32..36].try_into().unwrap()), 42);
         assert_eq!(out[37] & (1 << 6), 1 << 6); // A → Cross (bitmask)
         assert_eq!(out[39], 0xFF); // pulso de recentrado en Touch
-        assert_eq!(&out[40..44], &[128, 128, 128, 128]);
+        assert_eq!(&out[40..44], &[128, 128, 0, 128], "sin puntero IR: Right X = 0 (centinela)");
         assert_eq!(out[49], 0xFF); // Cross analógico
         assert_eq!(out[48], 0);
         assert_eq!(
@@ -439,6 +513,31 @@ mod tests {
         assert_eq!(live[1], 2, "slot 1 con muestra fresca = conectado");
         assert_eq!(live[0], 1);
         assert_eq!(&live[4..10], &[0x50, 0x4D, 0x50, 0x31, 0x00, 0x01]);
+    }
+
+    #[test]
+    fn las_peticiones_por_slot_de_un_mismo_cliente_se_acumulan() {
+        // Cemu: un socket, un pad por petición, y en cada respuesta vuelve a
+        // pedir ESE pad. Sustituir la suscripción dejaba al otro mando sin
+        // datos (dos Mandos Wii en Cemu: uno «desconectado»).
+        let t0 = Instant::now();
+        let mut c = Client::new();
+        c.register(subscribed_slots(&[1, 0, 0, 0, 0, 0, 0, 0]), t0);
+        c.register(subscribed_slots(&[1, 1, 0, 0, 0, 0, 0, 0]), t0);
+        assert!(c.wants(0, CLIENT_TTL, t0) && c.wants(1, CLIENT_TTL, t0), "los dos pads pedidos siguen los dos");
+        assert!(!c.wants(2, CLIENT_TTL, t0) && !c.wants(9, CLIENT_TTL, t0));
+        // cada slot caduca por su cuenta: el 1 se sigue pidiendo, el 0 no
+        let t1 = t0 + Duration::from_secs(2);
+        c.register(0b0010, t1);
+        let t2 = t0 + Duration::from_millis(3500);
+        assert!(!c.wants(0, CLIENT_TTL, t2), "el slot 0 caducó a los 3 s");
+        assert!(c.wants(1, CLIENT_TTL, t2) && c.alive(CLIENT_TTL, t2));
+        // «todos» (flags 0, Dolphin) cuenta para todos los slots
+        c.register(subscribed_slots(&[0]), t2);
+        assert!((0..MAX_PLAYERS).all(|s| c.wants(s, CLIENT_TTL, t2)));
+        // sin peticiones en 3 s, el cliente se da por ido
+        let t3 = t2 + Duration::from_secs(4);
+        assert!(!c.alive(CLIENT_TTL, t3));
     }
 
     #[test]

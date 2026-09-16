@@ -114,6 +114,22 @@
     <string name="update_dismiss">Hide</string>
     <string name="about">PepoMote %1$s · GPL-3.0 · made by PepoTech</string>
 
+    <!-- pointer sensor (phones without a real gyroscope) -->
+    <string name="motion_title">Pointer sensor</string>
+    <string name="motion_sub">What the phone moves the cursor with. Gyroscope: you aim and the cursor goes where you point. Accelerometer and derived: you tilt the phone sideways and up or down, for phones without a real gyroscope</string>
+    <string name="motion_gyro">Gyroscope (recommended)</string>
+    <string name="motion_accel">Accelerometer and derived</string>
+    <string name="motion_status_real">Your phone has a real gyroscope (%1$s)</string>
+    <string name="motion_status_virtual">Your phone has no real gyroscope: it exposes a similar one (%1$s), derived from the accelerometer, which may drift, lag or behave inconsistently. Accelerometer is recommended for this phone</string>
+    <string name="motion_status_none">Your phone has no gyroscope: the pointer can only work by tilting (accelerometer)</string>
+    <string name="gyro_warn_title_virtual">Your phone has no real gyroscope</string>
+    <string name="gyro_warn_title_none">Your phone has no gyroscope</string>
+    <string name="gyro_warn_body_virtual">It has a similar sensor, derived from the accelerometer, which is not guaranteed to be free of drift, lag or inconsistencies. PepoMote will use the accelerometer: tilt the phone sideways and up or down to move the cursor. The sensor is chosen in Settings</string>
+    <string name="gyro_warn_body_none">PepoMote will use the accelerometer: tilt the phone sideways and up or down to move the cursor. The sensor is chosen in Settings</string>
+    <string name="gyro_warn_body_manual_gyro">You chose its similar sensor (derived from the accelerometer): it may drift, lag or behave inconsistently, and on many phones the cursor only moves up and down. If it does not work well, choose Accelerometer in Settings</string>
+    <string name="gyro_warn_body_old_receiver">Pointing by tilting (accelerometer) needs PepoMote updated on the PC. With this receiver the cursor may only move vertically</string>
+    <string name="gyro_warn_ok">Got it</string>
+
     <!-- first run -->
     <string name="onboarding_sub">Your phone, your PC\'s controller in 3 steps</string>
     <string name="ob1_title">Choose where to play</string>
@@ -121,7 +137,7 @@
     <string name="ob2_title">Scan the QR</string>
     <string name="ob2_body">On the controller phone: Connect → scan the receiver QR code. Use the same Wi-Fi on both devices.</string>
     <string name="ob3_title">Point. Click. Play.</string>
-    <string name="ob3_body">With a gyroscope, point like a Wii Remote. Without one, you can play with buttons, sticks and touch controls.</string>
+    <string name="ob3_body">With a gyroscope, point like a Wii Remote. Without a real one, the pointer works by tilting (the app tells you); and you can always play with buttons, sticks and touch controls.</string>
     <string name="lets_go">Let\'s go!</string>
 
     <!-- controller -->
@@ -145,6 +161,10 @@
     <string name="nunchuk_line">Nunchuk · Player %1$d · %2$s</string>
     <string name="nunchuk_help">On Wii U the Nunchuk only works if the controller picks Wii Remote</string>
     <string name="precision">Precision</string>
+    <string name="near">Closer</string>
+    <string name="recenter">Recenter the pointer (hold)</string>
+    <string name="rotate_to_landscape">Rotate the screen</string>
+    <string name="rotate_to_portrait">Back to portrait</string>
 
     <!-- GamePad -->
     <string name="activating_wiiu">Activating Wii U…</string>

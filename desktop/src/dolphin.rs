@@ -22,7 +22,10 @@ use crate::tr;
 static CONFIGURE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Mapeo validado contra Dolphin real (h3): botones por bytes analógicos,
-/// cruceta "Pad N/S/W/E", IMU completo y recentrado por botón Touch.
+/// cruceta "Pad N/S/W/E", IMU completo y recentrado por botón Touch. El
+/// puntero IMU de Dolphin es el grupo `IMUIR` (así se llama en su código;
+/// un `IMUPointer/...` se ignora en silencio): queda como respaldo para un
+/// Dolphin sin passthrough (anterior a 2407), ver `ir_passthrough`.
 /// {DEV} = índice de pad del cliente DSU (slot).
 const MAPPING: &str = "Device = DSUClient/{DEV}/PepoMote
 Source = 1
@@ -50,12 +53,58 @@ IMUGyroscope/Roll Right = `Gyro Roll Right`
 IMUGyroscope/Yaw Left = `Gyro Yaw Left`
 IMUGyroscope/Yaw Right = `Gyro Yaw Right`
 IMUGyroscope/Dead Zone = 3.
-IMUPointer/Enabled = True
-IMUPointer/Recenter = `Touch Button`
-IMUPointer/Total Yaw = 25.000000000000000
-IMUPointer/Total Pitch = 20.000000000000000
+IMUIR/Enabled = True
+IMUIR/Recenter = `Touch Button`
+IMUIR/Total Yaw = 25.000000000000000
 Options/Battery = `Battery`
 ";
+
+/// Puntero IR por passthrough (grupo `IRPassthrough`, Dolphin ≥ 2407): el
+/// receptor genera los dos puntos de la barra sensora con su motor de
+/// puntero (el mismo que en Cemu) y el perfil los reconstruye de los bytes
+/// DSU que el perfil Wii deja libres (protocol/DSU.md, «Puntero IR»). Así
+/// el mando puede acercarse a la pantalla (juegos que lo piden: WarioWare)
+/// y el par gira con el roll del móvil. Con passthrough ligado Dolphin
+/// ignora su puntero IMU; un Dolphin anterior ignora estas claves y sigue
+/// con `IMUIR`.
+///
+/// Entradas del cliente DSU de Dolphin: `Right X+` = (byte − 128)/127 (los
+/// negativos se recortan a 0), `L2` = byte/255, `L3`/`R3` bits del byte 36.
+/// X del punto medio = byte alto (7 bits, mitad positiva de Right X) y bajo
+/// (L2) sobre 32767; Y igual con Right Y y R2.
+const IR_MX: &str = "(`Right X+`*32512 + `L2`*255)/32767";
+const IR_MY: &str = "(`Right Y+`*32512 + `R2`*255)/32767";
+/// Separación del par (fracción del ancho de cámara) por nivel L3 + 2·R3:
+/// 0,13 / 0,20 / 0,31 / 0,47 = LEDs a 0,2 m vistos con 42° de campo a
+/// 2,0 / 1,3 / 0,85 / 0,55 m (lo que Dolphin sintetiza a 2 m es 0,130).
+const IR_SEP: &str = "(0.13 + `L3`*0.07 + `R3`*0.18 + `L3`*`R3`*0.09)";
+/// Tamaño del punto 1..4 (de 15) según el nivel, como el ajuste de Dolphin
+/// a esas distancias; Right X = 0 (`Right X-` = 1) es el centinela «fuera de
+/// pantalla»: tamaño 0 = no hay punto.
+const IR_SIZE: &str = "if(`Right X-` > 0.999, 0, (1 + `L3` + `R3`*2)/15)";
+/// Roll del mando en Left X (byte 128..255 = −90°..+90°, en radianes).
+const IR_ROLL: &str = "((`Left X+` - 0.5)*3.14159)";
+
+/// Bloque `IRPassthrough/...` del perfil. `roll`: el par gira con Left X;
+/// sin él (Nunchuk en el mismo pad: Left X es su stick) va horizontal. La Y
+/// del giro lleva ×1,3333 (1023/767: la cámara es 4:3 y las fracciones son
+/// por eje). Objetos 3 y 4 sin ligar: no existen.
+fn ir_passthrough(roll: bool) -> String {
+    let (dx, dy) = if roll {
+        (format!("{IR_SEP}/2*cos({IR_ROLL})"), format!("{IR_SEP}/2*sin({IR_ROLL})*1.3333"))
+    } else {
+        (format!("{IR_SEP}/2"), "0".to_owned())
+    };
+    format!(
+        "IRPassthrough/Enabled = True\n\
+         IRPassthrough/Object 1 X = {IR_MX} - {dx}\n\
+         IRPassthrough/Object 1 Y = {IR_MY} - {dy}\n\
+         IRPassthrough/Object 1 Size = {IR_SIZE}\n\
+         IRPassthrough/Object 2 X = {IR_MX} + {dx}\n\
+         IRPassthrough/Object 2 Y = {IR_MY} + {dy}\n\
+         IRPassthrough/Object 2 Size = {IR_SIZE}\n"
+    )
+}
 
 /// Nunchuk emulado alimentado por un pad DSU ({NDEV} = su slot: el del OTRO
 /// móvil, o el mismo pad del mando si el Nunchuk va en el mismo móvil):
@@ -580,6 +629,10 @@ pub fn write_wiimotes(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
             .lines()
             .map(|l| l.to_owned())
             .collect();
+        // Puntero IR por passthrough: con roll salvo que el Nunchuk vaya en
+        // este mismo pad (entonces Left X es su stick)
+        let roll = *nslot != Some(*wslot);
+        body.extend(ir_passthrough(roll).lines().map(|l| l.to_owned()));
         match nslot {
             Some(ns) => body.extend(NUNCHUK_MAPPING.replace("{NDEV}", &ns.to_string()).lines().map(|l| l.to_owned())),
             None => body.push("Extension = None".to_owned()),
@@ -1081,6 +1134,40 @@ Source = 1
 "));
         assert_eq!(out.matches("Extension = Nunchuk").count(), 1);
         assert!(!out.contains("Extension = None"));
+        // Nunchuk en el mismo pad: Left X es su stick, el par IR va sin roll
+        assert!(out.contains("IRPassthrough/Object 1 X = (`Right X+`*32512 + `L2`*255)/32767 - (0.13 + `L3`*0.07 + `R3`*0.18 + `L3`*`R3`*0.09)/2
+"), "{out}");
+        assert!(out.contains("IRPassthrough/Object 2 Y = (`Right Y+`*32512 + `R2`*255)/32767 + 0
+"), "{out}");
+        assert!(!out.contains("cos("), "{out}");
+    }
+
+    #[test]
+    fn puntero_ir_por_passthrough_y_grupo_imuir() {
+        let dir = tmp_dir("ir");
+        write_wiimotes(&dir, &[(0, None), (1, Some(3))]).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        // el puntero IMU de Dolphin es el grupo IMUIR (IMUPointer no existe)
+        assert!(out.contains("IMUIR/Enabled = True
+"), "{out}");
+        assert!(out.contains("IMUIR/Recenter = `Touch Button`
+"));
+        assert!(out.contains("IMUIR/Total Yaw = 25.000000000000000
+"));
+        assert!(!out.contains("IMUPointer"), "{out}");
+        // passthrough: X = byte alto (Right X, mitad positiva) + bajo (L2); el
+        // par se separa por nivel (L3/R3) y gira con el roll de Left X
+        assert!(out.contains("IRPassthrough/Enabled = True
+"), "{out}");
+        assert!(out.contains("IRPassthrough/Object 1 X = (`Right X+`*32512 + `L2`*255)/32767 - (0.13 + `L3`*0.07 + `R3`*0.18 + `L3`*`R3`*0.09)/2*cos(((`Left X+` - 0.5)*3.14159))
+"), "{out}");
+        assert!(out.contains("IRPassthrough/Object 2 Y = (`Right Y+`*32512 + `R2`*255)/32767 + (0.13 + `L3`*0.07 + `R3`*0.18 + `L3`*`R3`*0.09)/2*sin(((`Left X+` - 0.5)*3.14159))*1.3333
+"), "{out}");
+        assert!(out.contains("IRPassthrough/Object 1 Size = if(`Right X-` > 0.999, 0, (1 + `L3` + `R3`*2)/15)
+"), "{out}");
+        assert_eq!(out.matches("IRPassthrough/Enabled = True").count(), 2, "uno por mando");
+        assert_eq!(out.matches("cos(").count(), 4, "los dos mandos giran (Nunchuk en OTRO pad)");
+        assert!(!out.contains("Object 3"));
     }
 
     #[test]

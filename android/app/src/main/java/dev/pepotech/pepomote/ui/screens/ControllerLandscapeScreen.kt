@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
@@ -41,9 +42,11 @@ import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PadSelector
+import dev.pepotech.pepomote.ui.components.NearPill
 import dev.pepotech.pepomote.ui.components.PrecisionPill
 import dev.pepotech.pepomote.ui.components.PriorityRow
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
+import dev.pepotech.pepomote.ui.components.RotateSuggestion
 import dev.pepotech.pepomote.ui.components.RoundButton
 import dev.pepotech.pepomote.ui.components.UiScale
 import dev.pepotech.pepomote.ui.theme.PepoColors
@@ -171,19 +174,41 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             PadCross(sizeDp = 190.dp * s, sideways = Route.sidewaysDpad(link))
         }
 
-        // − / + / A centro (un 20 % más grandes que en la primera versión:
-        // de lado se pulsan con el pulgar y quedaban pequeños)
+        // − / ◎ / + y A en el centro (un 20 % más grandes que en la primera
+        // versión: de lado se pulsan con el pulgar y quedaban pequeños). La
+        // diana, como en el mando vertical y en el mando + Nunchuk: mantener
+        // recentra el cursor (puntero) o el puntero IR (Dolphin, Mando de Wii
+        // en Cemu), que de lado también se apunta. Home, pequeño, a la derecha
+        // de A y fuera del modo puntero (el PC no le da uso): como en el Mando
+        // de Wii de lado, donde −/Home/+ quedan entre A y 1/2; Dolphin abre con
+        // él el menú HOME y Mario Party 10 lo pide para emparejar cada mando
         Column(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp * s)
         ) {
             Spacer(Modifier.height(20.dp * s))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp * s)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp * s),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 RoundButton("−", 53.dp * s, ButtonState.MINUS, textSize = (19 * s).roundToInt())
+                RecenterButton(size = 54.dp * s)
                 RoundButton("+", 53.dp * s, ButtonState.PLUS, textSize = (19 * s).roundToInt())
             }
-            RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
+            if (showHomeButton(link)) {
+                // un hueco igual a la izquierda deja A centrada bajo la diana
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(14.dp * s),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Spacer(Modifier.size(40.dp * s))
+                    RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
+                    RoundButton(stringResource(R.string.home_btn), 40.dp * s, ButtonState.HOME, textSize = (11 * s).roundToInt())
+                }
+            } else {
+                RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
+            }
         }
 
         // 1 y 2 grandes a la derecha (los botones de acción del modo NES)
@@ -218,17 +243,25 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 .padding(bottom = 8.dp)
         )
 
-        PrecisionPill(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 6.dp)
-        )
+        // En Dolphin la precisión no hace nada: la píldora es «Acercar»
+        val pill = Modifier
+            .align(Alignment.BottomStart)
+            .padding(start = 16.dp, bottom = 6.dp)
+        if (isDolphin(link)) NearPill(modifier = pill) else PrecisionPill(modifier = pill)
 
-        NoticeBanner(
+        // Aviso de «sin giroscopio real» (una vez, en modo puntero: de lado
+        // también se apunta) y, debajo, los avisos transitorios del receptor
+        Column(
             Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 84.dp)
-        )
+                .padding(top = 84.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            RotateSuggestion()
+            GyroWarnCard(link)
+            NoticeBanner()
+        }
 
         if (keyboardOpen) {
             KeyboardDialog(

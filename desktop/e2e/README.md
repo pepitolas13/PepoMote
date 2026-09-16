@@ -30,6 +30,11 @@ en el entorno:
   Dolphin.
 - `python e2e_nunchuk.py` — Nunchuk en modo Dolphin: slots, emparejamiento,
   stick/C/Z en su pad DSU.
+- `python e2e_dolphin_ir.py` — puntero IR del perfil Wii (Dolphin ≥ 2407,
+  `protocol/DSU.md`): el sentido de los ejes cruzado con el Mando Wii de
+  Cemu (mismo motor), yaw/pitch/roll con giroscopio y quaternion coherentes,
+  «acercar» (bit 30) en rampa, fuera de cámara (centinela), Nunchuk propio
+  sin roll y el `WiimoteNew.ini` escrito (IRPassthrough + IMUIR).
 - `python e2e_screen.py <segundos> <salida.jpg>` — canal de pantalla (doble
   pantalla del GamePad): sesión mala rechazada, apertura, tramas. Con Cemu
   abierto y su ventana GamePad View a la vista (por ejemplo

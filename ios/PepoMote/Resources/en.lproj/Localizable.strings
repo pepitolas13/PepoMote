@@ -130,6 +130,7 @@
 "nunchuk_line" = "Nunchuk · Player %1$d · %2$@";
 "nunchuk_help" = "On Wii U the Nunchuk only works if the controller picks Wii Remote";
 "precision" = "Precision";
+"near" = "Closer";
 
 /* GamePad */
 "activating_wiiu" = "Activating Wii U…";

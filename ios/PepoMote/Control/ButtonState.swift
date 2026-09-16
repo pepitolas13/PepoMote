@@ -38,6 +38,9 @@ enum Btn {
     static let screen: UInt32 = 1 << 28
     /// Precisión (modo puntero): mientras se mantiene, el cursor va al 40 %.
     static let precision: UInt32 = 1 << 29
+    /// Acercar (modo Dolphin): mientras se mantiene, el receptor acerca el
+    /// Mando de Wii emulado a la pantalla (juegos que piden acercar el mando).
+    static let near: UInt32 = 1 << 30
 
     /// Cruceta con el mando de lado (NES): un juego «de lado» espera un Mando
     /// de Wii girado con el extremo IR a la izquierda y aplica él mismo el

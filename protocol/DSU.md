@@ -28,7 +28,7 @@ gyro_dsu  = gyro_android · 180 / π
 
 - Emitir un PadData por cada INPUT recibido, tope 250 Hz.
 - Dolphin re-envía sus peticiones (PortInfo/PadData) cada 1 s. Expirar el registro de un cliente a los 3 s sin re-petición.
-- **La petición PadData lleva suscripción** (tras el tipo: `flags` u8, `pad_id` u8, `mac` [6]): `flags=0` = todos los pads; bit0 = solo `pad_id`; bit1 = solo la MAC (combinables). HAY QUE HONRARLA: Dolphin abre un socket UDP por mando y se registra con `flags=1, pad_id=índice`, y al recibir NO filtra por slot (se queda con el último PadData que entre por ese socket). Enviar todos los slots a todos los sockets hace que cada Wiimote se mueva con todos los móviles a la vez (bug real de v1.1.0 con dos jugadores).
+- **La petición PadData lleva suscripción** (tras el tipo: `flags` u8, `pad_id` u8, `mac` [6]): `flags=0` = todos los pads; bit0 = solo `pad_id`; bit1 = solo la MAC (combinables). HAY QUE HONRARLA: Dolphin abre un socket UDP por mando y se registra con `flags=1, pad_id=índice`, y al recibir NO filtra por slot (se queda con el último PadData que entre por ese socket). Enviar todos los slots a todos los sockets hace que cada Wiimote se mueva con todos los móviles a la vez (bug real de v1.1.0 con dos jugadores). Y las peticiones de un mismo socket se ACUMULAN, cada slot con su propia caducidad de 3 s: Cemu usa un solo socket para todos sus mandos, pide cada pad por separado (`flags=1`) y, en cuanto recibe un PadData, vuelve a pedir ese mismo pad; si cada petición sustituyera a la anterior solo saldría el último pad pedido y el otro mando aparecería desconectado en el juego (bug real de 1.8.1 con dos Mandos Wii en Cemu).
 - Responder peticiones de versión con 1001.
 
 ## Mapeo de ejes (móvil en mano como mando: pantalla arriba, borde superior apuntando a la TV)
@@ -83,6 +83,20 @@ Con el acelerómetro IMU mapeado, Dolphin usa la aceleración real del móvil pa
 
 **Nunchuk en el mismo móvil** (`"nunchuk":"own"` en el `hello`): el mando manda en su propia trama el stick y C/Z además de sus botones, y el Wiimote emulado lee el Nunchuk de su **mismo** pad (`DSUClient/0/PepoMote:L1`, `:R1`, `:Left X±`, `:Accel …`); el acelerómetro del Nunchuk es entonces el del propio mando (agitar uno es agitar los dos). Dolphin trata `Extension` como una configuración, no como una entrada: ponerlo o quitarlo exige reabrir Dolphin, y por eso el receptor solo escribe el ini con Dolphin cerrado.
 
+## Puntero IR (perfil Wii, Dolphin ≥ 2407)
+
+El receptor genera los dos puntos de la barra sensora con su motor de puntero (el mismo que en Cemu) y el perfil los reconstruye en el grupo `IRPassthrough` («Point (Passthrough)», `desktop/src/dolphin.rs` `ir_passthrough`) con los bytes que el perfil Wii deja libres. Entradas del cliente DSU de Dolphin: `Right X+` = (byte − 128)/127 (la capa de expresiones recorta los negativos a 0, así que los sticks solo se usan en su mitad 128..255), `L2`/`R2` = byte/255, `L3`/`R3` = bits 1/2 del byte 36. Geometría en `desktop/src/dsu/wii_ir.rs`: la misma cámara que Dolphin sintetiza para su puntero IMU (42° × 31,5° sobre 1023 × 767, LEDs a 0,2 m, barra 10 cm por encima del centro de la TV).
+
+| byte DSU | lleva | precisión |
+|---|---|---|
+| Right X (42, mitad alta) + L2 (55) | X del punto medio del par, en espejo como la cámara real (apuntar a la derecha = X baja) | 15 bits (7 + 8) sobre 1023 px |
+| Right Y (43, mitad alta) + R2 (54) | Y del punto medio (apuntar arriba = Y baja; en neutro queda un poco bajo el centro por la altura de la barra, como con el puntero IMU de Dolphin a 2 m, y no cambia al acercar) | 15 bits sobre 767 px |
+| L3, R3 (byte 36, bits 1-2) | nivel de distancia 0..3: 2,0 / 1,3 / 0,85 / 0,55 m → separación 0,13 / 0,20 / 0,31 / 0,47 del ancho y tamaño 1..4 de 15 | 4 niveles |
+| Left X (40, mitad alta) | roll del mando, −90°..+90° (positivo = lado derecho abajo); solo si el pad no lleva el stick del Nunchuk propio (entonces el par va horizontal) | 7 bits |
+| Right X = 0 | centinela «fuera de la cámara» (`Right X-` = 1): tamaño 0 en los dos objetos | — |
+
+El nivel lo sube el bit 30 de PMP (acercar, mantener) un paso cada 120 ms hasta 3 y baja igual al soltar; cerca de los bordes el receptor baja el nivel para que ningún punto se salga de la cámara (Dolphin recorta al borde en vez de ocultar). Con passthrough ligado Dolphin ignora su puntero IMU (`IMUIR`), que queda de respaldo para un Dolphin anterior (las claves que no conoce se ignoran). En Wii U el puntero IR sigue yendo por el touchpad (abajo) y estos bytes no se tocan.
+
 ## Modo Wii U (Cemu)
 
 Cemu lee del PadData los bits de los bytes 36-37 (botón i = bit i del 36, 8+i = bit i del 37), el Touch (byte 39) como botón 16, los sticks (40-43), los gatillos analógicos l2/r2 (bytes 55/54) como ejes y el touchpad 1 (bytes 56-61: activo, id, x u16 0..1920, y u16 0..942) como posición; el PS (38) lo ignora. Con 17 botones digitales para 19 del GamePad, ZL/ZR van por los gatillos analógicos (Cemu convierte un eje pasado de la zona muerta en pulsación) y L2/R2 quedan para soplar y TV↔Pad. Mapeo de `desktop/src/dsu/mapping.rs` (`buttons_to_dsu_wiiu`) y los perfiles que escribe `desktop/src/cemu.rs`:
@@ -127,7 +141,7 @@ Fuentes primarias inspeccionadas: [cliente UDP de Eden](https://github.com/eden-
 
 ## Recentrado
 
-La diana del móvil incrementa `recenter_count` (PMP); el servidor DSU traduce cada flanco en un **pulso de 150 ms del botón Touch**, que el perfil mapea a `IMUPointer/Recenter`. Así el mismo gesto recentra en modo puntero y en Dolphin.
+La diana del móvil incrementa `recenter_count` (PMP); el servidor DSU traduce cada flanco en un **pulso de 150 ms del botón Touch**, que el perfil mapea a `IMUIR/Recenter` (el puntero IMU de Dolphin: el grupo se llama así en su código, un `IMUPointer/` se ignora en silencio). Con el puntero IR por passthrough (Dolphin ≥ 2407) el recentrado lo consume el motor de puntero del receptor, como en Cemu, y el pulso queda para el respaldo IMU. Así el mismo gesto recentra en modo puntero y en Dolphin.
 
 ## Modo
 

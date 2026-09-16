@@ -53,6 +53,9 @@ pub struct ControllerUi {
     show_media: bool,
     /// Centro y media anchura de la cruceta del último frame.
     dpad: (Pos2, f32),
+    /// Modo Dolphin: la tira izquierda es «Acercar» (bit 30) en vez de la
+    /// precisión, que ahí no hace nada.
+    dolphin: bool,
 }
 
 impl Default for ControllerUi {
@@ -132,6 +135,7 @@ impl ControllerUi {
             input: Input::default(),
             show_media: false,
             dpad: (Pos2::ZERO, 1.0),
+            dolphin: false,
         }
     }
 
@@ -240,12 +244,17 @@ impl ControllerUi {
         let avail = ui.available_size();
         let (rect, _) = ui.allocate_exact_size(avail, Sense::hover());
         self.hits.clear();
-        self.layout(ui, rect, buttons);
+        // Home solo conectado y fuera del modo puntero (el PC no le da uso)
+        let home = matches!(status, Status::Connected { mode, .. } if mode != "pointer");
+        self.dolphin = matches!(status, Status::Connected { mode, .. } if mode == "dolphin");
+        self.layout(ui, rect, buttons, home);
         self.process_events(ui.ctx(), buttons);
         action
     }
 
-    fn layout(&mut self, ui: &mut egui::Ui, rect: Rect, buttons: &Buttons) {
+    /// `home`: pintar el botón Home entre 1 y 2 (Dolphin: menú HOME de la Wii;
+    /// Cemu: Mario Party 10 lo pide para dar por emparejado cada Mando de Wii).
+    fn layout(&mut self, ui: &mut egui::Ui, rect: Rect, buttons: &Buttons, home: bool) {
         let painter = ui.painter();
         let cv = Canvas::new(painter, rect, Transform::Straight);
         let pressed = buttons.physical();
@@ -281,10 +290,14 @@ impl ControllerUi {
         self.circle(&cv, Pos2::new(cx, y + a_r), a_r, "A", 44.0 * s, pmp::BTN_A, pressed, true);
         y += a_r * 2.0 + 12.0 * s;
 
-        // 1 2
+        // 1 · Home · 2 (como en el mando + Nunchuk; sin Home, 1 y 2 juntos como siempre)
         let r12 = 26.0 * s;
-        self.circle(&cv, Pos2::new(cx - 36.0 * s, y + r12), r12, "1", 18.0 * s, pmp::BTN_ONE, pressed, false);
-        self.circle(&cv, Pos2::new(cx + 36.0 * s, y + r12), r12, "2", 18.0 * s, pmp::BTN_TWO, pressed, false);
+        let dx = if home { 72.0 * s } else { 36.0 * s };
+        self.circle(&cv, Pos2::new(cx - dx, y + r12), r12, "1", 18.0 * s, pmp::BTN_ONE, pressed, false);
+        if home {
+            self.circle(&cv, Pos2::new(cx, y + r12), r12, "Home", 12.0 * s, pmp::BTN_HOME, pressed, false);
+        }
+        self.circle(&cv, Pos2::new(cx + dx, y + r12), r12, "2", 18.0 * s, pmp::BTN_TWO, pressed, false);
         y += r12 * 2.0 + 8.0 * s;
 
         // Multimedia (plegable)
@@ -354,27 +367,38 @@ impl ControllerUi {
 
         // Tira de precisión: borde izquierdo, simétrica a la de scroll pero
         // algo más ancha. Mantener = el puntero va al 40 % (bit 29, solo en
-        // modo puntero); sigue aunque el dedo se salga (el toque es pegajoso)
+        // modo puntero); sigue aunque el dedo se salga (el toque es pegajoso).
+        // En Dolphin la precisión no hace nada: la tira es «Acercar» (bit 30,
+        // el Mando de Wii emulado se acerca a la pantalla)
         let strip = Rect::from_min_max(
             Pos2::new(rect.left() + 2.0, rect.top() + rect.height() * 0.25),
             Pos2::new(rect.left() + 36.0 * s, rect.top() + rect.height() * 0.72),
         );
-        let precise = pressed & pmp::BTN_PRECISION != 0;
+        let bit = if self.dolphin { pmp::BTN_NEAR } else { pmp::BTN_PRECISION };
+        let held = pressed & bit != 0;
         painter.rect(
             strip,
             Rounding::same(13.0 * s),
-            if precise { theme::glow() } else { theme::card_border() },
+            if held { theme::glow() } else { theme::card_border() },
             Stroke::NONE,
         );
-        // mirilla de francotirador: aro, cuatro marcas que lo cruzan y punto central
         let c = strip.center();
         let dim = Stroke::new(1.8 * s, theme::text_dim());
-        painter.circle_stroke(c, 4.8 * s, dim);
-        for d in [Vec2::new(0.0, -1.0), Vec2::new(0.0, 1.0), Vec2::new(-1.0, 0.0), Vec2::new(1.0, 0.0)] {
-            painter.line_segment([c + d * (3.0 * s), c + d * (7.5 * s)], dim);
+        if self.dolphin {
+            // pantalla (barra arriba) y flecha que se le acerca
+            painter.line_segment([c + Vec2::new(-5.5 * s, -6.0 * s), c + Vec2::new(5.5 * s, -6.0 * s)], dim);
+            painter.line_segment([c + Vec2::new(0.0, 6.5 * s), c + Vec2::new(0.0, -2.5 * s)], dim);
+            painter.line_segment([c + Vec2::new(-3.5 * s, 1.0 * s), c + Vec2::new(0.0, -2.8 * s)], dim);
+            painter.line_segment([c + Vec2::new(3.5 * s, 1.0 * s), c + Vec2::new(0.0, -2.8 * s)], dim);
+        } else {
+            // mirilla de francotirador: aro, cuatro marcas que lo cruzan y punto central
+            painter.circle_stroke(c, 4.8 * s, dim);
+            for d in [Vec2::new(0.0, -1.0), Vec2::new(0.0, 1.0), Vec2::new(-1.0, 0.0), Vec2::new(1.0, 0.0)] {
+                painter.line_segment([c + d * (3.0 * s), c + d * (7.5 * s)], dim);
+            }
+            painter.circle_filled(c, 1.0 * s, theme::text_dim());
         }
-        painter.circle_filled(c, 1.0 * s, theme::text_dim());
-        self.hits.push((Shape::Rect(strip), Target::Button(pmp::BTN_PRECISION)));
+        self.hits.push((Shape::Rect(strip), Target::Button(bit)));
     }
 
     #[allow(clippy::too_many_arguments)]

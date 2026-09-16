@@ -43,7 +43,9 @@ sealed class UiLink {
         /** `ok.modes` contains "switch"; absent means an older receiver. */
         val supportsSwitch: Boolean = false,
         val platform: String = ReceiverCapabilities.DESKTOP,
-        val textInput: Boolean = true
+        val textInput: Boolean = true,
+        /** El receptor entiende el apuntado por inclinación (`ok.tilt`); false en receptores anteriores. */
+        val supportsTilt: Boolean = false
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
@@ -121,6 +123,14 @@ object LinkState {
     /** Modo Wii U: el móvil solo como pantalla táctil (pantalla completa); el eco lo confirma. */
     @Volatile
     var sendScreenOnly: ((Boolean) -> Unit)? = null
+
+    /**
+     * Sensor del puntero cambiado en Ajustes con el enlace vivo: true =
+     * acelerómetro (inclinación). El servicio lo cruza con lo que el
+     * receptor anunció en su `ok` antes de ponérselo al motor.
+     */
+    @Volatile
+    var setTilt: ((Boolean) -> Unit)? = null
 
     /**
      * Motor de sensores del enlace vivo: la pantalla GamePad le fija

@@ -153,6 +153,43 @@ Mira en Ajustes de la ventana del PC si "Apuntado absoluto" está desactivado:
 en modo relativo el cursor se desplaza con el giro en vez de ir a donde
 apuntas (pensado para juegos). Actívalo para el uso normal.
 
+Para traer el cursor (o el puntero IR en Dolphin y como Mando de Wii en Cemu)
+al centro, mantén la **diana** entre − y +: está en el mando vertical, en el
+mando apaisado (desde 1.8.5) y en el mando + Nunchuk.
+
+## Mi móvil no tiene giroscopio: el cursor solo sube y baja (o no se mueve)
+
+El puntero saca la altura de la gravedad y el giro horizontal del giroscopio.
+Girar el móvil sobre la vertical no cambia la gravedad, así que un móvil sin
+giroscopio no puede ver ese giro: con solo acelerómetro el cursor sube y baja
+pero no va a los lados. Muchos móviles baratos (Moto G04 / G04s y otros con
+Unisoc) no llevan giroscopio de verdad y exponen uno «virtual» sacado del
+acelerómetro: da un rotation vector y algo de giro vertical, pero nada de
+horizontal, y además puede tener deriva, retardo o inconsistencias.
+
+Qué hace PepoMote (con la app y el receptor actualizados):
+
+- Detecta si el giroscopio es real. Si no lo es, la primera vez que entras en
+  modo puntero te lo dice y pasa a **apuntar por inclinación**: inclinas el
+  móvil a los lados (como un volante: borde derecho hacia abajo = derecha) y
+  arriba o abajo. Sale solo de la gravedad, así que no deriva; a cambio lleva
+  el ruido de la mano, y el cursor se congela con el móvil quieto para que el
+  ratón real siga mandando.
+- En **Ajustes → Sensor del puntero** eliges tú: **Giroscopio (recomendado)**
+  o **Acelerómetro y derivados**, y ves el nombre del sensor que tiene el
+  móvil. Con giroscopio real se usa el giroscopio y no cambia nada.
+- La diana recentra, la precisión (tira de la mirilla) y el modo relativo
+  funcionan igual; la sensibilidad es la misma de siempre y la ventana del PC
+  marca «inclinación» junto al jugador.
+- Hace falta el receptor actualizado: uno anterior no entiende la
+  inclinación y el cursor sigue solo en vertical. El servidor Android
+  (Dolphin/Eden) no tiene puntero: ahí no cambia nada, y el movimiento de
+  los mandos emulados sigue necesitando un giroscopio físico.
+
+Si el móvil tiene giroscopio de verdad pero la app dice que no (o al revés),
+elige el sensor a mano en Ajustes y cuéntalo en un issue con el nombre del
+sensor que enseña.
+
 ## Varios monitores: a qué pantallas apunta
 
 Por defecto ("Todas las pantallas" en Ajustes), el apuntado absoluto cubre
@@ -270,6 +307,22 @@ ciérralo…»: ciérralo, pulsa Configurar Cemu y vuelve a abrirlo); o el perfi
 lo pisó otro programa (mira Opciones → Configuración de mandos: Controller 1
 debe ser Wii U GamePad con DSUController «Controller 1»). Detalles en
 `docs/SETUP-CEMU.md`.
+
+Con **varios móviles como Mando de Wii** (Mario Party 10) y ninguno como
+GamePad, PepoMote deja igualmente un Wii U GamePad en el Controller 1,
+manejado por el teclado del PC (o tu mando real si lo tenías ahí), y pone los
+Mandos de Wii en los Controller 2, 3…: Cemu necesita ese GamePad, y con un
+dispositivo detrás (uno sin dispositivo cuenta como desconectado), para
+arrancar el juego y leer los demás mandos. Las teclas están en
+`docs/SETUP-CEMU.md`. Con un receptor anterior a 1.8.5, el Controller 1 se
+quedaba como Wiimote y no funcionaba nada.
+
+Si con los mandos ya en su sitio el juego se queda en «añade los mandos como
+se indica en rojo» (Mario Party 10), pulsa **Home** en cada móvil: Cemu no da
+por emparejado un Wiimote emulado hasta que recibe Home (fallo conocido de
+Cemu: [bug 353](https://bugs.cemu.info/issues/353)). Home está entre 1 y 2 en
+el mando vertical y junto a A en el
+apaisado (desde 1.8.5; en modo puntero no aparece porque el PC no le da uso).
 
 ## «Cemu (Wii U): 0 cliente(s) DSU» con Cemu abierto
 
@@ -517,7 +570,7 @@ SideStore y AltStore avisan además por su cuenta con la fuente de PepoMote.
 - **El mando no funciona tras cambiar el número de jugadores:** cierra Eden, espera a que PepoMote confirme la configuración y vuelve a abrirlo. Revisa Ajustes → Carpeta de Eden si tienes varias instalaciones.
 - **Otro servidor DSU ya estaba configurado:** su orden se conserva; PepoMote puede usar UDP Controller 4, 8 u otro número. No cambies manualmente ese número al slot físico del móvil.
 - **Tenía un Joy-Con elegido:** esta versión usa solo Pro Controller. Las preferencias anteriores se convierten automáticamente; conecta todos los móviles con Eden cerrado para actualizar sus mandos.
-- **Mi móvil no tiene giroscopio:** los botones y sticks funcionan igualmente. Actualiza el APK y el receptor de esta prueba; el movimiento de giro requiere un giroscopio físico.
+- **Mi móvil no tiene giroscopio:** los botones y sticks funcionan igualmente. Actualiza el APK y el receptor de esta prueba; el movimiento de giro requiere un giroscopio físico (el puntero del PC sí puede ir por inclinación: ver «Mi móvil no tiene giroscopio» más arriba).
 - **Al cerrar el emulador cambia de modo:** desmarca Ajustes del receptor → Volver al puntero al cerrar un emulador. Desactivado conserva el modo, también en Dolphin y Wii U.
 - **Quiero recuperar mis mandos:** Restaurar mis mandos de Eden. La restauración apaga la autoconfiguración de Switch; vuelve a activarla si después quieres usar PepoMote automáticamente.
 - **No entra el texto:** abre el teclado del juego dentro de Eden. En Linux deja Eden en primer plano; Windows/macOS necesitan poder activar su ventana.

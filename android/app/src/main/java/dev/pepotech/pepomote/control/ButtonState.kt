@@ -56,6 +56,12 @@ object ButtonState {
     const val PRECISION = 1 shl 29
 
     /**
+     * Acercar (modo Dolphin): mientras se mantiene, el receptor acerca el
+     * Mando de Wii emulado a la pantalla (juegos que piden acercar el mando).
+     */
+    const val NEAR = 1 shl 30
+
+    /**
      * Dedo en la pantalla táctil del GamePad: instantánea inmutable, así el
      * hilo de sensores lee x, y y `down` coherentes entre sí de una sola vez.
      * x, y = fracción de la pantalla en 0..65535, origen arriba-izquierda.

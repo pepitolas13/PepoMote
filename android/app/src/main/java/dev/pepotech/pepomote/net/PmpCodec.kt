@@ -38,6 +38,16 @@ object PmpCodec {
     const val FLAG_TOUCH = 8
 
     /**
+     * flags bit4: apuntado por INCLINACIÓN. El móvil no tiene giroscopio real
+     * (o el usuario eligió el acelerómetro): el receptor saca el cursor del
+     * acelerómetro (horizontal = roll, vertical = pitch) y no del quaternion
+     * ni del gyro, que se siguen enviando tal cual. Solo se emite si el `ok`
+     * del receptor trae `"tilt":true` (el servidor Android descarta flags
+     * desconocidos).
+     */
+    const val FLAG_TILT = 16
+
+    /**
      * INPUT de 72 bytes, u 80 si `flags` lleva [FLAG_EXT] (entonces van
      * detrás el stick derecho, el táctil y dos bytes reservados a 0).
      */

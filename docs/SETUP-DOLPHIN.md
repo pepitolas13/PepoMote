@@ -26,7 +26,10 @@ carpeta suelta) se reconoce al verlo abierto; si no, pon la carpeta del
 `Dolphin.exe` en Ajustes → Carpeta de Dolphin → Detectar.
 
 Requisitos: Dolphin 5.0+ reciente (2023 en adelante), PepoMote en el PC y el
-móvil emparejado.
+móvil emparejado. Para el puntero IR completo (acercar el mando a la pantalla
+y el giro del cursor con el roll del móvil) hace falta **Dolphin 2407 o
+posterior** (grupo «Point (Passthrough)» del Wiimote emulado); con uno
+anterior el puntero sigue siendo el puntero IMU de Dolphin, como siempre.
 
 ## Nunchuk en el mismo móvil (un solo móvil)
 
@@ -68,7 +71,8 @@ Dolphin** al cambiarlo (el receptor lo avisa si Dolphin está abierto).
 ## Mando de lado (NES)
 
 Con el Nunchuk apagado, gira el móvil y tienes el mando de lado: cruceta a
-la izquierda, 1 y 2 grandes a la derecha, como se sostiene el Mando de Wii
+la izquierda, 1 y 2 grandes a la derecha (y en el centro −, la diana, +, A y
+Home, pequeño, junto a A), como se sostiene el Mando de Wii
 en los juegos 2D (New Super Mario Bros. Wii, Kirby, Donkey Kong Country
 Returns…) y con el volante de Mario Kart. El móvil es entonces un mando
 girado con el extremo IR a la izquierda, que es lo que esos juegos esperan y
@@ -96,6 +100,22 @@ Wiimote del jugador con `Extension = Nunchuk` leyendo del pad de ese segundo
 móvil, con Dolphin cerrado como siempre. Con más jugadores, el segundo
 Nunchuk que entre es el del Jugador 2, y así. El móvil Nunchuk no mueve el
 cursor del PC ni cambia el modo: eso lo decide el mando.
+
+## Acercar el mando a la pantalla (WarioWare y otros)
+
+Algunos juegos piden acercar el Mando de Wii a la pantalla (los microjuegos
+de WarioWare: Smooth Moves, por ejemplo): miden la distancia por la
+separación de los dos puntos IR de la barra sensora. El móvil no sabe a qué
+distancia está la TV, así que en modo Dolphin la tira del borde izquierdo
+del mando (y la píldora de los mandos apaisados; en modo puntero ahí va la
+precisión) es **Acercar**: mientras la mantienes, el mando emulado se acerca
+en cuatro pasos (de 2 m a medio metro) y al soltar vuelve. Hace falta Dolphin
+2407 o posterior: el receptor genera él mismo los puntos IR (grupo «Point
+(Passthrough)» del perfil, escrito solo con Dolphin cerrado), el cursor va
+como en modo puntero (recentrado con la diana incluido) y gira con el móvil.
+La barra sensora se supone **arriba** de la TV (el valor por defecto de la
+Wii y de Dolphin: Configuración → Wii → Posición de la barra sensora); con
+«abajo» el cursor sale desplazado en vertical.
 
 ## 1. Activar el modo Dolphin
 
@@ -127,8 +147,11 @@ Si prefieres mapear a mano (o el perfil no carga): en Configure, Device =
 `DSUClient/0/PepoMote`, y asigna A=Cross, B=Circle, 1=Square, 2=Triangle,
 −=Share, +=Options, Home=PS, cruceta=`Pad N/S/W/E` (así llama Dolphin a la
 cruceta del DSU), y en Motion Input los seis `Accel *` y los seis `Gyro *` a
-sus homónimos. `IMUPointer/Recenter` = `Touch Button` (la diana del móvil
-manda un pulso de Touch al recentrar).
+sus homónimos. `IMUIR/Recenter` = `Touch Button` (la diana del móvil manda un
+pulso de Touch al recentrar; el grupo del puntero IMU se llama `IMUIR` en
+Dolphin). El puntero IR por passthrough (acercar, giro) no se mapea a mano:
+cárgalo del perfil `PepoMote.ini`, que lleva las expresiones del grupo
+«Point (Passthrough)».
 
 ## 4. Calibración de ejes (verificación de h3)
 
@@ -152,8 +175,12 @@ Si alguna barra sale invertida o cruzada, se corrige en UN único archivo:
 
 ## 5. Jugar
 
-Wii Sports: en el menú, apunta con el móvil (puntero por IMU), diana para
-recentrar. Bolos: mantén B, balancea y suelta. Boxeo: puños con el móvil.
+Wii Sports: en el menú, apunta con el móvil, diana para recentrar. Bolos:
+mantén B, balancea y suelta. Boxeo: puños con el móvil.
+
+WarioWare: Smooth Moves: cuando un microjuego pida acercar el mando a la
+pantalla, mantén **Acercar** (la tira izquierda del mando, o la píldora de
+lado) y suéltalo después.
 
 ## Problemas típicos
 
@@ -170,7 +197,11 @@ recentrar. Bolos: mantén B, balancea y suelta. Boxeo: puños con el móvil.
   «Emular».
 - **Dolphin no lista el servidor**: ¿modo Dolphin activo en el móvil? ¿"1
   cliente(s) DSU" en la ventana? Reinicia Dolphin tras añadir el servidor.
-- **El puntero del menú deriva**: recentra (diana). Ajusta `Total Yaw/Pitch`
-  en Motion Input a tu gusto (más grados = menos sensible).
+- **El puntero del menú deriva**: recentra (diana). Con Dolphin 2407+ el
+  puntero es el del receptor (el mismo que en modo puntero). Con uno anterior
+  (puntero IMU de Dolphin) ajusta `IMUIR/Total Yaw` en Motion Input a tu
+  gusto (más grados = menos sensible).
+- **El cursor sale desplazado en vertical (Dolphin 2407+)**: Configuración →
+  Wii → Posición de la barra sensora tiene que ser «Arriba».
 - **Movimiento invertido en un juego**: comprueba la calibración del punto 4
   antes de tocar nada más.

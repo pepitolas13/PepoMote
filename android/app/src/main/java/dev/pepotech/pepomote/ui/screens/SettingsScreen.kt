@@ -23,6 +23,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,9 @@ import dev.pepotech.pepomote.service.GamePadSide
 import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.NunchukSide
+import dev.pepotech.pepomote.sensor.GyroClass
+import dev.pepotech.pepomote.sensor.GyroDetect
+import dev.pepotech.pepomote.sensor.MotionSource
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -64,6 +68,53 @@ private fun SideCard(@StringRes title: Int, @StringRes sub: Int, side: Landscape
                     ModeChip(stringResource(label), selected = side == s) { onPick(s) }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Sensor del puntero: giroscopio (lo de siempre, recomendado si es real) o
+ * acelerómetro (apuntado por inclinación, para móviles sin giroscopio real).
+ * Debajo, lo que tiene este móvil, con el nombre del sensor para poder
+ * diagnosticar. Sin giroscopio ni rotation vector solo cabe el acelerómetro.
+ */
+@Composable
+private fun MotionSourceCard() {
+    val context = LocalContext.current
+    val gyroClass = remember { GyroDetect.classify(context) }
+    val sensorName = remember { GyroDetect.describe(context) ?: "—" }
+    val tilt by MotionSource.tilt.collectAsState()
+    LaunchedEffect(Unit) { MotionSource.refresh(context) }
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+        border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            Text(stringResource(R.string.motion_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.motion_sub), style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModeChip(
+                    stringResource(R.string.motion_gyro),
+                    selected = !tilt,
+                    enabled = gyroClass != GyroClass.NONE
+                ) { MotionSource.choose(context, accel = false) }
+                ModeChip(stringResource(R.string.motion_accel), selected = tilt) {
+                    MotionSource.choose(context, accel = true)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                when (gyroClass) {
+                    GyroClass.REAL -> stringResource(R.string.motion_status_real, sensorName)
+                    GyroClass.VIRTUAL -> stringResource(R.string.motion_status_virtual, sensorName)
+                    GyroClass.NONE -> stringResource(R.string.motion_status_none)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (gyroClass == GyroClass.REAL) PepoColors.TextDim else PepoColors.Warn
+            )
         }
     }
 }
@@ -103,6 +154,10 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
         Text(stringResource(R.string.channel_settings), style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(20.dp))
 
+        // Sensor del puntero: giroscopio o acelerómetro (móviles sin giroscopio real)
+        MotionSourceCard()
+
+        Spacer(Modifier.height(14.dp))
         Card(
             shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(containerColor = PepoColors.Card),

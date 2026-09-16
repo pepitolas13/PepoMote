@@ -7,7 +7,11 @@ struct LandscapeMetrics {
     let s: CGFloat
     let cross: CGFloat
     let small: CGFloat
+    /// Diana de recentrado entre − y + (como en el mando + Nunchuk).
+    let recenter: CGFloat
     let a: CGFloat
+    /// Home, pequeño, a la derecha de A (fuera del modo puntero).
+    let home: CGFloat
     let big: CGFloat
     let crossInset: CGFloat
     let bigInset: CGFloat
@@ -17,7 +21,9 @@ struct LandscapeMetrics {
         s = UiScale.factor(size, base: UiScale.landscapeBase)
         cross = 190 * s
         small = 53 * s
+        recenter = 54 * s
         a = 62 * s
+        home = 40 * s
         big = 92 * s
         crossInset = 34 * s
         bigInset = 30 * s
@@ -37,6 +43,8 @@ struct ControllerLandscapeScreen: View {
     let onDisconnect: () -> Void
     @ObservedObject var link = LinkState.shared
     @State private var keyboardOpen = false
+    /// Home del Mando de Wii: conectado y fuera del modo puntero.
+    private var showHome: Bool { link.link.connected.map(showHomeButton) ?? false }
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
 
     var body: some View {
@@ -92,14 +100,28 @@ struct ControllerLandscapeScreen: View {
                     Spacer()
                 }
 
-                // − / + / A centro
+                // − / ◎ / + y A en el centro: la diana (mantener) recentra
+                // el cursor o el puntero IR, que de lado también se apunta.
+                // Home, pequeño, a la derecha de A y fuera del modo puntero
+                // (el PC no le da uso): como en el Mando de Wii de lado, donde
+                // −/Home/+ quedan entre A y 1/2; un hueco igual a la izquierda
+                // deja A centrada bajo la diana
                 VStack(spacing: m.gap(12)) {
                     Spacer().frame(height: m.gap(20))
                     HStack(spacing: m.gap(16)) {
                         RoundButton(label: "−", size: m.small, bit: Btn.minus, textSize: m.text(19))
+                        RecenterButton(size: m.recenter)
                         RoundButton(label: "+", size: m.small, bit: Btn.plus, textSize: m.text(19))
                     }
-                    RoundButton(label: "A", size: m.a, bit: Btn.a, textSize: m.text(22))
+                    if showHome {
+                        HStack(spacing: m.gap(14)) {
+                            Color.clear.frame(width: m.home, height: m.home)
+                            RoundButton(label: "A", size: m.a, bit: Btn.a, textSize: m.text(22))
+                            RoundButton(label: tr("home_btn"), size: m.home, bit: Btn.home, textSize: m.text(11))
+                        }
+                    } else {
+                        RoundButton(label: "A", size: m.a, bit: Btn.a, textSize: m.text(22))
+                    }
                 }
 
                 // 1 y 2 grandes a la derecha (los botones de acción del modo NES)
@@ -118,7 +140,12 @@ struct ControllerLandscapeScreen: View {
                 VStack {
                     Spacer()
                     HStack {
-                        PrecisionPill().padding(.leading, 16).padding(.bottom, 6)
+                        // En Dolphin la precisión no hace nada: la píldora es «Acercar»
+                        if link.link.connected?.mode == LinkState.modeDolphin {
+                            NearPill().padding(.leading, 16).padding(.bottom, 6)
+                        } else {
+                            PrecisionPill().padding(.leading, 16).padding(.bottom, 6)
+                        }
                         Spacer()
                     }
                 }

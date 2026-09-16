@@ -184,6 +184,39 @@ class MotionEngineTest {
         assertEquals(2, packets.size)
     }
 
+    @Test fun tiltFlagIsOffByDefaultAndSetInEveryFormatWhenRequested() {
+        for (kind in SenderKind.entries) {
+            val packets = mutableListOf<ByteArray>()
+            val engine = engine(kind, packets).apply { start() }
+            advance(20)
+            assertTrue("$kind: sin pedirlo, el bit4 va a 0 (los bytes de siempre)",
+                packets.isNotEmpty() && packets.all { it[5].toInt() and PmpCodec.FLAG_TILT == 0 })
+            val before = packets.size
+            engine.tilt = true // Ajustes con el enlace vivo
+            advance(20)
+            val after = packets.drop(before)
+            assertTrue("$kind: el bit4 entra al instante", after.isNotEmpty() && after.all { it[5].toInt() and PmpCodec.FLAG_TILT != 0 })
+            engine.tilt = false
+            val before2 = packets.size
+            advance(20)
+            assertTrue("$kind: y sale igual", packets.drop(before2).all { it[5].toInt() and PmpCodec.FLAG_TILT == 0 })
+            stop(engine)
+        }
+    }
+
+    @Test fun tiltKeepsSendingTheSensorsUnchanged() {
+        val accel = sensor(Sensor.TYPE_ACCELEROMETER)
+        val packets = mutableListOf<ByteArray>()
+        engine(packets = packets).apply { tilt = true; start() }
+        emit(accel, 1f, 2f, 9.8f)
+        advance(20)
+        val last = packets.last()
+        assertEquals(72, last.size)
+        // Sin rotation vector el bit0 sigue a 0; el bit4 pedido, y el acelerómetro tal cual
+        assertEquals(PmpCodec.FLAG_TILT, last[5].toInt() and (PmpCodec.FLAG_TILT or PmpCodec.FLAG_QUAT_VALID))
+        assertArrayEquals(floatArrayOf(1f, 2f, 9.8f), last.floats(52, 3), 0.0001f)
+    }
+
     @Implements(SensorManager::class)
     class DeniedSensorManager : ShadowSensorManager() {
         @Implementation

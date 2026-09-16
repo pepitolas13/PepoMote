@@ -157,19 +157,37 @@ s1.sendall(b'{"m":"pad","pad":"wiimote"}\n'); r = readmsg(f1, "pad")
 check(r and r.get("pad") == "wiimote", "jugador 1: pad wiimote aceptado")
 r3 = readmsg(f3, "pad", 3.0)
 check(r3 and r3.get("pad") == "wiimote", f"nunchuk: el receptor le avisa de que entra en uso (pad wiimote) ({r3})")
-check(wait_profile(0, lambda x: x and "<device_type>6</device_type>" in x and x.count("<controller>") == 2 and "<uuid>3</uuid>" in x),
-      "Cemu: controller0.xml = Wiimote + Nunchuk (device_type 6, pad 3)")
+# Dos Mandos Wii a la vez (Mario Party 10): Cemu necesita un GamePad CON dispositivo en el mando 1 aunque nadie lo sea →
+# controller0.xml = GamePad por teclado del PC (nuestro, api Keyboard, sin DSU), y los Mandos Wii bajan a los mandos 2 y 3
+check(wait_profile(0, lambda x: x and "<type>Wii U GamePad</type>" in x and "<profile>PepoMote</profile>" in x
+                   and "<api>Keyboard</api>" in x and "<uuid>keyboard</uuid>" in x and "DSUController" not in x and x.count("<controller>") == 1),
+      "Cemu: controller0.xml = GamePad por teclado del PC (todos son Mando Wii; Cemu lo necesita con dispositivo)")
+check("<mapping>1</mapping>\n\t\t\t\t<button>13</button>" in (profile(0) or ""), "Cemu: GamePad por teclado: A → Intro")
+check(wait_profile(1, lambda x: x and "<type>Wiimote</type>" in x and "<device_type>6</device_type>" in x and x.count("<controller>") == 2
+                   and "<uuid>0</uuid>" in x and "<uuid>3</uuid>" in x and "PepoMote J1 Mando Wii" in x),
+      "Cemu: controller1.xml = J1 Wiimote + Nunchuk (device_type 6, pads 0 y 3)")
+check(wait_profile(2, lambda x: x and "<type>Wiimote</type>" in x and "<device_type>5</device_type>" in x and "<uuid>1</uuid>" in x and "PepoMote J2 Mando Wii" in x),
+      "Cemu: controller2.xml = J2 Wiimote (pad 1)")
+check(sum(1 for i in range(8) if profile(i) and "<type>Wii U GamePad</type>" in profile(i)) == 1, "Cemu: exactamente un GamePad, y en el mando 1")
 # el Mando Wii en Cemu manda su puntero por el touchpad: con quat identidad tras recentrar → centro
 d = pad_data(0, lambda i: send(sess1, FLAG_QUAT, BTN["A"] | BTN["HOME"]))
 check(d is not None and d[39] == 0xFF and d[37] & (1 << 6), "DSU: Mando Wii en Cemu → A=Cross, Home=Touch")
 check(d is not None and d[56] == 1, f"DSU: puntero IR del Mando Wii activo en el touchpad (got {d[56] if d else None}, {struct.unpack_from('<HH', d, 58) if d else None})")
+# y el segundo Mando Wii tiene su propio pad y su propio puntero
+sess2 = ok2["session_id"]
+d2 = pad_data(1, lambda i: send(sess2, FLAG_QUAT, BTN["B"]))
+check(d2 is not None and d2[37] & (1 << 5) and d2[56] == 1, f"DSU: J2 Mando Wii en el pad 1 → B=Circle, puntero IR activo (got {list(d2[36:40]) if d2 else None})")
 
-# 7) vuelve a GamePad y el Nunchuk se va → controller0 vuelve a GamePad
+# 7) vuelve a GamePad y el Nunchuk se va → controller0 vuelve a ser el GamePad del móvil J1 y J2 sube al mando 2
 s1.sendall(b'{"m":"pad","pad":"gamepad"}\n'); r = readmsg(f1, "pad")
 check(r and r.get("pad") == "gamepad", "jugador 1: vuelve a gamepad")
 r3 = readmsg(f3, "pad", 3.0)
 check(r3 and r3.get("pad") == "nunchuk", f"nunchuk: deja de estar en uso (pad nunchuk) ({r3})")
-check(wait_profile(0, lambda x: x and "<type>Wii U GamePad</type>" in x), "Cemu: controller0.xml vuelve a GamePad")
+check(wait_profile(0, lambda x: x and "<type>Wii U GamePad</type>" in x and "<uuid>0</uuid>" in x and "<motion>true</motion>" in x),
+      "Cemu: controller0.xml vuelve a ser el GamePad del móvil J1 (pad 0)")
+check(wait_profile(1, lambda x: x and "<type>Wiimote</type>" in x and "<device_type>5</device_type>" in x and "<uuid>1</uuid>" in x),
+      "Cemu: controller1.xml = J2 Wiimote otra vez en el mando 2")
+check(wait_profile(2, lambda x: x is None), "Cemu: controller2.xml limpiado")
 s3.sendall(b'{"m":"bye"}\n'); s3.close()
 
 # 8) el jugador 2 se va → controller1.xml desaparece (era nuestro)

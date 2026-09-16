@@ -72,6 +72,15 @@ class MotionEngine(
     @Volatile
     var rotation: Int = Surface.ROTATION_0
 
+    /**
+     * Apuntado por inclinación (INPUT flags bit4): el receptor saca el cursor
+     * del acelerómetro en vez del giroscopio ([MotionSource]). Lo fija el
+     * servicio (ajuste × capacidad del receptor) y Ajustes lo cambia con el
+     * enlace vivo. Los sensores se envían exactamente igual.
+     */
+    @Volatile
+    var tilt: Boolean = false
+
     private val sensorManager =
         context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val batteryManager =
@@ -284,7 +293,9 @@ class MotionEngine(
         acceptButtonChanges()
         val buttons = buttonDelivery.buttonsForPacket(tSensorNs)
         seq++
-        val quatFlag = if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0
+        // Los sensores van siempre igual; la inclinación solo añade su bit
+        val quatFlag = (if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0) or
+            (if (tilt) PmpCodec.FLAG_TILT else 0)
         val packet = when (val senderKind = kind) {
             SenderKind.GAMEPAD, SenderKind.SWITCH -> {
                 // Marco del mando apaisado (contrato §4) ANTES de escribir el paquete

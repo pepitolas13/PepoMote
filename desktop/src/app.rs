@@ -930,7 +930,7 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         } else if !cemu && p.own_nunchuk {
             tr!("win.badge_player_nunchuk", number)
         } else if cemu {
-            match cemu_layout.iter().find(|c| c.dsu_slot == i as u8).map(|c| (c.kind, c.screen_only)) {
+            match cemu_layout.iter().find(|c| c.dsu_slot == Some(i as u8)).map(|c| (c.kind, c.screen_only)) {
                 Some((crate::state::PadKind::GamePad, true)) => tr!("win.badge_screen_only", number),
                 Some((crate::state::PadKind::GamePad, false)) => tr!("win.badge_gamepad", number),
                 Some((crate::state::PadKind::Pro, _)) => tr!("win.badge_pro", number),
@@ -964,6 +964,11 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
                         .size(12.0)
                         .color(theme::text_dim()),
                 );
+                // Apunta por inclinación (sin giroscopio real): que se sepa
+                if p.tilt && p.role == crate::state::Role::Wiimote {
+                    ui.label(RichText::new(tr!("win.tilt")).size(12.0).color(theme::text_dim()))
+                        .on_hover_text(tr!("win.tilt_tip"));
+                }
             });
         });
     }

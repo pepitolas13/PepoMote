@@ -5,11 +5,11 @@
 
 **[English](README.md)**
 
-**PepoMote 1.8.1:** vuelve la conexión por código de cuatro dígitos en Android y queda más claro dónde copiar el enlace del servidor. Incluye las novedades de la 1.8: servidor Android para Dolphin y Eden, configuración guiada y conexión entre redes con WireGuard o Tailscale. [Descargas y novedades](https://github.com/pepitolas13/PepoMote/releases/tag/v1.8.1).
+**PepoMote 1.8.5:** varios Mandos de Wii a la vez en modo Wii U (Cemu conserva siempre su GamePad en el mando 1), apuntado por inclinación en móviles sin giroscopio real, la diana de recentrado en el mando apaisado, el botón Home en el Mando de Wii y **Acercar** en modo Dolphin (mantener para acercar el Mando de Wii emulado a la pantalla cuando un juego lo pide, WarioWare incluido; con Dolphin 2407+ PepoMote genera él mismo los puntos IR y el cursor gira con el móvil). Incluye las novedades de la 1.8: servidor Android para Dolphin y Eden, configuración guiada, conexión por código de cuatro dígitos y conexión entre redes con WireGuard o Tailscale. [Descargas y novedades](https://github.com/pepitolas13/PepoMote/releases/tag/v1.8.5).
 
-- **Modo puntero** — apuntas con el móvil y el cursor va exactamente ahí (apuntado absoluto anclado al mundo, inmune al roll, 250 Hz). Botones, arrastre, scroll, teclas multimedia. Tu ratón de verdad sigue funcionando siempre que el móvil esté quieto.
+- **Modo puntero** — apuntas con el móvil y el cursor va exactamente ahí (apuntado absoluto anclado al mundo, inmune al roll, 250 Hz). Botones, arrastre, scroll, teclas multimedia. Tu ratón de verdad sigue funcionando siempre que el móvil esté quieto. Necesita giroscopio: un móvil sin giroscopio real (muchos de gama baja) lo avisa y apunta por inclinación, con el sensor a elegir en Ajustes.
 - **Modo Dolphin** — PepoMote se convierte en un Wiimote virtual con movimiento completo (servidor DSU/cemuhook en `127.0.0.1:26760`). Juega juegos de Wii reales — bolos de Wii Sports incluidos — en el [emulador Dolphin](https://es.dolphin-emu.org/).
-- **Modo Wii U** — pon el móvil apaisado y es un Wii U GamePad para el [emulador Cemu](https://cemu.info/): dos sticks, A/B/X/Y, L/R/ZL/ZR, giroscopio, pantalla táctil. Los perfiles de mando de Cemu se escriben solos; un segundo móvil es un Pro Controller, y cualquiera puede ser un Mando de Wii (con Nunchuk) para los juegos de Wii U que se juegan así. **Con doble pantalla**: la pantalla del GamePad (mapa, inventario, jugar sin TV) llega de Cemu al móvil (y se esconde en el PC), tocarla es tocar la pantalla del GamePad, y el teclado del móvil escribe en el teclado en pantalla de Cemu (el nombre del jugador y demás). O, con un mando de verdad en el PC, el móvil como pantalla táctil del GamePad y nada más, a pantalla completa (**Pantalla del GamePad a pantalla completa** en Ajustes).
+- **Modo Wii U** — pon el móvil apaisado y es un Wii U GamePad para el [emulador Cemu](https://cemu.info/): dos sticks, A/B/X/Y, L/R/ZL/ZR, giroscopio, pantalla táctil. Los perfiles de mando de Cemu se escriben solos; un segundo móvil es un Pro Controller, y cualquiera (o todos a la vez) puede ser un Mando de Wii (con Nunchuk) para los juegos de Wii U que se juegan así. **Con doble pantalla**: la pantalla del GamePad (mapa, inventario, jugar sin TV) llega de Cemu al móvil (y se esconde en el PC), tocarla es tocar la pantalla del GamePad, y el teclado del móvil escribe en el teclado en pantalla de Cemu (el nombre del jugador y demás). O, con un mando de verdad en el PC, el móvil como pantalla táctil del GamePad y nada más, a pantalla completa (**Pantalla del GamePad a pantalla completa** en Ajustes).
 
 - **Modo Switch** — Pro Controller para Eden, con un jugador independiente por móvil. Botones, ambos sticks, movimiento si hay giroscopio, Capturar y teclado; configuración automática con copia y restauración de tus mandos. [Guía de Switch](docs/SETUP-SWITCH.md).
 
@@ -40,7 +40,7 @@
 
 ## Jugar a la Wii
 
-Mira [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — dos minutos de configuración de Dolphin una sola vez (servidor DSU + perfil de mando incluido), y después: apunta a la pantalla, mantén la diana para recentrar, balancea para lanzar la bola.
+Mira [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — dos minutos de configuración de Dolphin una sola vez (servidor DSU + perfil de mando incluido), y después: apunta a la pantalla, mantén la diana para recentrar, balancea para lanzar la bola. Los juegos que piden acercar el mando a la pantalla (WarioWare: Smooth Moves): mantén **Acercar** en el móvil (Dolphin 2407+, donde PepoMote genera él mismo los puntos IR, así que el cursor también gira con el móvil).
 
 ## Jugar a la Wii U
 
@@ -62,6 +62,10 @@ Cierra Eden, toca **Switch** en el móvil, espera el aviso de configuración. Ab
 - Sonidos UI sintetizados + háptica (ambos opcionales)
 - **Modo automático** (1.4): abre Dolphin, Cemu o Eden y el receptor cambia de modo solo; al cerrarlo conserva el modo. Activa **Volver al puntero al cerrar un emulador** en Ajustes si prefieres el retorno automático (desactivado por defecto)
 - **Precisión**: mantén la tira de la mirilla y el cursor va al 40 %, sin salto al soltar; sigue aunque el dedo se salga de la tira
+- **Móviles sin giroscopio**: la app detecta que falta o que es solo software (Moto G04s y otros Unisoc), te avisa una vez y el puntero pasa a inclinación: a los lados y arriba/abajo, solo con el acelerómetro, sin deriva porque sale de la gravedad. En **Ajustes → Sensor del puntero** eliges tú Giroscopio o Acelerómetro. Necesita el receptor actualizado
+- **Varios Mandos de Wii en Wii U** (1.8.5): el mando 1 de Cemu es siempre un Wii U GamePad. Si todos los móviles eligen Mando de Wii (Mario Party 10 con dos, tres o cuatro móviles), PepoMote deja ahí un GamePad manejado por el teclado del PC (o tu mando real) y los Mandos de Wii van a los mandos 2 en adelante: el juego arranca y los lee todos
+- **Diana en el mando apaisado** (1.8.5): mantener la diana entre − y + recentra el cursor o el puntero también de lado (puntero, Dolphin y Mando de Wii en Cemu)
+- **Home en el Mando de Wii** (1.8.5): entre 1 y 2 en el mando vertical y junto a A en el apaisado, en Dolphin, Wii U y Switch. Mario Party 10 lo pide para dar por emparejado cada Mando de Wii emulado en Cemu
 - **Atrás/adelante y volumen que repite**: en modo puntero la cruceta ← / → va atrás / adelante en el navegador (↑ / ↓ siguen siendo flechas) y mantener − / + o el 🔉 / 🔊 de multimedia sigue bajando o subiendo el volumen
 - **iPhone y iPad** (1.5): el mismo emisor en Swift, con la doble pantalla del GamePad de Wii U y todo lo demás; se instala con SideStore o AltStore desde una fuente de un toque, y lo compila y prueba la CI en macOS
 - **Varios PCs y reconexión automática**: la app guarda todos tus PCs y, si se cae la Wi-Fi o reinicias el receptor, vuelve sola sin perder la pantalla ni el modo

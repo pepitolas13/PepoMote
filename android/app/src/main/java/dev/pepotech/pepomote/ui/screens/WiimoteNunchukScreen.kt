@@ -37,6 +37,7 @@ import dev.pepotech.pepomote.service.NunchukSide
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.AnalogStick
 import dev.pepotech.pepomote.ui.components.HeaderSlot
+import dev.pepotech.pepomote.ui.components.NearPill
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.PriorityRow
@@ -233,6 +234,8 @@ fun WiimoteNunchukScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> U
                 RoundButton(stringResource(R.string.home_btn), m.small.dp, ButtonState.HOME, textSize = m.text(12f))
                 RoundButton("2", m.small.dp, ButtonState.TWO, textSize = m.text(18f))
             }
+            // Acercar el mando a la pantalla (mantener): juegos que lo piden
+            NearPill(modifier = Modifier)
         }
 
         // Derecha: B arriba (el gatillo, bajo el índice); cruceta y A grande abajo (pulgar)

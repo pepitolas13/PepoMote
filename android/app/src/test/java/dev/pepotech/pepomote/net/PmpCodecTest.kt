@@ -165,6 +165,21 @@ class PmpCodecTest {
     }
 
     @Test
+    fun tiltFlagIsBit4AndKeeps72Bytes() {
+        assertEquals(16, PmpCodec.FLAG_TILT)
+        val packet = PmpCodec.encodeInput(
+            sessionId = 1, seq = 1, tSensorUs = 1,
+            quat = floatArrayOf(1f, 0f, 0f, 0f),
+            gyro = floatArrayOf(0f, 0f, 0f),
+            accel = floatArrayOf(0f, 0f, 9.8f),
+            buttons = 0, recenterCount = 0, batteryPct = 100, touchScrollDy = 0,
+            flags = PmpCodec.FLAG_TILT or PmpCodec.FLAG_QUAT_VALID
+        )
+        assertEquals(PmpCodec.INPUT_LEN, packet.size)
+        assertEquals(0x11, packet[5].toInt())
+    }
+
+    @Test
     fun pingPong() {
         assertEquals(
             vector("ping.hex"),

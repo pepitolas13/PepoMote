@@ -25,6 +25,7 @@ import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.net.UdpSender
 import dev.pepotech.pepomote.sensor.MotionEngine
+import dev.pepotech.pepomote.sensor.MotionSource
 import dev.pepotech.pepomote.sensor.SenderKind
 import kotlinx.coroutines.runBlocking
 
@@ -261,6 +262,10 @@ class LinkForegroundService : Service() {
                         sender.send(packet)
                     }
                     motion = engine
+                    // Inclinación (acelerómetro) solo si el receptor la entiende:
+                    // un receptor anterior o el servidor Android descartarían el bit
+                    engine.tilt = ok.supportsTilt && MotionSource.refresh(this@LinkForegroundService)
+                    LinkState.setTilt = { on -> engine.tilt = ok.supportsTilt && on }
                     // Antes de publicar Connected: la pantalla GamePad lo busca al entrar
                     LinkState.motion = engine
                     engine.start()
@@ -296,7 +301,8 @@ class LinkForegroundService : Service() {
                             screenOnly = ok.screenOnly,
                             supportsSwitch = ok.supportsSwitch,
                             platform = ok.platform,
-                            textInput = ok.textInput
+                            textInput = ok.textInput,
+                            supportsTilt = ok.supportsTilt
                         )
                     )
                     val requestedMode = LinkState.pendingMode
@@ -497,6 +503,7 @@ class LinkForegroundService : Service() {
         LinkState.sendText = null
         LinkState.sendNunchuk = null
         LinkState.sendScreenOnly = null
+        LinkState.setTilt = null
         LinkState.motion = null
         ScreenLink.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()

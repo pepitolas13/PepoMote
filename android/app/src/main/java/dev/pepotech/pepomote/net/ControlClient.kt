@@ -51,7 +51,13 @@ class ControlClient(
         val platform: String = ReceiverCapabilities.DESKTOP,
         val textInput: Boolean = true,
         /** Permanent credential returned after pairing with a short PC or Android code. */
-        val pairToken: String? = null
+        val pairToken: String? = null,
+        /**
+         * El receptor entiende el apuntado por inclinación (`ok.tilt`, INPUT
+         * flags bit4). false = receptor anterior o servidor Android: el bit no
+         * se envía nunca (lo descartarían).
+         */
+        val supportsTilt: Boolean = false
     )
 
     interface Callbacks {
@@ -160,7 +166,8 @@ class ControlClient(
                                 platform = confirmedPlatform,
                                 textInput = confirmedPlatform != ReceiverCapabilities.ANDROID && msg.optBoolean("text_input", true),
                                 pairToken = sequenceOf(msg.optString("pair_token"), msg.optString("token"))
-                                    .firstOrNull { it.isNotBlank() && it.length <= 512 }
+                                    .firstOrNull { it.isNotBlank() && it.length <= 512 },
+                                supportsTilt = msg.optBoolean("tilt", false)
                             )
                         )
                     }

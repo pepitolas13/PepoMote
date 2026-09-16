@@ -27,7 +27,7 @@ object UiScale {
 
     /**
      * Mando apaisado (NES): anchura natural del trazado a escala 1
-     * (34+190 | 122 | 232+30 = 578) más dos huecos.
+     * (34+190 | 53+16+54+16+53 = 192 | 232+30 = 648) más dos huecos.
      */
     const val LANDSCAPE_BASE_W = 700f
     const val LANDSCAPE_BASE_H = 440f

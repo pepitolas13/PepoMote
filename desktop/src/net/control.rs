@@ -244,6 +244,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             own_nunchuk,
             screen_only,
             switch_pad,
+            tilt: false,
         });
         if !s.injection_error {
             s.last_error = None;
@@ -264,7 +265,10 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         "half":null,
                         "side":null,
                         "nunchuk":if own_nunchuk { "own" } else { "none" },
-                        "screen_only":screen_only});
+                        "screen_only":screen_only,
+                        // Este receptor entiende el apuntado por inclinación
+                        // (INPUT flags bit4): el móvil solo lo pide si lo ve aquí
+                        "tilt":true});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }

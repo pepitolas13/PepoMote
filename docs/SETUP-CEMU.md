@@ -17,6 +17,10 @@ micrófono y el botón TV↔Pad de Cemu. Cemu se configura solo.
    movimiento y táctil), `controller1.xml` = Jugador 2 (**Pro Controller**), y
    así hasta cuatro. Cada perfil lee del pad DSU de su móvil (API
    `DSUController`, `127.0.0.1:26760`), así que en Cemu no hay que tocar nada.
+   El mando 1 de Cemu es **siempre un Wii U GamePad** (Cemu lo necesita para
+   arrancar el juego y leer los demás mandos): si el Jugador 1 elige Mando de
+   Wii, ahí queda un GamePad manejado por el teclado del PC (o tu mando real,
+   si lo tenías) y los móviles pasan a los mandos 2 en adelante.
 3. Abre Cemu y juega. Si conectas el móvil después de abrir Cemu también vale:
    Cemu reintenta la conexión DSU solo.
 
@@ -50,14 +54,48 @@ U, Mario Party 10, Nintendo Land…): en el móvil, dentro del modo Wii U, el
 selector **«En Cemu soy: GamePad / Mando de Wii»** (está en la pantalla del
 GamePad, bajo la cabecera). Con **Mando de Wii** ese móvil pasa al layout de Wii
 de siempre y en Cemu su perfil es un **Wiimote** emulado con MotionPlus; el
-puntero se apunta como en modo puntero (recentra con la diana) y llega a Cemu
-por el táctil DSU. Un segundo móvil en modo **Nunchuk** se le acopla igual que
-en Dolphin (stick, C, Z). El mismo selector, marcando **GamePad**, vuelve al
-GamePad / Pro Controller. La elección no se guarda: cada vez que entras en
-Wii U eres GamePad.
+puntero se apunta como en modo puntero (recentra con la diana, también de
+lado) y llega a Cemu por el táctil DSU. Un segundo móvil en modo **Nunchuk**
+se le acopla igual que en Dolphin (stick, C, Z). El mismo selector, marcando
+**GamePad**, vuelve al GamePad / Pro Controller. La elección se recuerda para
+la próxima vez que entres en Wii U.
+
+**Varios Mandos de Wii a la vez** (Mario Party 10, Wii Party U… con dos, tres
+o cuatro móviles): cada móvil elige Mando de Wii en su selector y cada uno es
+un Wiimote emulado con su propio pad DSU y su propio puntero. Cemu exige un
+**Wii U GamePad en el mando 1, con un dispositivo detrás**, aunque nadie
+juegue con él (un GamePad sin dispositivo cuenta como desconectado: el juego
+no arranca ni lee los Mandos Wii). Si todos los móviles son Mando de Wii,
+PepoMote deja en `controller0.xml` un GamePad manejado por **el teclado del
+PC** (o conserva tu GamePad real si tenías uno ahí, y si lo había sustituido
+por un móvil, te lo devuelve) y los Mandos Wii van a `controller1.xml`,
+`controller2.xml`… La ventana del PC lo dice: «mando 1 GamePad por teclado
+del PC (Cemu lo necesita; todos sois Mando Wii), J1 Mando Wii, J2 Mando Wii».
+Si un juego pide algo al GamePad (o necesita a alguien detrás, como Bowser
+Party en Mario Party 10), o bien deja un móvil como GamePad, o bien úsalo
+desde el teclado del PC con estas teclas (las asigna Cemu por código de tecla
+de Windows; en Linux/macOS pueden no coincidir):
+
+| GamePad | Tecla | GamePad | Tecla |
+|---|---|---|---|
+| A / B | Intro / Retroceso | X / Y | X / Y |
+| L / R | Q / E | ZL / ZR | Z / C |
+| + / − | P / M | Home | H |
+| Cruceta | Flechas | Click stick izq / dcho | F / G |
+| Stick izquierdo | W A S D | Stick derecho | I J K L |
+| Soplar al micro | N | Mostrar pantalla del GamePad | T |
 
 Como el perfil de Cemu es global (no por juego), cambia de tipo con Cemu
 cerrado, antes de arrancar el juego.
+
+**Mario Party 10 dice «añade los mandos como se indica en rojo» y no avanza**:
+es un fallo conocido de Cemu con los Wiimotes emulados ([bug 353 de
+Cemu](https://bugs.cemu.info/issues/353), «Emulated Wiimotes not paired»): el
+juego no da por emparejado un Mando de Wii hasta que pulsas **Home** en él.
+Pulsa Home en cada móvil (en el mando vertical está entre 1 y 2; de lado,
+junto a A) y su recuadro pasa a «OK»; con todos en OK el juego sigue a la
+elección de personaje, cada móvil con su puntero. Vale para cualquier otro
+juego que «añada» mandos con ese diálogo.
 
 ## Doble pantalla: la pantalla del GamePad en el móvil
 
@@ -171,6 +209,9 @@ copiarlo a `controllerProfiles/`.
   pantalla del GamePad (izquierda ↔ derecha).
 - **El juego no ve el mando tras cambiar GamePad ↔ Mando Wii**: el cambio se
   aplica con Cemu cerrado; reinicia Cemu.
+- **Mario Party 10 pide «añadir mandos» y no da por emparejado el Mando de
+  Wii**: pulsa **Home** en cada móvil (fallo de Cemu con los Wiimotes
+  emulados; ver «Varios Mandos de Wii a la vez»).
 - **En el móvil no aparece la pantalla del GamePad**: el hueco central dice el
   motivo. Comprueba que Cemu tiene abierta la ventana GamePad View (Options →
   Separate GamePad view; escondida detrás de Cemu es lo normal); minimizada,

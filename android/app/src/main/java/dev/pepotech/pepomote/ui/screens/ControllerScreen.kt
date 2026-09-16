@@ -40,9 +40,11 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
@@ -54,7 +56,9 @@ import dev.pepotech.pepomote.ui.components.KeyboardButton
 import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
+import dev.pepotech.pepomote.ui.components.RotateSuggestion
 import dev.pepotech.pepomote.ui.components.PadSelector
+import dev.pepotech.pepomote.ui.components.NearStrip
 import dev.pepotech.pepomote.ui.components.PrecisionStrip
 import dev.pepotech.pepomote.ui.components.ReconnectingLabel
 import dev.pepotech.pepomote.ui.components.RoundButton
@@ -69,7 +73,8 @@ import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
 
 /**
- * Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/2, multimedia, B.
+ * Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/Home/2 (Home fuera
+ * del modo puntero), multimedia, B.
  * `showChips`: mostrar el selector Puntero/Dolphin/Wii U (entrada por Conectar
  * con el ajuste activo). Entrando por la tarjeta Dolphin no hay selector: esa
  * pantalla es solo-Dolphin. Dentro de Wii U como Mando de Wii, la cabecera lo
@@ -234,8 +239,18 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
             )
 
             Gap(14.dp * grow, flexible)
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp * grow)) {
+            // 1 · Home · 2, como en el mando + Nunchuk. Home solo fuera del modo
+            // puntero (el PC no le da uso): en Dolphin es el menú HOME de la Wii
+            // y en Cemu, además, Mario Party 10 lo pide para dar por emparejado
+            // cada Mando de Wii emulado
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 RoundButton("1", 52.dp * grow, ButtonState.ONE, textSize = (18 * grow).roundToInt())
+                if (showHomeButton(link)) {
+                    RoundButton(stringResource(R.string.home_btn), 52.dp * grow, ButtonState.HOME, textSize = (12 * grow).roundToInt())
+                }
                 RoundButton("2", 52.dp * grow, ButtonState.TWO, textSize = (18 * grow).roundToInt())
             }
 
@@ -256,21 +271,33 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
         )
 
         // Espejo de la de scroll, algo más ancha: mantener = puntero al 40 %
-        // (sigue aunque el dedo se salga de la tira)
-        PrecisionStrip(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = gutter)
-                .fillMaxHeight(0.45f)
-                .width(40.dp * grow),
-            glyph = 16.dp * grow
-        )
+        // (sigue aunque el dedo se salga de la tira). En Dolphin la precisión
+        // no hace nada: ahí la tira es «Acercar» (el mando emulado se acerca
+        // a la pantalla, para los juegos que lo piden)
+        val sideStrip = Modifier
+            .align(Alignment.CenterStart)
+            .padding(start = gutter)
+            .fillMaxHeight(0.45f)
+            .width(40.dp * grow)
+        if (isDolphin(link)) {
+            NearStrip(modifier = sideStrip, glyph = 16.dp * grow)
+        } else {
+            PrecisionStrip(modifier = sideStrip, glyph = 16.dp * grow)
+        }
 
-        NoticeBanner(
+        // Aviso de «sin giroscopio real» (una vez, en modo puntero) y, debajo,
+        // los avisos transitorios del receptor
+        Column(
             Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 64.dp, start = 24.dp, end = 24.dp)
-        )
+                .padding(top = 64.dp, start = 24.dp, end = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            RotateSuggestion()
+            GyroWarnCard(link)
+            NoticeBanner()
+        }
 
         if (keyboardOpen) {
             KeyboardDialog(
@@ -280,6 +307,10 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
         }
     }
 }
+
+/** Modo Dolphin: la tira / píldora lateral es «Acercar» (la precisión ahí no hace nada). */
+internal fun isDolphin(link: UiLink): Boolean =
+    link is UiLink.Connected && link.mode == LinkState.MODE_DOLPHIN
 
 /** Modo Wii U actuando como Mando de Wii (layouts Wii de siempre, 72 bytes). */
 internal fun isWiiUAsWiimote(link: UiLink.Connected): Boolean =
@@ -292,6 +323,15 @@ internal fun showModeChips(link: UiLink.Connected, showChips: Boolean): Boolean 
 /** Chip «Nunchuk»: en Dolphin, cualquier jugador que sea mando (no un Nunchuk). */
 internal fun showNunchukChip(link: UiLink.Connected): Boolean =
     link.mode == LinkState.MODE_DOLPHIN && link.role == LinkState.ROLE_WIIMOTE
+
+/**
+ * Botón Home del Mando de Wii (vertical y apaisado): conectado y fuera del
+ * modo puntero, donde el PC no le da uso. En Dolphin es el menú HOME de la
+ * Wii; en Cemu, además, Mario Party 10 lo pide para dar por emparejado cada
+ * Mando de Wii emulado. El mando + Nunchuk y el GamePad lo tienen siempre.
+ */
+internal fun showHomeButton(link: UiLink): Boolean =
+    link is UiLink.Connected && link.mode != LinkState.MODE_POINTER
 
 /**
  * Chip «Nunchuk» (modo Dolphin): el mando lleva su propio Nunchuk (con el
@@ -364,6 +404,7 @@ internal fun ModeChip(
     compact: Boolean = false,
     dense: Boolean = false,
     toggle: Boolean = false,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -376,10 +417,11 @@ internal fun ModeChip(
     val text = if (!selected) PepoColors.TextDim else if (toggle) PepoColors.OnAccent else PepoColors.Card
     Box(
         modifier = modifier
+            .alpha(if (enabled) 1f else 0.5f)
             .background(fill, shape)
             .then(if (toggle && !selected) Modifier.border(1.5.dp, PepoColors.Ok, shape) else Modifier)
             .semantics { this.selected = selected }
-            .clickable(role = if (toggle) Role.Switch else Role.RadioButton) { current() }
+            .clickable(enabled = enabled, role = if (toggle) Role.Switch else Role.RadioButton) { current() }
             .padding(
                 horizontal = if (compact || dense) 12.dp else 18.dp,
                 vertical = if (compact) 6.dp else 8.dp
@@ -406,15 +448,21 @@ private fun ColumnScope.Gap(h: Dp, flexible: Boolean) {
     }
 }
 
-/** Diana de recentrado: mantener 150 ms → vibra y recentra. */
+/**
+ * Diana de recentrado: mantener 150 ms → vibra y recentra (el cursor en modo
+ * puntero, el puntero IR en Dolphin y como Mando de Wii en Cemu). La misma en
+ * el mando vertical, en el apaisado y en el mando + Nunchuk.
+ */
 @Composable
 internal fun RecenterButton(size: Dp = 64.dp) {
     val view = LocalView.current
     var down by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.recenter)
 
     Box(
         modifier = Modifier
             .size(size)
+            .semantics { contentDescription = label }
             .background(if (down) PepoColors.Glow else PepoColors.Card, CircleShape)
             .pointerInput(Unit) {
                 detectTapGestures(onPress = {

@@ -17,9 +17,14 @@
 //!
 //! Fallback: integración relativa del gyro para móviles sin rotation vector
 //! (flags bit0 = 0); ese camino sí es sensible al roll (ejes del dispositivo).
+//!
+//! Inclinación (flags bit4): móviles sin giroscopio real (Moto G04s y otros
+//! Unisoc con un gyro «virtual» sacado del acelerómetro, que no ve el giro
+//! sobre la vertical: el cursor solo subía y bajaba). El cursor sale solo del
+//! acelerómetro: horizontal = roll, vertical = pitch. Ver `apply_tilt`.
 
 use super::one_euro::Filter2D;
-use crate::net::codec::{InputPacket, FLAG_QUAT_VALID};
+use crate::net::codec::{InputPacket, FLAG_QUAT_VALID, FLAG_TILT};
 
 /// Congelación: clavado y en silencio SOLO con la mano quieta de verdad, y
 /// continuo en cuanto se mueve. Con una banda de histéresis ancha (antes
@@ -132,6 +137,35 @@ const POLE_H2: f32 = 0.022;
 /// Zona muerta del gyro en el fallback relativo (rad/s ≈ 1.7°/s): mata el
 /// sesgo típico de los MEMS baratos sin tragarse el giro intencional.
 const GYRO_DEADZONE_RADS: f32 = 0.03;
+
+// --- Apuntado por INCLINACIÓN (flags bit4: móviles sin giroscopio real) ---
+// El acelerómetro solo ve la gravedad, y el giro sobre la vertical (yaw) no
+// la cambia: es físicamente invisible. Así que la horizontal sale del ROLL
+// (inclinar el móvil a los lados, como un volante: borde derecho hacia abajo
+// = derecha) y la vertical del pitch. Los dos son absolutos y sin deriva
+// (referidos a la gravedad), pero llevan dentro el ruido del sensor y la
+// aceleración de la mano: filtrado más tranquilo que el del gyro y
+// congelación por VENTANA DE ÁNGULO, no por velocidad (la derivada de un
+// acelerómetro en la mano nunca baja de unos °/s).
+/// Módulo mínimo del acelerómetro (m/s²) para fiarse de él: por debajo no hay
+/// muestra (sensor ausente u ocioso) y no se mueve nada.
+const TILT_MIN_G: f32 = 3.0;
+/// Paso bajo del vector de gravedad (Hz) antes de sacar ángulos: quita el
+/// temblor de la mano (8-12 Hz) y la aceleración de los gestos.
+const TILT_ACCEL_CUTOFF_HZ: f32 = 6.0;
+/// One Euro de los ángulos de inclinación: quieto muy suave, en movimiento abre.
+const TILT_MINCUTOFF_HZ: f32 = 3.0;
+const TILT_BETA: f32 = 0.3;
+/// Polo: apuntando casi vertical (|pitch| ≳ 81°) el roll es indefinido y se
+/// mantiene el último válido (sin latigazos ni NaN).
+const TILT_POLE_H: f32 = 0.15;
+/// Congelación: el ángulo filtrado dentro de ±`TILT_STILL_DEG` de su ancla
+/// durante `TILT_FREEZE_DWELL_US` → congelado (silencio: el ratón real manda).
+/// Sale al alejarse del punto de congelación más de `TILT_FREEZE_EXIT_DEG`
+/// (≈ 29 px a 1920 px y 40°), recuperando ese giro como hace el camino gyro.
+const TILT_STILL_DEG: f32 = 0.3;
+const TILT_FREEZE_DWELL_US: u64 = 400_000;
+const TILT_FREEZE_EXIT_DEG: f32 = 0.6;
 
 /// Zona muerta SUAVE: 0 dentro de ±dz, y fuera resta dz (sin escalón brusco,
 /// así el arranque del movimiento no da un tirón).
@@ -383,6 +417,19 @@ pub struct PointerEngine {
     // fallback relativo
     acc_x: f32,
     acc_y: f32,
+    // --- inclinación (flags bit4)
+    /// Fuente del último paquete (inclinación o giroscopio): al cambiar (el
+    /// usuario cambió el ajuste con el enlace vivo) se recentra y el otro
+    /// camino vuelve a sembrar su estado.
+    last_tilt: Option<bool>,
+    /// Gravedad filtrada (ejes del dispositivo).
+    tilt_lp: Option<[f32; 3]>,
+    tilt_filter: Filter2D,
+    /// Último roll válido (°): en el polo se mantiene.
+    tilt_roll: f32,
+    /// Ancla de la ventana de quietud (yaw, pitch filtrados); congelado, el
+    /// punto de congelación.
+    tilt_anchor: Option<(f32, f32)>,
 }
 
 /// Estado interno para `--replay` (diagnóstico de grabaciones reales).
@@ -401,6 +448,13 @@ pub struct PointerDebug {
     pub frozen: bool,
     pub quiet: bool,
     pub bias: [f32; 3],
+    /// El último paquete pedía apuntado por inclinación (flags bit4).
+    pub tilt: bool,
+    /// Inclinación filtrada relativa al recentrado (yaw = roll, pitch), en °.
+    pub tilt_yaw: f32,
+    pub tilt_pitch: f32,
+    /// Ancla de quietud / punto de congelación de la inclinación.
+    pub tilt_anchor: Option<(f32, f32)>,
 }
 
 impl PointerEngine {
@@ -444,6 +498,11 @@ impl PointerEngine {
             cursor_bounds: (0.0, 0.0, 1.0, 1.0),
             acc_x: 0.0,
             acc_y: 0.0,
+            last_tilt: None,
+            tilt_lp: None,
+            tilt_filter: Filter2D::new(TILT_MINCUTOFF_HZ, TILT_BETA),
+            tilt_roll: 0.0,
+            tilt_anchor: None,
         }
     }
 
@@ -475,6 +534,8 @@ impl PointerEngine {
             (Some(e), Some(s)) => e.twist_about_y(s),
             _ => 0.0,
         };
+        let tilt = self.last_tilt.unwrap_or(false);
+        let (tilt_yaw, tilt_pitch) = if tilt { self.last_filtered.unwrap_or((0.0, 0.0)) } else { (0.0, 0.0) };
         PointerDebug {
             qyaw,
             qpitch,
@@ -487,6 +548,10 @@ impl PointerEngine {
             frozen: self.frozen,
             quiet: self.quiet,
             bias: self.bias,
+            tilt,
+            tilt_yaw,
+            tilt_pitch,
+            tilt_anchor: if tilt { self.tilt_anchor } else { None },
         }
     }
 
@@ -627,6 +692,8 @@ impl PointerEngine {
         self.freeze_quat_leaky = (0.0, 0.0);
         self.still_since = None;
         self.frozen_at = None;
+        self.tilt_filter.reset();
+        self.tilt_anchor = None;
     }
 
     /// Apuntado absoluto: si el cursor real no está donde lo dejamos (el SO
@@ -691,11 +758,25 @@ impl PointerEngine {
         screen_w_px: f32,
         precision: bool,
     ) -> PointerOutput {
+        // Fuente del paquete: inclinación (bit4) o giroscopio. Al cambiar (el
+        // usuario cambió el ajuste con el enlace vivo) las referencias de un
+        // camino no valen para el otro: se recentra, y el otro camino vuelve
+        // a sembrar su estado como en la primera muestra (dt = None). Con un
+        // móvil que nunca manda el bit esto queda en Some(false) para siempre.
+        let tilt = p.flags & FLAG_TILT != 0;
+        let switched = self.last_tilt.replace(tilt).is_some_and(|t| t != tilt);
+        if switched {
+            self.last_t_us = None;
+        }
         let dt = self.compute_dt(p.t_sensor_us);
 
         // Recentrado: flanco del contador (o primera muestra)
-        let recentered = self.last_recenter != Some(p.recenter_count);
+        let recentered = self.last_recenter != Some(p.recenter_count) || switched;
         self.last_recenter = Some(p.recenter_count);
+
+        if tilt {
+            return self.apply_tilt(p, recentered, dt, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, precision);
+        }
 
         if p.flags & FLAG_QUAT_VALID == 0 {
             // Fallback h1: integración relativa del gyro (ejes del dispositivo).
@@ -879,6 +960,121 @@ impl PointerEngine {
                 PointerOutput::None
             }
         }
+    }
+
+    /// Apuntado por INCLINACIÓN (flags bit4): móviles sin giroscopio real, o
+    /// el acelerómetro elegido en el móvil. La horizontal es el roll (inclinar
+    /// a los lados; + = borde derecho abajo = derecha) y la vertical el pitch
+    /// (+ = borde superior arriba), los dos de la gravedad que mide el
+    /// acelerómetro: absolutos y sin deriva. El quat y el gyro del paquete no
+    /// intervienen. Misma salida que el camino del gyro (puente, precisión,
+    /// ratón real, `emit`); congelación por ventana de ángulo.
+    #[allow(clippy::too_many_arguments)]
+    fn apply_tilt(
+        &mut self,
+        p: &InputPacket,
+        recentered: bool,
+        dt: Option<f32>,
+        sens_deg: f32,
+        aspect_w_over_h: f32,
+        abs_mode: bool,
+        screen_w_px: f32,
+        precision: bool,
+    ) -> PointerOutput {
+        let a = p.accel;
+        let n = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
+        if !n.is_finite() || n < TILT_MIN_G {
+            // Sin acelerómetro (o a cero): nada que apuntar, nada que mover
+            return PointerOutput::None;
+        }
+        // Gravedad filtrada; primera muestra, hueco o cambio de fuente:
+        // sembrar con la cruda (y el filtro de ángulos desde cero)
+        let lp = match (self.tilt_lp, dt) {
+            (Some(prev), Some(dt)) => {
+                let mut out = [0.0; 3];
+                for (o, (pv, x)) in out.iter_mut().zip(prev.iter().zip(a.iter())) {
+                    *o = lowpass(Some(*pv), *x, TILT_ACCEL_CUTOFF_HZ, dt);
+                }
+                out
+            }
+            _ => {
+                self.tilt_filter.reset();
+                a
+            }
+        };
+        self.tilt_lp = Some(lp);
+        let m = (lp[0] * lp[0] + lp[1] * lp[1] + lp[2] * lp[2]).sqrt().max(1e-6);
+        let u = [lp[0] / m, lp[1] / m, lp[2] / m]; // «arriba» en ejes del dispositivo
+        let h = (u[0] * u[0] + u[2] * u[2]).sqrt();
+        let pitch_w = u[1].atan2(h).to_degrees();
+        if h >= TILT_POLE_H {
+            self.tilt_roll = (-u[0]).atan2(u[2]).to_degrees();
+        }
+        let roll_w = self.tilt_roll;
+
+        if recentered || self.ref_angles.is_none() {
+            self.rebase(roll_w, pitch_w);
+            return PointerOutput::Abs { nx: 0.5, ny: 0.5 };
+        }
+        let (roll_ref, pitch_ref) = self.ref_angles.unwrap();
+        let yaw = wrap180(roll_w - roll_ref); // + = derecha
+        let pitch = pitch_w - pitch_ref; // + = arriba
+
+        let dt = dt.unwrap_or(0.005);
+        let (yaw_f, pitch_f, _) = self.tilt_filter.filter(yaw, pitch, dt);
+        let (lf_yaw, lf_pitch) = self.last_filtered.replace((yaw_f, pitch_f)).unwrap_or((yaw_f, pitch_f));
+        let (prev_yaw, prev_pitch) = self.last_emitted.unwrap_or((yaw_f, pitch_f));
+
+        // Quietud: el ángulo filtrado dentro de la ventana de su ancla
+        let (ay, ap) = *self.tilt_anchor.get_or_insert((yaw_f, pitch_f));
+        let dev = (yaw_f - ay).hypot(pitch_f - ap);
+
+        if self.frozen {
+            if dev <= TILT_FREEZE_EXIT_DEG {
+                // Congelado = SILENCIO: el ratón real queda libre
+                return PointerOutput::None;
+            }
+            // Liberar recuperando lo que la mano inclinó desde que se congeló
+            // (exacto: los ángulos son absolutos); el puente absorbe el resto
+            // y se disuelve con el movimiento. Si el ratón real movió el
+            // cursor, lo recoge `follow_real_cursor`.
+            self.frozen = false;
+            self.still_since = None;
+            self.tilt_anchor = Some((yaw_f, pitch_f));
+            self.offset = (
+                prev_yaw + (yaw_f - ay) - yaw_f - self.shift.0,
+                prev_pitch + (pitch_f - ap) - pitch_f - self.shift.1,
+            );
+        } else if dev > TILT_STILL_DEG {
+            // Se mueve: ventana de quietud nueva desde aquí
+            self.tilt_anchor = Some((yaw_f, pitch_f));
+            self.still_since = None;
+        } else {
+            let since = *self.still_since.get_or_insert(p.t_sensor_us);
+            if p.t_sensor_us.saturating_sub(since) >= TILT_FREEZE_DWELL_US {
+                // Quieto de verdad: congelar aquí (este paquete aún se emite)
+                self.frozen = true;
+                self.still_since = None;
+                self.tilt_anchor = Some((yaw_f, pitch_f));
+            }
+        }
+
+        // Libre: igual que con el gyro (precisión, puente, ratón real)
+        let (mut step_yaw, mut step_pitch) = (yaw_f - lf_yaw, pitch_f - lf_pitch);
+        if precision {
+            self.shift.0 -= step_yaw * (1.0 - PRECISION_GAIN);
+            self.shift.1 -= step_pitch * (1.0 - PRECISION_GAIN);
+            step_yaw *= PRECISION_GAIN;
+            step_pitch *= PRECISION_GAIN;
+        }
+        self.dissolve_bridge(step_yaw, step_pitch);
+        if abs_mode {
+            self.follow_real_cursor(sens_deg, aspect_w_over_h);
+        }
+        let out_yaw = yaw_f + self.offset.0 + self.shift.0;
+        let out_pitch = pitch_f + self.offset.1 + self.shift.1;
+        self.last_emitted = Some((out_yaw, out_pitch));
+        self.emit(out_yaw, out_pitch, sens_deg, aspect_w_over_h, abs_mode, screen_w_px, prev_yaw, prev_pitch)
     }
 
     fn compute_dt(&mut self, t_us: u64) -> Option<f32> {
@@ -2453,5 +2649,300 @@ mod tests {
         assert!((first.0 - before.0).abs() < 0.02, "salto al descongelar: {} → {}", before.0, first.0);
         let moved = (last.0 - before.0).abs();
         assert!((moved - 0.4 * 10.0 / 35.0).abs() < 0.03, "recorrido con precisión: {moved}");
+    }
+
+    // --- Inclinación (flags bit4: móviles sin giroscopio real) ---
+
+    /// Acelerómetro de un móvil inclinado `roll` (+ borde derecho abajo) y
+    /// `pitch` (+ borde superior arriba), en grados: la gravedad en ejes del
+    /// dispositivo (plano boca arriba = +g en Z).
+    fn tilt_accel(roll_deg: f32, pitch_deg: f32) -> [f32; 3] {
+        let (r, p) = (roll_deg.to_radians(), pitch_deg.to_radians());
+        [-r.sin() * p.cos() * G_MS2, p.sin() * G_MS2, r.cos() * p.cos() * G_MS2]
+    }
+
+    fn tilt_packet(accel: [f32; 3], rec: u8, t_us: u64) -> InputPacket {
+        let mut p = packet([0.0; 4], rec, t_us, FLAG_TILT);
+        p.accel = accel;
+        p
+    }
+
+    /// Móvil sin giroscopio: solo inclinación (roll, pitch) por paquete.
+    struct TiltPhone {
+        roll: f32,
+        pitch: f32,
+        t: u64,
+    }
+
+    impl TiltPhone {
+        fn new() -> Self {
+            Self { roll: 0.0, pitch: 0.0, t: 0 }
+        }
+
+        fn make(&mut self, rec: u8) -> InputPacket {
+            self.t += DT_US;
+            tilt_packet(tilt_accel(self.roll, self.pitch), rec, self.t)
+        }
+
+        /// Inclina suave hasta (roll, pitch) en `steps` paquetes. Devuelve la
+        /// última salida Abs vista (o el centro si no hubo ninguna).
+        fn tilt_to(&mut self, e: &mut PointerEngine, roll: f32, pitch: f32, steps: u32) -> (f32, f32) {
+            let (r0, p0) = (self.roll, self.pitch);
+            let mut out = (0.5, 0.5);
+            for i in 1..=steps {
+                let k = i as f32 / steps as f32;
+                self.roll = r0 + (roll - r0) * k;
+                self.pitch = p0 + (pitch - p0) * k;
+                let p = self.make(0);
+                if let PointerOutput::Abs { nx, ny } = ap_tilt(e, &p) {
+                    out = (nx, ny);
+                }
+            }
+            out
+        }
+
+        /// Quieto `steps` paquetes.
+        fn hold(&mut self, e: &mut PointerEngine, steps: u32) -> (f32, f32) {
+            let (r, p) = (self.roll, self.pitch);
+            self.tilt_to(e, r, p, steps)
+        }
+    }
+
+    /// 40° para cruzar la pantalla (el valor por defecto del receptor).
+    fn ap_tilt(e: &mut PointerEngine, p: &InputPacket) -> PointerOutput {
+        e.apply(p, 40.0, 16.0 / 9.0, true, 1920.0, false)
+    }
+
+    #[test]
+    fn inclinacion_plano_centra() {
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        assert_eq!(ap_tilt(&mut e, &p), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+    }
+
+    #[test]
+    fn inclinacion_roll_derecha_mueve_derecha() {
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        ap_tilt(&mut e, &p);
+        ph.hold(&mut e, 20);
+        ph.tilt_to(&mut e, 10.0, 0.0, 40); // borde derecho hacia abajo
+        let (nx, ny) = ph.hold(&mut e, 60);
+        let expected = 0.5 + 10.0 / 40.0;
+        assert!((nx - expected).abs() < 0.015, "nx={nx} esperado={expected}");
+        assert!((ny - 0.5).abs() < 0.01, "ny={ny} no debía cambiar");
+    }
+
+    #[test]
+    fn inclinacion_pitch_arriba_sube() {
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        ap_tilt(&mut e, &p);
+        ph.tilt_to(&mut e, 0.0, 10.0, 40); // borde superior arriba
+        let (nx, ny) = ph.hold(&mut e, 60);
+        let expected = 0.5 - (10.0 / 40.0) * (16.0 / 9.0);
+        assert!((ny - expected).abs() < 0.02, "ny={ny} esperado={expected}");
+        assert!((nx - 0.5).abs() < 0.01, "nx={nx} no debía cambiar");
+    }
+
+    #[test]
+    fn inclinacion_quieto_congela_y_calla() {
+        // Móvil quieto en la mano: ruido lento de ±0,1° (1,5 Hz). Tras la
+        // permanencia, silencio; y el ruido no descongela.
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        ap_tilt(&mut e, &p);
+        ph.tilt_to(&mut e, 5.0, 3.0, 40);
+        let mut silent_from = None;
+        let mut emitted_after_silence = 0;
+        for i in 0..400u32 {
+            let t = i as f32 * DT_US as f32 / 1e6;
+            let wob = 0.1 * (t * std::f32::consts::TAU * 1.5).sin();
+            ph.roll = 5.0 + wob;
+            ph.pitch = 3.0 - wob;
+            let p = ph.make(0);
+            match ap_tilt(&mut e, &p) {
+                PointerOutput::None => {
+                    silent_from.get_or_insert(i);
+                }
+                _ => {
+                    if silent_from.is_some() {
+                        emitted_after_silence += 1;
+                    }
+                }
+            }
+        }
+        let from = silent_from.expect("debe congelar en reposo");
+        assert!(from < 200, "tardó demasiado en congelar: paquete {from}");
+        assert_eq!(emitted_after_silence, 0, "el ruido no debe descongelar");
+    }
+
+    #[test]
+    fn inclinacion_descongela_desde_el_raton_real() {
+        // Congelado, el ratón real lleva el cursor a otro sitio; al inclinar,
+        // el puntero continúa desde AHÍ, sin salto al apuntado absoluto.
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        ap_os(&mut e, &p, None);
+        let mut frozen = false;
+        for _ in 0..200 {
+            let p = ph.make(0);
+            if ap_os(&mut e, &p, None) == PointerOutput::None {
+                frozen = true;
+            }
+        }
+        assert!(frozen, "debe congelar en reposo");
+        let mouse = (0.2, 0.7);
+        let mut first = None;
+        let mut i = 0;
+        while first.is_none() && i < 80 {
+            i += 1;
+            ph.roll += 0.1; // 20°/s
+            let p = ph.make(0);
+            if let PointerOutput::Abs { nx, ny } = ap_os(&mut e, &p, Some(mouse)) {
+                first = Some((nx, ny));
+            }
+        }
+        let (nx, ny) = first.expect("se descongela al inclinar");
+        assert!((nx - mouse.0).abs() < 0.03, "nx={nx} debía seguir desde el ratón ({})", mouse.0);
+        assert!((ny - mouse.1).abs() < 0.03, "ny={ny} debía seguir desde el ratón ({})", mouse.1);
+    }
+
+    #[test]
+    fn inclinacion_recentrar_centra() {
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        ap_tilt(&mut e, &p);
+        ph.tilt_to(&mut e, 8.0, -4.0, 40);
+        let (nx, _) = ph.hold(&mut e, 40);
+        assert!(nx > 0.6, "nx={nx}");
+        // Home: el sitio actual pasa a ser el centro
+        let p = ph.make(1);
+        assert_eq!(ap_tilt(&mut e, &p), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+        let (nx, ny) = ph.hold(&mut e, 40);
+        assert!((nx - 0.5).abs() < 0.01 && (ny - 0.5).abs() < 0.01, "({nx}, {ny})");
+        // y desde ahí, 10° más son 10°/40°
+        ph.tilt_to(&mut e, 18.0, -4.0, 40);
+        let (nx, _) = ph.hold(&mut e, 60);
+        assert!((nx - 0.75).abs() < 0.015, "nx={nx}");
+    }
+
+    #[test]
+    fn inclinacion_relativo_da_deltas() {
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        assert_eq!(e.apply(&p, 40.0, 16.0 / 9.0, false, 1920.0, false), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+        let mut dx_total = 0;
+        let mut dy_total = 0;
+        for i in 1..=40 {
+            ph.roll = 10.0 * i as f32 / 40.0;
+            let p = ph.make(0);
+            if let PointerOutput::Rel { dx, dy } = e.apply(&p, 40.0, 16.0 / 9.0, false, 1920.0, false) {
+                dx_total += dx;
+                dy_total += dy;
+            }
+        }
+        assert!(dx_total > 200, "dx_total={dx_total} (10° de 40° son 480 px)");
+        assert!(dy_total.abs() < 10, "dy_total={dy_total}");
+    }
+
+    #[test]
+    fn inclinacion_precision_al_40() {
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        ap_tilt(&mut e, &p);
+        ph.hold(&mut e, 10);
+        let mut last = (0.5, 0.5);
+        for i in 0..100 {
+            if i < 40 {
+                ph.roll = 10.0 * (i + 1) as f32 / 40.0;
+            }
+            let p = ph.make(0);
+            if let PointerOutput::Abs { nx, ny } = e.apply(&p, 40.0, 16.0 / 9.0, true, 1920.0, true) {
+                last = (nx, ny);
+            }
+        }
+        let moved = last.0 - 0.5;
+        assert!((moved - 0.4 * 10.0 / 40.0).abs() < 0.02, "recorrido con precisión: {moved}");
+    }
+
+    #[test]
+    fn inclinacion_sin_acelerometro_no_mueve() {
+        let mut e = PointerEngine::new();
+        let mut p = tilt_packet([0.0; 3], 0, DT_US);
+        assert_eq!(ap_tilt(&mut e, &p), PointerOutput::None);
+        p.t_sensor_us += DT_US;
+        assert_eq!(ap_tilt(&mut e, &p), PointerOutput::None);
+        // y con NaN tampoco revienta
+        p.accel = [f32::NAN, 0.0, G_MS2];
+        p.t_sensor_us += DT_US;
+        assert_eq!(ap_tilt(&mut e, &p), PointerOutput::None);
+    }
+
+    #[test]
+    fn inclinacion_cambio_de_fuente_recentra_y_resiembra() {
+        // Empieza con giroscopio apuntando 10° a la derecha; el usuario
+        // cambia a acelerómetro con el enlace vivo: centro, sin salto. Al
+        // volver al giroscopio, otra vez centro y sin deriva en reposo.
+        let mut e = PointerEngine::new();
+        let mut ph = Phone::new();
+        let p = ph.make(qrot_z(0.0), 0);
+        ap(&mut e, &p);
+        ph.turn(&mut e, qrot_z(-10.0), 40);
+        let (nx, _) = ph.hold(&mut e, 40);
+        assert!(nx > 0.7, "nx={nx}");
+        // → inclinación (mismo reloj)
+        let mut tp = TiltPhone { roll: 3.0, pitch: 0.0, t: ph.t };
+        let p = tp.make(0);
+        assert_eq!(ap(&mut e, &p), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+        let (nx, ny) = tp.hold(&mut e, 40);
+        assert!((nx - 0.5).abs() < 0.01 && (ny - 0.5).abs() < 0.01, "({nx}, {ny})");
+        // → giroscopio otra vez
+        ph.t = tp.t;
+        let q = ph.q;
+        let p = ph.make(q, 0);
+        assert_eq!(ap(&mut e, &p), PointerOutput::Abs { nx: 0.5, ny: 0.5 });
+        let (nx, ny) = ph.hold(&mut e, 100);
+        assert!((nx - 0.5).abs() < 0.01 && (ny - 0.5).abs() < 0.01, "deriva tras volver al gyro: ({nx}, {ny})");
+    }
+
+    #[test]
+    fn inclinacion_polo_sin_nan() {
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        ap_tilt(&mut e, &p);
+        ph.tilt_to(&mut e, 0.0, 89.5, 60); // apuntando al techo
+        let (nx, ny) = ph.hold(&mut e, 40);
+        assert!(nx.is_finite() && ny.is_finite(), "({nx}, {ny})");
+        // y al bajar, sigue respondiendo
+        ph.tilt_to(&mut e, 0.0, 0.0, 60);
+        let (nx, ny) = ph.hold(&mut e, 60);
+        assert!(nx.is_finite() && ny.is_finite() && (ny - 0.5).abs() < 0.05, "({nx}, {ny})");
+    }
+
+    #[test]
+    fn inclinacion_hueco_no_recentra() {
+        // Un hueco largo (suspensión, pérdida) sin cambio de fuente: el
+        // cursor sigue donde apunta el móvil, sin volver al centro.
+        let mut e = PointerEngine::new();
+        let mut ph = TiltPhone::new();
+        let p = ph.make(0);
+        ap_tilt(&mut e, &p);
+        ph.tilt_to(&mut e, 10.0, 0.0, 40);
+        ph.hold(&mut e, 40);
+        ph.t += 400_000; // 0,4 s sin paquetes
+        ph.tilt_to(&mut e, 12.0, 0.0, 40);
+        let (nx, _) = ph.hold(&mut e, 60);
+        let expected = 0.5 + 12.0 / 40.0;
+        assert!((nx - expected).abs() < 0.015, "nx={nx} esperado={expected} (recentró en el hueco?)");
     }
 }

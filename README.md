@@ -5,11 +5,11 @@
 
 **[Español](README.es.md)**
 
-**PepoMote 1.8.1:** four-digit code pairing is back on Android, with clearer instructions for copying the server link. Includes the 1.8 features: an Android server for Dolphin and Eden, guided setup, and connections across networks with WireGuard or Tailscale. [Downloads and release notes](https://github.com/pepitolas13/PepoMote/releases/tag/v1.8.1).
+**PepoMote 1.8.5:** several Wii Remotes at once in Wii U mode (Cemu always keeps its GamePad on Controller 1), pointing by tilting on phones without a real gyroscope, the recenter target on the sideways controller, a Home button on the Wii Remote and **Closer** in Dolphin mode (hold it to bring the emulated Wii Remote up to the screen when a game asks for it, WarioWare included; on Dolphin 2407+ PepoMote generates the IR dots itself and the cursor rotates with the phone). Includes the 1.8 features: an Android server for Dolphin and Eden, guided setup, four-digit code pairing and connections across networks with WireGuard or Tailscale. [Downloads and release notes](https://github.com/pepitolas13/PepoMote/releases/tag/v1.8.5).
 
-- **Pointer mode** — aim your phone at the screen and the cursor goes exactly there (world-anchored absolute pointing, roll-invariant, 250 Hz). Buttons, drag, scroll, media keys. Your real mouse keeps working whenever the phone is still.
+- **Pointer mode** — aim your phone at the screen and the cursor goes exactly there (world-anchored absolute pointing, roll-invariant, 250 Hz). Buttons, drag, scroll, media keys. Your real mouse keeps working whenever the phone is still. Needs a gyroscope: a phone without a real one (many budget phones) is told so and points by tilting instead, with the sensor selectable in Settings.
 - **Dolphin mode** — PepoMote becomes a full-motion virtual Wiimote (DSU/cemuhook server on `127.0.0.1:26760`). Play real Wii games — Wii Sports bowling included — in the [Dolphin emulator](https://dolphin-emu.org/).
-- **Wii U mode** — turn the phone sideways and it is a Wii U GamePad for the [Cemu emulator](https://cemu.info/): two sticks, A/B/X/Y, L/R/ZL/ZR, gyro, touch screen. Cemu's controller profiles are written for you; a second phone can be a Pro Controller, and any phone can be a Wii Remote (with Nunchuk) for Wii-style Wii U games. **Second screen included**: the GamePad's own screen (map, inventory, off-TV play) is streamed from Cemu to the phone (and hidden on the PC), touching it touches the GamePad screen, and the phone's keyboard types into Cemu's on-screen keyboard (player names and the like). Or, with a real controller on the PC, the phone can be the GamePad's touch screen only, full screen (**GamePad screen full screen** in Settings).
+- **Wii U mode** — turn the phone sideways and it is a Wii U GamePad for the [Cemu emulator](https://cemu.info/): two sticks, A/B/X/Y, L/R/ZL/ZR, gyro, touch screen. Cemu's controller profiles are written for you; a second phone can be a Pro Controller, and any phone (or all of them at once) can be a Wii Remote (with Nunchuk) for Wii-style Wii U games. **Second screen included**: the GamePad's own screen (map, inventory, off-TV play) is streamed from Cemu to the phone (and hidden on the PC), touching it touches the GamePad screen, and the phone's keyboard types into Cemu's on-screen keyboard (player names and the like). Or, with a real controller on the PC, the phone can be the GamePad's touch screen only, full screen (**GamePad screen full screen** in Settings).
 
 - **Switch mode** — Pro Controller for Eden, with one independent player per phone. Buttons, both sticks, motion when a gyroscope is available, Capture and keyboard; automatic setup with backup and controller restoration. [Switch setup guide](docs/SETUP-SWITCH.md).
 
@@ -40,7 +40,7 @@
 
 ## Play Wii games
 
-See [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — two minutes of one-time Dolphin setup (DSU server + bundled controller profile), then: aim at the screen to point, hold the target button to recenter, swing to bowl.
+See [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — two minutes of one-time Dolphin setup (DSU server + bundled controller profile), then: aim at the screen to point, hold the target button to recenter, swing to bowl. Games that ask you to move the remote closer to the screen (WarioWare: Smooth Moves): hold **Closer** on the phone (Dolphin 2407+, where PepoMote generates the IR dots itself, so the cursor also rotates with the phone).
 
 ## Play Wii U games
 
@@ -62,6 +62,10 @@ Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden 
 - Synthesized UI sounds + haptics (both optional)
 - **Automatic mode** (1.4): open Dolphin, Cemu or Eden and the receiver switches mode by itself; closing it keeps the current mode. Enable **Return to pointer when an emulator closes** in Settings for automatic return (off by default)
 - **Precision**: hold the crosshair strip and the cursor moves at 40 %, with no jump when you let go; it keeps working even if your finger drifts off the strip
+- **Phones without a gyroscope**: the app detects a missing or software-only gyroscope (Moto G04s and other Unisoc phones), warns you once, and the pointer switches to tilting: sideways and up/down, from the accelerometer alone, drift-free because it comes from gravity. **Settings → Pointer sensor** lets you pick Gyroscope or Accelerometer yourself. Needs the updated receiver
+- **Several Wii Remotes in Wii U mode** (1.8.5): Cemu's Controller 1 is always a Wii U GamePad. If every phone chooses Wii Remote (Mario Party 10 with two to four phones), PepoMote leaves a GamePad driven by the PC keyboard there (or your own real one) and the Wii Remotes take Controllers 2 and up, so the game boots and reads all of them
+- **Target on the sideways controller** (1.8.5): holding the target between − and + recenters the cursor or the pointer sideways too (pointer mode, Dolphin, Wii Remote in Cemu)
+- **Home on the Wii Remote** (1.8.5): between 1 and 2 on the upright controller and next to A sideways, in Dolphin, Wii U and Switch modes. Mario Party 10 needs it to pair each emulated Wii Remote in Cemu
 - **Browser back/forward and volume that repeats**: in pointer mode the D-pad ← / → go back / forward in the browser (↑ / ↓ stay arrow keys), and holding − / + or the media 🔉 / 🔊 keeps stepping the volume
 - **iPhone and iPad** (1.5): the same sender in Swift, with the Wii U GamePad's second screen and everything else; installed with SideStore or AltStore from a one-tap source, built and tested by the CI on macOS
 - **Several PCs and automatic reconnection**: the app keeps all your PCs and, if the Wi-Fi drops or the receiver restarts, it comes back by itself without losing the screen or the mode

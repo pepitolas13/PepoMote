@@ -114,6 +114,22 @@
     <string name="update_dismiss">Ocultar</string>
     <string name="about">PepoMote %1$s · GPL-3.0 · hecho por PepoTech</string>
 
+    <!-- sensor del puntero (móviles sin giroscopio real) -->
+    <string name="motion_title">Sensor del puntero</string>
+    <string name="motion_sub">Con qué mueve el cursor el móvil. Giroscopio: apuntas y el cursor va donde apuntas. Acelerómetro y derivados: inclinas el móvil a los lados y arriba o abajo, para móviles sin giroscopio real</string>
+    <string name="motion_gyro">Giroscopio (recomendado)</string>
+    <string name="motion_accel">Acelerómetro y derivados</string>
+    <string name="motion_status_real">Tu móvil tiene giroscopio real (%1$s)</string>
+    <string name="motion_status_virtual">Tu móvil no tiene giroscopio real: expone uno parecido (%1$s), derivado del acelerómetro, que puede tener deriva, retardo o inconsistencias. Para este móvil se recomienda Acelerómetro</string>
+    <string name="motion_status_none">Tu móvil no tiene giroscopio: el puntero solo puede ir por inclinación (acelerómetro)</string>
+    <string name="gyro_warn_title_virtual">Tu móvil no tiene giroscopio real</string>
+    <string name="gyro_warn_title_none">Tu móvil no tiene giroscopio</string>
+    <string name="gyro_warn_body_virtual">Tiene un sensor parecido, derivado del acelerómetro, que no garantiza estar libre de deriva, retardo o inconsistencias. PepoMote usará el acelerómetro: inclina el móvil a los lados y arriba o abajo para mover el cursor. El sensor se elige en Ajustes</string>
+    <string name="gyro_warn_body_none">PepoMote usará el acelerómetro: inclina el móvil a los lados y arriba o abajo para mover el cursor. El sensor se elige en Ajustes</string>
+    <string name="gyro_warn_body_manual_gyro">Has elegido su sensor parecido (derivado del acelerómetro): puede tener deriva, retardo o inconsistencias, y en muchos móviles el cursor solo sube y baja. Si no va bien, elige Acelerómetro en Ajustes</string>
+    <string name="gyro_warn_body_old_receiver">Para apuntar por inclinación (acelerómetro) hace falta actualizar PepoMote en el PC. Con este receptor el cursor puede moverse solo en vertical</string>
+    <string name="gyro_warn_ok">Entendido</string>
+
     <!-- primer arranque -->
     <string name="onboarding_sub">Tu móvil, mando de tu PC u otro Android en 3 pasos</string>
     <string name="ob1_title">Elige dónde vas a jugar</string>
@@ -121,7 +137,7 @@
     <string name="ob2_title">Escanea el QR</string>
     <string name="ob2_body">En el móvil que usarás como mando: Conectar → escanea el QR del receptor. Ambos en la misma Wi-Fi.</string>
     <string name="ob3_title">Apunta. Haz clic. Juega.</string>
-    <string name="ob3_body">Con giroscopio, apunta como un mando de Wii. Sin él, puedes jugar con los botones, sticks y controles táctiles.</string>
+    <string name="ob3_body">Con giroscopio, apunta como un mando de Wii. Sin giroscopio real, el puntero va por inclinación (la app te avisa); y siempre puedes jugar con los botones, sticks y controles táctiles.</string>
     <string name="lets_go">¡Vamos!</string>
 
     <!-- mando -->
@@ -145,6 +161,10 @@
     <string name="nunchuk_line">Nunchuk · Jugador %1$d · %2$s</string>
     <string name="nunchuk_help">En Wii U el Nunchuk solo funciona si el mando elige Mando de Wii</string>
     <string name="precision">Precisión</string>
+    <string name="near">Acercar</string>
+    <string name="recenter">Recentrar el puntero (mantener)</string>
+    <string name="rotate_to_landscape">Girar la pantalla</string>
+    <string name="rotate_to_portrait">Volver a vertical</string>
 
     <!-- GamePad -->
     <string name="activating_wiiu">Activando Wii U…</string>

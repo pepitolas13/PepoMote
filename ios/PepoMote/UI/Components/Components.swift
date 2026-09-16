@@ -343,6 +343,14 @@ func showModeChips(_ c: ConnectedLink, _ showChips: Bool) -> Bool {
     c.slot == 0 && (showChips || c.mode == LinkState.modeCemu || c.mode == LinkState.modeSwitch)
 }
 
+/// Botón Home del Mando de Wii (vertical y apaisado): fuera del modo puntero,
+/// donde el PC no le da uso. En Dolphin es el menú HOME de la Wii; en Cemu,
+/// además, Mario Party 10 lo pide para dar por emparejado cada Mando de Wii
+/// emulado. El mando + Nunchuk y el GamePad lo tienen siempre.
+func showHomeButton(_ c: ConnectedLink) -> Bool {
+    c.mode != LinkState.modePointer
+}
+
 // MARK: - Chips de modo y botón Teclado
 
 /// Selector de modo: Puntero (controla el PC) / Dolphin (Wiimote virtual) /
@@ -655,24 +663,34 @@ struct CrosshairGlyph: View {
     }
 }
 
-/// Mantener = bit de precisión (el puntero del PC va al 40 %); háptico y tic
-/// al activar. Sigue activo aunque el dedo se salga. Solo en modo puntero.
-struct PrecisionHold: ViewModifier {
+/// Mantener = un bit sostenido (precisión, acercar); háptico y tic al
+/// activar. Sigue activo aunque el dedo se salga.
+struct HoldBit: ViewModifier {
+    let bit: UInt32
     @Binding var active: Bool
 
     func body(content: Content) -> some View {
         content.holdGesture(
             onDown: {
                 active = true
-                ButtonState.shared.set(Btn.precision, true)
+                ButtonState.shared.set(bit, true)
                 Haptics.tap()
                 UiSounds.shared.tick()
             },
             onUp: {
                 active = false
-                ButtonState.shared.set(Btn.precision, false)
+                ButtonState.shared.set(bit, false)
             }
         )
+    }
+}
+
+/// Mantener = bit de precisión (el puntero del PC va al 40 %). Solo en modo puntero.
+struct PrecisionHold: ViewModifier {
+    @Binding var active: Bool
+
+    func body(content: Content) -> some View {
+        content.modifier(HoldBit(bit: Btn.precision, active: $active))
     }
 }
 
@@ -711,6 +729,73 @@ struct PrecisionPill: View {
         .clipShape(Capsule())
         .contentShape(Capsule())
         .modifier(PrecisionHold(active: $active))
+    }
+}
+
+/// Tira «Acercar» del borde izquierdo en modo Dolphin (en el sitio de la de
+/// precisión, que ahí no hace nada): mantener acerca el Mando de Wii emulado
+/// a la pantalla (juegos que lo piden, como los microjuegos de WarioWare).
+struct NearStrip: View {
+    let width: CGFloat
+    let height: CGFloat
+    var glyph: CGFloat = 16
+    @State private var active = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(active ? Pepo.glow : Pepo.cardBorder)
+            NearGlyph(color: Pepo.textDim, size: glyph)
+        }
+        .frame(width: width, height: height)
+        .contentShape(Rectangle())
+        .modifier(HoldBit(bit: Btn.near, active: $active))
+    }
+}
+
+/// Píldora «Acercar» de los mandos apaisados en Dolphin (mismo gesto: mantener).
+struct NearPill: View {
+    @State private var active = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            NearGlyph(color: Pepo.textDim, size: 14)
+            Text(tr("near")).pepoBody()
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 34)
+        .background(active ? Pepo.glow : Pepo.cardBorder)
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+        .modifier(HoldBit(bit: Btn.near, active: $active))
+    }
+}
+
+/// Pantalla (barra arriba) y flecha que se le acerca: el glifo de «Acercar».
+struct NearGlyph: View {
+    let color: Color
+    let size: CGFloat
+
+    var body: some View {
+        Canvas { ctx, sz in
+            let px = min(sz.width, sz.height)
+            let x0 = (sz.width - px) / 2
+            let y0 = (sz.height - px) / 2
+            let cx = x0 + px / 2
+            var p = Path()
+            // la pantalla: barra horizontal arriba
+            p.move(to: CGPoint(x: x0 + px * 0.15, y: y0 + px * 0.14))
+            p.addLine(to: CGPoint(x: x0 + px * 0.85, y: y0 + px * 0.14))
+            // la flecha: asta y punta hacia la barra
+            p.move(to: CGPoint(x: cx, y: y0 + px * 0.90))
+            p.addLine(to: CGPoint(x: cx, y: y0 + px * 0.34))
+            p.move(to: CGPoint(x: cx - px * 0.22, y: y0 + px * 0.54))
+            p.addLine(to: CGPoint(x: cx, y: y0 + px * 0.32))
+            p.move(to: CGPoint(x: cx + px * 0.22, y: y0 + px * 0.54))
+            p.addLine(to: CGPoint(x: cx, y: y0 + px * 0.32))
+            ctx.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: px * 0.11, lineCap: .round))
+        }
+        .frame(width: size, height: size)
     }
 }
 

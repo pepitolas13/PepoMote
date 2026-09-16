@@ -130,6 +130,7 @@
 "nunchuk_line" = "Nunchuk · Jugador %1$d · %2$@";
 "nunchuk_help" = "En Wii U el Nunchuk solo funciona si el mando elige Mando de Wii";
 "precision" = "Precisión";
+"near" = "Acercar";
 
 /* GamePad */
 "activating_wiiu" = "Activando Wii U…";

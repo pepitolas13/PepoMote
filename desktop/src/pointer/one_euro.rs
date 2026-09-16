@@ -101,7 +101,8 @@ impl Filter2D {
 
     /// Devuelve (x, y) filtrados y la velocidad combinada suavizada
     /// (mismas unidades de entrada por segundo), derivando la entrada.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// (Lo usa el apuntado por inclinación, que no tiene gyro que le dé la
+    /// velocidad.)
     pub fn filter(&mut self, x: f32, y: f32, dt: f32) -> (f32, f32, f32) {
         let (px, py) = self.prev.unwrap_or((x, y));
         self.prev = Some((x, y));

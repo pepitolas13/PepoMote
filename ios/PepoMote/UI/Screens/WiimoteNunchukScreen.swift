@@ -133,6 +133,8 @@ struct WiimoteNunchukScreen: View {
                         RoundButton(label: tr("home_btn"), size: m.small, bit: Btn.home, textSize: m.text(12))
                         RoundButton(label: "2", size: m.small, bit: Btn.two, textSize: m.text(18))
                     }
+                    // Acercar el mando a la pantalla (mantener): juegos que lo piden
+                    NearPill()
                 }
 
                 // Derecha: B arriba (el gatillo, bajo el índice); cruceta y A grande abajo (pulgar)

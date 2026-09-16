@@ -272,6 +272,10 @@ struct Ctx {
 struct Target {
     udp: Arc<UdpSocket>,
     session_id: u32,
+    /// El receptor anunció `"tilt":true` en el `ok`: entiende el apuntado por
+    /// inclinación (INPUT flags bit4). Sin eso el bit no se manda nunca (un
+    /// receptor anterior o el servidor Android lo descartarían).
+    supports_tilt: bool,
 }
 
 /// Cómo terminó una sesión de control.
@@ -659,7 +663,7 @@ fn session(
                     port: pairing.port,
                     session_id,
                 });
-                start_session_udp(&pairing.host, udp_port, session_id, &session_stop, ctx);
+                start_session_udp(&pairing.host, udp_port, session_id, msg["tilt"].as_bool() == Some(true), &session_stop, ctx);
                 if let Some(src) = source.take() {
                     start_hot_path(src, ctx);
                 }
@@ -716,7 +720,7 @@ fn session(
 /// UDP de la sesión: socket conectado al receptor (lo usa el hilo de
 /// paquetes mientras `target` lo diga) y oyente de PING/PONG, que muere con
 /// la sesión.
-fn start_session_udp(host: &str, port: u16, session_id: u32, session_stop: &Arc<AtomicBool>, ctx: &Ctx) {
+fn start_session_udp(host: &str, port: u16, session_id: u32, supports_tilt: bool, session_stop: &Arc<AtomicBool>, ctx: &Ctx) {
     let Ok(udp) = UdpSocket::bind("0.0.0.0:0") else {
         return;
     };
@@ -725,7 +729,7 @@ fn start_session_udp(host: &str, port: u16, session_id: u32, session_stop: &Arc<
     }
     let _ = udp.set_read_timeout(Some(Duration::from_millis(500)));
     let udp = Arc::new(udp);
-    *ctx.target.lock().unwrap() = Some(Target { udp: udp.clone(), session_id });
+    *ctx.target.lock().unwrap() = Some(Target { udp: udp.clone(), session_id, supports_tilt });
 
     // Oyente: eco de PING y RTT de nuestros PING
     let stop = ctx.stop.clone();
@@ -784,6 +788,8 @@ fn start_hot_path(source: Box<dyn Source>, ctx: &Ctx) {
 /// extensión, y los sensores remapeados al marco apaisado según el giro. Si
 /// Switch nunca lleva táctil. Si no hay modo extendido, 72 bytes como siempre: el Nunchuk lleva su stick con FLAG_STICK_VALID
 /// y el mando manda 0,0.
+/// `tilt`: pedir apuntado por inclinación (flags bit4: sin giroscopio real y
+/// con un receptor que lo entiende); los sensores van igual.
 #[allow(clippy::too_many_arguments)]
 fn packet_from_state(
     st: &State,
@@ -793,8 +799,9 @@ fn packet_from_state(
     session_id: u32,
     seq: u32,
     battery_pct: u8,
+    tilt: bool,
 ) -> pmp::InputPacket {
-    let quat_flag = if st.quat_valid { pmp::FLAG_QUAT_VALID } else { 0 };
+    let quat_flag = (if st.quat_valid { pmp::FLAG_QUAT_VALID } else { 0 }) | (if tilt { pmp::FLAG_TILT } else { 0 });
     let base = pmp::InputPacket {
         session_id,
         seq,
@@ -971,7 +978,10 @@ fn packet_loop(
         st.t_us = clock_us.max(last_packet_t_us + 1);
         last_packet_t_us = st.t_us;
         seq = seq.wrapping_add(1);
-        let packet = packet_from_state(&st, &buttons, role, now, t.session_id, seq, battery.pct());
+        // Inclinación: sin giroscopio real (has_rotation es pegajoso: una
+        // muestra suelta sin gyro del SSC no es que se haya ido) y solo si el
+        // receptor la anunció
+        let packet = packet_from_state(&st, &buttons, role, now, t.session_id, seq, battery.pct(), t.supports_tilt && !has_rotation);
         let _ = t.udp.send(&pmp::build_input(&packet));
 
         if last_ping.elapsed() >= Duration::from_secs(1) {
@@ -1033,7 +1043,7 @@ mod tests {
         receiver.set_read_timeout(Some(Duration::from_millis(250))).unwrap();
         let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
         sender.connect(receiver.local_addr().unwrap()).unwrap();
-        let target = Arc::new(Mutex::new(Some(Target { udp: Arc::new(sender), session_id: 7 })));
+        let target = Arc::new(Mutex::new(Some(Target { udp: Arc::new(sender), session_id: 7, supports_tilt: false })));
         let buttons = Arc::new(Buttons::new());
         buttons.set_gamepad(true);
         buttons.set_switch(true);
@@ -1109,13 +1119,90 @@ mod tests {
     #[test]
     fn stopped_sensor_readings_clear_stale_motion_and_keep_controls_live() { fallback_packets(false, true); }
 
+    /// Sin giroscopio real (solo acelerómetro) el emisor pide apuntado por
+    /// inclinación (flags bit4), pero solo si el receptor lo anunció en el
+    /// `ok`; y en cuanto aparece un gyro de verdad el bit se apaga y no
+    /// vuelve aunque el SSC cuele una muestra suelta sin gyro.
+    fn tilt_packets(supports_tilt: bool) {
+        let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
+        receiver.set_read_timeout(Some(Duration::from_millis(250))).unwrap();
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender.connect(receiver.local_addr().unwrap()).unwrap();
+        let target = Arc::new(Mutex::new(Some(Target { udp: Arc::new(sender), session_id: 5, supports_tilt })));
+        let buttons = Arc::new(Buttons::new());
+        let stop = Arc::new(AtomicBool::new(false));
+        let hz = Arc::new(AtomicU32::new(0));
+        let (tx, rx) = mpsc::channel();
+        let worker = {
+            let (target, buttons, stop, hz) = (target.clone(), buttons.clone(), stop.clone(), hz.clone());
+            std::thread::spawn(move || packet_loop(target, rx, buttons, stop, hz, Role::Wiimote))
+        };
+        let receive = || {
+            let mut bytes = [0; 128];
+            loop {
+                let size = receiver.recv(&mut bytes).expect("input packets must keep flowing");
+                if let Some(pmp::Packet::Input(packet)) = pmp::parse(&bytes[..size]) { break packet; }
+            }
+        };
+        let accel_only = |t_us| Sample { t_us, gyro_valid: false, gyro: [0.0; 3], accel: [0.0, 0.0, 9.8] };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let t0 = sensor::now_us();
+            for i in 0..8 {
+                tx.send(accel_only(t0 + i * 5_000)).unwrap();
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let mut p = receive();
+            for _ in 0..40 {
+                if (p.flags & pmp::FLAG_TILT != 0) == supports_tilt && p.accel[2] > 9.0 { break; }
+                p = receive();
+            }
+            assert!(p.accel[2] > 9.0, "el acelerómetro llega tal cual");
+            assert_eq!(p.flags & pmp::FLAG_QUAT_VALID, 0, "sin gyro no hay quaternion");
+            if supports_tilt {
+                assert_ne!(p.flags & pmp::FLAG_TILT, 0, "sin gyro real se pide inclinación");
+            } else {
+                assert_eq!(p.flags & pmp::FLAG_TILT, 0, "sin `tilt` en el ok el bit no sale nunca");
+            }
+            // aparece el gyro de verdad: fuera la inclinación
+            let t1 = sensor::now_us();
+            for i in 0..8 {
+                tx.send(Sample { t_us: t1 + i * 5_000, gyro_valid: true, gyro: [0.0, 0.0, 0.1], accel: [0.0, 0.0, 9.8] }).unwrap();
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let mut p = receive();
+            for _ in 0..40 {
+                if p.flags & pmp::FLAG_QUAT_VALID != 0 { break; }
+                p = receive();
+            }
+            assert_ne!(p.flags & pmp::FLAG_QUAT_VALID, 0, "con gyro hay quaternion");
+            assert_eq!(p.flags & pmp::FLAG_TILT, 0, "con gyro real, sin inclinación");
+            // una muestra suelta sin gyro (SSC) no la reactiva: el gyro real es pegajoso
+            tx.send(accel_only(sensor::now_us())).unwrap();
+            std::thread::sleep(Duration::from_millis(30));
+            for _ in 0..4 {
+                let p = receive();
+                assert_eq!(p.flags & pmp::FLAG_TILT, 0, "una muestra sin gyro no es que el gyro se haya ido");
+            }
+        }));
+        stop.store(true, Ordering::Relaxed);
+        drop(tx);
+        worker.join().unwrap();
+        if let Err(error) = result { std::panic::resume_unwind(error); }
+    }
+
+    #[test]
+    fn accel_only_sensor_requests_tilt_when_the_receiver_supports_it() { tilt_packets(true); }
+
+    #[test]
+    fn accel_only_sensor_never_requests_tilt_from_an_old_receiver() { tilt_packets(false); }
+
     #[test]
     fn ssc_bursts_keep_buffered_motion_until_the_pacer_has_played_it() {
         let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
         receiver.set_read_timeout(Some(Duration::from_millis(250))).unwrap();
         let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
         sender.connect(receiver.local_addr().unwrap()).unwrap();
-        let target = Arc::new(Mutex::new(Some(Target { udp: Arc::new(sender), session_id: 9 })));
+        let target = Arc::new(Mutex::new(Some(Target { udp: Arc::new(sender), session_id: 9, supports_tilt: false })));
         let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel();
         let burst = |tx: &mpsc::Sender<Sample>, batch: u64| {
@@ -1212,7 +1299,7 @@ mod tests {
         b.set_stick(100, -50);
         b.set_stick2(-30, 120);
         b.set_touch(0x8000, 0x4000, true); // stale Cemu touch must never leak
-        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 123, 1, 90);
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 123, 1, 90, false);
         let wire = pmp::build_input(&p);
         assert_eq!(wire.len(), 80);
         assert_eq!(&wire[6..8], &[100, (-50_i8) as u8]);
@@ -1222,7 +1309,7 @@ mod tests {
         assert_eq!(p.buttons, 1 << 28);
         assert_eq!(p.quat, wiiu_state().quat, "an unknown rotation preserves the phone frame");
         b.set_stick(0, 0);
-        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 123, 2, 90);
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 123, 2, 90, false);
         assert_eq!((p.stick_x, p.stick_y), (0, 0));
         assert_eq!((p.stick_rx, p.stick_ry), (-30, 120), "the right stick uses the extension block");
     }
@@ -1428,7 +1515,7 @@ mod tests {
         assert_eq!(golden.len(), pmp::INPUT_EXT_LEN);
         let b = wiiu_buttons();
         // borde superior a la izquierda (por defecto): los sensores se remapean
-        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 0xAABBCCDD, 11, 66);
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 0xAABBCCDD, 11, 66, false);
         assert_eq!(p.flags, 0x0F, "QUAT|STICK|EXT|TOUCH");
         assert_eq!(p.buttons, 0x1FF8_0001);
         assert_eq!((p.stick_x, p.stick_y), (100, -50));
@@ -1446,7 +1533,7 @@ mod tests {
         assert_eq!(&out[72..80], &[0xE2, 0x78, 0x00, 0x80, 0x00, 0x40, 0x00, 0x00]);
         // sin giro conocido (valor fuera de 0/1) no se remapea: paridad TOTAL
         b.set_rotation(7);
-        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 0xAABBCCDD, 11, 66);
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 0xAABBCCDD, 11, 66, false);
         assert_eq!(pmp::build_input(&p), golden);
         assert_eq!(pmp::parse(&golden), Some(pmp::Packet::Input(p)));
     }
@@ -1462,12 +1549,12 @@ mod tests {
             accel: [0.0, 1.0, 0.0],
         };
         b.set_rotation(1);
-        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100);
+        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100, false);
         assert_eq!(p.gyro, [0.0, -1.0, 0.0], "derecha: (gy, −gx, gz)");
         assert_eq!(p.accel, [1.0, 0.0, 0.0]);
         assert!((p.quat[3] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
         b.set_rotation(0);
-        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100);
+        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100, false);
         assert_eq!(p.gyro, [0.0, 1.0, 0.0], "izquierda: (−gy, gx, gz)");
         assert_eq!(p.accel, [-1.0, 0.0, 0.0]);
         assert!((p.quat[3] + std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
@@ -1477,7 +1564,7 @@ mod tests {
     fn sin_dedo_en_la_tactil_cae_flag_touch() {
         let b = wiiu_buttons();
         b.set_touch(0x8000, 0x4000, false);
-        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 1, 1, 100);
+        let p = packet_from_state(&wiiu_state(), &b, Role::Wiimote, Instant::now(), 1, 1, 100, false);
         assert_eq!(p.flags, pmp::FLAG_QUAT_VALID | pmp::FLAG_STICK_VALID | pmp::FLAG_EXT);
         assert_eq!(pmp::build_input(&p).len(), pmp::INPUT_EXT_LEN, "sigue siendo un paquete de 80 bytes");
     }
@@ -1487,19 +1574,19 @@ mod tests {
         let b = wiiu_buttons();
         b.set_gamepad(false);
         let st = wiiu_state();
-        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100);
+        let p = packet_from_state(&st, &b, Role::Wiimote, Instant::now(), 1, 1, 100, false);
         assert_eq!(p.flags, pmp::FLAG_QUAT_VALID, "mando: sin stick ni extensión");
         assert_eq!((p.stick_x, p.stick_y), (0, 0), "un mando manda 0,0 aunque el stick tenga valor");
         assert_eq!((p.stick_rx, p.stick_ry, p.touch_x, p.touch_y), (0, 0, 0, 0));
         assert_eq!(p.quat, st.quat, "sin remapeo");
         assert_eq!(pmp::build_input(&p).len(), pmp::INPUT_LEN);
-        let n = packet_from_state(&st, &b, Role::Nunchuk, Instant::now(), 1, 1, 100);
+        let n = packet_from_state(&st, &b, Role::Nunchuk, Instant::now(), 1, 1, 100, false);
         assert_eq!(n.flags, pmp::FLAG_QUAT_VALID | pmp::FLAG_STICK_VALID, "Nunchuk: stick en 6-7");
         assert_eq!((n.stick_x, n.stick_y), (100, -50));
         assert_eq!(pmp::build_input(&n).len(), pmp::INPUT_LEN);
         // un Nunchuk nunca es GamePad aunque el atómico quede puesto
         b.set_gamepad(true);
-        let n = packet_from_state(&st, &b, Role::Nunchuk, Instant::now(), 1, 1, 100);
+        let n = packet_from_state(&st, &b, Role::Nunchuk, Instant::now(), 1, 1, 100, false);
         assert_eq!(pmp::build_input(&n).len(), pmp::INPUT_LEN);
     }
 

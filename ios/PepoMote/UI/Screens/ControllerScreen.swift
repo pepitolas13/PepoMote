@@ -69,7 +69,8 @@ struct Gap: View {
     }
 }
 
-/// Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/2, multimedia, B.
+/// Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/Home/2 (Home fuera
+/// del modo puntero), multimedia, B.
 /// `showChips`: mostrar el selector Puntero/Dolphin/Wii U. Dentro de Wii U
 /// como Mando de Wii, la cabecera lo dice, los chips se ven siempre (Jugador
 /// 1) y debajo va el selector «En Cemu soy». En modo Wii U la cabecera lleva
@@ -82,6 +83,9 @@ struct ControllerScreen: View {
     @ObservedObject var link = LinkState.shared
     @State private var keyboardOpen = false
 
+    /// Home del Mando de Wii: conectado y fuera del modo puntero.
+    private var showHome: Bool { link.link.connected.map(showHomeButton) ?? false }
+
     var body: some View {
         GeometryReader { geo in
             let wrapsNunchuk = link.link.connected.map { $0.supportsSwitch && showModeChips($0, showChips) && showNunchukChip($0) } ?? false
@@ -92,8 +96,14 @@ struct ControllerScreen: View {
                     column(m)
                         .padding(.horizontal, 24)
                     HStack {
-                        PrecisionStrip(width: m.precisionW, height: m.stripH, glyph: m.text(16))
-                            .padding(.leading, 6)
+                        // En Dolphin la precisión no hace nada: la tira es «Acercar»
+                        if link.link.connected?.mode == LinkState.modeDolphin {
+                            NearStrip(width: m.precisionW, height: m.stripH, glyph: m.text(16))
+                                .padding(.leading, 6)
+                        } else {
+                            PrecisionStrip(width: m.precisionW, height: m.stripH, glyph: m.text(16))
+                                .padding(.leading, 6)
+                        }
                         Spacer()
                         ScrollStrip(width: m.scrollW, height: m.stripH)
                             .padding(.trailing, 6)
@@ -161,8 +171,15 @@ struct ControllerScreen: View {
                 textSize: m.text(44), pop: true
             )
             Gap(m.gap(14), flexible: m.flexible)
+            // 1 · Home · 2, como en el mando + Nunchuk. Home solo fuera del modo
+            // puntero (el PC no le da uso): en Dolphin es el menú HOME de la Wii
+            // y en Cemu, además, Mario Party 10 lo pide para dar por emparejado
+            // cada Mando de Wii emulado
             HStack(spacing: m.spacing) {
                 RoundButton(label: "1", size: m.one, bit: Btn.one, textSize: m.text(18))
+                if showHome {
+                    RoundButton(label: tr("home_btn"), size: m.one, bit: Btn.home, textSize: m.text(12))
+                }
                 RoundButton(label: "2", size: m.one, bit: Btn.two, textSize: m.text(18))
             }
             Gap(m.gap(10), flexible: m.flexible)

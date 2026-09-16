@@ -24,6 +24,10 @@ enum PmpCodec {
     static let flagExt: UInt8 = 4
     /// flags bit3: hay un dedo en la pantalla táctil del GamePad.
     static let flagTouch: UInt8 = 8
+    /// flags bit4: apuntado por inclinación (el receptor saca el cursor del
+    /// acelerómetro; solo con `ok.tilt`). Reservado: todo iPhone/iPad tiene
+    /// giroscopio y este emisor no lo usa.
+    static let flagTilt: UInt8 = 16
 
     /// INPUT de 72 bytes, u 80 si `flags` lleva `flagExt`.
     static func encodeInput(

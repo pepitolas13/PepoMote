@@ -1,5 +1,6 @@
 mod mapping;
 mod server;
+pub mod wii_ir;
 
 use crate::state::LockTolerant;
 use crate::net::MAX_PLAYERS;
@@ -44,6 +45,22 @@ impl DsuProfile {
     }
 }
 
+/// Puntero IR del perfil Wii (Dolphin ≥ 2407, grupo `IRPassthrough`): el
+/// receptor genera los dos puntos de la barra sensora y los codifica en los
+/// bytes DSU que el perfil Wii deja libres (protocol/DSU.md, «Puntero IR»).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WiiIr {
+    /// Punto medio del par en la cámara, 0..32767 sobre 1023 × 767 (X en
+    /// espejo, como la cámara real: apuntar a la derecha = X baja).
+    pub x: u16,
+    pub y: u16,
+    /// Nivel de distancia 0..3 (2,0 / 1,3 / 0,85 / 0,55 m): L3 = bit 0, R3 = bit 1.
+    pub level: u8,
+    /// Roll del mando en Left X (byte 128..255 = −90°..+90°); `None` cuando
+    /// ese stick lleva el Nunchuk del propio móvil (el par va horizontal).
+    pub roll: Option<u8>,
+}
+
 /// Muestra de movimiento que la telemetría empuja al DSU.
 #[derive(Clone, Copy)]
 pub struct MotionSample {
@@ -63,10 +80,13 @@ pub struct MotionSample {
     /// Toque en el touchpad DSU (x 0..1920, y 0..942, origen arriba-izquierda):
     /// la pantalla táctil del GamePad o el puntero IR de un Mando Wii en Cemu.
     pub touch: Option<(u16, u16)>,
+    /// Perfil Wii: los puntos IR que genera el receptor; `None` = fuera de
+    /// pantalla o sin apuntado absoluto (en el cable, centinela Right X = 0).
+    pub wii_ir: Option<WiiIr>,
     pub profile: DsuProfile,
 }
 
-/// Duración del pulso del botón Touch al recentrar (IMUPointer/Recenter).
+/// Duración del pulso del botón Touch al recentrar (IMUIR/Recenter).
 const RECENTER_PULSE: Duration = Duration::from_millis(150);
 
 #[derive(Clone, Copy)]
@@ -77,14 +97,53 @@ struct Pulse {
 
 pub type SlotSamples = Arc<Mutex<[Option<(MotionSample, Instant)>; MAX_PLAYERS]>>;
 
-/// Un cliente DSU registrado y QUÉ slots pidió (bitmask, bit i = slot i).
-/// Dolphin abre un socket por mando y se suscribe solo a su slot; al recibir
-/// no filtra: se queda con el último PadData que entre por ese socket. Si se
-/// le mandan todos los slots, cada Wiimote se mueve con todos los móviles.
+/// Clientes con registro caducable: Dolphin re-pide cada 1 s; Cemu vuelve a
+/// pedir cada pad en cuanto recibe su PadData.
+pub(crate) const CLIENT_TTL: Duration = Duration::from_secs(3);
+
+/// Un cliente DSU registrado y QUÉ slots pidió. Dolphin abre un socket por
+/// mando y se suscribe solo a su slot (al recibir no filtra: si se le mandan
+/// todos los slots, cada Wiimote se mueve con todos los móviles). Cemu usa UN
+/// socket para todos sus mandos y pide cada pad por separado, uno tras otro
+/// (y en cada respuesta vuelve a pedir ESE pad): las peticiones se ACUMULAN,
+/// cada slot con su propia caducidad. Si una petición sustituyera a la
+/// anterior, solo llegaría el último pad pedido y el otro mando saldría
+/// desconectado en el juego (dos Mandos Wii en Cemu: solo uno funcionaba).
 #[derive(Clone, Copy)]
 pub struct Client {
-    pub last_seen: Instant,
-    pub slots: u8,
+    /// Última petición que incluía cada slot.
+    pub slot_seen: [Option<Instant>; MAX_PLAYERS],
+}
+
+impl Client {
+    pub fn new() -> Self {
+        Client { slot_seen: [None; MAX_PLAYERS] }
+    }
+
+    /// Registra ahora los slots de `mask` (bit i = slot i), sin olvidar los demás.
+    pub fn register(&mut self, mask: u8, now: Instant) {
+        for (i, seen) in self.slot_seen.iter_mut().enumerate() {
+            if mask & (1 << i) != 0 {
+                *seen = Some(now);
+            }
+        }
+    }
+
+    /// Quiere ese slot: lo pidió hace menos de `ttl`.
+    pub fn wants(&self, slot: usize, ttl: Duration, now: Instant) -> bool {
+        self.slot_seen.get(slot).copied().flatten().is_some_and(|t| now.duration_since(t) < ttl)
+    }
+
+    /// Sigue vivo: alguna petición hace menos de `ttl`.
+    pub fn alive(&self, ttl: Duration, now: Instant) -> bool {
+        self.slot_seen.iter().flatten().any(|t| now.duration_since(*t) < ttl)
+    }
+}
+
+impl Default for Client {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub type Clients = Arc<Mutex<HashMap<SocketAddr, Client>>>;
@@ -125,14 +184,14 @@ impl Dsu {
         self.last.lock_tolerant()[slot_idx] = Some((*sample, Instant::now()));
 
         let clients = self.clients.lock_tolerant();
-        let slot_bit = 1u8 << slot;
-        if !clients.values().any(|c| c.slots & slot_bit != 0) {
+        let now = Instant::now();
+        if !clients.values().any(|c| c.wants(slot_idx, CLIENT_TTL, now)) {
             return;
         }
         let counter = self.counter.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
         let packet = server::pad_data_packet(slot, sample, touch, counter);
         for (addr, c) in clients.iter() {
-            if c.slots & slot_bit != 0 {
+            if c.wants(slot_idx, CLIENT_TTL, now) {
                 let _ = self.socket.send_to(&packet, addr);
             }
         }

@@ -31,6 +31,13 @@ pub const FLAG_STICK_VALID: u8 = 1 << 1;
 pub const FLAG_EXT: u8 = 1 << 2;
 /// flags bit3: hay un dedo en la pantalla táctil del GamePad (touch_x/y válidos).
 pub const FLAG_TOUCH: u8 = 1 << 3;
+/// flags bit4: apuntado por INCLINACIÓN. El móvil no tiene giroscopio real (o
+/// el usuario eligió el acelerómetro): el receptor saca el cursor del
+/// acelerómetro (horizontal = roll, vertical = pitch) y no del quaternion ni
+/// del gyro, que se siguen enviando tal cual para los pads DSU. Solo se emite
+/// cuando el `ok` del receptor trae `"tilt":true` (un receptor que no lo
+/// conoce puede descartar flags desconocidos).
+pub const FLAG_TILT: u8 = 1 << 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct InputPacket {
@@ -98,6 +105,10 @@ pub const BTN_SCREEN: u32 = 1 << 28;
 /// Precisión (modo puntero, desde 1.4): mientras se mantiene, el cursor se
 /// mueve al 40 %. En Dolphin y Cemu se ignora.
 pub const BTN_PRECISION: u32 = 1 << 29;
+/// Acercar (modo Dolphin): mientras se mantiene, el receptor acerca el Mando
+/// de Wii emulado a la pantalla (separa los puntos IR por niveles, para los
+/// juegos que piden acercar el mando). En puntero, Cemu y Switch se ignora.
+pub const BTN_NEAR: u32 = 1 << 30;
 
 #[derive(Debug, PartialEq)]
 pub enum Packet {
@@ -416,5 +427,35 @@ mod tests {
         p.buttons |= BTN_PRECISION;
         let Packet::Input(back) = parse(&build_input(&p)).unwrap() else { panic!("no es INPUT") };
         assert_eq!(back.buttons, p.buttons, "el bit 29 sobrevive al viaje");
+    }
+
+    #[test]
+    fn el_bit_de_acercar_es_el_30_y_viaja_en_el_input() {
+        assert_eq!(BTN_NEAR, 0x4000_0000);
+        assert_eq!(BTN_NEAR & BTN_PRECISION, 0);
+        let buf = vector("input_wiiu");
+        let Packet::Input(mut p) = parse(&buf).unwrap() else { panic!("no es INPUT") };
+        p.buttons |= BTN_NEAR;
+        let Packet::Input(back) = parse(&build_input(&p)).unwrap() else { panic!("no es INPUT") };
+        assert_eq!(back.buttons, p.buttons, "el bit 30 sobrevive al viaje");
+    }
+
+    #[test]
+    fn el_flag_de_inclinacion_es_el_bit4_y_sobrevive_al_viaje() {
+        assert_eq!(FLAG_TILT, 0x10);
+        assert_eq!(FLAG_TILT & (FLAG_QUAT_VALID | FLAG_STICK_VALID | FLAG_EXT | FLAG_TOUCH), 0);
+        // 72 bytes: se conserva (solo EXT/TOUCH se normalizan sin extensión)
+        let p = InputPacket { flags: FLAG_TILT | FLAG_QUAT_VALID, ..Default::default() };
+        let buf = build_input(&p);
+        assert_eq!(buf.len(), INPUT_LEN);
+        assert_eq!(buf[5], 0x11);
+        let Packet::Input(back) = parse(&buf).unwrap() else { panic!("no es INPUT") };
+        assert_eq!(back.flags, FLAG_TILT | FLAG_QUAT_VALID);
+        // 80 bytes: también
+        let p = InputPacket { flags: FLAG_TILT | FLAG_EXT | FLAG_STICK_VALID, ..Default::default() };
+        let buf = build_input(&p);
+        assert_eq!(buf.len(), INPUT_EXT_LEN);
+        let Packet::Input(back) = parse(&buf).unwrap() else { panic!("no es INPUT") };
+        assert_eq!(back.flags, FLAG_TILT | FLAG_EXT | FLAG_STICK_VALID);
     }
 }

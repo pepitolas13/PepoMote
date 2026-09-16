@@ -290,6 +290,9 @@ pub struct PlayerInfo {
     pub screen_only: bool,
     /// Modo Switch: Pro Controller. Los nombres antiguos se normalizan al leerlos.
     pub switch_pad: SwitchPad,
+    /// Sus INPUT piden apuntado por inclinación (flags bit4): el móvil no
+    /// tiene giroscopio real (o eligió el acelerómetro en Ajustes).
+    pub tilt: bool,
 }
 
 /// Tipo de mando de Switch que pide un móvil (modo Switch). Vocabulario del
@@ -380,11 +383,15 @@ impl PadKind {
 /// Un jugador tal como se configura en Cemu: `controller{index}.xml`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct CemuPlayer {
-    /// Índice del mando en Cemu (jugador − 1).
+    /// Índice del mando en Cemu (número de mando − 1).
     pub index: u8,
     pub kind: PadKind,
-    /// Pad DSU del móvil (su slot).
-    pub dsu_slot: u8,
+    /// Jugador (1..4) del móvil; 0 en el GamePad vacío del mando 1.
+    pub player: u8,
+    /// Pad DSU del móvil (su slot). `None` solo en el GamePad VACÍO del
+    /// mando 1: nadie es GamePad (todos pidieron Mando Wii) y Cemu necesita
+    /// uno igualmente (sin GamePad el juego no arranca ni lee los Mandos Wii).
+    pub dsu_slot: Option<u8>,
     /// Pad DSU del Nunchuk emparejado (solo si el jugador es Mando Wii).
     pub nunchuk_slot: Option<u8>,
     /// El móvil solo hace de pantalla táctil junto al mando real del usuario
@@ -392,32 +399,53 @@ pub struct CemuPlayer {
     pub screen_only: bool,
 }
 
-/// Reparto para Cemu: el Jugador 1 es el GamePad y los demás Pro Controller,
-/// salvo los que pidieron Mando Wii; el Nunchuk (de otro móvil) solo acompaña
-/// a un Mando Wii. El Nunchuk propio no se aplica en Cemu de momento.
+impl CemuPlayer {
+    /// El GamePad del mando 1 sin ningún móvil detrás.
+    pub fn empty_gamepad() -> Self {
+        CemuPlayer { index: 0, kind: PadKind::GamePad, player: 0, dsu_slot: None, nunchuk_slot: None, screen_only: false }
+    }
+
+    /// GamePad sin móvil (ver [`Self::empty_gamepad`]).
+    pub fn is_empty_gamepad(&self) -> bool {
+        self.dsu_slot.is_none()
+    }
+}
+
+/// Reparto para Cemu: el mando 1 es SIEMPRE un Wii U GamePad, porque Cemu lo
+/// necesita (sin él el juego no arranca ni lee los demás mandos). Lo pone el
+/// Jugador 1, salvo que haya pedido Mando Wii: entonces el GamePad del mando 1
+/// queda vacío (sin móvil; en Cemu, el mando real del usuario si lo tiene) y
+/// los móviles van del mando 2 en adelante, con sus números de jugador de
+/// siempre. Los demás jugadores son Pro Controller, salvo los que pidieron
+/// Mando Wii (dos, tres o cuatro Mandos Wii a la vez: Mario Party 10); el
+/// Nunchuk (de otro móvil) solo acompaña a un Mando Wii. El Nunchuk propio
+/// no se aplica en Cemu de momento.
 pub fn cemu_layout(players: &[Option<PlayerInfo>]) -> Vec<CemuPlayer> {
-    external_layout(players)
-        .iter()
-        .enumerate()
-        .map(|(i, (wslot, nslot))| {
-            let pad_wii = players[*wslot as usize].as_ref().is_some_and(|p| p.pad_wii);
-            let kind = if pad_wii {
-                PadKind::Wiimote
-            } else if i == 0 {
-                PadKind::GamePad
-            } else {
-                PadKind::Pro
-            };
-            CemuPlayer {
-                index: i as u8,
-                kind,
-                dsu_slot: *wslot,
-                nunchuk_slot: if kind == PadKind::Wiimote { *nslot } else { None },
-                screen_only: kind == PadKind::GamePad
-                    && players[*wslot as usize].as_ref().is_some_and(|p| p.screen_only),
-            }
-        })
-        .collect()
+    let ext = external_layout(players);
+    let wants_wii = |slot: u8| players[slot as usize].as_ref().is_some_and(|p| p.pad_wii);
+    let mut out = Vec::with_capacity(ext.len() + 1);
+    if ext.first().is_some_and(|(w, _)| wants_wii(*w)) {
+        out.push(CemuPlayer::empty_gamepad());
+    }
+    for (i, (wslot, nslot)) in ext.iter().enumerate() {
+        let kind = if wants_wii(*wslot) {
+            PadKind::Wiimote
+        } else if i == 0 {
+            PadKind::GamePad
+        } else {
+            PadKind::Pro
+        };
+        out.push(CemuPlayer {
+            index: out.len() as u8,
+            kind,
+            player: i as u8 + 1,
+            dsu_slot: Some(*wslot),
+            nunchuk_slot: if kind == PadKind::Wiimote { *nslot } else { None },
+            screen_only: kind == PadKind::GamePad
+                && players[*wslot as usize].as_ref().is_some_and(|p| p.screen_only),
+        });
+    }
+    out
 }
 
 /// Lo que se le dice a cada móvil en `ok.pad` / eco `pad`, según el modo: en
@@ -450,7 +478,7 @@ pub fn effective_pad_cemu(players: &[Option<PlayerInfo>], slot: u8) -> &'static 
         }
         _ => layout
             .iter()
-            .find(|c| c.dsu_slot == slot)
+            .find(|c| c.dsu_slot == Some(slot))
             .map(|c| c.kind.as_str())
             .unwrap_or("gamepad"),
     }
@@ -730,6 +758,7 @@ mod tests {
             own_nunchuk: false,
             screen_only: false,
             switch_pad: SwitchPad::Pro,
+            tilt: false,
         })
     }
 
@@ -823,9 +852,13 @@ mod tests {
         let l = cemu_layout(&p);
         assert!(l[0].screen_only, "J1 GamePad solo pantalla");
         assert!(!l[1].screen_only, "J2 es Pro: sin pantalla que dar");
-        // como Mando de Wii no aplica
+        // como Mando de Wii no aplica: el mando 1 queda como GamePad vacío
+        // (sin pantalla que dar) y él baja al mando 2
         p[0].as_mut().unwrap().pad_wii = true;
-        assert!(!cemu_layout(&p)[0].screen_only);
+        let l = cemu_layout(&p);
+        assert!(l[0].is_empty_gamepad() && !l[0].screen_only);
+        assert_eq!(l[1].kind, PadKind::Wiimote);
+        assert!(!l[1].screen_only);
     }
 
     #[test]
@@ -835,25 +868,29 @@ mod tests {
         assert_eq!(
             cemu_layout(&p),
             vec![
-                CemuPlayer { index: 0, kind: PadKind::GamePad, dsu_slot: 0, nunchuk_slot: None, screen_only: false },
-                CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None, screen_only: false },
+                CemuPlayer { index: 0, kind: PadKind::GamePad, player: 1, dsu_slot: Some(0), nunchuk_slot: None, screen_only: false },
+                CemuPlayer { index: 1, kind: PadKind::Pro, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
             ]
         );
         assert_eq!(effective_pad_cemu(&p, 0), "gamepad");
         assert_eq!(effective_pad_cemu(&p, 1), "pro");
         assert_eq!(effective_pad_cemu(&p, 3), "nunchuk", "sin uso: J1 es GamePad");
         assert_eq!(effective_pad_cemu(&p, 2), "gamepad", "slot vacío: valor por defecto");
-        // J1 pide Mando Wii: se lleva el Nunchuk y J2 sigue siendo Pro (no GamePad)
+        // J1 pide Mando Wii: se lleva el Nunchuk y J2 sigue siendo Pro (no
+        // GamePad); el mando 1 de Cemu queda como GamePad vacío y los móviles
+        // bajan a los mandos 2 y 3
         let mut p = p;
         p[0].as_mut().unwrap().pad_wii = true;
         assert_eq!(
             cemu_layout(&p),
             vec![
-                CemuPlayer { index: 0, kind: PadKind::Wiimote, dsu_slot: 0, nunchuk_slot: Some(3), screen_only: false },
-                CemuPlayer { index: 1, kind: PadKind::Pro, dsu_slot: 1, nunchuk_slot: None, screen_only: false },
+                CemuPlayer::empty_gamepad(),
+                CemuPlayer { index: 1, kind: PadKind::Wiimote, player: 1, dsu_slot: Some(0), nunchuk_slot: Some(3), screen_only: false },
+                CemuPlayer { index: 2, kind: PadKind::Pro, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
             ]
         );
         assert_eq!(effective_pad_cemu(&p, 0), "wiimote");
+        assert_eq!(effective_pad_cemu(&p, 1), "pro");
         assert_eq!(effective_pad_cemu(&p, 3), "wiimote", "el Nunchuk ya está en uso");
         // se va J1: J2 pasa a ser el GamePad (su móvil debe enterarse por `pad`)
         p[0] = None;
@@ -862,6 +899,59 @@ mod tests {
         // solo un Nunchuk: nada que configurar
         let p = [None, None, None, player(Role::Nunchuk)];
         assert!(cemu_layout(&p).is_empty());
+    }
+
+    #[test]
+    fn dos_mandos_wii_y_cemu_conserva_un_gamepad_en_el_mando_1() {
+        // Mario Party 10 con dos móviles como Mando de Wii: nadie es GamePad,
+        // pero Cemu necesita uno en el mando 1 → vacío, y los Mandos Wii van a
+        // los mandos 2 y 3 con sus números de jugador de siempre
+        let mut p = [player(Role::Wiimote), player(Role::Wiimote), None, None];
+        p[0].as_mut().unwrap().pad_wii = true;
+        p[1].as_mut().unwrap().pad_wii = true;
+        assert_eq!(
+            cemu_layout(&p),
+            vec![
+                CemuPlayer::empty_gamepad(),
+                CemuPlayer { index: 1, kind: PadKind::Wiimote, player: 1, dsu_slot: Some(0), nunchuk_slot: None, screen_only: false },
+                CemuPlayer { index: 2, kind: PadKind::Wiimote, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
+            ]
+        );
+        assert_eq!(effective_pad_cemu(&p, 0), "wiimote");
+        assert_eq!(effective_pad_cemu(&p, 1), "wiimote");
+        assert_eq!(player_number(&p, 0), 1);
+        assert_eq!(player_number(&p, 1), 2);
+        // el GamePad vacío no es de nadie: un slot libre sigue diciendo gamepad por defecto
+        assert_eq!(effective_pad_cemu(&p, 2), "gamepad");
+        // un solo móvil como Mando de Wii: lo mismo
+        let mut solo = [player(Role::Wiimote), None, None, None];
+        solo[0].as_mut().unwrap().pad_wii = true;
+        let l = cemu_layout(&solo);
+        assert_eq!(l.len(), 2);
+        assert!(l[0].is_empty_gamepad());
+        assert_eq!((l[1].index, l[1].kind, l[1].dsu_slot, l[1].player), (1, PadKind::Wiimote, Some(0), 1));
+        // un Nunchuk (slot 3) acompaña al primer Mando Wii, ahora en el mando 2
+        let mut con_nunchuk = [player(Role::Wiimote), player(Role::Wiimote), None, player(Role::Nunchuk)];
+        con_nunchuk[0].as_mut().unwrap().pad_wii = true;
+        con_nunchuk[1].as_mut().unwrap().pad_wii = true;
+        let l = cemu_layout(&con_nunchuk);
+        assert_eq!(l[1].nunchuk_slot, Some(3));
+        assert_eq!(l[2].nunchuk_slot, None);
+        assert_eq!(effective_pad_cemu(&con_nunchuk, 3), "wiimote");
+        // cuatro Mandos Wii: GamePad vacío + mandos 2..5
+        let mut cuatro = [player(Role::Wiimote), player(Role::Wiimote), player(Role::Wiimote), player(Role::Wiimote)];
+        for q in cuatro.iter_mut().flatten() {
+            q.pad_wii = true;
+        }
+        let l = cemu_layout(&cuatro);
+        assert_eq!(l.iter().map(|c| c.index).collect::<Vec<_>>(), vec![0, 1, 2, 3, 4]);
+        assert_eq!(l.iter().map(|c| c.player).collect::<Vec<_>>(), vec![0, 1, 2, 3, 4]);
+        // siempre hay exactamente un GamePad y está en el mando 1
+        for l in [cemu_layout(&p), cemu_layout(&solo), cemu_layout(&con_nunchuk), cemu_layout(&cuatro), cemu_layout(&[player(Role::Wiimote), None, None, None])] {
+            assert_eq!(l.iter().filter(|c| c.kind == PadKind::GamePad).count(), 1, "{l:?}");
+            assert_eq!((l[0].kind, l[0].index), (PadKind::GamePad, 0), "{l:?}");
+            assert!(l.iter().skip(1).all(|c| !c.is_empty_gamepad()), "solo el mando 1 puede ir vacío: {l:?}");
+        }
     }
 
     #[test]
@@ -903,7 +993,10 @@ mod tests {
         // se lleva el de otro móvil como siempre
         let mut p = [player_own(), player(Role::Wiimote), None, player(Role::Nunchuk)];
         p[0].as_mut().unwrap().pad_wii = true;
-        assert_eq!(cemu_layout(&p)[0].nunchuk_slot, Some(3));
+        // (el mando 1 es el GamePad vacío; J1 Mando Wii va en el mando 2)
+        let l = cemu_layout(&p);
+        assert!(l[0].is_empty_gamepad());
+        assert_eq!(l[1].nunchuk_slot, Some(3));
         assert_eq!(effective_pad_cemu(&p, 3), "wiimote");
     }
 
