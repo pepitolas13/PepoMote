@@ -637,3 +637,16 @@ SideStore y AltStore avisan además por su cuenta con la fuente de PepoMote.
 - **Hay un perfil específico de juego:** la integración escribe el perfil global. Si ese juego fuerza otro perfil, selecciona la configuración global de mandos en Eden.
 
 Guía completa: [SETUP-SWITCH.md](SETUP-SWITCH.md).
+
+## RetroArch
+
+- **No aparece RetroArch en el móvil:** el receptor del PC tiene que ser de esta versión (anuncia `retroarch` en sus modos); el servidor Android no lo ofrece.
+- **«Esperando a RetroArch» en el receptor:** RetroArch no contesta a los comandos de red (UDP 55355). Ciérralo, pulsa **Configurar RetroArch** y ábrelo; en RetroArch, Ajustes → Red → Comandos de red debe estar activado, y Ajustes → Entrada → Mando en red también (PepoMote pone ambos en `retroarch.cfg`, pero solo con RetroArch cerrado, porque lo reescribe al salir).
+- **«Abierto pero no responde a los comandos de red»:** el mando funciona en modo degradado (sin sincronizar con los fotogramas). Activa los comandos de red y reinicia RetroArch.
+- **El mando no aparece en el juego:** los mandos en red no salen en la lista de dispositivos; se suman al puerto del jugador (Jugador 1 = usuario 1, puerto 55400). Ajustes → Entrada → Usuarios máximos debe ser ≥ el número de móviles.
+- **Un botón se suelta solo o dura un fotograma:** RetroArch en Windows vacía el mando en red en los fotogramas sin datagrama; PepoMote lo esquiva refrescando cada fotograma. Si pasa, la ventana del receptor debe decir «responde»; si dice degradado, ver arriba.
+- **La pistola no apunta:** en el núcleo, Menú rápido → Controles → Puerto 1 → dispositivo de pistola (Zapper, Super Scope, GunCon…); PepoMote mueve el cursor del PC y B/A son los botones 1 y 2 del ratón. En Linux usa el driver de entrada `x11` o `sdl2` si con `udev` no sigue al cursor. Solo apunta el Jugador 1.
+- **No entra el texto:** pon la ventana de RetroArch en primer plano (Windows/macOS la activan solos) y, si el juego usa teclado, el foco de juego (Bloq Despl).
+- **Quiero mi retroarch.cfg de antes:** Restaurar mi retroarch.cfg en el receptor (solo las claves de PepoMote; apaga la autoconfiguración de RetroArch).
+
+Guía completa: [SETUP-RETROARCH.md](SETUP-RETROARCH.md).

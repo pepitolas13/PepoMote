@@ -12,6 +12,7 @@
 - **Modo Wii U** — pon el móvil apaisado y es un Wii U GamePad para el [emulador Cemu](https://cemu.info/): dos sticks, A/B/X/Y, L/R/ZL/ZR, giroscopio, pantalla táctil. Los perfiles de mando de Cemu se escriben solos; un segundo móvil es un Pro Controller, y cualquiera (o todos a la vez) puede ser un Mando de Wii (con Nunchuk) para los juegos de Wii U que se juegan así. **Con doble pantalla**: la pantalla del GamePad (mapa, inventario, jugar sin TV) llega de Cemu al móvil (y se esconde en el PC), tocarla es tocar la pantalla del GamePad, y el teclado del móvil escribe en el teclado en pantalla de Cemu (el nombre del jugador y demás). O, con un mando de verdad en el PC, el móvil como pantalla táctil del GamePad y nada más, a pantalla completa (**Pantalla del GamePad a pantalla completa** en Ajustes).
 
 - **Modo Switch** — Pro Controller para Eden, con un jugador independiente por móvil. Botones, ambos sticks, movimiento si hay giroscopio, Capturar y teclado; configuración automática con copia y restauración de tus mandos. [Guía de Switch](docs/SETUP-SWITCH.md).
+- **Modo RetroArch** — el móvil es un mando para [RetroArch](https://www.retroarch.com/): un **RetroPad** de dos sticks con todos los botones, un **mando de NES** (el Mando de Wii de lado) o una **pistola de luz** (apuntas con el móvil: B dispara, A recarga). Usa el mando en red y los comandos de red del propio RetroArch, así que no hay driver y va igual en Windows, Linux y macOS; PepoMote activa las dos cosas en `retroarch.cfg` con RetroArch cerrado. Home abre el menú de RetroArch, un botón hace avance rápido mientras se mantiene, y la cabecera del móvil trae guardar y cargar estado, ranura, rebobinar, pausa, captura y reiniciar. Un jugador por móvil, hasta cuatro. [Guía de RetroArch](docs/SETUP-RETROARCH.md).
 
 | Pieza | Plataforma | Archivo |
 |---|---|---|
@@ -49,6 +50,10 @@ Mira [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — toca **Wii U** en la app, sost
 ## Jugar a la Switch
 
 Cierra Eden, toca **Switch** en el móvil, espera el aviso de configuración. Abre Eden y juega. Instrucciones, restauración y multijugador en [docs/SETUP-SWITCH.md](docs/SETUP-SWITCH.md). Este modo integra Eden; Ryujinx aún no está incluido.
+
+## Jugar en RetroArch
+
+Cierra RetroArch, toca **RetroArch** en el móvil, espera el aviso de configuración. Abre RetroArch y juega: el móvil es un RetroPad en el jugador 1 (puerto 55400), un segundo móvil en el jugador 2, y así. Elige **Mando NES** o **Pistola** en la cabecera del móvil para los juegos de 8 bits y para los núcleos con Zapper/GunCon. Cómo se dosifica la entrada a los fotogramas de RetroArch, la pistola, el teclado y dónde vive `retroarch.cfg`: [docs/SETUP-RETROARCH.md](docs/SETUP-RETROARCH.md).
 
 ## Detalles finos
 
@@ -89,7 +94,7 @@ Cierra Eden, toca **Switch** en el móvil, espera el aviso de configuración. Ab
 
 ## Legal
 
-PepoMote es un proyecto original e independiente — sin afiliación, respaldo ni patrocinio de Nintendo. No contiene assets, marcas, tipografías ni sonidos de Nintendo; "Wii" se usa solo de forma nominativa para describir compatibilidad con el emulador Dolphin. No distribuye Dolphin ni juegos. Ver [docs/LEGAL.md](docs/LEGAL.md).
+PepoMote es un proyecto original e independiente — sin afiliación, respaldo ni patrocinio de Nintendo. No contiene assets, marcas, tipografías ni sonidos de Nintendo; "Wii" se usa solo de forma nominativa para describir compatibilidad con el emulador Dolphin, "Wii U" con Cemu, "Switch" con Eden y "RetroArch" con el frontend RetroArch (código abierto, GPL-3.0), con cuyo mando en red e interfaz de comandos habla PepoMote. No distribuye Dolphin, Cemu, Eden, RetroArch ni juegos. Ver [docs/LEGAL.md](docs/LEGAL.md).
 
 ## Licencia
 

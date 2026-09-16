@@ -23,6 +23,12 @@ jobs:
       - name: Test
         working-directory: desktop
         run: cargo test --release
+      # Receptor real aislado + RetroArch falso por sockets (desktop/e2e/README.md):
+      # retroarch.cfg, un datagrama por fotograma, teclas rápidas, resincronización
+      - name: e2e RetroArch (receptor aislado)
+        env:
+          PEPOMOTE_E2E_SUITES: e2e_retroarch
+        run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe
       - uses: actions/upload-artifact@v4
         with:
           name: PepoMote-windows
@@ -128,6 +134,11 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends sway wev xkb-data
           bash desktop/e2e/e2e_wayland.sh
+      # Receptor real aislado + RetroArch falso por sockets (desktop/e2e/README.md)
+      - name: e2e RetroArch (receptor aislado)
+        env:
+          PEPOMOTE_E2E_SUITES: e2e_retroarch
+        run: python3 desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote
       - uses: actions/upload-artifact@v4
         if: always()
         with:

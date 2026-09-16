@@ -12,6 +12,7 @@
 - **Wii U mode** — turn the phone sideways and it is a Wii U GamePad for the [Cemu emulator](https://cemu.info/): two sticks, A/B/X/Y, L/R/ZL/ZR, gyro, touch screen. Cemu's controller profiles are written for you; a second phone can be a Pro Controller, and any phone (or all of them at once) can be a Wii Remote (with Nunchuk) for Wii-style Wii U games. **Second screen included**: the GamePad's own screen (map, inventory, off-TV play) is streamed from Cemu to the phone (and hidden on the PC), touching it touches the GamePad screen, and the phone's keyboard types into Cemu's on-screen keyboard (player names and the like). Or, with a real controller on the PC, the phone can be the GamePad's touch screen only, full screen (**GamePad screen full screen** in Settings).
 
 - **Switch mode** — Pro Controller for Eden, with one independent player per phone. Buttons, both sticks, motion when a gyroscope is available, Capture and keyboard; automatic setup with backup and controller restoration. [Switch setup guide](docs/SETUP-SWITCH.md).
+- **RetroArch mode** — the phone is a controller for [RetroArch](https://www.retroarch.com/): a two-stick **RetroPad** with every button, a **NES pad** (the Wii Remote sideways) or a **light gun** (aim with the phone: B fires, A reloads). It uses RetroArch's own network gamepad and network commands, so there is no driver and it works the same on Windows, Linux and macOS; PepoMote enables both in `retroarch.cfg` while RetroArch is closed. Home opens the RetroArch menu, a button fast-forwards while held, and the phone header brings save/load state, slot, rewind, pause, screenshot and reset. One player per phone, up to four. [RetroArch setup guide](docs/SETUP-RETROARCH.md).
 
 | Piece | Platform | File |
 |---|---|---|
@@ -50,6 +51,10 @@ See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold 
 
 Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden and play. Setup, restoration and multiplayer: [docs/SETUP-SWITCH.md](docs/SETUP-SWITCH.md). This mode integrates Eden; Ryujinx is not included yet.
 
+## Play in RetroArch
+
+Close RetroArch, tap **RetroArch** on the phone, wait for setup confirmation. Open RetroArch and play: the phone is a RetroPad on player 1 (55400), a second phone on player 2, and so on. Pick **NES pad** or **Light gun** in the phone header for 8-bit games and for Zapper/GunCon cores. How the input is paced to RetroArch's frames, the light gun, the keyboard and where `retroarch.cfg` lives: [docs/SETUP-RETROARCH.md](docs/SETUP-RETROARCH.md).
+
 ## Nice touches
 
 - **Local multiplayer**: up to 4 phones on one PC — scan the same QR and each phone becomes its own Wiimote in Dolphin, with Dolphin's controller config written for you automatically
@@ -60,7 +65,7 @@ Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden 
 - Optional start-with-the-system (tray only, no window)
 - One QR pairing; reconnects with one tap; auto-discovery on your LAN
 - Synthesized UI sounds + haptics (both optional)
-- **Automatic mode** (1.4): open Dolphin, Cemu or Eden and the receiver switches mode by itself; closing it keeps the current mode. Enable **Return to pointer when an emulator closes** in Settings for automatic return (off by default)
+- **Automatic mode** (1.4): open Dolphin, Cemu, Eden or RetroArch and the receiver switches mode by itself; closing it keeps the current mode. Enable **Return to pointer when an emulator closes** in Settings for automatic return (off by default)
 - **Precision**: hold the crosshair strip and the cursor moves at 40 %, with no jump when you let go; it keeps working even if your finger drifts off the strip
 - **Phones without a gyroscope**: the app detects a missing or software-only gyroscope (Moto G04s and other Unisoc phones), warns you once, and the pointer switches to tilting: sideways and up/down, from the accelerometer alone, drift-free because it comes from gravity. **Settings → Pointer sensor** lets you pick Gyroscope or Accelerometer yourself. Needs the updated receiver
 - **Several Wii Remotes in Wii U mode** (1.8.5): Cemu's Controller 1 is always a Wii U GamePad. If every phone chooses Wii Remote (Mario Party 10 with two to four phones), PepoMote leaves a GamePad driven by the PC keyboard there (or your own real one) and the Wii Remotes take Controllers 2 and up, so the game boots and reads all of them
@@ -89,7 +94,7 @@ Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden 
 
 ## Legal
 
-PepoMote is an original, independent project — not affiliated with, endorsed by, or sponsored by Nintendo. It contains no Nintendo assets, trademarks, fonts or sounds; "Wii" is used only nominatively to describe compatibility with the Dolphin emulator. "Wii U" likewise describes compatibility with the Cemu emulator (open source, MPL-2.0). It does not distribute Dolphin, Cemu or any games. See [docs/LEGAL.md](docs/LEGAL.md).
+PepoMote is an original, independent project — not affiliated with, endorsed by, or sponsored by Nintendo. It contains no Nintendo assets, trademarks, fonts or sounds; "Wii" is used only nominatively to describe compatibility with the Dolphin emulator. "Wii U" likewise describes compatibility with the Cemu emulator (open source, MPL-2.0), "Switch" with Eden, and "RetroArch" with the RetroArch frontend (open source, GPL-3.0), whose network gamepad and command interface PepoMote talks to. It does not distribute Dolphin, Cemu, Eden, RetroArch or any games. See [docs/LEGAL.md](docs/LEGAL.md).
 
 ## License
 
