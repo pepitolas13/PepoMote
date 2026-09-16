@@ -51,6 +51,10 @@ private const val PAD_ECHO_TIMEOUT_MS = 2000L
  */
 @Composable
 fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? = null) {
+    if (link.mode == LinkState.MODE_RETROARCH) {
+        RetroPadSelector(link, compact, help)
+        return
+    }
     if (link.mode == LinkState.MODE_SWITCH) {
         Text(
             stringResource(R.string.pro_controller),
@@ -125,6 +129,85 @@ fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? 
                         if (!wiimote) {
                             pending = LinkState.PAD_WIIMOTE
                             LinkState.sendPad?.invoke(LinkState.PAD_WIIMOTE)
+                        }
+                    }
+                }
+            }
+            if (help != null) {
+                Text(
+                    help,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp, start = 12.dp, end = 12.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * «En RetroArch soy: [ RetroPad ] [ NES ] [ Pistola ]»: el mando apaisado de
+ * dos sticks, el Mando Wii de lado (B y A) o el Mando Wii apuntando (pistola
+ * de luz: B dispara, A recarga). Tocar envía `pad retropad|nes|gun`; la
+ * pantalla cambia con el eco.
+ */
+@Composable
+private fun RetroPadSelector(link: UiLink.Connected, compact: Boolean, help: String?) {
+    var pending by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(link.pad) { pending = null }
+    LaunchedEffect(pending) {
+        if (pending != null) {
+            delay(PAD_ECHO_TIMEOUT_MS)
+            pending = null
+        }
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val inlinePrefix = maxWidth >= 470.dp
+        val prefixW = if (inlinePrefix) 130.dp else 0.dp
+        val segmentsW = (maxWidth - prefixW - 24.dp).coerceIn(200.dp, if (compact) 360.dp else 400.dp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (!inlinePrefix) {
+                Text(
+                    stringResource(R.string.in_retroarch),
+                    style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.TextDim, fontSize = 11.sp),
+                    maxLines = 1
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
+            ) {
+                if (inlinePrefix) {
+                    Text(
+                        stringResource(R.string.in_retroarch),
+                        style = MaterialTheme.typography.bodyMedium.copy(color = PepoColors.Text),
+                        maxLines = 1
+                    )
+                }
+                val shape = RoundedCornerShape(20.dp)
+                Row(
+                    modifier = Modifier
+                        .width(segmentsW)
+                        .background(PepoColors.Card, shape)
+                        .border(1.5.dp, PepoColors.CardBorder, shape)
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    for ((pad, label) in listOf(
+                        LinkState.PAD_RETROPAD to R.string.retropad,
+                        LinkState.PAD_NES to R.string.nes_pad,
+                        LinkState.PAD_GUN to R.string.light_gun
+                    )) {
+                        Segment(
+                            label = stringResource(label),
+                            selected = link.pad == pad,
+                            pending = pending == pad,
+                            compact = compact
+                        ) {
+                            if (link.pad != pad) {
+                                pending = pad
+                                LinkState.sendPad?.invoke(pad)
+                            }
                         }
                     }
                 }

@@ -57,7 +57,9 @@ class ControlClient(
          * flags bit4). false = receptor anterior o servidor Android: el bit no
          * se envía nunca (lo descartarían).
          */
-        val supportsTilt: Boolean = false
+        val supportsTilt: Boolean = false,
+        /** `ok.modes` contiene "retroarch": el receptor del PC entiende RetroArch. */
+        val supportsRetroArch: Boolean = false
     )
 
     interface Callbacks {
@@ -167,7 +169,8 @@ class ControlClient(
                                 textInput = confirmedPlatform != ReceiverCapabilities.ANDROID && msg.optBoolean("text_input", true),
                                 pairToken = sequenceOf(msg.optString("pair_token"), msg.optString("token"))
                                     .firstOrNull { it.isNotBlank() && it.length <= 512 },
-                                supportsTilt = msg.optBoolean("tilt", false)
+                                supportsTilt = msg.optBoolean("tilt", false),
+                                supportsRetroArch = supportsMode(msg, "retroarch")
                             )
                         )
                     }
@@ -191,6 +194,7 @@ class ControlClient(
                         msg.optInt("player", 0).takeIf { it in 1..4 })
                     "nunchuk" -> callbacks.onNunchukChanged(msg.optBoolean("own", false))
                     "screen_only" -> callbacks.onScreenOnlyChanged(msg.optBoolean("on", false))
+                    "hotkey" -> Unit // eco de la tecla rápida de RetroArch: informativo
                     "notice" -> msg.optString("text").takeIf { it.isNotBlank() }?.let(callbacks::onNotice)
                     else -> Unit // mensaje desconocido: se ignora
                 }
@@ -241,6 +245,15 @@ class ControlClient(
     /** Modo Wii U: el móvil solo como pantalla táctil, sí o no; el receptor lo confirma con el eco. */
     fun sendScreenOnly(on: Boolean) {
         sendJson(JSONObject().put("m", "screen_only").put("on", on))
+    }
+
+    /**
+     * Modo RetroArch: tecla rápida (`save_state`, `load_state`, `rewind`…;
+     * PROTOCOL.md §3). Las de mantener llevan `down` true al pulsar y false
+     * al soltar; las de un toque, solo true. Un receptor antiguo la ignora.
+     */
+    fun sendHotkey(name: String, down: Boolean) {
+        sendJson(JSONObject().put("m", "hotkey").put("name", name).put("down", down))
     }
 
     /**

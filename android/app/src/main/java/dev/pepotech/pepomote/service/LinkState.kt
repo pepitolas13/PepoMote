@@ -45,7 +45,9 @@ sealed class UiLink {
         val platform: String = ReceiverCapabilities.DESKTOP,
         val textInput: Boolean = true,
         /** El receptor entiende el apuntado por inclinación (`ok.tilt`); false en receptores anteriores. */
-        val supportsTilt: Boolean = false
+        val supportsTilt: Boolean = false,
+        /** `ok.modes` contains "retroarch" (PC receiver with the RetroArch network gamepad). */
+        val supportsRetroArch: Boolean = false
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
@@ -74,10 +76,15 @@ object LinkState {
     const val MODE_DOLPHIN = "dolphin"
     const val MODE_CEMU = "cemu"
     const val MODE_SWITCH = "switch"
+    const val MODE_RETROARCH = "retroarch"
 
     const val PAD_GAMEPAD = "gamepad"
     const val PAD_PRO = "pro"
     const val PAD_WIIMOTE = "wiimote"
+    /** Modo RetroArch: mando apaisado de dos sticks, mando de NES (de lado) o pistola de luz. */
+    const val PAD_RETROPAD = "retropad"
+    const val PAD_NES = "nes"
+    const val PAD_GUN = "gun"
 
     private val _flow = MutableStateFlow<UiLink>(UiLink.Disconnected)
     val flow: StateFlow<UiLink> = _flow
@@ -125,6 +132,14 @@ object LinkState {
     var sendScreenOnly: ((Boolean) -> Unit)? = null
 
     /**
+     * Modo RetroArch: tecla rápida por su nombre del protocolo (`save_state`,
+     * `rewind`…) y si se pulsa (true) o se suelta (false); las de un toque
+     * solo necesitan la pulsación.
+     */
+    @Volatile
+    var sendHotkey: ((String, Boolean) -> Unit)? = null
+
+    /**
      * Sensor del puntero cambiado en Ajustes con el enlace vivo: true =
      * acelerómetro (inclinación). El servicio lo cruza con lo que el
      * receptor anunció en su `ok` antes de ponérselo al motor.
@@ -153,6 +168,7 @@ object LinkState {
         _intent.value = when (selected) {
             MODE_CEMU -> PadIntent.WiiU
             MODE_SWITCH -> PadIntent.Switch
+            MODE_RETROARCH -> PadIntent.RetroArch
             else -> PadIntent.None
         }
         val send = sendMode

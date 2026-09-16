@@ -291,6 +291,9 @@ class LinkForegroundService : Service() {
                     LinkState.sendScreenOnly = { on ->
                         if ((LinkState.flow.value as? UiLink.Connected)?.mode == LinkState.MODE_CEMU) control?.sendScreenOnly(on)
                     }
+                    LinkState.sendHotkey = { name, down ->
+                        if ((LinkState.flow.value as? UiLink.Connected)?.mode == LinkState.MODE_RETROARCH) control?.sendHotkey(name, down)
+                    }
                     LinkState.publish(
                         UiLink.Connected(
                             pcName, ok.mode, null, 0f, ok.slot,
@@ -304,7 +307,8 @@ class LinkForegroundService : Service() {
                             supportsSwitch = ok.supportsSwitch,
                             platform = ok.platform,
                             textInput = ok.textInput,
-                            supportsTilt = ok.supportsTilt
+                            supportsTilt = ok.supportsTilt,
+                            supportsRetroArch = ok.supportsRetroArch
                         )
                     )
                     val requestedMode = LinkState.pendingMode
@@ -316,7 +320,7 @@ class LinkForegroundService : Service() {
                         control?.sendMode(selected, cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
                     }
                     // Reponer solo la elección del modo confirmado, después de su eco si estaba pendiente.
-                    if (!nunchuk && requestedMode == null && (ok.mode == LinkState.MODE_CEMU && ok.supportsCemu || ok.mode == LinkState.MODE_SWITCH && ok.supportsSwitch)) {
+                    if (!nunchuk && requestedMode == null && (ok.mode == LinkState.MODE_CEMU && ok.supportsCemu || ok.mode == LinkState.MODE_SWITCH && ok.supportsSwitch || ok.mode == LinkState.MODE_RETROARCH && ok.supportsRetroArch)) {
                         control?.restoreModePreferences(ok.mode, AppPrefs.pad(this@LinkForegroundService, ok.mode),
                             cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
                     }
@@ -383,7 +387,7 @@ class LinkForegroundService : Service() {
                     }
                     LinkState.resolveIntent(this@LinkForegroundService, mode, byPc)
                     if (role == LinkState.ROLE_WIIMOTE) {
-                        if (mode == LinkState.MODE_CEMU && before?.supportsCemu == true || mode == LinkState.MODE_SWITCH && before?.supportsSwitch == true) {
+                        if (mode == LinkState.MODE_CEMU && before?.supportsCemu == true || mode == LinkState.MODE_SWITCH && before?.supportsSwitch == true || mode == LinkState.MODE_RETROARCH && before?.supportsRetroArch == true) {
                             control?.restoreModePreferences(mode, AppPrefs.pad(this@LinkForegroundService, mode),
                                 cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
                         }
@@ -511,6 +515,7 @@ class LinkForegroundService : Service() {
         LinkState.sendText = null
         LinkState.sendNunchuk = null
         LinkState.sendScreenOnly = null
+        LinkState.sendHotkey = null
         LinkState.setTilt = null
         LinkState.motion = null
         ScreenLink.unbind() // sin enlace no hay pantalla que recibir

@@ -61,7 +61,9 @@ fun HomeScreen(
     /** Versión nueva publicada que anunciar (null = ninguna). */
     update: UpdateCheck.Version? = null,
     onOpenUpdate: (UpdateCheck.Version) -> Unit = {},
-    onDismissUpdate: (UpdateCheck.Version) -> Unit = {}
+    onDismissUpdate: (UpdateCheck.Version) -> Unit = {},
+    /** Tarjeta RetroArch (solo con receptor de PC). */
+    onRetroArch: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -175,6 +177,16 @@ fun HomeScreen(
                     glyph = ChannelGlyph.Switch,
                     accent = PepoColors.Error,
                     onClick = onSwitch
+                )
+            }
+            // RetroArch: RetroPad de dos sticks, mando de NES o pistola de luz
+            if (!androidReceiver) item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_retroarch),
+                    subtitle = stringResource(R.string.channel_retroarch_sub),
+                    glyph = ChannelGlyph.Retro,
+                    accent = PepoColors.Warn,
+                    onClick = onRetroArch
                 )
             }
             // Con Dolphin: el segundo móvil, en la otra mano

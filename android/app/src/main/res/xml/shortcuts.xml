@@ -46,6 +46,17 @@
             android:targetClass="dev.pepotech.pepomote.MainActivity" />
     </shortcut>
     <shortcut
+        android:shortcutId="retroarch"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_retroarch"
+        android:shortcutShortLabel="@string/shortcut_retroarch"
+        android:shortcutLongLabel="@string/shortcut_retroarch_long">
+        <intent
+            android:action="dev.pepotech.pepomote.action.RETROARCH"
+            android:targetPackage="dev.pepotech.pepomote"
+            android:targetClass="dev.pepotech.pepomote.MainActivity" />
+    </shortcut>
+    <shortcut
         android:shortcutId="nunchuk"
         android:enabled="true"
         android:icon="@drawable/ic_shortcut_nunchuk"

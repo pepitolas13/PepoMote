@@ -305,6 +305,7 @@ class MainActivity : ComponentActivity() {
             LaunchAction.Dolphin -> openController(LinkState.MODE_DOLPHIN, dolphinOnly = true)
             LaunchAction.WiiU -> openController(LinkState.MODE_CEMU, dolphinOnly = false)
             LaunchAction.Switch -> openController(LinkState.MODE_SWITCH, dolphinOnly = false)
+            LaunchAction.RetroArch -> openController(LinkState.MODE_RETROARCH, dolphinOnly = false)
             LaunchAction.Nunchuk -> openNunchuk()
         }
     }
@@ -579,6 +580,7 @@ private fun Root(activity: MainActivity) {
                 onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
                 onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
                 onSwitch = { activity.openController(LinkState.MODE_SWITCH, dolphinOnly = false) },
+                onRetroArch = { activity.openController(LinkState.MODE_RETROARCH, dolphinOnly = false) },
                 onNunchuk = { activity.openNunchuk() },
                 onNewPairing = { activity.currentScreen = Screen.Settings },
                 onServer = { activity.openServer() },

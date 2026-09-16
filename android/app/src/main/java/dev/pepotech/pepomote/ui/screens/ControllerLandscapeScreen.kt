@@ -109,6 +109,9 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 PadCross(sizeDp = 190.dp * s, sideways = Route.sidewaysDpad(link))
             }
 
+            // RetroArch como mando de NES: 1 y 2 son B y A del RetroPad, la A
+            // grande es X y Home abre el menú de RetroArch (el receptor los mapea)
+            val retro = Route.isRetroArch(link)
             // − / ◎ / + y A en el centro (un 20 % más grandes que en la primera
             // versión: de lado se pulsan con el pulgar y quedaban pequeños). La
             // diana, como en el mando vertical y en el mando + Nunchuk: mantener
@@ -138,8 +141,8 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Spacer(Modifier.size(40.dp * s))
-                        RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
-                        RoundButton(stringResource(R.string.home_btn), 40.dp * s, ButtonState.HOME, textSize = (11 * s).roundToInt())
+                        RoundButton(if (retro) "X" else "A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
+                        RoundButton(stringResource(if (retro) R.string.retro_menu else R.string.home_btn), 40.dp * s, ButtonState.HOME, textSize = ((if (retro) 10 else 11) * s).roundToInt())
                     }
                 } else {
                     RoundButton("A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
@@ -154,14 +157,14 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 horizontalArrangement = Arrangement.spacedBy(18.dp * s)
             ) {
                 RoundButton(
-                    "1", 92.dp * s, ButtonState.ONE,
+                    if (retro) "B" else "1", 92.dp * s, ButtonState.ONE,
                     background = PepoColors.Blue,
                     pressedColor = PepoColors.BlueHover,
                     textColor = PepoColors.OnAccent,
                     textSize = (28 * s).roundToInt()
                 )
                 RoundButton(
-                    "2", 92.dp * s, ButtonState.TWO,
+                    if (retro) "A" else "2", 92.dp * s, ButtonState.TWO,
                     background = PepoColors.Blue,
                     pressedColor = PepoColors.BlueHover,
                     textColor = PepoColors.OnAccent,

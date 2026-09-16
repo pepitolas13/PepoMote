@@ -134,8 +134,11 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val intent by LinkState.intent.collectAsState()
     val wantedMode = Route.displayMode(link, intent)
     val switchPad = wantedMode == LinkState.MODE_SWITCH
+    // RetroArch: el mismo mando apaisado con etiquetas de RetroPad (L2/R2,
+    // Select/Start, Menú y avance rápido); paquetes como los de Switch
+    val retroPad = wantedMode == LinkState.MODE_RETROARCH
     val operative = Route.isGamePad(link) && connected?.mode == wantedMode
-    val pro = switchPad || connected?.pad == LinkState.PAD_PRO
+    val pro = switchPad || retroPad || connected?.pad == LinkState.PAD_PRO
     val engine = LinkState.motion
     val rotation = rememberDisplayRotation()
     val screen by ScreenLink.client.collectAsState()
@@ -167,7 +170,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             val prevKind = engine.kind
             val prevRotation = engine.rotation
             engine.rotation = rotation
-            engine.kind = if (switchPad) SenderKind.SWITCH else SenderKind.GAMEPAD
+            engine.kind = if (switchPad || retroPad) SenderKind.SWITCH else SenderKind.GAMEPAD
             onDispose {
                 engine.kind = prevKind
                 engine.rotation = prevRotation
@@ -190,7 +193,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val fullScreenKb = remember { AppPrefs.gamePadFullScreenKeyboard(context) }
     // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene),
     // con el modo confirmado y sin el ajuste «GamePad sin pantalla»
-    val wantScreen = operative && !switchPad && connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
+    val wantScreen = operative && !switchPad && !retroPad && connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
     // Pantalla completa: solo la pantalla de Cemu y el táctil (mando real en
     // el PC). Nunca sin el modo confirmado: el estado «Activando Wii U…»
     // sigue con cabecera y «Salir»
@@ -319,7 +322,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             val shoulders: @Composable () -> Unit = {
                                 Column(verticalArrangement = Arrangement.spacedBy(gap)) {
                                     ShoulderButton("L", ButtonState.L, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
-                                    ShoulderButton("ZL", ButtonState.ZL, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                                    ShoulderButton(if (retroPad) "L2" else "ZL", ButtonState.ZL, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                                 }
                             }
                             val click: @Composable () -> Unit = {
@@ -374,12 +377,20 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             val pillW = m.pillW.dp
                             val pillH = m.pillH.dp
                             val roundBtn = m.roundBtn.dp
-                            val minus: @Composable () -> Unit = { RoundButton("−", roundBtn, ButtonState.MINUS, textSize = (19 * k).roundToInt()) }
-                            val home: @Composable () -> Unit = { RoundButton(stringResource(R.string.home_btn), roundBtn, ButtonState.HOME, textSize = (12 * k).roundToInt()) }
-                            val plus: @Composable () -> Unit = { RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt()) }
+                            // RetroArch: − / + son Select / Start, Home abre el menú de
+                            // RetroArch y Capturar es el avance rápido (mantener)
+                            val minus: @Composable () -> Unit = {
+                                if (retroPad) RoundButton(stringResource(R.string.retro_select), roundBtn, ButtonState.MINUS, textSize = (9 * k).roundToInt())
+                                else RoundButton("−", roundBtn, ButtonState.MINUS, textSize = (19 * k).roundToInt())
+                            }
+                            val home: @Composable () -> Unit = { RoundButton(stringResource(if (retroPad) R.string.retro_menu else R.string.home_btn), roundBtn, ButtonState.HOME, textSize = ((if (retroPad) 10 else 12) * k).roundToInt()) }
+                            val plus: @Composable () -> Unit = {
+                                if (retroPad) RoundButton(stringResource(R.string.retro_start), roundBtn, ButtonState.PLUS, textSize = (9 * k).roundToInt())
+                                else RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt())
+                            }
                             val tv: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.tv_pad), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt()) }
                             val blow: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, pillH, textSize = (12 * k).roundToInt()) }
-                            val capture: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.capture), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt()) }
+                            val capture: @Composable () -> Unit = { ShoulderButton(stringResource(if (retroPad) R.string.retro_ff else R.string.capture), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt()) }
                             Spacer(Modifier.weight(1f))
                             if (m.row) {
                                 Column(
@@ -389,7 +400,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                     minus()
                                     home()
                                     plus()
-                                    if (switchPad) capture()
+                                    if (switchPad || retroPad) capture()
                                     if (!pro) {
                                         tv()
                                         blow()
@@ -398,7 +409,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             } else {
                                 if (pro) {
                                     Text(
-                                        stringResource(R.string.pro_controller),
+                                        stringResource(if (retroPad) R.string.retropad else R.string.pro_controller),
                                         style = MaterialTheme.typography.bodyMedium,
                                         textAlign = TextAlign.Center
                                     )
@@ -413,7 +424,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(rowGap)
                                 ) {
-                                    if (switchPad) capture() else if (!pro) tv()
+                                    if (switchPad || retroPad) capture() else if (!pro) tv()
                                     minus()
                                     home()
                                     plus()
@@ -439,7 +450,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                     verticalArrangement = Arrangement.spacedBy(gap)
                                 ) {
                                     ShoulderButton("R", ButtonState.R, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
-                                    ShoulderButton("ZR", ButtonState.ZR, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                                    ShoulderButton(if (retroPad) "R2" else "ZR", ButtonState.ZR, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                                 }
                             }
                             val click: @Composable () -> Unit = {
@@ -511,7 +522,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                 else -> headerH + gap
                             }
                         ),
-                    title = stringResource(if (switchPad) R.string.side_ask_switch else R.string.side_ask_gamepad),
+                    title = stringResource(if (retroPad) R.string.side_ask_retroarch else if (switchPad) R.string.side_ask_switch else R.string.side_ask_gamepad),
                     onFlip = { GamePadSide.setProvisional(shown.flipped()) },
                     onKeep = { GamePadSide.save(context, shown) }
                 )
@@ -527,7 +538,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                 KeyboardDialog(
                     onSend = { LinkState.sendText?.invoke(it) },
                     onClose = { keyboardOpen = false },
-                    switchPad = switchPad
+                    switchPad = switchPad,
+                    retroPad = retroPad
                 )
             }
 
@@ -759,8 +771,11 @@ private fun GamePadHeaderCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            val padName = if (wantedMode == LinkState.MODE_SWITCH || link.pad == LinkState.PAD_PRO)
-                stringResource(R.string.pro_controller) else stringResource(R.string.gamepad)
+            val padName = when {
+                wantedMode == LinkState.MODE_RETROARCH -> stringResource(R.string.retropad)
+                wantedMode == LinkState.MODE_SWITCH || link.pad == LinkState.PAD_PRO -> stringResource(R.string.pro_controller)
+                else -> stringResource(R.string.gamepad)
+            }
             Text(
                 GamePadHeaderText.status(
                     operative = operative,
@@ -768,7 +783,11 @@ private fun GamePadHeaderCard(
                     padName = padName,
                     rttMs = link.rttMs,
                     activating = stringResource(
-                        if (wantedMode == LinkState.MODE_SWITCH) R.string.activating_switch else R.string.activating_wiiu
+                        when (wantedMode) {
+                            LinkState.MODE_SWITCH -> R.string.activating_switch
+                            LinkState.MODE_RETROARCH -> R.string.activating_retroarch
+                            else -> R.string.activating_wiiu
+                        }
                     )
                 ),
                 style = MaterialTheme.typography.bodyMedium,
@@ -791,9 +810,14 @@ private fun GamePadHeaderCard(
                 current = if (operative) link.mode else wantedMode,
                 supportsCemu = link.supportsCemu,
                 supportsSwitch = link.supportsSwitch,
+                supportsRetroArch = link.supportsRetroArch,
                 androidReceiver = link.platform == "android",
                 compact = true
             )
+        }
+        // RetroArch: guardar/cargar estado, ranura, rebobinar, pausa…
+        if (operative && Route.isRetroArch(link)) {
+            dev.pepotech.pepomote.ui.components.RetroArchHotkeys(link, compact = true)
         }
     }
 }

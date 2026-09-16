@@ -205,6 +205,36 @@
     <string name="kb_switch_title">Teclado de Switch</string>
     <string name="kb_switch_help">Para el teclado en pantalla del juego. Borrar quita un carácter, Escribir manda el texto y sigue, Aceptar manda el texto e Intro.</string>
 
+    <!-- RetroArch -->
+    <string name="channel_retroarch">RetroArch</string>
+    <string name="channel_retroarch_sub">RetroPad, mando NES o pistola</string>
+    <string name="mode_retroarch">RetroArch</string>
+    <string name="activating_retroarch">Activando RetroArch…</string>
+    <string name="warn_needs_retroarch">Actualiza el receptor del PC para usar RetroArch.</string>
+    <string name="shortcut_retroarch">RetroArch</string>
+    <string name="shortcut_retroarch_long">Mando para RetroArch</string>
+    <string name="in_retroarch">En RetroArch soy:</string>
+    <string name="retropad">RetroPad</string>
+    <string name="nes_pad">Mando NES</string>
+    <string name="light_gun">Pistola</string>
+    <string name="retro_pad_help">RetroPad: dos sticks y todos los botones · Mando NES: el móvil de lado, B y A · Pistola: apunta con el móvil, B dispara y A recarga</string>
+    <string name="retro_menu">Menú</string>
+    <string name="retro_ff">Rápido</string>
+    <string name="retro_select">Select</string>
+    <string name="retro_start">Start</string>
+    <string name="side_ask_retroarch">¿Quieres el RetroPad así?</string>
+    <string name="kb_retroarch_title">Teclado para RetroArch</string>
+    <string name="kb_retroarch_help">Escribe en la ventana de RetroArch (ponla en primer plano; con teclado en el juego, activa el foco de juego). Borrar quita un carácter, Escribir manda el texto y sigue, Aceptar manda el texto e Intro.</string>
+    <string name="hotkey_save">Guardar</string>
+    <string name="hotkey_load">Cargar</string>
+    <string name="hotkey_slot_minus">Ranura −</string>
+    <string name="hotkey_slot_plus">Ranura +</string>
+    <string name="hotkey_rewind">Rebobinar</string>
+    <string name="hotkey_pause">Pausa</string>
+    <string name="hotkey_screenshot">Captura</string>
+    <string name="hotkey_reset">Reiniciar</string>
+    <string name="hotkeys_hint">Rebobinar se mantiene pulsado; el resto son un toque</string>
+
     <!-- Local Android receiver -->
     <string name="channel_server">Servidor</string>
     <string name="channel_server_sub">Juega en este Android</string>

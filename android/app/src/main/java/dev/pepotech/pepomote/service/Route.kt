@@ -13,7 +13,7 @@ enum class PadScreen { GamePad, Wii, Nunchuk }
  * Wii U y aún no ha llegado ningún eco/difusión de `mode` posterior. Mientras
  * dura, la pantalla GamePad se enseña de forma optimista.
  */
-enum class PadIntent { None, WiiU, Switch }
+enum class PadIntent { None, WiiU, Switch, RetroArch }
 
 /**
  * Routing del mando: función pura de (estado del enlace, intención pendiente),
@@ -23,7 +23,7 @@ object Route {
     /** Modes the owner can select from a compact controller menu. */
     fun availableModes(link: UiLink.Connected): List<String> {
         if (link.slot != 0 || link.role != LinkState.ROLE_WIIMOTE) return emptyList()
-        return ReceiverCapabilities.modes(link.platform, link.supportsCemu, link.supportsSwitch)
+        return ReceiverCapabilities.modes(link.platform, link.supportsCemu, link.supportsSwitch, link.supportsRetroArch)
     }
 
     fun isAndroidReceiver(link: UiLink): Boolean =
@@ -31,7 +31,7 @@ object Route {
 
     fun selectMode(requested: String?, link: UiLink.Connected): String =
         if (link.platform == ReceiverCapabilities.ANDROID)
-            ReceiverCapabilities.select(requested, link.mode, link.platform, link.supportsCemu, link.supportsSwitch)
+            ReceiverCapabilities.select(requested, link.mode, link.platform, link.supportsCemu, link.supportsSwitch, link.supportsRetroArch)
         else requested ?: link.mode
 
     @StringRes
@@ -43,6 +43,9 @@ object Route {
     @StringRes
     val WARN_NEEDS_SWITCH: Int = R.string.warn_needs_switch
 
+    @StringRes
+    val WARN_NEEDS_RETROARCH: Int = R.string.warn_needs_retroarch
+
     /**
      * Modo Wii U activo como GamePad/Pro: el receptor confirmó `cemu` y este
      * móvil (mando) no ha elegido ser Mando de Wii. Solo entonces se emiten
@@ -52,6 +55,9 @@ object Route {
         link.role == LinkState.ROLE_WIIMOTE && when (link.mode) {
             LinkState.MODE_CEMU -> link.supportsCemu && link.pad in setOf(LinkState.PAD_GAMEPAD, LinkState.PAD_PRO)
             LinkState.MODE_SWITCH -> link.supportsSwitch
+            // RetroArch: el mando apaisado es el RetroPad; el de NES y la
+            // pistola son los layouts de Wii de siempre (72 bytes)
+            LinkState.MODE_RETROARCH -> link.supportsRetroArch && link.pad == LinkState.PAD_RETROPAD
             else -> false
         }
 
@@ -59,6 +65,7 @@ object Route {
     fun displayMode(link: UiLink, intent: PadIntent): String = when (intent) {
         PadIntent.WiiU -> LinkState.MODE_CEMU
         PadIntent.Switch -> LinkState.MODE_SWITCH
+        PadIntent.RetroArch -> LinkState.MODE_RETROARCH
         PadIntent.None -> (link as? UiLink.Connected)?.mode ?: LinkState.MODE_CEMU
     }
 
@@ -84,13 +91,27 @@ object Route {
         link is UiLink.Connected && link.mode == LinkState.MODE_DOLPHIN &&
             link.role == LinkState.ROLE_WIIMOTE && link.ownNunchuk
 
+    /** Modo RetroArch confirmado por un receptor que lo entiende (este móvil es mando). */
+    fun isRetroArch(link: UiLink): Boolean =
+        link is UiLink.Connected && link.mode == LinkState.MODE_RETROARCH &&
+            link.supportsRetroArch && link.role == LinkState.ROLE_WIIMOTE
+
+    /** RetroArch como mando de NES: el Mando Wii de lado, fijo en apaisado. */
+    fun retroNes(link: UiLink): Boolean =
+        isRetroArch(link) && (link as UiLink.Connected).pad == LinkState.PAD_NES
+
+    /** RetroArch como pistola de luz: el Mando Wii apuntando (B dispara, A recarga). */
+    fun retroGun(link: UiLink): Boolean =
+        isRetroArch(link) && (link as UiLink.Connected).pad == LinkState.PAD_GUN
+
     /**
      * Pantallas del mando que van fijas en apaisado (el sensor solo decide
      * entre los dos apaisados): el GamePad de Wii U y el mando + Nunchuk de
-     * Dolphin. El mando se gira solo: no hace falta girar el móvil.
+     * Dolphin, y el mando de NES de RetroArch. El mando se gira solo: no
+     * hace falta girar el móvil.
      */
     fun forcesLandscape(link: UiLink, intent: PadIntent): Boolean =
-        route(link, intent) == PadScreen.GamePad || wiiLandscapeNunchuk(link)
+        route(link, intent) == PadScreen.GamePad || wiiLandscapeNunchuk(link) || retroNes(link)
 
     /**
      * Con el mando de lado (NES) el móvil ES un Mando de Wii girado: en
@@ -134,12 +155,24 @@ object Route {
      */
     fun afterModeEcho(intent: PadIntent, mode: String, link: UiLink, byPc: Boolean = false): Outcome {
         if (intent == PadIntent.None) return Outcome(intent, null)
-        val wanted = if (intent == PadIntent.Switch) LinkState.MODE_SWITCH else LinkState.MODE_CEMU
+        val wanted = when (intent) {
+            PadIntent.Switch -> LinkState.MODE_SWITCH
+            PadIntent.RetroArch -> LinkState.MODE_RETROARCH
+            else -> LinkState.MODE_CEMU
+        }
         if (mode == wanted || byPc) return Outcome(PadIntent.None, null)
         val c = link as? UiLink.Connected
-        val supported = if (intent == PadIntent.Switch) c?.supportsSwitch == true else c?.supportsCemu == true
+        val supported = when (intent) {
+            PadIntent.Switch -> c?.supportsSwitch == true
+            PadIntent.RetroArch -> c?.supportsRetroArch == true
+            else -> c?.supportsCemu == true
+        }
         val warning = if (supported && c?.slot != 0) WARN_PLAYER_1
-            else if (intent == PadIntent.Switch) WARN_NEEDS_SWITCH else WARN_NEEDS_13
+            else when (intent) {
+                PadIntent.Switch -> WARN_NEEDS_SWITCH
+                PadIntent.RetroArch -> WARN_NEEDS_RETROARCH
+                else -> WARN_NEEDS_13
+            }
         return Outcome(PadIntent.None, warning)
     }
 }

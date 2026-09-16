@@ -5,7 +5,7 @@ package dev.pepotech.pepomote.service
  * arrancar. Función pura, testeada en LaunchActionTest.
  */
 enum class LaunchAction {
-    Pointer, Dolphin, WiiU, Switch, Nunchuk;
+    Pointer, Dolphin, WiiU, Switch, RetroArch, Nunchuk;
 
     companion object {
         private const val PREFIX = "dev.pepotech.pepomote.action."
@@ -16,6 +16,7 @@ enum class LaunchAction {
             PREFIX + "DOLPHIN" -> Dolphin
             PREFIX + "WIIU" -> WiiU
             PREFIX + "SWITCH" -> Switch
+            PREFIX + "RETROARCH" -> RetroArch
             PREFIX + "NUNCHUK" -> Nunchuk
             else -> null
         }

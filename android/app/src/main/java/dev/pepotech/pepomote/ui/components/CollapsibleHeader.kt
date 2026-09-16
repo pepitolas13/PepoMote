@@ -390,8 +390,8 @@ private fun HeaderCard(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        // Modo Wii U: texto para el teclado en pantalla de Cemu
-        if (onKeyboard != null && link is UiLink.Connected && link.mode == LinkState.MODE_CEMU) {
+        // Modo Wii U: texto para el teclado en pantalla de Cemu; en RetroArch, para su ventana
+        if (onKeyboard != null && link is UiLink.Connected && (link.mode == LinkState.MODE_CEMU || link.mode == LinkState.MODE_RETROARCH)) {
             KeyboardButton(compact = true, onClick = onKeyboard)
         }
         TextButton(onClick = onDisconnect) {
@@ -404,6 +404,7 @@ private fun HeaderCard(
                 current = link.mode,
                 supportsCemu = link.supportsCemu,
                 supportsSwitch = link.supportsSwitch,
+                supportsRetroArch = link.supportsRetroArch,
                 androidReceiver = link.platform == "android",
                 compact = true
             )
@@ -411,8 +412,11 @@ private fun HeaderCard(
         if (alwaysNunchukChip || showNunchukChip(link)) {
             NunchukChip(link, compact = true)
         }
-        if (isWiiUAsWiimote(link)) {
+        if (isWiiUAsWiimote(link) || dev.pepotech.pepomote.service.Route.isRetroArch(link)) {
             PadSelector(link, compact = true)
+        }
+        if (dev.pepotech.pepomote.service.Route.isRetroArch(link)) {
+            RetroArchHotkeys(link, compact = true)
         }
     }
 }

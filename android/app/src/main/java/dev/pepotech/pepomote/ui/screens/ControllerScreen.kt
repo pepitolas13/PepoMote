@@ -160,6 +160,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                                     link.mode == LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
                                     link.mode == LinkState.MODE_DOLPHIN && link.ownNunchuk -> stringResource(R.string.mode_dolphin_nunchuk)
                                     link.mode == LinkState.MODE_DOLPHIN -> stringResource(R.string.mode_dolphin)
+                                    link.mode == LinkState.MODE_RETROARCH -> stringResource(R.string.mode_retroarch)
                                     link.slot > 0 -> stringResource(R.string.pointer_player1_points)
                                     else -> stringResource(R.string.mode_pointer)
                                 }
@@ -187,8 +188,9 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                             }
                         }
                     }
-                    // Modo Wii U: texto para el teclado en pantalla de Cemu
-                    if (link is UiLink.Connected && link.mode == LinkState.MODE_CEMU) {
+                    // Modo Wii U: texto para el teclado en pantalla de Cemu; en
+                    // RetroArch, para su ventana
+                    if (link is UiLink.Connected && (link.mode == LinkState.MODE_CEMU || link.mode == LinkState.MODE_RETROARCH)) {
                         KeyboardButton(compact = true) { keyboardOpen = true }
                         Spacer(Modifier.width(4.dp))
                     }
@@ -214,14 +216,21 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                             horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 10.dp, Alignment.CenterHorizontally),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, androidReceiver = link.platform == "android", dense = dense)
+                            if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, supportsRetroArch = link.supportsRetroArch, androidReceiver = link.platform == "android", dense = dense)
                             if (nunchuk) NunchukChip(link, dense = dense, modifier = Modifier.padding(start = 4.dp))
                         }
                     }
-                    // Wii U como Mando de Wii: qué mando soy en Cemu, con su ayuda
+                    // Wii U como Mando de Wii: qué mando soy en Cemu, con su ayuda;
+                    // en RetroArch, qué mando soy (RetroPad / NES / pistola) y las
+                    // teclas rápidas
                     if (isWiiUAsWiimote(link)) {
                         Spacer(Modifier.height(8.dp))
                         PadSelector(link, help = stringResource(R.string.wii_pad_help))
+                    } else if (dev.pepotech.pepomote.service.Route.isRetroArch(link)) {
+                        Spacer(Modifier.height(8.dp))
+                        PadSelector(link, help = stringResource(R.string.retro_pad_help))
+                        Spacer(Modifier.height(6.dp))
+                        dev.pepotech.pepomote.ui.components.RetroArchHotkeys(link)
                     }
                 }
 
@@ -367,6 +376,7 @@ internal fun modeLabel(mode: String): String = when (mode) {
     LinkState.MODE_DOLPHIN -> stringResource(R.string.mode_dolphin)
     LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
     LinkState.MODE_SWITCH -> stringResource(R.string.mode_switch)
+    LinkState.MODE_RETROARCH -> stringResource(R.string.mode_retroarch)
     else -> stringResource(R.string.mode_pointer)
 }
 
@@ -378,7 +388,7 @@ internal fun modeLabel(mode: String): String = when (mode) {
  */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: Boolean = false, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier, androidReceiver: Boolean = false) {
+internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: Boolean = false, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier, androidReceiver: Boolean = false, supportsRetroArch: Boolean = false) {
     val chips: @Composable () -> Unit = {
         if (!androidReceiver) ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact, dense = dense) {
             LinkState.requestMode(LinkState.MODE_POINTER)
@@ -394,6 +404,11 @@ internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: B
         if (supportsSwitch) {
             ModeChip(stringResource(if (androidReceiver) R.string.mode_eden else R.string.mode_switch), selected = current == LinkState.MODE_SWITCH, compact = compact, dense = dense) {
                 LinkState.requestMode(LinkState.MODE_SWITCH)
+            }
+        }
+        if (supportsRetroArch && !androidReceiver) {
+            ModeChip(stringResource(R.string.mode_retroarch), selected = current == LinkState.MODE_RETROARCH, compact = compact, dense = dense) {
+                LinkState.requestMode(LinkState.MODE_RETROARCH)
             }
         }
     }

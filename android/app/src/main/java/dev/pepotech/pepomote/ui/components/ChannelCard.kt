@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 // Glifos propios, dibujados a mano — nada de iconografía ajena.
-enum class ChannelGlyph { Qr, Pad, Pointer, Stick, GamePad, Switch, Gear, Server }
+enum class ChannelGlyph { Qr, Pad, Pointer, Stick, GamePad, Switch, Gear, Server, Retro }
 
 /** `wide`: tarjeta apaisada a todo el ancho (glifo a la izquierda, textos al lado). */
 @Composable
@@ -92,7 +92,25 @@ private fun DrawScope.drawGlyph(glyph: ChannelGlyph, accent: Color) {
         ChannelGlyph.Switch -> drawSwitchGlyph(accent)
         ChannelGlyph.Gear -> drawGearGlyph(accent)
         ChannelGlyph.Server -> drawServerGlyph(accent)
+        ChannelGlyph.Retro -> drawRetroGlyph(accent)
     }
+}
+
+/** Mando clásico apaisado: cuerpo, cruceta a la izquierda y dos botones a la derecha. */
+private fun DrawScope.drawRetroGlyph(accent: Color) {
+    val w = size.width
+    val h = size.height
+    drawRoundRect(accent, androidx.compose.ui.geometry.Offset(w * .04f, h * .28f),
+        androidx.compose.ui.geometry.Size(w * .92f, h * .44f),
+        androidx.compose.ui.geometry.CornerRadius(w * .08f), style = Stroke(w * .045f))
+    // cruceta
+    drawLine(accent, androidx.compose.ui.geometry.Offset(w * .27f, h * .38f),
+        androidx.compose.ui.geometry.Offset(w * .27f, h * .62f), w * .07f, StrokeCap.Round)
+    drawLine(accent, androidx.compose.ui.geometry.Offset(w * .15f, h * .50f),
+        androidx.compose.ui.geometry.Offset(w * .39f, h * .50f), w * .07f, StrokeCap.Round)
+    // B y A
+    drawCircle(accent, w * .05f, androidx.compose.ui.geometry.Offset(w * .66f, h * .55f))
+    drawCircle(accent, w * .05f, androidx.compose.ui.geometry.Offset(w * .82f, h * .45f))
 }
 
 private fun DrawScope.drawServerGlyph(accent: Color) {
