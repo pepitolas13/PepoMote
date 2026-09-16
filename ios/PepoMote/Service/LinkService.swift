@@ -166,6 +166,7 @@ final class LinkService {
             guard let self, let mode = self.link.link.connected?.mode else { return }
             if mode == LinkState.modeSwitch, LinkState.validSwitchPad(p) { AppPrefs.switchPad = p }
             else if mode == LinkState.modeCemu, [LinkState.padGamepad, LinkState.padWiimote].contains(p) { AppPrefs.cemuPad = p }
+            else if mode == LinkState.modeRetroArch, LinkState.validRetroPad(p) { AppPrefs.retroPad = p }
             else { return }
             ButtonState.shared.reset()
             self.control?.sendPad(p)
@@ -173,6 +174,10 @@ final class LinkService {
         link.sendText = { [weak self] t in self?.control?.sendText(t) }
         link.sendNunchuk = { [weak self] own in self?.control?.sendNunchuk(own) }
         link.sendScreenOnly = { [weak self] on in self?.control?.sendScreenOnly(on) }
+        link.sendHotkey = { [weak self] name, down in
+            guard let self, self.link.link.connected?.mode == LinkState.modeRetroArch else { return }
+            self.control?.sendHotkey(name, down: down)
+        }
         link.publish(.connected(ConnectedLink(
             pcName: pcName,
             mode: ok.mode,
@@ -186,7 +191,8 @@ final class LinkService {
             pad: ok.pad,
             ownNunchuk: ok.nunchuk == "own",
             screenOnly: ok.screenOnly,
-            supportsSwitch: ok.supportsSwitch
+            supportsSwitch: ok.supportsSwitch,
+            supportsRetroArch: ok.supportsRetroArch
         )))
         if let m = link.pendingMode {
             link.pendingMode = nil
@@ -210,6 +216,7 @@ final class LinkService {
         guard role == LinkState.roleWiimote else { return }
         if mode == LinkState.modeSwitch { control?.sendPad(AppPrefs.switchPad) }
         else if mode == LinkState.modeCemu { control?.sendPad(AppPrefs.cemuPad) }
+        else if mode == LinkState.modeRetroArch { control?.sendPad(AppPrefs.retroPad) }
     }
 
     private func onError(_ code: String, _ msg: String, _ gen: Int, _ pairing: Pairing) {
@@ -320,6 +327,7 @@ final class LinkService {
         link.sendText = nil
         link.sendNunchuk = nil
         link.sendScreenOnly = nil
+        link.sendHotkey = nil
         link.motion = nil
         ScreenLink.shared.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()

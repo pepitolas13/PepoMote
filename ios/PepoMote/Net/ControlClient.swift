@@ -25,6 +25,8 @@ final class ControlClient {
         /// El receptor conoce «solo pantalla» (`ok.screen_only`); nil = receptor anterior a 1.6.
         var screenOnly: Bool? = nil
         var supportsSwitch: Bool = false
+        /// `modes` contiene "retroarch": el receptor del PC entiende RetroArch.
+        var supportsRetroArch: Bool = false
     }
 
     struct Callbacks {
@@ -189,7 +191,8 @@ final class ControlClient {
                 name: obj["name"] as? String ?? "",
                 nunchuk: obj["nunchuk"] as? String ?? "none",
                 screenOnly: obj["screen_only"] as? Bool,
-                supportsSwitch: ControlClient.supportsSwitch(obj)
+                supportsSwitch: ControlClient.supportsSwitch(obj),
+                supportsRetroArch: ControlClient.supportsRetroArch(obj)
             )
             DispatchQueue.main.async { self.callbacks.onOk(ok) }
         case "err":
@@ -236,6 +239,11 @@ final class ControlClient {
         return modes.contains { ($0 as? String) == LinkState.modeSwitch }
     }
 
+    static func supportsRetroArch(_ ok: [String: Any]) -> Bool {
+        guard let modes = ok["modes"] as? [Any] else { return false }
+        return modes.contains { ($0 as? String) == LinkState.modeRetroArch }
+    }
+
     // MARK: - Temporizadores
 
     private func startPinger() {
@@ -279,6 +287,11 @@ final class ControlClient {
 
     /// Modo Wii U: el móvil solo como pantalla táctil, sí o no; el receptor lo confirma con el eco.
     func sendScreenOnly(_ on: Bool) { sendJson(["m": "screen_only", "on": on]) }
+
+    /// Modo RetroArch: tecla rápida (`save_state`, `rewind`…; PROTOCOL.md §3).
+    /// Las de mantener llevan `down` true al pulsar y false al soltar; las de
+    /// un toque, solo true. Un receptor antiguo la ignora.
+    func sendHotkey(_ name: String, down: Bool) { sendJson(["m": "hotkey", "name": name, "down": down]) }
 
     /// Texto para el teclado en pantalla del emulador de Wii U o Switch.
     func sendText(_ text: String) { sendLine(TextInput.encode(text)) }

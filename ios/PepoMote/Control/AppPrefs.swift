@@ -21,6 +21,16 @@ enum AppPrefs {
         set { d.set(LinkState.validSwitchPad(newValue) ? newValue : LinkState.padPro, forKey: switchPadKey) }
     }
 
+    /// Mando de RetroArch (retropad / nes / gun); cualquier otro valor es el RetroPad.
+    static let retroPadKey = "retroPad"
+    static var retroPad: String {
+        get {
+            let pad = d.string(forKey: retroPadKey) ?? LinkState.padRetroPad
+            return LinkState.validRetroPad(pad) ? pad : LinkState.padRetroPad
+        }
+        set { d.set(LinkState.validRetroPad(newValue) ? newValue : LinkState.padRetroPad, forKey: retroPadKey) }
+    }
+
     /// Mostrar el selector Puntero/Dolphin en el mando al entrar por Conectar.
     static var showDolphinChips: Bool {
         get { d.object(forKey: "showDolphinChips") as? Bool ?? true }

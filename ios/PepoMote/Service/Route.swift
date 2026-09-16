@@ -14,6 +14,7 @@ enum Route {
     static let warnNeeds13 = "warn_needs_13"
     static let warnPlayer1 = "warn_player_1"
     static let warnNeedsSwitch = "warn_needs_switch"
+    static let warnNeedsRetroArch = "warn_needs_retroarch"
 
     /// Modo Wii U activo como GamePad/Pro: el receptor confirmó `cemu` y este
     /// móvil (mando) no ha elegido ser Mando de Wii. Solo entonces se emiten
@@ -28,14 +29,35 @@ enum Route {
         return c.mode == LinkState.modeSwitch && c.role == LinkState.roleWiimote
     }
 
-    /// La intención manda mientras se espera el eco, aunque ambas usen GamePadScreen.
+    /// Modo RetroArch confirmado por un receptor que lo entiende (este móvil es mando).
+    static func isRetroArch(_ link: UiLink) -> Bool {
+        guard let c = link.connected else { return false }
+        return c.mode == LinkState.modeRetroArch && c.role == LinkState.roleWiimote && c.supportsRetroArch
+    }
+
+    /// RetroArch como RetroPad: el mando apaisado de dos sticks (80 bytes, como Switch).
+    static func isRetroPad(_ link: UiLink) -> Bool {
+        isRetroArch(link) && link.connected?.pad == LinkState.padRetroPad
+    }
+
+    /// RetroArch como mando de NES: el Mando Wii de lado, fijo en apaisado.
+    static func retroNes(_ link: UiLink) -> Bool {
+        isRetroArch(link) && link.connected?.pad == LinkState.padNes
+    }
+
+    /// RetroArch como pistola de luz: el Mando Wii apuntando (B dispara, A recarga).
+    static func retroGun(_ link: UiLink) -> Bool {
+        isRetroArch(link) && link.connected?.pad == LinkState.padGun
+    }
+
+    /// La intención manda mientras se espera el eco, aunque todas usen GamePadScreen.
     static func wantedMode(_ link: UiLink, _ intent: PadIntent) -> String {
-        intent.mode ?? (isSwitch(link) ? LinkState.modeSwitch : LinkState.modeCemu)
+        intent.mode ?? (isSwitch(link) ? LinkState.modeSwitch : isRetroPad(link) ? LinkState.modeRetroArch : LinkState.modeCemu)
     }
 
     /// Solo un modo confirmado puede emitir el bloque de 80 bytes.
     static func extendedOperative(_ link: UiLink, _ intent: PadIntent) -> Bool {
-        guard isGamePad(link) || isSwitch(link) else { return false }
+        guard isGamePad(link) || isSwitch(link) || isRetroPad(link) else { return false }
         return intent.mode == nil || intent.mode == link.connected?.mode
     }
 
@@ -47,6 +69,7 @@ enum Route {
         if let c = link.connected, c.role == LinkState.roleNunchuk { return .nunchuk }
         if let wanted = intent.mode, link.alive, link.connected?.mode != wanted { return .gamePad }
         if isSwitch(link) { return .gamePad }
+        if isRetroPad(link) { return .gamePad }
         if isGamePad(link) { return .gamePad }
         if intent != .none, link.alive { return .gamePad }
         return .wii
@@ -65,7 +88,7 @@ enum Route {
     /// el móvil.
     static func forcesLandscape(_ link: UiLink, _ intent: PadIntent) -> Bool {
         let screen = route(link, intent)
-        return screen == .gamePad || wiiLandscapeNunchuk(link)
+        return screen == .gamePad || wiiLandscapeNunchuk(link) || retroNes(link)
     }
 
     /// Con el mando de lado (NES) el móvil ES un Mando de Wii girado: en
@@ -106,8 +129,12 @@ enum Route {
         guard let wanted = intent.mode else { return Outcome(intent: intent, warning: nil) }
         if mode == wanted || byPc { return Outcome(intent: .none, warning: nil) }
         let c = link.connected
-        let supported = wanted == LinkState.modeSwitch ? c?.supportsSwitch : c?.supportsCemu
-        let oldReceiver = wanted == LinkState.modeSwitch ? warnNeedsSwitch : warnNeeds13
+        let supported: Bool? = wanted == LinkState.modeSwitch ? c?.supportsSwitch
+            : wanted == LinkState.modeRetroArch ? c?.supportsRetroArch
+            : c?.supportsCemu
+        let oldReceiver = wanted == LinkState.modeSwitch ? warnNeedsSwitch
+            : wanted == LinkState.modeRetroArch ? warnNeedsRetroArch
+            : warnNeeds13
         let warning = supported == true && c?.slot != 0 ? warnPlayer1 : oldReceiver
         return Outcome(intent: .none, warning: warning)
     }

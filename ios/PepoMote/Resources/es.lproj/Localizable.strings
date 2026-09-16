@@ -161,6 +161,34 @@
 "in_switch" = "En Switch soy:";
 "capture" = "Capturar";
 "activating_switch" = "Activando Switch…";
+
+/* RetroArch */
+"channel_retroarch" = "RetroArch";
+"channel_retroarch_sub" = "RetroPad, mando NES o pistola";
+"mode_retroarch" = "RetroArch";
+"activating_retroarch" = "Activando RetroArch…";
+"warn_needs_retroarch" = "El PC necesita un PepoMote más nuevo para RetroArch";
+"in_retroarch" = "En RetroArch soy:";
+"retropad" = "RetroPad";
+"nes_pad" = "Mando NES";
+"light_gun" = "Pistola";
+"retro_pad_help" = "RetroPad: dos sticks y todos los botones · Mando NES: el móvil de lado, B y A · Pistola: apunta con el móvil, B dispara y A recarga";
+"retro_menu" = "Menú";
+"retro_ff" = "Rápido";
+"retro_select" = "Select";
+"retro_start" = "Start";
+"side_ask_retroarch" = "¿Quieres el RetroPad así?";
+"kb_title_retroarch" = "Teclado para RetroArch";
+"kb_help_retroarch" = "Escribe en la ventana de RetroArch (ponla en primer plano; con teclado en el juego, activa el foco de juego). Borrar quita un carácter, Escribir manda el texto y sigue, Aceptar manda el texto e Intro.";
+"hotkey_save" = "Guardar";
+"hotkey_load" = "Cargar";
+"hotkey_slot_minus" = "Ranura −";
+"hotkey_slot_plus" = "Ranura +";
+"hotkey_rewind" = "Rebobinar";
+"hotkey_pause" = "Pausa";
+"hotkey_screenshot" = "Captura";
+"hotkey_reset" = "Reiniciar";
+"hotkeys_hint" = "Rebobinar se mantiene pulsado; el resto son un toque";
 "kb_placeholder" = "Texto para el juego";
 "kb_delete" = "Borrar";
 "kb_write" = "Escribir";

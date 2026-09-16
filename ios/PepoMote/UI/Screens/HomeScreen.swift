@@ -80,6 +80,10 @@ struct HomeScreen: View {
                     ChannelCard(title: tr("channel_switch"), subtitle: tr("channel_switch_sub"), glyph: .switchPad, accent: Pepo.blue) {
                         model.openController(mode: LinkState.modeSwitch, dolphinOnly: false)
                     }
+                    // RetroArch: RetroPad de dos sticks, mando de NES o pistola de luz
+                    ChannelCard(title: tr("channel_retroarch"), subtitle: tr("channel_retroarch_sub"), glyph: .retro, accent: Pepo.warn) {
+                        model.openController(mode: LinkState.modeRetroArch, dolphinOnly: false)
+                    }
                     // Con Dolphin: el segundo móvil, en la otra mano
                     ChannelCard(title: tr("channel_nunchuk"), subtitle: tr("channel_nunchuk_sub"), glyph: .stick, accent: Pepo.ok) {
                         model.openNunchuk()

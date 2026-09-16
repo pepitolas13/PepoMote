@@ -2,7 +2,7 @@ import SwiftUI
 
 // Glifos propios, dibujados a mano — nada de iconografía ajena.
 enum ChannelGlyph {
-    case qr, pad, pointer, stick, gamePad, switchPad, gear
+    case qr, pad, pointer, stick, gamePad, switchPad, gear, retro
 }
 
 /// Tarjeta del inicio: glifo, título y subtítulo.
@@ -57,6 +57,7 @@ struct GlyphView: View {
             case .gamePad: GlyphView.gamePad(&ctx, w, accent)
             case .switchPad: GlyphView.switchPad(&ctx, w, accent)
             case .gear: GlyphView.gear(&ctx, w, accent)
+            case .retro: GlyphView.retro(&ctx, w, accent)
             }
         }
     }
@@ -126,6 +127,21 @@ struct GlyphView: View {
         circle(&ctx, CGPoint(x: w * 0.83, y: top + bodyH * 0.40), w * 0.075, accent)
         circle(&ctx, CGPoint(x: w * 0.17, y: top + bodyH * 0.72), w * 0.04, accent)
         circle(&ctx, CGPoint(x: w * 0.83, y: top + bodyH * 0.72), w * 0.04, accent)
+    }
+
+    /// Mando clásico apaisado: cuerpo, cruceta a la izquierda y dos botones a la derecha.
+    private static func retro(_ ctx: inout GraphicsContext, _ w: CGFloat, _ accent: Color) {
+        let stroke = w * 0.06
+        let body = CGRect(x: w * 0.04 + stroke / 2, y: w * 0.28 + stroke / 2, width: w * 0.92 - stroke, height: w * 0.44 - stroke)
+        ctx.stroke(Path(roundedRect: body, cornerRadius: w * 0.08), with: .color(accent), lineWidth: stroke)
+        var cross = Path()
+        cross.move(to: CGPoint(x: w * 0.27, y: w * 0.38))
+        cross.addLine(to: CGPoint(x: w * 0.27, y: w * 0.62))
+        cross.move(to: CGPoint(x: w * 0.15, y: w * 0.50))
+        cross.addLine(to: CGPoint(x: w * 0.39, y: w * 0.50))
+        ctx.stroke(cross, with: .color(accent), style: StrokeStyle(lineWidth: w * 0.07, lineCap: .round))
+        circle(&ctx, CGPoint(x: w * 0.66, y: w * 0.55), w * 0.05, accent)
+        circle(&ctx, CGPoint(x: w * 0.82, y: w * 0.45), w * 0.05, accent)
     }
 
     private static func gear(_ ctx: inout GraphicsContext, _ w: CGFloat, _ accent: Color) {

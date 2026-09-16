@@ -24,6 +24,8 @@ struct ConnectedLink: Equatable {
     var screenOnly: Bool? = nil
     /// El receptor anuncia Switch en `ok.modes`.
     var supportsSwitch: Bool = false
+    /// El receptor anuncia RetroArch en `ok.modes` (receptor del PC con el mando en red).
+    var supportsRetroArch: Bool = false
 }
 
 enum UiLink: Equatable {
@@ -60,12 +62,14 @@ enum PadIntent {
     case none
     case wiiU
     case switchMode
+    case retroArch
 
     var mode: String? {
         switch self {
         case .none: return nil
         case .wiiU: return LinkState.modeCemu
         case .switchMode: return LinkState.modeSwitch
+        case .retroArch: return LinkState.modeRetroArch
         }
     }
 }
@@ -80,12 +84,22 @@ final class LinkState: ObservableObject {
     static let modeDolphin = "dolphin"
     static let modeCemu = "cemu"
     static let modeSwitch = "switch"
+    static let modeRetroArch = "retroarch"
     static let padGamepad = "gamepad"
     static let padPro = "pro"
     static let padWiimote = "wiimote"
+    /// Modo RetroArch: mando apaisado de dos sticks, mando de NES (de lado) o pistola de luz.
+    static let padRetroPad = "retropad"
+    static let padNes = "nes"
+    static let padGun = "gun"
+    static let retroPads = [padRetroPad, padNes, padGun]
 
     static func validSwitchPad(_ pad: String) -> Bool {
         pad == padPro
+    }
+
+    static func validRetroPad(_ pad: String) -> Bool {
+        retroPads.contains(pad)
     }
 
     @Published private(set) var link: UiLink = .disconnected
@@ -107,6 +121,8 @@ final class LinkState: ObservableObject {
     var sendNunchuk: ((Bool) -> Void)?
     /// Modo Wii U: el móvil solo como pantalla táctil (pantalla completa); el eco lo confirma.
     var sendScreenOnly: ((Bool) -> Void)?
+    /// Modo RetroArch: tecla rápida por su nombre del protocolo y si se pulsa o se suelta.
+    var sendHotkey: ((String, Bool) -> Void)?
     /// Motor de sensores del enlace vivo (la pantalla GamePad le fija kind/rotation).
     weak var motion: MotionEngine?
 
@@ -115,9 +131,12 @@ final class LinkState: ObservableObject {
     /// Pide un modo al receptor. Wii U y Switch dejan su intención pendiente.
     /// Si el enlace aún no está, se aplica al llegar el `ok`.
     func requestMode(_ mode: String) {
-        intent = mode == LinkState.modeCemu ? .wiiU : mode == LinkState.modeSwitch ? .switchMode : .none
+        intent = mode == LinkState.modeCemu ? .wiiU
+            : mode == LinkState.modeSwitch ? .switchMode
+            : mode == LinkState.modeRetroArch ? .retroArch
+            : .none
         ButtonState.shared.reset()
-        if mode == LinkState.modeSwitch { ScreenLink.shared.release() }
+        if mode == LinkState.modeSwitch || mode == LinkState.modeRetroArch { ScreenLink.shared.release() }
         if intent != .none, link.connected?.mode != mode {
             motion?.kind = role == LinkState.roleNunchuk ? .nunchuk : .wiimote
         }
@@ -162,6 +181,8 @@ final class LinkState: ObservableObject {
 
     private static func normalizeController(_ connected: inout ConnectedLink) {
         if connected.mode == modeSwitch { connected.pad = padPro }
+        // RetroArch solo conoce sus tres mandos; cualquier otro nombre es el RetroPad
+        if connected.mode == modeRetroArch, !validRetroPad(connected.pad) { connected.pad = padRetroPad }
     }
 
     func publishNotice(_ text: String) {

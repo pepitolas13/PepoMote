@@ -44,6 +44,9 @@ struct ControllerLandscapeScreen: View {
     @State private var keyboardOpen = false
     /// Home del Mando de Wii: conectado y fuera del modo puntero.
     private var showHome: Bool { link.link.connected.map(showHomeButton) ?? false }
+    /// RetroArch como mando de NES: 1 y 2 son B y A del RetroPad, la A grande
+    /// es X y Home abre el menú de RetroArch (el receptor los mapea).
+    private var retro: Bool { Route.isRetroArch(link.link) }
     @State private var rotation: Int = OrientationLock.frameRotation(OrientationLock.current)
     /// Dónde está cada botón, para «Pulsar deslizando».
     @StateObject private var press = PressRegistry()
@@ -78,19 +81,19 @@ struct ControllerLandscapeScreen: View {
                     if showHome {
                         HStack(spacing: m.gap(14)) {
                             Color.clear.frame(width: m.home, height: m.home)
-                            RoundButton(label: "A", size: m.a, bit: Btn.a, textSize: m.text(22))
-                            RoundButton(label: tr("home_btn"), size: m.home, bit: Btn.home, textSize: m.text(11))
+                            RoundButton(label: retro ? "X" : "A", size: m.a, bit: Btn.a, textSize: m.text(22))
+                            RoundButton(label: tr(retro ? "retro_menu" : "home_btn"), size: m.home, bit: Btn.home, textSize: m.text(retro ? 10 : 11))
                         }
                     } else {
-                        RoundButton(label: "A", size: m.a, bit: Btn.a, textSize: m.text(22))
+                        RoundButton(label: retro ? "X" : "A", size: m.a, bit: Btn.a, textSize: m.text(22))
                     }
                 }
 
                 // 1 y 2 grandes a la derecha (los botones de acción del modo NES)
                 HStack(spacing: m.gap(18)) {
                     Spacer()
-                    RoundButton(label: "1", size: m.big, bit: Btn.one, background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent, textSize: m.text(28))
-                    RoundButton(label: "2", size: m.big, bit: Btn.two, background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent, textSize: m.text(28), pop: true)
+                    RoundButton(label: retro ? "B" : "1", size: m.big, bit: Btn.one, background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent, textSize: m.text(28))
+                    RoundButton(label: retro ? "A" : "2", size: m.big, bit: Btn.two, background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent, textSize: m.text(28), pop: true)
                 }
                 .padding(.trailing, m.bigInset)
 
@@ -158,7 +161,7 @@ struct ControllerLandscapeScreen: View {
                 HStack(spacing: 20) {
                     if let c = link.link.connected {
                         Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160)
-                        if c.mode == LinkState.modeCemu {
+                        if c.mode == LinkState.modeCemu || c.mode == LinkState.modeRetroArch {
                             HeaderKeyboardButton { keyboardOpen = true }
                         }
                     }
@@ -171,13 +174,16 @@ struct ControllerLandscapeScreen: View {
                 }
                 if let c = link.link.connected {
                     if showModeChips(c, showChips) {
-                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
+                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, compact: true)
                     }
                     // En Dolphin, el chip «Nunchuk» (aquí apagado: encenderlo
                     // cambia este NES por el mando + Nunchuk)
                     if showNunchukChip(c) { NunchukChip(link: c, compact: true) }
-                    if isWiiUAsWiimote(c) {
+                    if isWiiUAsWiimote(c) || Route.isRetroArch(link.link) {
                         PadSelector(link: c, width: HeaderCollapse.cardWidth - 40, compact: true)
+                    }
+                    if Route.isRetroArch(link.link) {
+                        RetroArchHotkeys(compact: true)
                     }
                 }
             }

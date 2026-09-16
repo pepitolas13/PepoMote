@@ -434,6 +434,7 @@ func modeLabel(_ mode: String) -> String {
     case LinkState.modeDolphin: return tr("mode_dolphin")
     case LinkState.modeCemu: return tr("mode_wiiu")
     case LinkState.modeSwitch: return tr("mode_switch")
+    case LinkState.modeRetroArch: return tr("mode_retroarch")
     default: return tr("mode_pointer")
     }
 }
@@ -445,7 +446,7 @@ func isWiiUAsWiimote(_ c: ConnectedLink) -> Bool {
 
 /// Chips de modo: solo el Jugador 1; con el ajuste activo o, siempre, dentro de Wii U.
 func showModeChips(_ c: ConnectedLink, _ showChips: Bool) -> Bool {
-    c.slot == 0 && (showChips || c.mode == LinkState.modeCemu || c.mode == LinkState.modeSwitch)
+    c.slot == 0 && (showChips || c.mode == LinkState.modeCemu || c.mode == LinkState.modeSwitch || c.mode == LinkState.modeRetroArch)
 }
 
 /// Botón Home del Mando de Wii (vertical y apaisado): fuera del modo puntero,
@@ -464,6 +465,7 @@ struct ModeChips: View {
     let current: String
     let supportsCemu: Bool
     var supportsSwitch = false
+    var supportsRetroArch = false
     var compact = false
     /// Chips estrechos (iPhone): caben cuatro en una fila.
     var dense = false
@@ -484,6 +486,11 @@ struct ModeChips: View {
             if supportsSwitch {
                 ModeChip(label: tr("mode_switch"), selected: current == LinkState.modeSwitch, compact: compact, dense: dense) {
                     LinkState.shared.requestMode(LinkState.modeSwitch)
+                }
+            }
+            if supportsRetroArch {
+                ModeChip(label: tr("mode_retroarch"), selected: current == LinkState.modeRetroArch, compact: compact, dense: dense) {
+                    LinkState.shared.requestMode(LinkState.modeRetroArch)
                 }
             }
         }
@@ -559,8 +566,9 @@ struct KeyboardDialog: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(tr("kb_title")).font(PepoFont.titleMedium()).foregroundColor(Pepo.text)
-            Text(tr(LinkState.shared.link.connected?.mode == LinkState.modeSwitch ? "kb_help_switch" : "kb_help")).pepoBody()
+            let mode = LinkState.shared.link.connected?.mode
+            Text(tr(mode == LinkState.modeRetroArch ? "kb_title_retroarch" : "kb_title")).font(PepoFont.titleMedium()).foregroundColor(Pepo.text)
+            Text(tr(mode == LinkState.modeRetroArch ? "kb_help_retroarch" : mode == LinkState.modeSwitch ? "kb_help_switch" : "kb_help")).pepoBody()
             TextField(tr("kb_placeholder"), text: $field)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
@@ -630,10 +638,68 @@ struct PadSelector: View {
 
     var body: some View {
         Group {
-            if switchPad { switchSelector } else { cemuSelector }
+            if link.mode == LinkState.modeRetroArch { retroSelector } else if switchPad { switchSelector } else { cemuSelector }
         }
         .onChange(of: link.pad) { _ in pending = nil }
         .onChange(of: link.mode) { _ in pending = nil }
+    }
+
+    /// «En RetroArch soy: [ RetroPad ] [ NES ] [ Pistola ]»: el mando apaisado
+    /// de dos sticks, el Mando Wii de lado (B y A) o el Mando Wii apuntando
+    /// (pistola de luz). Tocar envía `pad retropad|nes|gun`; la pantalla cambia con el eco.
+    private var retroSelector: some View {
+        let inlinePrefix = width >= 470
+        let prefixW: CGFloat = inlinePrefix ? 130 : 0
+        let segmentsW = min(max(width - prefixW - 24, 200), compact ? 360 : 400)
+        let pads: [(String, String)] = [
+            (LinkState.padRetroPad, tr("retropad")),
+            (LinkState.padNes, tr("nes_pad")),
+            (LinkState.padGun, tr("light_gun"))
+        ]
+        return VStack(spacing: 2) {
+            if !inlinePrefix {
+                Text(tr("in_retroarch"))
+                    .font(PepoFont.nunito(11, .regular))
+                    .foregroundColor(Pepo.textDim)
+                    .lineLimit(1)
+            }
+            HStack(spacing: compact ? 8 : 10) {
+                if inlinePrefix {
+                    Text(tr("in_retroarch"))
+                        .font(PepoFont.bodyMedium())
+                        .foregroundColor(Pepo.text)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 3) {
+                    ForEach(pads, id: \.0) { pad, label in
+                        Segment(label: label, selected: link.pad == pad, pending: pending == pad, compact: compact) {
+                            if link.pad != pad {
+                                pending = pad
+                                LinkState.shared.sendPad?(pad)
+                            }
+                        }
+                    }
+                }
+                .padding(3)
+                .frame(width: segmentsW)
+                .background(Pepo.card)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Pepo.cardBorder, lineWidth: 1.5))
+            }
+            if let help {
+                Text(help)
+                    .pepoBody()
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 4)
+                    .padding(.horizontal, 12)
+            }
+        }
+        .onChange(of: pending) { p in
+            guard let p else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(PadSelector.echoTimeoutMs)) {
+                if pending == p { pending = nil }
+            }
+        }
     }
 
     private var switchSelector: some View {

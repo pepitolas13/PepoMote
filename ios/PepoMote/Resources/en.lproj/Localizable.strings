@@ -161,6 +161,34 @@
 "in_switch" = "In Switch I am:";
 "capture" = "Capture";
 "activating_switch" = "Activating Switch…";
+
+/* RetroArch */
+"channel_retroarch" = "RetroArch";
+"channel_retroarch_sub" = "RetroPad, NES pad or light gun";
+"mode_retroarch" = "RetroArch";
+"activating_retroarch" = "Activating RetroArch…";
+"warn_needs_retroarch" = "The PC needs a newer PepoMote for RetroArch";
+"in_retroarch" = "In RetroArch I am:";
+"retropad" = "RetroPad";
+"nes_pad" = "NES pad";
+"light_gun" = "Light gun";
+"retro_pad_help" = "RetroPad: two sticks and every button · NES pad: the phone sideways, B and A · Light gun: aim with the phone, B fires and A reloads";
+"retro_menu" = "Menu";
+"retro_ff" = "Fast";
+"retro_select" = "Select";
+"retro_start" = "Start";
+"side_ask_retroarch" = "Keep the RetroPad this way?";
+"kb_title_retroarch" = "Keyboard for RetroArch";
+"kb_help_retroarch" = "Types into the RetroArch window (bring it to the front; with a keyboard in the game, enable game focus). Delete removes a character, Type sends the text and continues, Accept sends the text and Enter.";
+"hotkey_save" = "Save";
+"hotkey_load" = "Load";
+"hotkey_slot_minus" = "Slot −";
+"hotkey_slot_plus" = "Slot +";
+"hotkey_rewind" = "Rewind";
+"hotkey_pause" = "Pause";
+"hotkey_screenshot" = "Screenshot";
+"hotkey_reset" = "Reset";
+"hotkeys_hint" = "Rewind is held down; the rest are a tap";
 "kb_placeholder" = "Text for the game";
 "kb_delete" = "Delete";
 "kb_write" = "Type";

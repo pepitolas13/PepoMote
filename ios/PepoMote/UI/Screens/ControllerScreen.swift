@@ -153,7 +153,7 @@ struct ControllerScreen: View {
                     let dense = m.colW < 420
                     VStack(spacing: 5) {
                         HStack(spacing: dense ? 8 : 10) {
-                            if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, dense: dense) }
+                            if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, dense: dense) }
                             if nunchuk && !(dense && c.supportsSwitch) { NunchukChip(link: c, dense: dense).padding(.leading, 4) }
                         }
                         if nunchuk && dense && c.supportsSwitch { NunchukChip(link: c, dense: dense) }
@@ -162,6 +162,12 @@ struct ControllerScreen: View {
                 if isWiiUAsWiimote(c) {
                     Spacer().frame(height: 8)
                     PadSelector(link: c, width: m.colW - 48, help: tr("wii_pad_help"))
+                } else if Route.isRetroArch(link.link) {
+                    // RetroArch: qué mando soy (RetroPad / NES / pistola) y las teclas rápidas
+                    Spacer().frame(height: 8)
+                    PadSelector(link: c, width: m.colW - 48, help: tr("retro_pad_help"))
+                    Spacer().frame(height: 6)
+                    RetroArchHotkeys()
                 }
             }
             // Hueco de sobra entre los chips y la cruceta: que ir a por ↑ no toque un chip
@@ -212,6 +218,7 @@ struct ControllerScreen: View {
                         if isWiiUAsWiimote(c) { return tr("wiiu_as_wiimote") }
                         if c.mode == LinkState.modeCemu { return tr("mode_wiiu") }
                         if c.mode == LinkState.modeDolphin { return tr(c.ownNunchuk ? "mode_dolphin_nunchuk" : "mode_dolphin") }
+                        if c.mode == LinkState.modeRetroArch { return tr("mode_retroarch") }
                         if c.slot > 0 { return tr("pointer_player1_points") }
                         return tr("mode_pointer")
                     }()
@@ -231,8 +238,8 @@ struct ControllerScreen: View {
             }
             .layoutPriority(0)
             Spacer(minLength: 4)
-            // Modo Wii U: texto para el teclado en pantalla de Cemu
-            if let c = link.link.connected, c.mode == LinkState.modeCemu {
+            // Modo Wii U: texto para el teclado en pantalla de Cemu; en RetroArch, para su ventana
+            if let c = link.link.connected, c.mode == LinkState.modeCemu || c.mode == LinkState.modeRetroArch {
                 KeyboardButton(compact: true) { keyboardOpen = true }
                     .fixedSize()
                     .layoutPriority(2)
