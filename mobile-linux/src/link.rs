@@ -82,7 +82,10 @@ pub enum Status {
         /// El receptor anuncia `modes` con "cemu": sabe de Wii U (1.3+).
         supports_cemu: bool,
         supports_switch: bool,
-        /// Tipo de mando efectivo en modo Wii U: "gamepad", "pro" o "wiimote".
+        /// El receptor anuncia `modes` con "retroarch" (receptor del PC con el mando en red).
+        supports_retroarch: bool,
+        /// Tipo de mando efectivo: "gamepad", "pro" o "wiimote" en Wii U; "pro" en
+        /// Switch; "retropad", "nes" o "gun" en RetroArch.
         pad: String,
         /// Aviso transitorio (del receptor o local) y cuándo llegó.
         notice: Option<(String, Instant)>,
@@ -113,9 +116,10 @@ pub enum Status {
 impl Status {
     /// Extended input is only enabled after the receiver confirms support.
     pub fn ext_confirmed(&self) -> bool {
-        matches!(self, Self::Connected { mode, role: Role::Wiimote, pad, supports_cemu, supports_switch, .. }
+        matches!(self, Self::Connected { mode, role: Role::Wiimote, pad, supports_cemu, supports_switch, supports_retroarch, .. }
             if (mode == "cemu" && *supports_cemu && matches!(pad.as_str(), "gamepad" | "pro"))
-            || (mode == "switch" && *supports_switch && is_switch_pad(pad)))
+            || (mode == "switch" && *supports_switch && is_switch_pad(pad))
+            || (mode == "retroarch" && *supports_retroarch && pad == "retropad"))
     }
 
     /// Aviso aún vigente (menos de `NOTICE_SECS` desde que llegó).
@@ -224,6 +228,13 @@ impl Link {
     /// o no; el receptor lo confirma con el eco (uno antiguo lo ignora).
     pub fn send_screen_only(&self, on: bool) {
         send_json(&self.writer, &json!({"m":"screen_only","on":on}));
+    }
+
+    /// Modo RetroArch: tecla rápida (`save_state`, `rewind`…; PROTOCOL.md §3).
+    /// Las de mantener llevan `down` true al pulsar y false al soltar; las de
+    /// un toque, solo true. Un receptor antiguo la ignora.
+    pub fn send_hotkey(&self, name: &str, down: bool) {
+        send_json(&self.writer, &hotkey_message(name, down));
     }
 
     /// Aviso local (mismo banner que un `notice` del receptor).
@@ -335,12 +346,26 @@ fn supports_switch(ok: &Value) -> bool {
     ok["modes"].as_array().is_some_and(|m| m.iter().any(|v| v.as_str() == Some("switch")))
 }
 
+fn supports_retroarch(ok: &Value) -> bool {
+    ok["modes"].as_array().is_some_and(|m| m.iter().any(|v| v.as_str() == Some("retroarch")))
+}
+
 pub fn is_switch_pad(pad: &str) -> bool {
     pad == "pro"
 }
 
+/// Mandos de RetroArch (mensaje `pad`): el apaisado de dos sticks, el de NES y la pistola.
+pub fn is_retro_pad(pad: &str) -> bool {
+    matches!(pad, "retropad" | "nes" | "gun")
+}
+
 fn valid_pad(s: Option<&str>) -> Option<&str> {
-    s.filter(|p| matches!(*p, "gamepad" | "pro" | "wiimote") || is_switch_pad(p))
+    s.filter(|p| matches!(*p, "gamepad" | "pro" | "wiimote") || is_switch_pad(p) || is_retro_pad(p))
+}
+
+/// `{"m":"hotkey","name":…,"down":…}`: una tecla rápida de RetroArch.
+pub fn hotkey_message(name: &str, down: bool) -> Value {
+    json!({"m":"hotkey","name":name,"down":down})
 }
 
 #[cfg(test)]
@@ -359,6 +384,9 @@ fn switch_pad_vocabulary_normalizes_to_pro() {
 /// para el jugador 1 y Pro para los demás.
 fn pad_of(ok: &Value, slot: u8) -> String {
     if ok["mode"] == "switch" { return "pro".to_owned(); }
+    if ok["mode"] == "retroarch" {
+        return ok["pad"].as_str().filter(|p| is_retro_pad(p)).unwrap_or("retropad").to_owned();
+    }
     valid_pad(ok["pad"].as_str())
         .unwrap_or(if ok["mode"] == "switch" || slot != 0 { "pro" } else { "gamepad" })
         .to_owned()
@@ -384,6 +412,8 @@ fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
         Some("mode") => {
             *mode = msg["mode"].as_str().unwrap_or("pointer").to_owned();
             if mode == "switch" { *pad = "pro".to_owned(); }
+            // RetroArch solo conoce sus tres mandos; cualquier otro nombre es el RetroPad
+            if mode == "retroarch" && !is_retro_pad(pad) { *pad = "retropad".to_owned(); }
             *mode_by_pc = msg["by"].as_str() == Some("pc");
             *mode_seq = mode_seq.wrapping_add(1);
             true
@@ -391,6 +421,8 @@ fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
         Some("pad") => {
             if mode == "switch" {
                 *pad = "pro".to_owned();
+            } else if mode == "retroarch" {
+                *pad = msg["pad"].as_str().filter(|p| is_retro_pad(p)).unwrap_or("retropad").to_owned();
             } else if let Some(p) = valid_pad(msg["pad"].as_str()) {
                 *pad = p.to_owned();
             }
@@ -648,6 +680,7 @@ fn session(
                     rtt_ms: None,
                     supports_cemu: supports_cemu(&msg),
                     supports_switch: supports_switch(&msg),
+                    supports_retroarch: supports_retroarch(&msg),
                     pad: pad_of(&msg, slot),
                     notice: None,
                     mode_seq: 0,
@@ -1389,6 +1422,7 @@ mod tests {
             rtt_ms: None,
             supports_cemu: true,
             supports_switch: true,
+            supports_retroarch: true,
             pad: "gamepad".into(),
             notice: None,
             mode_seq: 0,
@@ -1396,6 +1430,36 @@ mod tests {
             own_nunchuk: false,
             screen_only: None,
         }
+    }
+
+    #[test]
+    fn retroarch_capability_pads_and_hotkeys() {
+        assert!(supports_retroarch(&json!({"modes":["pointer","dolphin","cemu","switch","retroarch"]})));
+        for ok in [json!({}), json!({"modes":"retroarch"}), json!({"modes":["cemu","switch"]})] {
+            assert!(!supports_retroarch(&ok));
+        }
+        // el ok con RetroArch trae uno de sus tres mandos; otra cosa es el RetroPad
+        assert_eq!(pad_of(&json!({"mode":"retroarch","pad":"nes"}), 0), "nes");
+        assert_eq!(pad_of(&json!({"mode":"retroarch","pad":"gun"}), 2), "gun");
+        assert_eq!(pad_of(&json!({"mode":"retroarch","pad":"pro"}), 0), "retropad");
+        assert_eq!(pad_of(&json!({"mode":"retroarch"}), 1), "retropad");
+        // ecos en modo RetroArch
+        let mut st = connected();
+        let now = Instant::now();
+        apply_update(&mut st, &json!({"m":"mode","mode":"retroarch"}), now);
+        assert!(matches!(&st, Status::Connected { pad, .. } if pad == "retropad"), "al entrar, RetroPad");
+        apply_update(&mut st, &json!({"m":"pad","pad":"gun","player":2}), now);
+        assert!(matches!(&st, Status::Connected { pad, player: 2, .. } if pad == "gun"));
+        apply_update(&mut st, &json!({"m":"pad","pad":"wiimote"}), now);
+        assert!(matches!(&st, Status::Connected { pad, .. } if pad == "retropad"), "un mando ajeno es el RetroPad");
+        assert!(st.ext_confirmed(), "RetroPad confirmado: 80 bytes");
+        apply_update(&mut st, &json!({"m":"pad","pad":"nes"}), now);
+        assert!(!st.ext_confirmed(), "el mando de NES va en 72 bytes");
+        if let Status::Connected { supports_retroarch, pad, .. } = &mut st { *supports_retroarch = false; *pad = "retropad".into(); }
+        assert!(!st.ext_confirmed(), "sin RetroArch en el receptor nunca hay 80 bytes");
+        // el mensaje de tecla rápida
+        assert_eq!(hotkey_message("save_state", true), json!({"m":"hotkey","name":"save_state","down":true}));
+        assert_eq!(hotkey_message("rewind", false)["down"], false);
     }
 
     #[test]

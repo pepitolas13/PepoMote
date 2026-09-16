@@ -20,10 +20,15 @@ pub enum Action {
     Exit,
     Mode(&'static str),
     /// Pedir al receptor otro tipo de mando en modo Wii U (`"gamepad"` o
-    /// `"wiimote"`, desde el selector «En Cemu soy»).
+    /// `"wiimote"`, desde el selector «En Cemu soy») o en RetroArch
+    /// (`"retropad"`, `"nes"`, `"gun"`).
     Pad(&'static str),
     /// Abrir el teclado para el teclado en pantalla de Cemu (modo Wii U).
     Keyboard,
+    /// RetroArch: tecla rápida de un toque (nombre del protocolo).
+    Hotkey(&'static str),
+    /// RetroArch: tecla de mantener, pulsada (true) o soltada.
+    Hold(&'static str, bool),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -64,6 +69,10 @@ pub struct ControllerUi {
     dolphin: bool,
     /// Los dos ajustes de pulsación (deslizar / mantener al salir).
     press: Press,
+    /// RetroArch confirmado: etiquetas B/A/X/Menú en vez de 1/2/A/Home.
+    retro: bool,
+    /// RetroArch: rebobinar estaba pulsado en el frame anterior.
+    rewind_held: bool,
 }
 
 impl Default for ControllerUi {
@@ -79,8 +88,86 @@ pub fn mode_label(mode: &str) -> String {
         "dolphin" => tr!("common.mode_dolphin").to_owned(),
         "cemu" => tr!("common.mode_cemu").to_owned(),
         "switch" => tr!("common.mode_switch").to_owned(),
+        "retroarch" => tr!("common.mode_retroarch").to_owned(),
         other => other.to_owned(),
     }
+}
+
+/// Teclas rápidas de RetroArch que caben en el mando: (nombre del protocolo,
+/// de mantener). El avance rápido y el menú van en el propio mando apaisado
+/// (Rápido y Menú); en el vertical, Home es el menú.
+pub const RETRO_HOTKEYS: [(&str, bool); 8] = [
+    ("save_state", false),
+    ("load_state", false),
+    ("slot_minus", false),
+    ("slot_plus", false),
+    ("rewind", true),
+    ("pause", false),
+    ("screenshot", false),
+    ("reset", false),
+];
+
+/// Etiqueta de cada tecla rápida (claves literales: el test de i18n las ve).
+pub fn hotkey_label(name: &str) -> &'static str {
+    match name {
+        "save_state" => tr!("hk.save"),
+        "load_state" => tr!("hk.load"),
+        "slot_minus" => tr!("hk.slot_minus"),
+        "slot_plus" => tr!("hk.slot_plus"),
+        "rewind" => tr!("hk.rewind"),
+        "pause" => tr!("hk.pause"),
+        "screenshot" => tr!("hk.screenshot"),
+        _ => tr!("hk.reset"),
+    }
+}
+
+/// Selector segmentado «En RetroArch soy: [RetroPad] [NES] [Pistola]».
+pub fn retro_pad_selector(ui: &mut egui::Ui, pad: &str, pending: Option<&str>) -> Option<&'static str> {
+    let mut out = None;
+    ui.label(RichText::new(tr!("common.in_retroarch")).size(13.0).color(theme::text_dim()));
+    ui.horizontal(|ui| {
+        let w = ((ui.available_width() - 16.0) / 3.0).max(70.0);
+        for (label, p) in [(tr!("common.retropad"), "retropad"), (tr!("common.nes_pad"), "nes"), (tr!("common.light_gun"), "gun")] {
+            let on = pad == p && pending.is_none();
+            let pend = pending == Some(p);
+            let (fill, color) = if on {
+                (theme::blue(), theme::ON_ACCENT)
+            } else if pend {
+                (theme::glow(), theme::text())
+            } else {
+                (theme::card(), theme::text_dim())
+            };
+            let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
+            ui.painter().rect(rect, egui::Rounding::same(15.0), fill, Stroke::new(1.0_f32, theme::card_border()));
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(13.0), color);
+            if resp.clicked() && pad != p {
+                out = Some(p);
+            }
+        }
+    });
+    out
+}
+
+/// Teclas rápidas de RetroArch como botones: las de un toque disparan al
+/// hacer clic; la de mantener (rebobinar) da un flanco al pulsar y otro al
+/// soltar (`held` guarda si estaba pulsada en el frame anterior).
+pub fn retro_hotkeys(ui: &mut egui::Ui, held: &mut bool) -> Action {
+    let mut action = Action::None;
+    ui.horizontal_wrapped(|ui| {
+        for (name, hold) in RETRO_HOTKEYS {
+            let resp = ui.button(RichText::new(hotkey_label(name)).size(13.0).color(theme::text()));
+            if hold {
+                let down = resp.is_pointer_button_down_on();
+                if down != *held {
+                    *held = down;
+                    action = Action::Hold(name, down);
+                }
+            } else if resp.clicked() {
+                action = Action::Hotkey(name);
+            }
+        }
+    });
+    action
 }
 
 /// Selector segmentado «En Cemu soy: [GamePad|Pro Controller] [Mando de
@@ -144,6 +231,8 @@ impl ControllerUi {
             show_media: false,
             dpad: (Pos2::ZERO, 1.0),
             dolphin: false,
+            retro: false,
+            rewind_held: false,
             press: Press::default(),
         }
     }
@@ -219,8 +308,10 @@ impl ControllerUi {
             });
         });
 
-        if let Status::Connected { mode, supports_cemu, supports_switch, player, pad, .. } = status {
+        if let Status::Connected { mode, supports_cemu, supports_switch, supports_retroarch, player, pad, .. } = status {
             let wiiu = mode == "cemu";
+            // RetroArch: 1 y 2 son B y A del RetroPad, la A grande es X y Home el menú
+            self.retro = mode == "retroarch" && *supports_retroarch;
             if show_chips {
                 ui.horizontal_wrapped(|ui| {
                     // selección por igualdad exacta del modo
@@ -236,6 +327,9 @@ impl ControllerUi {
                     if *supports_switch && ui.selectable_label(mode == "switch", RichText::new(format!("  {}  ", tr!("common.mode_switch"))).size(14.0)).clicked() {
                         action = Action::Mode("switch");
                     }
+                    if *supports_retroarch && ui.selectable_label(mode == "retroarch", RichText::new(format!("  {}  ", tr!("common.mode_retroarch"))).size(14.0)).clicked() {
+                        action = Action::Mode("retroarch");
+                    }
                 });
             }
             if wiiu {
@@ -248,6 +342,15 @@ impl ControllerUi {
                         .size(11.0)
                         .color(theme::text_dim()),
                 );
+            } else if mode == "retroarch" && *supports_retroarch {
+                // RetroArch: qué mando soy (RetroPad / NES / pistola) y las teclas rápidas
+                if let Some(p) = retro_pad_selector(ui, pad, pad_pending) {
+                    action = Action::Pad(p);
+                }
+                ui.label(RichText::new(tr!("ctl.retro_pad_help")).size(11.0).color(theme::text_dim()));
+                if let hk @ (Action::Hotkey(_) | Action::Hold(..)) = retro_hotkeys(ui, &mut self.rewind_held) {
+                    action = hk;
+                }
             }
         }
         notice_banner(ui, status);
@@ -297,19 +400,21 @@ impl ControllerUi {
         self.hits.push((Shape::Circle { c: rc, r: 32.0 * s }, Target::Recenter));
         y += 64.0 * s + 14.0 * s;
 
-        // A
+        // A (en RetroArch, X: la A grande del Mando Wii es el tercer botón del RetroPad)
         let a_r = 72.0 * s;
-        self.circle(&cv, Pos2::new(cx, y + a_r), a_r, "A", 44.0 * s, pmp::BTN_A, pressed, true);
+        let retro = self.retro;
+        self.circle(&cv, Pos2::new(cx, y + a_r), a_r, if retro { "X" } else { "A" }, 44.0 * s, pmp::BTN_A, pressed, true);
         y += a_r * 2.0 + 12.0 * s;
 
         // 1 · Home · 2 (como en el mando + Nunchuk; sin Home, 1 y 2 juntos como siempre)
         let r12 = 26.0 * s;
         let dx = if home { 72.0 * s } else { 36.0 * s };
-        self.circle(&cv, Pos2::new(cx - dx, y + r12), r12, "1", 18.0 * s, pmp::BTN_ONE, pressed, false);
+        self.circle(&cv, Pos2::new(cx - dx, y + r12), r12, if retro { "B" } else { "1" }, 18.0 * s, pmp::BTN_ONE, pressed, false);
         if home {
-            self.circle(&cv, Pos2::new(cx, y + r12), r12, "Home", 12.0 * s, pmp::BTN_HOME, pressed, false);
+            let (label, font) = if retro { (tr!("gp.menu"), 10.0 * s) } else { ("Home", 12.0 * s) };
+            self.circle(&cv, Pos2::new(cx, y + r12), r12, label, font, pmp::BTN_HOME, pressed, false);
         }
-        self.circle(&cv, Pos2::new(cx + dx, y + r12), r12, "2", 18.0 * s, pmp::BTN_TWO, pressed, false);
+        self.circle(&cv, Pos2::new(cx + dx, y + r12), r12, if retro { "A" } else { "2" }, 18.0 * s, pmp::BTN_TWO, pressed, false);
         y += r12 * 2.0 + 8.0 * s;
 
         // Multimedia (plegable)
@@ -565,7 +670,7 @@ mod tests {
         Status::Connected {
             pc_name: "PC".into(), mode: mode.into(), mode_by_pc: false,
             slot: 0, player: 1, role: crate::link::Role::Wiimote, rtt_ms: None,
-            supports_cemu: true, supports_switch: true, pad: "wiimote".into(),
+            supports_cemu: true, supports_switch: true, supports_retroarch: true, pad: "wiimote".into(),
             notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None,
         }
     }

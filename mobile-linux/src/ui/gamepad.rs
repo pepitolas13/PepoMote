@@ -37,12 +37,16 @@ pub enum Action {
     None,
     Exit,
     Mode(&'static str),
-    /// Pedir al receptor otro tipo de mando (`"wiimote"` = ser Mando de Wii).
+    /// Pedir al receptor otro tipo de mando (`"wiimote"` = ser Mando de Wii;
+    /// en RetroArch `"retropad"`, `"nes"` o `"gun"`).
     Pad(&'static str),
     /// Nuevo giro del móvil apaisado (ajuste + atómico).
     Rotation(Rotation),
     /// Abrir el teclado para el teclado en pantalla de Cemu.
     Keyboard,
+    /// RetroArch: tecla rápida de un toque (nombre del protocolo). Las de
+    /// mantener se leen con [`GamePadUi::held_hotkeys`].
+    Hotkey(&'static str),
 }
 
 /// Lo que la app pasa cada frame.
@@ -84,6 +88,10 @@ enum Chip {
     Pad(&'static str),
     Rotate,
     Keyboard,
+    /// RetroArch: tecla rápida de un toque (dispara al levantar el dedo).
+    Hotkey(&'static str),
+    /// RetroArch: tecla de mantener (pulsada mientras el dedo esté encima).
+    Hold(&'static str),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -122,7 +130,11 @@ struct View<'a> {
     show_chips: bool,
     supports_cemu: bool,
     supports_switch: bool,
+    supports_retroarch: bool,
     switch: bool,
+    /// RetroArch: el mismo trazado que Switch con etiquetas de RetroPad
+    /// (L2/R2, Select/Start, Menú, Rápido) y su selector de tres mandos.
+    retro: bool,
     /// El receptor ha confirmado Wii U y somos GamePad/Pro: se juega.
     active: bool,
     optimistic: bool,
@@ -149,6 +161,8 @@ pub struct GamePadUi {
     zone_rect: Rect,
     active: bool,
     fired: Option<Chip>,
+    /// RetroArch: teclas de mantener bajo algún dedo (rebobinar).
+    held: Vec<&'static str>,
     /// Los dos ajustes de pulsación (deslizar / mantener al salir).
     press: Press,
     /// La pantalla del GamePad de Cemu (se crea con la primera imagen y se
@@ -225,6 +239,7 @@ impl GamePadUi {
             zone_rect: Rect::NOTHING,
             active: false,
             fired: None,
+            held: Vec::new(),
             press: Press::default(),
             texture: None,
             layout_key: None,
@@ -261,7 +276,8 @@ impl GamePadUi {
         let avail = ui.available_size();
         let (rect, _) = ui.allocate_exact_size(avail, Sense::hover());
         self.screen = rect;
-        self.upload(ui.ctx(), if inp.wanted_mode == "switch" { None } else { inp.screen });
+        let ext = matches!(inp.wanted_mode, "switch" | "retroarch");
+        self.upload(ui.ctx(), if ext { None } else { inp.screen });
         let notice = inp.status.live_notice();
         let view = match inp.status {
             Status::Connected {
@@ -271,25 +287,28 @@ impl GamePadUi {
                 rtt_ms,
                 supports_cemu,
                 supports_switch,
+                supports_retroarch,
                 pad,
                 ..
             } => View {
                 pc_name,
                 player: *player,
                 pro: pad == "pro",
-                no_screen: inp.wanted_mode == "switch" || pad == "pro" || inp.no_screen,
-                pad: if inp.wanted_mode == "switch" { "pro" } else { pad },
+                no_screen: ext || pad == "pro" || inp.no_screen,
+                pad: if inp.wanted_mode == "switch" { "pro" } else if inp.wanted_mode == "retroarch" && !crate::link::is_retro_pad(pad) { "retropad" } else { pad },
                 mode: if inp.optimistic { inp.wanted_mode } else { mode },
                 show_chips: inp.show_chips,
                 supports_cemu: *supports_cemu,
                 supports_switch: *supports_switch,
+                supports_retroarch: *supports_retroarch,
                 switch: inp.wanted_mode == "switch",
+                retro: inp.wanted_mode == "retroarch",
                 active: inp.status.ext_confirmed() && mode == inp.wanted_mode,
                 optimistic: inp.optimistic,
                 pending: inp.pad_pending,
                 notice,
                 rtt_ms: *rtt_ms,
-                screen: if inp.wanted_mode == "switch" { None } else { inp.screen },
+                screen: if ext { None } else { inp.screen },
             },
             other => View {
                 pc_name: match other {
@@ -299,13 +318,15 @@ impl GamePadUi {
                 },
                 player: 1,
                 pro: false,
-                no_screen: inp.wanted_mode == "switch" || inp.no_screen,
-                pad: if inp.wanted_mode == "switch" { "pro" } else { "gamepad" },
+                no_screen: ext || inp.no_screen,
+                pad: match inp.wanted_mode { "switch" => "pro", "retroarch" => "retropad", _ => "gamepad" },
                 mode: inp.wanted_mode,
                 show_chips: false,
                 supports_cemu: false,
                 supports_switch: false,
+                supports_retroarch: false,
                 switch: inp.wanted_mode == "switch",
+                retro: inp.wanted_mode == "retroarch",
                 active: false,
                 optimistic: inp.optimistic,
                 pending: None,
@@ -339,7 +360,7 @@ impl GamePadUi {
             // que el velo y la cabecera se refresquen en cuanto llegue el eco
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
-        let current_pad = if view.switch { view.pad } else if view.pad == "wiimote" { "wiimote" } else { "gamepad" };
+        let current_pad = if view.switch || view.retro { view.pad } else if view.pad == "wiimote" { "wiimote" } else { "gamepad" };
         match self.fired.take() {
             Some(Chip::Exit) => Action::Exit,
             Some(Chip::Mode(m)) => Action::Mode(m),
@@ -347,6 +368,8 @@ impl GamePadUi {
             Some(Chip::Pad(_)) => Action::None,
             Some(Chip::Rotate) => Action::Rotation(inp.rotation.toggled()),
             Some(Chip::Keyboard) => Action::Keyboard,
+            Some(Chip::Hotkey(n)) => Action::Hotkey(n),
+            Some(Chip::Hold(_)) => Action::None,
             None => Action::None,
         }
     }
@@ -388,13 +411,16 @@ impl GamePadUi {
             Rotation::Right => tr!("gp.rotate_right"),
         };
         self.chip(cv, place(66.0 * s), giro, chip_font, false, theme::text(), Chip::Rotate);
-        if matches!(v.mode, "cemu" | "switch") {
-            // teclado del móvil para el teclado en pantalla de Cemu (GamePad y Pro)
+        if matches!(v.mode, "cemu" | "switch" | "retroarch") {
+            // teclado del móvil para el teclado en pantalla de Cemu (GamePad y Pro) o de RetroArch
             self.chip(cv, place(64.0 * s), tr!("common.keyboard"), chip_font, false, theme::text(), Chip::Keyboard);
         }
         if v.show_chips {
             // esta ES la pantalla Wii U: su chip va marcado (también mientras
             // se espera el eco); los otros dos, por igualdad exacta
+            if v.supports_retroarch || v.retro {
+                self.chip(cv, place(74.0 * s), tr!("common.mode_retroarch"), chip_font, v.mode == "retroarch", theme::text(), Chip::Mode("retroarch"));
+            }
             if v.supports_switch || v.switch {
                 self.chip(cv, place(62.0 * s), tr!("common.mode_switch"), chip_font, v.mode == "switch", theme::text(), Chip::Mode("switch"));
             }
@@ -424,10 +450,12 @@ impl GamePadUi {
         cv.text(Pos2::new(x0 + 4.0 * s, hy), Align2::LEFT_CENTER, &cv.fit_text(&line, title_font.clone(), avail), title_font, theme::text());
 
         let sel_y = y0 + hh + 2.0 * s;
-        let sel_h = if v.switch { 0.0 } else { self.selector(cv, v, sel_y, s) };
+        let sel_h = if v.switch { 0.0 } else if v.retro { self.retro_selector(cv, v, sel_y, s) } else { self.selector(cv, v, sel_y, s) };
+        // RetroArch: fila de teclas rápidas bajo el selector
+        let hk_h = if v.retro { self.hotkeys_row(cv, sel_y + sel_h + 4.0 * s, s) } else { 0.0 };
 
         // ---- Cuerpo ----
-        let by = sel_y + sel_h + 6.0 * s;
+        let by = sel_y + sel_h + hk_h + 6.0 * s;
         // sin zona táctil pintada no hay tamaño que pedir al receptor
         self.touch_rect = Rect::NOTHING;
         self.zone_rect = Rect::NOTHING;
@@ -438,14 +466,15 @@ impl GamePadUi {
         let zl = l.translate(Vec2::new(0.0, sh_ + 4.0 * s));
         let rr = Rect::from_min_size(Pos2::new(r.right() - 6.0 * s - sw, by), Vec2::new(sw, sh_));
         let zr = rr.translate(Vec2::new(0.0, sh_ + 4.0 * s));
-        for (rc, label, bit) in [(l, "L", pmp::BTN_L), (zl, "ZL", pmp::BTN_ZL), (rr, "R", pmp::BTN_R), (zr, "ZR", pmp::BTN_ZR)] {
+        let (zl_label, zr_label) = if v.retro { ("L2", "R2") } else { ("ZL", "ZR") };
+        for (rc, label, bit) in [(l, "L", pmp::BTN_L), (zl, zl_label, pmp::BTN_ZL), (rr, "R", pmp::BTN_R), (zr, zr_label, pmp::BTN_ZR)] {
             let shape = touch::rect_button(cv, rc, 8.0 * s, label, 13.0 * s, pressed & bit != 0, false);
             self.hits.push((shape, Target::Button(bit)));
         }
 
         // Sin pantalla táctil (Pro Controller o el ajuste): stick y cruceta en
         // fila si así salen más grandes que apilados (en un móvil, siempre)
-        let row = v.no_screen.then(|| row_metrics(vw, r.bottom() - by, s, v.pro && !v.switch)).filter(|m| m.pad > 92.0 * s);
+        let row = v.no_screen.then(|| row_metrics(vw, r.bottom() - by, s, v.pro && !v.switch && !v.retro)).filter(|m| m.pad > 92.0 * s);
         let zone_w = if let Some(m) = row {
             self.layout_row(cv, v, &m, s, pressed, r, by);
             m.center_w
@@ -464,6 +493,8 @@ impl GamePadUi {
             cv.rounded_rect(body, 0.0, veil(), Stroke::NONE);
             let why = if v.switch {
                 tr!("gp.activating_switch")
+            } else if v.retro {
+                tr!("gp.activating_retroarch")
             } else if v.mode.is_empty() {
                 tr!("common.connecting")
             } else if v.pad == "wiimote" {
@@ -485,7 +516,66 @@ impl GamePadUi {
     }
 
     fn kind(v: &View) -> &'static str {
-        if v.switch || v.pro { tr!("common.pro") } else { tr!("common.gamepad") }
+        if v.retro {
+            match v.pad { "nes" => tr!("common.nes_pad"), "gun" => tr!("common.light_gun"), _ => tr!("common.retropad") }
+        } else if v.switch || v.pro {
+            tr!("common.pro")
+        } else {
+            tr!("common.gamepad")
+        }
+    }
+
+    /// «En RetroArch soy: [RetroPad] [NES] [Pistola]».
+    fn retro_selector(&mut self, cv: &Canvas, v: &View, y: f32, s: f32) -> f32 {
+        let r = cv.rect();
+        let h = 26.0 * s;
+        let gap = 4.0 * s;
+        let font = 12.0 * s;
+        let label = tr!("common.in_retroarch");
+        let choices = [(tr!("common.retropad"), "retropad"), (tr!("common.nes_pad"), "nes"), (tr!("common.light_gun"), "gun")];
+        let label_w = cv.text_width(label, FontId::proportional(font)) + 8.0 * s;
+        let available = r.width() - 12.0 * s - label_w;
+        let w = ((available - 2.0 * gap) / 3.0).min(96.0 * s);
+        let total = label_w + 3.0 * w + 2.0 * gap;
+        let x = r.center().x - total / 2.0;
+        cv.text(Pos2::new(x, y + h / 2.0), Align2::LEFT_CENTER, label, FontId::proportional(font), theme::text_dim());
+        for (i, (label, pad)) in choices.iter().enumerate() {
+            let rc = Rect::from_min_size(Pos2::new(x + label_w + i as f32 * (w + gap), y), Vec2::new(w, h));
+            let seg = if v.pending == Some(*pad) { Seg::Pending } else if v.pad == *pad && v.pending.is_none() { Seg::On } else { Seg::Off };
+            let size = font.min(font * (w - 10.0 * s) / cv.text_width(label, FontId::proportional(font)).max(1.0));
+            let shape = touch::segment(cv, rc, label, size, seg);
+            self.hits.push((shape, Target::Chip(Chip::Pad(pad))));
+        }
+        h
+    }
+
+    /// RetroArch: guardar/cargar estado, ranura, rebobinar (mantener), pausa,
+    /// captura y reiniciar, en una fila de chips bajo el selector.
+    fn hotkeys_row(&mut self, cv: &Canvas, y: f32, s: f32) -> f32 {
+        let r = cv.rect();
+        let h = 22.0 * s;
+        let gap = 4.0 * s;
+        let font = 11.0 * s;
+        let n = crate::ui::controller::RETRO_HOTKEYS.len() as f32;
+        let w = ((r.width() - 12.0 * s - (n - 1.0) * gap) / n).min(80.0 * s);
+        let total = n * w + (n - 1.0) * gap;
+        let mut x = r.center().x - total / 2.0;
+        for (name, hold) in crate::ui::controller::RETRO_HOTKEYS {
+            let rc = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
+            let label = crate::ui::controller::hotkey_label(name);
+            let size = font.min(font * (w - 8.0 * s) / cv.text_width(label, FontId::proportional(font)).max(1.0));
+            let selected = hold && self.held.contains(&name);
+            let target = if hold { Chip::Hold(name) } else { Chip::Hotkey(name) };
+            let shape = touch::chip(cv, rc, label, size, selected, theme::text());
+            self.hits.push((shape, Target::Chip(target)));
+            x += w + gap;
+        }
+        h
+    }
+
+    /// RetroArch: las teclas de mantener bajo algún dedo ahora mismo.
+    pub fn held_hotkeys(&self) -> Vec<&'static str> {
+        self.held.clone()
     }
 
     /// Wii U retains GamePad / Wii Remote choices; Switch is always Pro.
@@ -511,6 +601,20 @@ impl GamePadUi {
             self.hits.push((shape, Target::Chip(Chip::Pad(pad))));
         }
         h
+    }
+
+    /// Etiqueta y tamaño de letra de −, Home y +: en RetroArch, Select, Menú y Start.
+    fn center_labels(v: &View) -> ((&'static str, f32), (&'static str, f32), (&'static str, f32)) {
+        if v.retro {
+            ((tr!("gp.select"), 8.5), (tr!("gp.menu"), 9.0), (tr!("gp.start"), 8.5))
+        } else {
+            (("−", 18.0), ("Home", 10.0), ("+", 18.0))
+        }
+    }
+
+    /// La pastilla bajo −/Home/+: Capturar en Switch, avance rápido en RetroArch.
+    fn pill_label(v: &View) -> &'static str {
+        if v.retro { tr!("gp.fast") } else { tr!("gp.capture") }
     }
 
     fn pill(&mut self, cv: &Canvas, r: Rect, label: &str, bit: u32, s: f32, pressed: u32) {
@@ -559,11 +663,12 @@ impl GamePadUi {
             tr.bottom() + 6.0 * s + 20.0 * s
         };
         let br2 = 20.0 * s;
-        self.button(cv, Pos2::new(cx - 62.0 * s, rows_y), br2, "−", 18.0 * s, pmp::BTN_MINUS, pressed, false);
-        self.button(cv, Pos2::new(cx, rows_y), br2, "Home", 10.0 * s, pmp::BTN_HOME, pressed, false);
-        self.button(cv, Pos2::new(cx + 62.0 * s, rows_y), br2, "+", 18.0 * s, pmp::BTN_PLUS, pressed, false);
-        if v.switch {
-            self.pill(cv, Rect::from_center_size(Pos2::new(cx, rows_y + 50.0 * s), Vec2::new(76.0 * s, 24.0 * s)), tr!("gp.capture"), pmp::BTN_SCREEN, s, pressed);
+        let (minus, home, plus) = Self::center_labels(v);
+        self.button(cv, Pos2::new(cx - 62.0 * s, rows_y), br2, minus.0, minus.1 * s, pmp::BTN_MINUS, pressed, false);
+        self.button(cv, Pos2::new(cx, rows_y), br2, home.0, home.1 * s, pmp::BTN_HOME, pressed, false);
+        self.button(cv, Pos2::new(cx + 62.0 * s, rows_y), br2, plus.0, plus.1 * s, pmp::BTN_PLUS, pressed, false);
+        if v.switch || v.retro {
+            self.pill(cv, Rect::from_center_size(Pos2::new(cx, rows_y + 50.0 * s), Vec2::new(76.0 * s, 24.0 * s)), Self::pill_label(v), pmp::BTN_SCREEN, s, pressed);
         } else if !v.pro {
             let ry = rows_y + br2 + 6.0 * s;
             let (bw, bh) = (76.0 * s, 24.0 * s);
@@ -606,14 +711,15 @@ impl GamePadUi {
         let br2 = 20.0 * s;
         let (bw, bh) = (76.0 * s, 24.0 * s);
         let gap = 6.0 * s;
-        let total = 6.0 * br2 + 2.0 * gap + if v.switch { bh + gap } else if v.pro { 0.0 } else { 2.0 * (bh + gap) };
+        let total = 6.0 * br2 + 2.0 * gap + if v.switch || v.retro { bh + gap } else if v.pro { 0.0 } else { 2.0 * (bh + gap) };
         let mut y = by + (r.bottom() - by - total) / 2.0;
-        for (label, font, bit) in [("−", 18.0, pmp::BTN_MINUS), ("Home", 10.0, pmp::BTN_HOME), ("+", 18.0, pmp::BTN_PLUS)] {
+        let (minus, home, plus) = Self::center_labels(v);
+        for ((label, font), bit) in [(minus, pmp::BTN_MINUS), (home, pmp::BTN_HOME), (plus, pmp::BTN_PLUS)] {
             self.button(cv, Pos2::new(cx, y + br2), br2, label, font * s, bit, pressed, false);
             y += 2.0 * br2 + gap;
         }
-        if v.switch {
-            self.pill(cv, Rect::from_min_size(Pos2::new(cx - bw / 2.0, y), Vec2::new(bw, bh)), tr!("gp.capture"), pmp::BTN_SCREEN, s, pressed);
+        if v.switch || v.retro {
+            self.pill(cv, Rect::from_min_size(Pos2::new(cx - bw / 2.0, y), Vec2::new(bw, bh)), Self::pill_label(v), pmp::BTN_SCREEN, s, pressed);
         } else if !v.pro {
             for (label, bit) in [(tr!("gp.tv_pad"), pmp::BTN_SCREEN), (tr!("gp.blow"), pmp::BTN_MIC)] {
                 let rc = Rect::from_min_size(Pos2::new(cx - bw / 2.0, y), Vec2::new(bw, bh));
@@ -837,6 +943,11 @@ impl GamePadUi {
                 }
                 self.dpad_at(pos, buttons);
             }
+            Target::Chip(Chip::Hold(n)) => {
+                if !self.held.contains(&n) {
+                    self.held.push(n);
+                }
+            }
             Target::Chip(_) | Target::Free => {}
         }
         self.touches.insert(key, target);
@@ -915,6 +1026,10 @@ impl GamePadUi {
                 let (x, y, _) = buttons.touch();
                 buttons.set_touch(x, y, false);
             }
+            // una tecla de mantener se suelta al levantar el dedo, esté donde esté
+            Some(Target::Chip(Chip::Hold(n))) => {
+                self.held.retain(|h| *h != n);
+            }
             // un chip dispara solo si el dedo se levanta sobre el mismo chip
             Some(Target::Chip(c)) if touch::hit_test(&self.hits, pos) == Some(Target::Chip(c)) => {
                 self.fired = Some(c);
@@ -957,13 +1072,73 @@ mod tests {
         Status::Connected {
             pc_name: "PC".into(), mode: "switch".into(), mode_by_pc: false,
             slot: 0, player: 1, role: crate::link::Role::Wiimote, rtt_ms: None,
-            supports_cemu: true, supports_switch: true, pad: pad.into(),
+            supports_cemu: true, supports_switch: true, supports_retroarch: true, pad: pad.into(),
             notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None,
+        }
+    }
+
+    fn retro_status(pad: &str) -> Status {
+        match switch_status(pad) {
+            Status::Connected { pc_name, mode_by_pc, slot, player, role, rtt_ms, supports_cemu, supports_switch, supports_retroarch, notice, mode_seq, pad_seq, own_nunchuk, screen_only, .. } => Status::Connected {
+                pc_name, mode: "retroarch".into(), mode_by_pc, slot, player, role, rtt_ms, supports_cemu, supports_switch, supports_retroarch,
+                pad: pad.into(), notice, mode_seq, pad_seq, own_nunchuk, screen_only,
+            },
+            other => other,
         }
     }
 
     fn render(gamepad: &mut GamePadUi, buttons: &Buttons, status: &Status, size: Vec2) {
         render_press(gamepad, buttons, status, size, Press::default());
+    }
+
+    fn render_mode(gamepad: &mut GamePadUi, buttons: &Buttons, status: &Status, size: Vec2, wanted_mode: &'static str) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                gamepad.show(ui, buttons, &Inputs {
+                    status, rotation: Rotation::Left, show_chips: true, optimistic: false,
+                    wanted_mode, pad_pending: None, sensor_hz: 200.0, screen: None,
+                    no_screen: false, full_screen: true, keyboard_button: true, press: Press::default(),
+                });
+            });
+        });
+    }
+
+    #[test]
+    fn retroarch_retropad_has_every_button_its_three_way_selector_and_hotkeys() {
+        let required = pmp::BTN_A | pmp::BTN_B | pmp::BTN_X | pmp::BTN_Y | pmp::BTN_L | pmp::BTN_R |
+            pmp::BTN_ZL | pmp::BTN_ZR | pmp::BTN_STICK_L | pmp::BTN_STICK_R | pmp::BTN_MINUS | pmp::BTN_PLUS | pmp::BTN_HOME | pmp::BTN_SCREEN;
+        for size in [Vec2::new(700.0, 370.0), Vec2::new(360.0, 640.0)] {
+            let mut ui = GamePadUi::new();
+            render_mode(&mut ui, &Buttons::new(), &retro_status("retropad"), size, "retroarch");
+            assert!(ui.active, "RetroPad confirmado: se juega");
+            assert_eq!(mask(&ui), required);
+            assert!(ui.touch_size_px(1.0).is_none(), "sin pantalla táctil");
+            for pad in ["retropad", "nes", "gun"] {
+                assert!(ui.hits.iter().any(|(_, t)| *t == Target::Chip(Chip::Pad(pad))), "selector {pad}");
+            }
+            assert!(ui.hits.iter().any(|(_, t)| *t == Target::Chip(Chip::Hotkey("save_state"))));
+            assert!(ui.hits.iter().any(|(_, t)| *t == Target::Chip(Chip::Hold("rewind"))));
+            assert!(ui.hits.iter().any(|(_, t)| *t == Target::Chip(Chip::Mode("retroarch"))));
+        }
+        // rebobinar: pulsado mientras el dedo está encima, suelto al levantarlo
+        let mut ui = GamePadUi::new();
+        let b = Buttons::new();
+        render_mode(&mut ui, &b, &retro_status("retropad"), Vec2::new(700.0, 370.0), "retroarch");
+        let rewind = position(&ui, Target::Chip(Chip::Hold("rewind")));
+        ui.begin(9, rewind, &b);
+        assert_eq!(ui.held_hotkeys(), vec!["rewind"]);
+        ui.end(9, rewind + Vec2::new(300.0, 0.0), &b);
+        assert!(ui.held_hotkeys().is_empty());
+        // guardar estado dispara al levantar el dedo encima
+        let save = position(&ui, Target::Chip(Chip::Hotkey("save_state")));
+        ui.begin(10, save, &b);
+        ui.end(10, save, &b);
+        assert_eq!(ui.fired, Some(Chip::Hotkey("save_state")));
+        // el mando de NES no es esta pantalla (ni 80 bytes): inerte aquí
+        let mut ui = GamePadUi::new();
+        render_mode(&mut ui, &Buttons::new(), &retro_status("nes"), Vec2::new(700.0, 370.0), "retroarch");
+        assert!(!ui.active);
     }
 
     fn render_press(gamepad: &mut GamePadUi, buttons: &Buttons, status: &Status, size: Vec2, press: Press) {

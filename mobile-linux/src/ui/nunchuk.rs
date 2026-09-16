@@ -338,7 +338,7 @@ mod tests {
         Status::Connected {
             pc_name: "PC".into(), mode: "dolphin".into(), mode_by_pc: false,
             slot: 1, player: 2, role: Role::Nunchuk, rtt_ms: None,
-            supports_cemu: true, supports_switch: true, pad: "wiimote".into(),
+            supports_cemu: true, supports_switch: true, supports_retroarch: false, pad: "wiimote".into(),
             notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None,
         }
     }
