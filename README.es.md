@@ -9,6 +9,10 @@
 
 **¿Te gusta el proyecto? Dale una estrellita arriba en GitHub ⭐.** Me ayudas a que más gente descubra PepoMote y a seguir mejorándolo. Quiero que llegue a ser el mejor mando virtual para jugar a tus consolas favoritas, y cada estrella ayuda a que este proyecto llegue más lejos.
 
+[![Dale una estrellita a PepoMote](https://img.shields.io/badge/Dale_una_estrellita-FFD54F?style=for-the-badge&logo=github&logoColor=181717)](https://github.com/pepitolas13/PepoMote#top)
+
+Pulsa el botón y después **Star**, arriba a la derecha en GitHub.
+
 ¿Un control no va como debería? Cuéntamelo en [mi Discord](https://discord.gg/Vx3MPuMPxb), con tu dispositivo y el juego, y lo solucionaré tan pronto como pueda. Todavía no he podido probar todos los controles y combinaciones.
 
 - **Modo puntero** — apuntas con el móvil y el cursor va exactamente ahí (apuntado absoluto anclado al mundo, inmune al roll, 250 Hz). Botones, arrastre, scroll, teclas multimedia. Tu ratón de verdad sigue funcionando siempre que el móvil esté quieto. Necesita giroscopio: un móvil sin giroscopio real (muchos de gama baja) lo avisa y apunta por inclinación, con el sensor a elegir en Ajustes.

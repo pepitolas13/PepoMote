@@ -9,6 +9,10 @@
 
 **Enjoying the project? Give it a star at the top of GitHub ⭐.** It helps more people discover PepoMote and encourages me to keep improving it. I want it to become the best virtual controller for playing your favourite consoles, and every star helps the project reach more people.
 
+[![Star PepoMote](https://img.shields.io/badge/Star_PepoMote-FFD54F?style=for-the-badge&logo=github&logoColor=181717)](https://github.com/pepitolas13/PepoMote#top)
+
+Click the button, then **Star** at the top right of GitHub.
+
 A control not working as expected? Tell me in [my Discord](https://discord.gg/Vx3MPuMPxb), including your device and game, and I'll fix it as soon as I can. I haven't been able to try every control and combination yet.
 
 - **Pointer mode** — aim your phone at the screen and the cursor goes exactly there (world-anchored absolute pointing, roll-invariant, 250 Hz). Buttons, drag, scroll, media keys. Your real mouse keeps working whenever the phone is still. Needs a gyroscope: a phone without a real one (many budget phones) is told so and points by tilting instead, with the sensor selectable in Settings.
