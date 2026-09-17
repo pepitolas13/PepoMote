@@ -1,9 +1,10 @@
 # Jugar en RetroArch con PepoMote
 
-El modo **RetroArch** convierte el móvil en un mando para RetroArch: un
-**RetroPad** apaisado de dos sticks con todos los botones, un **mando de NES**
-(el Mando de Wii de lado) para los juegos de dos botones, o una **pistola de
-luz** (el Mando de Wii apuntando) para Duck Hunt y compañía. Usa dos cosas que
+El modo **RetroArch** convierte el móvil en un mando para RetroArch: **el
+mando de la consola del juego que RetroArch tiene cargado** (NES, Game Boy,
+SNES, Mega Drive, N64, PlayStation… o el **RetroPad** completo de dos sticks
+si no se conoce), el **Mando de Wii de lado** para los juegos de dos botones,
+o una **pistola de luz** (el Mando de Wii apuntando) para Duck Hunt y compañía. Usa dos cosas que
 RetroArch trae de serie: el **mando en red** (Network Gamepad / Remote
 RetroPad, UDP 55400 + jugador) para los botones y los sticks, y la **interfaz
 de comandos de red** (UDP 55355) para el menú y las teclas rápidas (guardar y
@@ -40,14 +41,58 @@ En el móvil, **En RetroArch soy:** elige el mando; se recuerda entre sesiones.
 
 | Mando | Cómo se sostiene | Qué manda |
 |---|---|---|
-| **RetroPad** | apaisado | A/B/X/Y en las posiciones de la SNES, L/R, L2/R2, L3/R3, cruceta, dos sticks, Select/Start, **Menú** (abre el menú de RetroArch) y **Rápido** (avance rápido mientras se mantiene) |
-| **Mando NES** | de lado | cruceta, **B** y **A** (los botones grandes), X (la A grande del Mando de Wii), Select/Start y Menú |
+| **Consola** (el primer segmento, con el nombre de la que toca) | apaisado | el mando de la consola del juego cargado (ver «El mando de cada consola»); si no se conoce, el **RetroPad** completo: A/B/X/Y en las posiciones de la SNES, L/R, L2/R2, L3/R3, cruceta, dos sticks, Select/Start, **Menú** (abre el menú de RetroArch) y **Rápido** (avance rápido mientras se mantiene) |
+| **Wii de lado** | de lado | cruceta, **B** y **A** (los botones grandes), X (la A grande del Mando de Wii), Select/Start y Menú |
 | **Pistola** | derecho, apuntando a la pantalla | el puntero mueve el ratón del PC (es la pistola de luz de RetroArch), **B dispara** (clic izquierdo) y **A recarga** fuera de pantalla (clic derecho); 1 y 2 son B y A del RetroPad, y la cruceta, − / + y Menú como en el mando de NES |
 
 La cabecera plegable del móvil trae además las **teclas rápidas**: Guardar y
 Cargar estado, Ranura − / +, Rebobinar (se mantiene pulsado), Pausa, Captura
 y Reiniciar. Van por la interfaz de comandos de RetroArch, así que no
 dependen de qué teclas tengas asignadas.
+
+## El mando de cada consola
+
+RetroArch apunta en su historial (`content_history.lpl`) qué juego y qué
+núcleo acaba de cargar, y la ficha del núcleo (`info/*.info`) dice de qué
+consola es. El receptor lo lee (cada 2 s, sin preguntar nada a RetroArch) y
+se lo cuenta al móvil, que enseña **el mando de esa consola**: solo sus
+botones, con sus nombres y sus colores, y sin sticks si no los tenía. En la
+ventana del receptor sale «Último juego cargado: …» y, por jugador, la
+plantilla que enseña cada móvil.
+
+| Consola (núcleos) | Botones en el móvil | Qué manda cada uno al RetroPad |
+|---|---|---|
+| **NES** (FCEUmm, Nestopia, Mesen) | cruceta, B y A, Select/Start | B, A |
+| **Game Boy / Color** (Gambatte, SameBoy) | cruceta, B y A, Select/Start | B, A |
+| **Game Boy Advance** (mGBA, VBA) | cruceta, B y A, L/R, Select/Start | B, A, L, R |
+| **SNES** (Snes9x, bsnes) | cruceta, rombo X/Y/A/B, L/R, Select/Start | los mismos |
+| **Master System / Game Gear** (Genesis Plus GX, SMS Plus) | cruceta, 1 y 2, Pause | 1 → B, 2 → A, Pause → Start |
+| **Mega Drive / 32X** (Genesis Plus GX, PicoDrive) | cruceta, X Y Z sobre A B C, Mode/Start | A → Y, B → B, C → A, X → L, Y → X, Z → R, Mode → Select |
+| **PC Engine** (Beetle PCE) | cruceta, II y I, Select/Run | I → A, II → B, Run → Start |
+| **Arcade** (FBNeo, MAME) | cruceta, seis botones (Y X L / B A R), Moneda/Start | los del RetroPad (dispositivo «Classic» de FBNeo: en lucha, puño flojo/medio/fuerte arriba y patadas abajo), Moneda → Select |
+| **Neo Geo** (FBNeo) | cruceta, rombo A/B/C/D, Moneda/Start | A → B, B → A, C → Y, D → X |
+| **Atari 2600** (Stella) | joystick (cruceta) y Disparo, Select/Reset | Disparo → B, Reset → Start |
+| **Nintendo 64** (Mupen64Plus, ParaLLEl) | stick, cruceta, B y A, Z, L/R, botones C, Start | A → B, B → Y, Z → L2, C → stick derecho |
+| **PlayStation** (PCSX-ReARMed, Beetle PSX, SwanStation) | dos sticks, cruceta, △ ○ ✕ □, L1/L2/R1/R2, L3/R3, Select/Start | ✕ → B, ○ → A, □ → Y, △ → X |
+
+Son los mapeos por defecto de cada núcleo: si en RetroArch has remapeado los
+controles, o usas el dispositivo «Modern» de FBNeo, las etiquetas no
+cuadrarán; elige entonces **RetroPad completo**. Cualquier otro núcleo (DOS,
+Saturn, Dreamcast, PSP…) usa el RetroPad completo.
+
+En el selector del móvil el primer segmento lleva el nombre de la consola que
+toca. Tócalo cuando ya está elegido y sale la lista: **Automático** (seguir
+al PC), las doce consolas, **Mega Drive (3)** (el mando de tres botones) y
+**RetroPad completo**. Lo que elijas se recuerda **para ese juego**; sin juego
+cargado vale para todos hasta que RetroArch cargue uno. Con RetroArch en el
+menú o cerrado se conserva el último juego; si se recarga el mismo, todo sigue
+igual. Cambiar de mando con algo pulsado lo suelta todo primero.
+
+Para que funcione, RetroArch tiene que tener el historial activado (Ajustes →
+Guardado → Historial, que lo está de serie) y el núcleo su ficha `.info`
+(las trae el zip oficial y el actualizador en línea); sin ficha, el receptor
+adivina la consola por el nombre del archivo del núcleo, y para los núcleos
+multisistema (Genesis Plus GX, mGBA…) por la extensión del ROM.
 
 ## Multijugador
 
@@ -114,7 +159,9 @@ restauración queda pendiente hasta que se cierre.
 | macOS | `~/Library/Application Support/RetroArch/config/retroarch.cfg` |
 
 PepoMote escribe en todos los que existan (para que valga con una instalación
-nativa y un Flatpak a la vez). En **Ajustes → Carpeta de RetroArch** puedes
+nativa y un Flatpak a la vez), y lee el historial (`playlists/builtin/
+content_history.lpl`) y las fichas (`info/`) de la misma carpeta, o de donde
+digan `content_history_path` y `libretro_info_path` en `retroarch.cfg`. En **Ajustes → Carpeta de RetroArch** puedes
 indicar la carpeta del ejecutable, la que contiene `retroarch.cfg` o el
 propio archivo; **Detectar** busca la versión de Steam, y el receptor aprende
 la carpeta al ver RetroArch abierto (Windows).
@@ -151,6 +198,13 @@ en Android no está incluido de momento.
   Interfaz → «Pausar el contenido cuando no está activo»). Haz clic en su
   ventana o desactiva esa opción (`pause_nonactive`). Los comandos (Menú,
   capturas, estados) sí funcionan con la ventana detrás.
+- **El móvil no cambia al mando de la consola**: RetroArch tiene el historial
+  desactivado, el núcleo no tiene ficha `.info` y su nombre no se reconoce, o
+  la extensión es ambigua (`.bin`, `.cue`) en un núcleo multisistema; el
+  receptor enseña «Último juego cargado» con lo que ha visto. Elige la
+  consola a mano en el selector del móvil.
+- **Las etiquetas no cuadran con el juego**: controles remapeados en
+  RetroArch o dispositivo «Modern» de FBNeo; elige **RetroPad completo**.
 - **El mando no aparece en el juego**: en RetroArch, Ajustes → Entrada →
   Mando en red activado y el jugador 1 (o el que sea) habilitado; Ajustes →
   Entrada → Usuarios máximos ≥ número de móviles. Los mandos en red no salen
