@@ -38,7 +38,15 @@ jobs:
             dist/e2e/**/receiver.out
             dist/e2e/**/receptor.log
           if-no-files-found: warn
+      - name: Diagnóstico de cierre de Windows
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-10)} -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'PepoMote' } |
+            Format-List TimeCreated, Id, ProviderName, Message
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: PepoMote-windows
           path: desktop/target/release/PepoMote.exe

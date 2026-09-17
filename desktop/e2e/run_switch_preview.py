@@ -94,6 +94,10 @@ def run_suite(name):
                 raise RuntimeError(f"{name} failed: {result.returncode}; logs: {base}")
             print(f"PASS {name}; logs: {base}", flush=True)
         finally:
+            if sys.exc_info()[0] is not None:
+                status = receiver.poll()
+                detail = "sigue vivo" if status is None else f"{status} (0x{status & 0xffffffff:08x})"
+                print(f"Estado del receptor antes de limpiar la prueba: {detail}", flush=True)
             receiver.terminate()
             try:
                 receiver.wait(timeout=8)
