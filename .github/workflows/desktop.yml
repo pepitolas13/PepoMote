@@ -28,7 +28,16 @@ jobs:
       - name: e2e de todos los mandos (receptor aislado)
         env:
           PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir
-        run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe
+        run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-windows-logs
+          path: |
+            dist/e2e/**/checks.log
+            dist/e2e/**/receiver.out
+            dist/e2e/**/receptor.log
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: PepoMote-windows

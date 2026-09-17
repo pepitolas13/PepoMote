@@ -100,6 +100,14 @@ def run_suite(name):
             except subprocess.TimeoutExpired:
                 receiver.kill()
                 receiver.wait()
+            if sys.exc_info()[0] is not None:
+                # La CI debe conservar también lo que vio el receptor cuando
+                # falla una comprobación, no solo el error del móvil simulado.
+                for path in (base / "receiver.out", base / "config" / "receptor.log"):
+                    if path.is_file():
+                        print(f"\nDiagnóstico: {path.name}", flush=True)
+                        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                        print("\n".join(lines[-120:]), flush=True)
 
 
 if not BIN.is_file():

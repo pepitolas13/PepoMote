@@ -62,7 +62,16 @@ jobs:
       - name: Mandos de extremo a extremo (RetroArch, Eden, Cemu y Dolphin)
         env:
           PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir
-        run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe
+        run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-windows-logs
+          path: |
+            dist/e2e/**/checks.log
+            dist/e2e/**/receiver.out
+            dist/e2e/**/receptor.log
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: windows

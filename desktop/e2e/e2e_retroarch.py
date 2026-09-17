@@ -20,6 +20,7 @@ import socket
 import struct
 import threading
 import time
+from collections import deque
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("PEPOMOTE_PORT", "26771"))
@@ -193,6 +194,7 @@ class Phone:
         self.s.settimeout(None)
         self.q = queue.Queue()
         self.alive = True
+        self.reader_error = None
         self.seq = 0
         self.write_lock = threading.Lock()
         self.send(m="hello", pv=1, name=name, model="RetroArch E2E", code="1234", **extra)
@@ -207,8 +209,11 @@ class Phone:
             with self.s.makefile("r", encoding="utf-8") as f:
                 for line in f:
                     self.q.put(json.loads(line))
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as error:
+            self.reader_error = repr(error)
+        finally:
+            if self.reader_error is None:
+                self.reader_error = "El receptor cerró la conexión"
 
     def beat(self):
         while self.alive:
@@ -224,6 +229,7 @@ class Phone:
 
     def receive(self, pred, timeout=8):
         until = time.monotonic() + timeout
+        recent = deque(maxlen=12)
         while time.monotonic() < until:
             try:
                 m = self.q.get(timeout=max(0.001, until - time.monotonic()))
@@ -231,7 +237,8 @@ class Phone:
                 break
             if pred(m):
                 return m
-        raise AssertionError("Missing receiver echo")
+            recent.append(m)
+        raise AssertionError(f"Missing receiver echo; lector={self.reader_error}; últimos mensajes={list(recent)}")
 
     def mode(self, name):
         self.send(m="mode", mode=name)
