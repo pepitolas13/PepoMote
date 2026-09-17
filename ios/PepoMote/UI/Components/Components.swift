@@ -633,6 +633,9 @@ struct PadSelector: View {
     var help: String? = nil
     var switchPad = false
     @State private var pending: String?
+    /// RetroArch: el primer segmento lleva la plantilla de consola que toca; ya elegido, abre el selector
+    @State private var pickerOpen = false
+    @ObservedObject private var state = LinkState.shared
 
     private static let echoTimeoutMs = 2000
 
@@ -651,8 +654,9 @@ struct PadSelector: View {
         let inlinePrefix = width >= 470
         let prefixW: CGFloat = inlinePrefix ? 130 : 0
         let segmentsW = min(max(width - prefixW - 24, 200), compact ? 360 : 400)
+        let layoutName = RetroLayouts.byId(state.wouldBeRetroLayout(link))?.name ?? tr("retropad")
         let pads: [(String, String)] = [
-            (LinkState.padRetroPad, tr("retropad")),
+            (LinkState.padRetroPad, layoutName),
             (LinkState.padNes, tr("nes_pad")),
             (LinkState.padGun, tr("light_gun"))
         ]
@@ -676,6 +680,8 @@ struct PadSelector: View {
                             if link.pad != pad {
                                 pending = pad
                                 LinkState.shared.sendPad?(pad)
+                            } else if pad == LinkState.padRetroPad, pending == nil {
+                                pickerOpen = true
                             }
                         }
                     }
@@ -699,6 +705,9 @@ struct PadSelector: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(PadSelector.echoTimeoutMs)) {
                 if pending == p { pending = nil }
             }
+        }
+        .sheet(isPresented: $pickerOpen) {
+            RetroLayoutPicker(link: link) { pickerOpen = false }
         }
     }
 

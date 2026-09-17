@@ -26,6 +26,9 @@ struct ConnectedLink: Equatable {
     var supportsSwitch: Bool = false
     /// El receptor anuncia RetroArch en `ok.modes` (receptor del PC con el mando en red).
     var supportsRetroArch: Bool = false
+    /// RetroArch: el juego cargado según el receptor (mensaje `game`); con su
+    /// consola se elige la plantilla de mando. Se conserva al cambiar de modo.
+    var game: RetroGame? = nil
 }
 
 enum UiLink: Equatable {
@@ -123,6 +126,38 @@ final class LinkState: ObservableObject {
     var sendScreenOnly: ((Bool) -> Void)?
     /// Modo RetroArch: tecla rápida por su nombre del protocolo y si se pulsa o se suelta.
     var sendHotkey: ((String, Bool) -> Void)?
+    /// RetroArch: la plantilla de consola efectiva cambió (juego nuevo, eco de
+    /// `pad` o elección a mano): el servicio la manda al receptor (`pad.layout`).
+    var sendLayout: (() -> Void)?
+    /// RetroArch: mando de consola elegido a mano (preferencias); lo carga el servicio al conectar.
+    @Published private(set) var retroLayoutChoice = RetroLayoutChoice()
+
+    func loadRetroLayouts() {
+        retroLayoutChoice = AppPrefs.retroLayoutChoice
+    }
+
+    /// Elegir a mano (nil = automático) para el juego `path`; se guarda y se avisa al receptor.
+    func pickRetroLayout(path: String?, id: String?) {
+        let next = retroLayoutChoice.pick(path: path, id: id)
+        retroLayoutChoice = next
+        AppPrefs.retroLayoutChoice = next
+        sendLayout?()
+    }
+
+    /// Plantilla que tocaría como RetroPad en esta sesión: la elegida a mano
+    /// para el juego (o la global), si no la consola que anunció el PC, si no
+    /// el RetroPad completo.
+    func wouldBeRetroLayout(_ link: ConnectedLink?) -> String {
+        let game = link?.game
+        let path = (game?.path).flatMap { $0.isEmpty ? nil : $0 }
+        return RetroLayouts.effective(console: game?.console, chosen: retroLayoutChoice.choiceFor(path))
+    }
+
+    /// La que se enseña: solo en RetroArch y siendo el RetroPad; si no, el RetroPad completo.
+    func effectiveRetroLayout(_ link: ConnectedLink?) -> String {
+        guard let link, link.mode == LinkState.modeRetroArch, link.pad == LinkState.padRetroPad else { return RetroLayouts.retroPad.id }
+        return wouldBeRetroLayout(link)
+    }
     /// Motor de sensores del enlace vivo (la pantalla GamePad le fija kind/rotation).
     weak var motion: MotionEngine?
 

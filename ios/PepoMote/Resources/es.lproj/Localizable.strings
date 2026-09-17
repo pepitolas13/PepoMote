@@ -164,19 +164,25 @@
 
 /* RetroArch */
 "channel_retroarch" = "RetroArch";
-"channel_retroarch_sub" = "RetroPad, mando NES o pistola";
+"channel_retroarch_sub" = "El mando de cada consola, Wii de lado o pistola";
 "mode_retroarch" = "RetroArch";
 "activating_retroarch" = "Activando RetroArch…";
 "warn_needs_retroarch" = "El PC necesita un PepoMote más nuevo para RetroArch";
 "in_retroarch" = "En RetroArch soy:";
 "retropad" = "RetroPad";
-"nes_pad" = "Mando NES";
+"nes_pad" = "Wii de lado";
 "light_gun" = "Pistola";
-"retro_pad_help" = "RetroPad: dos sticks y todos los botones · Mando NES: el móvil de lado, B y A · Pistola: apunta con el móvil, B dispara y A recarga";
+"retro_pad_help" = "Consola: el mando del juego que carga RetroArch (tócalo para elegir otro) · Wii de lado: el móvil de lado, B y A · Pistola: apunta con el móvil, B dispara y A recarga";
 "retro_menu" = "Menú";
 "retro_ff" = "Rápido";
-"retro_select" = "Select";
-"retro_start" = "Start";
+"retro_coin" = "Moneda";
+"retro_fire" = "Disparo";
+"retro_layout_picker_title" = "Mando en RetroArch";
+"retro_layout_auto" = "Automático (%@)";
+"retro_layout_full" = "RetroPad completo";
+"retro_layout_hint_game" = "Se recuerda para %@";
+"retro_layout_hint_no_game" = "Hasta que RetroArch cargue un juego";
+"retro_layout_changed" = "Mando: %@";
 "side_ask_retroarch" = "¿Quieres el RetroPad así?";
 "kb_title_retroarch" = "Teclado para RetroArch";
 "kb_help_retroarch" = "Escribe en la ventana de RetroArch (ponla en primer plano; con teclado en el juego, activa el foco de juego). Borrar quita un carácter, Escribir manda el texto y sigue, Aceptar manda el texto e Intro.";

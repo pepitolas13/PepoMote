@@ -108,6 +108,7 @@ final class LinkService {
                         $0.pad = pad
                         if let player, (1...4).contains(player) { $0.player = player }
                     }
+                    self.syncRetroLayout()
                 },
                 onNunchukChanged: { [weak self] own in
                     guard let self, gen == self.generation else { return }
@@ -116,6 +117,11 @@ final class LinkService {
                 onScreenOnlyChanged: { [weak self] on in
                     guard let self, gen == self.generation else { return }
                     self.link.updateConnected { $0.screenOnly = on }
+                },
+                onGameChanged: { [weak self] game in
+                    guard let self, gen == self.generation else { return }
+                    self.link.updateConnected { $0.game = game }
+                    self.syncRetroLayout()
                 },
                 onNotice: { [weak self] text in
                     guard let self, gen == self.generation else { return }
@@ -178,6 +184,10 @@ final class LinkService {
             guard let self, self.link.link.connected?.mode == LinkState.modeRetroArch else { return }
             self.control?.sendHotkey(name, down: down)
         }
+        // RetroArch: la plantilla de consola elegida a mano, y el gancho para
+        // avisar al receptor cuando cambie la efectiva
+        link.loadRetroLayouts()
+        link.sendLayout = { [weak self] in self?.syncRetroLayout() }
         link.publish(.connected(ConnectedLink(
             pcName: pcName,
             mode: ok.mode,
@@ -216,7 +226,35 @@ final class LinkService {
         guard role == LinkState.roleWiimote else { return }
         if mode == LinkState.modeSwitch { control?.sendPad(AppPrefs.switchPad) }
         else if mode == LinkState.modeCemu { control?.sendPad(AppPrefs.cemuPad) }
-        else if mode == LinkState.modeRetroArch { control?.sendPad(AppPrefs.retroPad) }
+        else if mode == LinkState.modeRetroArch {
+            // con la plantilla de consola que toca (solo cuenta siendo el RetroPad)
+            let pad = AppPrefs.retroPad
+            let layout = link.wouldBeRetroLayout(link.link.connected)
+            lastSentLayout = pad == LinkState.padRetroPad ? layout : nil
+            control?.sendPad(pad, layout: layout)
+        }
+    }
+
+    /// RetroArch: última plantilla de consola avisada al receptor (`pad.layout`).
+    private var lastSentLayout: String?
+
+    /// RetroArch como RetroPad: la plantilla de consola que se enseña (por el
+    /// juego que anunció el PC o la elegida a mano) va al receptor en cuanto
+    /// cambia; si cambia jugando, se suelta todo y se avisa en pantalla.
+    private func syncRetroLayout() {
+        guard let cur = link.link.connected else { return }
+        guard cur.mode == LinkState.modeRetroArch, cur.pad == LinkState.padRetroPad else {
+            lastSentLayout = nil
+            return
+        }
+        let eff = link.effectiveRetroLayout(cur)
+        if eff == lastSentLayout { return }
+        if lastSentLayout != nil {
+            ButtonState.shared.reset()
+            link.publishNotice(tr("retro_layout_changed", RetroLayouts.byId(eff)?.name ?? eff))
+        }
+        lastSentLayout = eff
+        control?.sendPad(LinkState.padRetroPad, layout: eff)
     }
 
     private func onError(_ code: String, _ msg: String, _ gen: Int, _ pairing: Pairing) {
@@ -328,6 +366,8 @@ final class LinkService {
         link.sendNunchuk = nil
         link.sendScreenOnly = nil
         link.sendHotkey = nil
+        link.sendLayout = nil
+        lastSentLayout = nil
         link.motion = nil
         ScreenLink.shared.unbind() // sin enlace no hay pantalla que recibir
         motion?.stop()

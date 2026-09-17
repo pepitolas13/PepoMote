@@ -14,6 +14,45 @@ final class RetroArchTests: XCTestCase {
         .connected(ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: true, pad: pad, supportsSwitch: supportsSwitch, supportsRetroArch: supportsRetroArch))
     }
 
+    func testGameMessageAndLayoutChoice() {
+        let g = RetroGame.parse(["m": "game", "console": "md", "system": "Mega Drive", "core": "Genesis Plus GX", "title": "Cave Story", "path": "C:\\r\\cs.zip"])
+        XCTAssertEqual(g?.console, "md")
+        XCTAssertEqual(g?.title, "Cave Story")
+        XCTAssertEqual(g?.core, "Genesis Plus GX")
+        XCTAssertNil(RetroGame.parse(["m": "game", "console": NSNull(), "system": "", "core": "", "title": "", "path": ""]), "sin juego")
+        XCTAssertNil(RetroGame.parse(["m": "game", "console": NSNull(), "core": "dosbox_pure", "title": "game", "path": "g.zip"])?.console)
+        // elección por juego y global, con tope
+        var c = RetroLayoutChoice()
+        XCTAssertNil(c.choiceFor("a.zip"))
+        c = c.pick(path: nil, id: "md3")
+        XCTAssertEqual(c.choiceFor("a.zip"), "md3")
+        c = c.pick(path: "a.zip", id: "nes")
+        XCTAssertEqual(c.choiceFor("a.zip"), "nes")
+        XCTAssertEqual(c.choiceFor("b.zip"), "md3")
+        c = c.pick(path: "a.zip", id: nil)
+        XCTAssertNil(c.choiceFor("a.zip"))
+        XCTAssertNil(c.choiceFor(nil))
+        for i in 0..<60 { c = c.pick(path: "g\(i).zip", id: "snes") }
+        XCTAssertEqual(c.byPath.count, RetroLayoutChoice.cap)
+        XCTAssertNil(c.choiceFor("g0.zip"))
+        XCTAssertEqual(c.choiceFor("g59.zip"), "snes")
+        XCTAssertEqual(RetroLayoutChoice.decode(c.encode()), c)
+        XCTAssertEqual(RetroLayoutChoice.decode("{no"), RetroLayoutChoice())
+        // la plantilla efectiva
+        XCTAssertEqual(RetroLayouts.effective(console: nil, chosen: nil), "retropad")
+        XCTAssertEqual(RetroLayouts.effective(console: "md", chosen: nil), "md")
+        XCTAssertEqual(RetroLayouts.effective(console: "md", chosen: "nes"), "nes")
+        XCTAssertEqual(RetroLayouts.effective(console: "dos", chosen: nil), "retropad")
+        XCTAssertEqual(RetroLayouts.effective(console: "md3", chosen: nil), "retropad")
+        let state = LinkState()
+        var link = ConnectedLink(pcName: "PC", mode: LinkState.modeRetroArch, rttMs: nil, sensorHz: 0, pad: LinkState.padRetroPad)
+        link.game = g
+        XCTAssertEqual(state.effectiveRetroLayout(link), "md")
+        link.pad = LinkState.padNes
+        XCTAssertEqual(state.effectiveRetroLayout(link), "retropad", "solo siendo el RetroPad")
+        XCTAssertEqual(state.wouldBeRetroLayout(link), "md", "lo que tocaría, para el selector")
+    }
+
     func testCapabilityComesFromOkModes() {
         XCTAssertTrue(ControlClient.supportsRetroArch(["modes": ["pointer", "dolphin", "cemu", "switch", "retroarch"]]))
         XCTAssertFalse(ControlClient.supportsRetroArch(["modes": ["pointer", "dolphin", "cemu", "switch"]]))

@@ -68,6 +68,9 @@ targets:
       # Vectores dorados del protocolo, como recursos del bundle de tests
       - path: ../protocol/vectors
         buildPhase: resources
+      # La tabla de plantillas de RetroArch (pmp::retro), para el test de paridad
+      - path: ../protocol/retro-layouts.json
+        buildPhase: resources
     dependencies:
       - target: PepoMote
     settings:

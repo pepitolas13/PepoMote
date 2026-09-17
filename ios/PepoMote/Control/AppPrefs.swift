@@ -31,6 +31,13 @@ enum AppPrefs {
         set { d.set(LinkState.validRetroPad(newValue) ? newValue : LinkState.padRetroPad, forKey: retroPadKey) }
     }
 
+    /// RetroArch: mando de consola elegido a mano (JSON de `RetroLayoutChoice`, como Android).
+    static let retroLayoutChoiceKey = "retroLayouts"
+    static var retroLayoutChoice: RetroLayoutChoice {
+        get { RetroLayoutChoice.decode(d.string(forKey: retroLayoutChoiceKey)) }
+        set { d.set(newValue.encode(), forKey: retroLayoutChoiceKey) }
+    }
+
     /// Mostrar el selector Puntero/Dolphin en el mando al entrar por Conectar.
     static var showDolphinChips: Bool {
         get { d.object(forKey: "showDolphinChips") as? Bool ?? true }

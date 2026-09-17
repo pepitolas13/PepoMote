@@ -7,6 +7,28 @@ import XCTest
 final class PadMetricsTests: XCTestCase {
     private func sz(_ w: CGFloat, _ h: CGFloat) -> CGSize { CGSize(width: w, height: h) }
 
+    func testRetroArchNeedsGrowThePadsWithoutSticks() {
+        for (w, h) in [(640, 240), (734, 320), (852, 393), (1133, 744), (1376, 1032)] as [(CGFloat, CGFloat)] {
+            let retro = PadMetrics(size: sz(w, h), pro: true, switchPad: true, retroPad: true)
+            let sw = PadMetrics(size: sz(w, h), pro: true, switchPad: true)
+            XCTAssertGreaterThan(retro.pillW, 0)
+            XCTAssertEqual(retro.padSize, sw.padSize, "con lo del RetroPad, las mismas medidas que Switch")
+            XCTAssertEqual(retro.roundBtn, sw.roundBtn)
+            XCTAssertEqual(retro.dpadSize, retro.padSize, "el RetroPad no cambia la cruceta")
+            XCTAssertEqual(retro.faceBox, retro.padSize)
+            // sin sticks (NES, Mega Drive…) la cruceta y los botones crecen dentro del cuerpo
+            let nes = PadMetrics(size: sz(w, h), pro: true, switchPad: true, retroPad: true, needs: PadNeeds(leftStick: false, rightStick: .none, centerButtons: 2))
+            XCTAssertGreaterThanOrEqual(nes.dpadSize, nes.padSize)
+            XCTAssertLessThanOrEqual(nes.dpadSize, nes.padSize * 1.35 + 0.01)
+            XCTAssertEqual(nes.dpadSize, nes.faceBox)
+            XCTAssertLessThanOrEqual(nes.dpadSize, nes.bodyH - nes.shoulderH * 2 - nes.gap * 2 + 0.01)
+            XCTAssertEqual(nes.padSize, retro.padSize, "los sticks y hombros no cambian")
+            // Master System: un solo botón central (Pause) deja más sitio a Menú
+            let ms = PadMetrics(size: sz(w, h), pro: true, switchPad: true, retroPad: true, needs: PadNeeds(leftStick: false, rightStick: .none, centerButtons: 1))
+            XCTAssertGreaterThanOrEqual(ms.roundBtn, retro.roundBtn)
+        }
+    }
+
     func testSwitchKeepsOneCapturePillAndNoScreen() {
         let phone = PadMetrics(size: sz(852, 393), pro: true, switchPad: true)
         XCTAssertTrue(phone.switchPad)

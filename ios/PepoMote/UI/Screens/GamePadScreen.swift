@@ -12,6 +12,19 @@ import UIKit
 /// iPad) o en fila, con stick y cruceta uno al lado del otro y el centro como
 /// columna vertical (móviles, que van justos de altura y sobrados de ancho).
 /// Con pantalla, en un iPhone todo mide lo de siempre.
+/// Lo que la plantilla de consola necesita del trazado (RetroArch): con lo
+/// del RetroPad no cambia ningún número.
+struct PadNeeds: Equatable {
+    var leftStick = true
+    var rightStick: RightStick = .analog
+    var centerButtons = 2
+    static let retroPad = PadNeeds()
+}
+
+extension RetroLayout {
+    var needs: PadNeeds { PadNeeds(leftStick: leftStick, rightStick: rightStick, centerButtons: center.count) }
+}
+
 struct PadMetrics {
     let w: CGFloat
     let h: CGFloat
@@ -45,8 +58,12 @@ struct PadMetrics {
     let pillH: CGFloat
     let touchW: CGFloat
     let touchH: CGFloat
+    /// Cruceta: con stick izquierdo `padSize`; sin él (plantillas de RetroArch) crece.
+    let dpadSize: CGFloat
+    /// Caja de los botones frontales: `padSize`, o mayor sin stick derecho.
+    let faceBox: CGFloat
 
-    init(size: CGSize, noScreen: Bool = false, pro: Bool = false, switchPad: Bool = false, retroPad: Bool = false) {
+    init(size: CGSize, noScreen: Bool = false, pro: Bool = false, switchPad: Bool = false, retroPad: Bool = false, needs: PadNeeds = .retroPad) {
         w = size.width
         h = size.height
         k = UiScale.factor(size, base: UiScale.phoneLandscape)
@@ -70,7 +87,9 @@ struct PadMetrics {
             pad = Swift.min(padH, sideW - clickMax - gap)
         } else {
             let rb = bottomRowH * 0.85
-            let need = switchPad ? rb * 3 + 10 * 3 + 66 * k + 20 : pro ? rb * 3 + 10 * 2 + 20 : rb * 3 + 10 * 4 + 66 * k * 2 + 20
+            let pillsN: CGFloat = switchPad ? 1 : pro ? 0 : 2
+            let n = CGFloat(1 + needs.centerButtons)
+            let need = rb * n + 10 * (n - 1 + pillsN) + 66 * k * pillsN + 20
             let sideS = (w - need - gap * 2) / 2
             let padStack = Swift.min(padH, sideS - clickMax - gap)
             let cw = pro && !switchPad ? rb : 66 * k
@@ -87,18 +106,26 @@ struct PadMetrics {
         centerW = row ? w - sideW * 2 - gap * 2 : Swift.max(w - sideW * 2 - gap * 2, 60)
         if row {
             rowGap = gap
-            roundBtn = switchPad ? min(bottomRowH * 0.85, (bodyH - pillH - gap * 3) / 3) : bottomRowH * 0.85
+            roundBtn = switchPad ? min(bottomRowH * 0.85, (bodyH - pillH - gap * 3) / CGFloat(1 + needs.centerButtons)) : bottomRowH * 0.85
             pillW = pro && !switchPad ? 0 : 66 * k
         } else {
             // La fila entera tiene que caber en el centro: pastillas y círculos se encogen juntos
             rowGap = centerW < 300 ? 6 : 10
             pillW = pro && !switchPad ? 0 : Swift.min(Swift.max(centerW * 0.22, 44), 66 * k)
             let pills: CGFloat = switchPad ? 1 : pro ? 0 : 2
-            roundBtn = Swift.min(Swift.max((centerW - rowGap * (2 + pills) - pillW * pills) / 3, 28), bottomRowH * 0.85)
+            let n = CGFloat(1 + needs.centerButtons)
+            roundBtn = Swift.min(Swift.max((centerW - rowGap * (n - 1 + pills) - pillW * pills) / n, 28), bottomRowH * 0.85)
         }
         let tw = Swift.min(centerW, (bodyH - bottomRowH - gap * 2) * (16.0 / 9.0))
         touchW = Swift.max(tw, 64)
         touchH = touchW * (9.0 / 16.0)
+        // Sin stick izquierdo la cruceta ocupa su hueco y crece; sin stick
+        // derecho, los botones frontales igual (en fila, los dos huecos;
+        // apilado, la altura bajo los gatillos)
+        let slotH = bodyH - shoulderH * 2 - gap * 2
+        let grown = Swift.min(padSize * 1.35, slotH, row ? padSize * 2 + gap : slotH)
+        dpadSize = needs.leftStick ? padSize : grown
+        faceBox = needs.rightStick == RightStick.none ? grown : padSize
     }
 
     /// Tamaño de texto de los botones: crece con el iPad.
@@ -163,8 +190,13 @@ struct GamePadScreen: View {
     private var switchPad: Bool { wantedMode == LinkState.modeSwitch || wantedMode == LinkState.modeRetroArch }
     private var retroPad: Bool { wantedMode == LinkState.modeRetroArch }
     private var operative: Bool { Route.extendedOperative(link.link, link.intent) }
+    /// RetroArch: la plantilla de la consola del juego cargado (o la elegida a
+    /// mano); fuera de RetroArch, el RetroPad de siempre (nada cambia).
+    private var layout: RetroLayout {
+        retroPad ? (RetroLayouts.byId(link.effectiveRetroLayout(link.link.connected)) ?? RetroLayouts.retroPad) : RetroLayouts.retroPad
+    }
     private var layoutIdentity: String {
-        [wantedMode, link.link.connected?.pad ?? "", String(link.link.connected?.player ?? 0)].joined(separator: ":")
+        [wantedMode, link.link.connected?.pad ?? "", String(link.link.connected?.player ?? 0), layout.id].joined(separator: ":")
     }
 
     /// Doble pantalla: solo el GamePad (no un Pro Controller), con el modo
@@ -241,7 +273,7 @@ struct GamePadScreen: View {
         let connected = link.link.connected
         let operative = self.operative
         let pro = switchPad || connected?.pad == LinkState.padPro
-        let m = PadMetrics(size: size, noScreen: noScreenPref, pro: pro, switchPad: switchPad, retroPad: retroPad)
+        let m = PadMetrics(size: size, noScreen: noScreenPref, pro: pro, switchPad: switchPad, retroPad: retroPad, needs: layout.needs)
         let wantScreen = self.wantScreen
         let fullScreen = self.fullScreen
         // Tamaño que se pide al PC: en pantalla completa, el área entera en
@@ -360,9 +392,9 @@ struct GamePadScreen: View {
                 .frame(height: m.selectorH)
                 Spacer().frame(height: m.gap)
                 HStack(spacing: m.gap) {
-                    LeftColumn(m: m)
-                    CenterColumn(m: m, client: screenLink.client)
-                    RightColumn(m: m)
+                    LeftColumn(m: m, layout: layout)
+                    CenterColumn(m: m, layout: layout, client: screenLink.client)
+                    RightColumn(m: m, layout: layout)
                 }
                 .id(layoutIdentity)
                 .frame(height: m.bodyH)
@@ -397,20 +429,31 @@ struct GamePadScreen: View {
 /// a los gatillos y stick y cruceta uno al lado del otro, abajo.
 private struct LeftColumn: View {
     let m: PadMetrics
+    /// La plantilla de consola (RetroArch); el RetroPad fuera de RetroArch.
+    let layout: RetroLayout
 
+    // Hombros y stick según la plantilla: sin stick, la cruceta ocupa su hueco y crece
     private var shoulders: some View {
         VStack(alignment: .leading, spacing: m.gap) {
-            ShoulderButton(label: "L", bit: Btn.l, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
-            ShoulderButton(label: m.retroPad ? "L2" : "ZL", bit: Btn.zl, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
+            if let l = m.retroPad ? layout.shoulders.l : Optional("L") {
+                ShoulderButton(label: l, bit: Btn.l, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
+            }
+            if let l2 = m.retroPad ? layout.shoulders.l2 : Optional("ZL") {
+                ShoulderButton(label: l2, bit: Btn.zl, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
+            }
         }
     }
 
-    private var stick: some View {
-        AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick(x, y) }
+    @ViewBuilder private var stick: some View {
+        if layout.leftStick {
+            AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick(x, y) }
+        }
     }
 
-    private var click: some View {
-        RoundButton(label: "L3", size: m.clickSize, bit: Btn.stickL, textSize: m.text(12))
+    @ViewBuilder private var click: some View {
+        if layout.stickClicks {
+            RoundButton(label: "L3", size: m.clickSize, bit: Btn.stickL, textSize: m.text(12))
+        }
     }
 
     var body: some View {
@@ -423,19 +466,23 @@ private struct LeftColumn: View {
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: m.gap) {
                     stick
-                    PadCross(size: m.padSize)
+                    PadCross(size: m.dpadSize)
                 }
+                .frame(width: m.sideW)
             } else {
                 shoulders
                 Spacer(minLength: 0)
-                HStack(alignment: .bottom, spacing: m.gap) {
-                    stick
-                    click
+                if layout.leftStick {
+                    HStack(alignment: .bottom, spacing: m.gap) {
+                        stick
+                        click
+                    }
+                    // iPad: stick y cruceta juntos, abajo (donde llega el pulgar), en
+                    // vez de repartidos por toda la altura
+                    if m.k > 1 { Spacer().frame(height: m.gap * 2) } else { Spacer(minLength: 0) }
                 }
-                // iPad: stick y cruceta juntos, abajo (donde llega el pulgar), en
-                // vez de repartidos por toda la altura
-                if m.k > 1 { Spacer().frame(height: m.gap * 2) } else { Spacer(minLength: 0) }
-                PadCross(size: m.padSize)
+                PadCross(size: m.dpadSize)
+                if !layout.leftStick { Spacer(minLength: 0) }
             }
         }
         .frame(width: m.sideW, height: m.bodyH)
@@ -446,21 +493,35 @@ private struct LeftColumn: View {
 /// junto a los gatillos y rombo y stick uno al lado del otro, abajo.
 private struct RightColumn: View {
     let m: PadMetrics
+    let layout: RetroLayout
 
     private var shoulders: some View {
         VStack(alignment: .trailing, spacing: m.gap) {
-            ShoulderButton(label: "R", bit: Btn.r, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
-            ShoulderButton(label: m.retroPad ? "R2" : "ZR", bit: Btn.zr, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
+            if let r = m.retroPad ? layout.shoulders.r : Optional("R") {
+                ShoulderButton(label: r, bit: Btn.r, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
+            }
+            if let r2 = m.retroPad ? layout.shoulders.r2 : Optional("ZR") {
+                ShoulderButton(label: r2, bit: Btn.zr, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
+            }
         }
     }
 
-    private var stick: some View {
-        AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick2(x, y) }
+    /// El hueco del stick derecho: stick, los botones C de N64 o nada.
+    @ViewBuilder private var stick: some View {
+        switch layout.rightStick {
+        case .analog: AnalogStick(size: m.padSize) { x, y in ButtonState.shared.setStick2(x, y) }
+        case .cbuttons: CButtons(size: m.padSize) { x, y in ButtonState.shared.setStick2(x, y) }
+        case RightStick.none: EmptyView()
+        }
     }
 
-    private var click: some View {
-        RoundButton(label: "R3", size: m.clickSize, bit: Btn.stickR, textSize: m.text(12))
+    @ViewBuilder private var click: some View {
+        if layout.stickClicks {
+            RoundButton(label: "R3", size: m.clickSize, bit: Btn.stickR, textSize: m.text(12))
+        }
     }
+
+    private var hasRight: Bool { layout.rightStick != RightStick.none }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
@@ -471,18 +532,22 @@ private struct RightColumn: View {
                 }
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: m.gap) {
-                    FaceButtons(size: m.padSize, btn: m.faceBtn)
+                    FaceCluster(layout: layout, boxW: m.faceBox, boxH: m.faceBox)
                     stick
                 }
+                .frame(width: m.sideW)
             } else {
                 shoulders
                 Spacer(minLength: 0)
-                HStack(alignment: .bottom, spacing: m.gap) {
-                    click
-                    stick
+                if hasRight {
+                    HStack(alignment: .bottom, spacing: m.gap) {
+                        click
+                        stick
+                    }
+                    if m.k > 1 { Spacer().frame(height: m.gap * 2) } else { Spacer(minLength: 0) }
                 }
-                if m.k > 1 { Spacer().frame(height: m.gap * 2) } else { Spacer(minLength: 0) }
-                FaceButtons(size: m.padSize, btn: m.faceBtn)
+                FaceCluster(layout: layout, boxW: m.faceBox, boxH: m.faceBox)
+                if !hasRight { Spacer(minLength: 0) }
             }
         }
         .frame(width: m.sideW, height: m.bodyH)
@@ -493,20 +558,31 @@ private struct RightColumn: View {
 /// Soplar). En fila, una columna vertical con lo mismo.
 private struct CenterColumn: View {
     let m: PadMetrics
+    let layout: RetroLayout
     let client: ScreenClient?
 
-    // RetroArch: − / + son Select / Start, Home abre el menú de RetroArch y
-    // Capturar es el avance rápido (mantener)
-    private var minus: some View {
-        m.retroPad
-            ? RoundButton(label: tr("retro_select"), size: m.roundBtn, bit: Btn.minus, textSize: m.text(9))
-            : RoundButton(label: "−", size: m.roundBtn, bit: Btn.minus, textSize: m.text(19))
-    }
+    // RetroArch: los botones del centro de la consola (Select/Start, Mode/Start,
+    // Pause, Run…) con Menú (el menú de RetroArch) en medio, y Capturar es el
+    // avance rápido (mantener)
     private var home: some View { RoundButton(label: tr(m.retroPad ? "retro_menu" : "home_btn"), size: m.roundBtn, bit: Btn.home, textSize: m.text(m.retroPad ? 10 : 12)) }
-    private var plus: some View {
-        m.retroPad
-            ? RoundButton(label: tr("retro_start"), size: m.roundBtn, bit: Btn.plus, textSize: m.text(9))
-            : RoundButton(label: "+", size: m.roundBtn, bit: Btn.plus, textSize: m.text(19))
+    private func centerButton(_ c: RetroCenter) -> some View {
+        RoundButton(label: retroLabel(c.label), size: m.roundBtn, bit: c.bit, textSize: m.text(9))
+    }
+    @ViewBuilder private var centers: some View {
+        if m.retroPad {
+            if layout.center.count >= 2 {
+                centerButton(layout.center[0])
+                home
+                centerButton(layout.center[1])
+            } else {
+                home
+                ForEach(layout.center, id: \.label) { centerButton($0) }
+            }
+        } else {
+            RoundButton(label: "−", size: m.roundBtn, bit: Btn.minus, textSize: m.text(19))
+            home
+            RoundButton(label: "+", size: m.roundBtn, bit: Btn.plus, textSize: m.text(19))
+        }
     }
     private var tv: some View { ShoulderButton(label: tr("tv_pad"), bit: Btn.screen, width: m.pillW, height: m.pillH, textSize: m.text(12)) }
     private var blow: some View { ShoulderButton(label: tr("blow"), bit: Btn.mic, width: m.pillW, height: m.pillH, textSize: m.text(12)) }
@@ -517,9 +593,7 @@ private struct CenterColumn: View {
             Spacer(minLength: 0)
             if m.row {
                 VStack(spacing: m.gap) {
-                    minus
-                    home
-                    plus
+                    centers
                     if m.switchPad {
                         capture
                     } else if !m.pro {
@@ -529,7 +603,7 @@ private struct CenterColumn: View {
                 }
             } else {
                 if m.pro {
-                    Text(tr(m.retroPad ? "retropad" : m.switchPad ? "mode_switch" : "pro_controller")).pepoBody().multilineTextAlignment(.center)
+                    Text(m.retroPad ? layout.name : tr(m.switchPad ? "mode_switch" : "pro_controller")).pepoBody().multilineTextAlignment(.center)
                     // iPad: la fila pegada al texto (un bloque centrado)
                     if m.k > 1 { Spacer().frame(height: m.gap * 3) } else { Spacer(minLength: 0) }
                 } else if !m.noScreen {
@@ -539,9 +613,7 @@ private struct CenterColumn: View {
                 }
                 HStack(alignment: .center, spacing: m.rowGap) {
                     if m.switchPad { capture } else if !m.pro { tv }
-                    minus
-                    home
-                    plus
+                    centers
                     if !m.pro && !m.switchPad { blow }
                 }
             }
@@ -568,7 +640,7 @@ private struct GamePadHeaderCard: View {
         let padName = wantedMode == LinkState.modeSwitch
             ? switchPadLabel(c.pad)
             : wantedMode == LinkState.modeRetroArch
-            ? tr("retropad")
+            ? (RetroLayouts.byId(LinkState.shared.wouldBeRetroLayout(c))?.name ?? tr("retropad"))
             : (c.pad == LinkState.padPro ? tr("pro_controller") : tr("gamepad"))
         return GamePadHeaderText.status(
             operative: operative,
@@ -608,6 +680,14 @@ private struct GamePadHeaderCard: View {
                     if let screen {
                         FpsLabel(client: screen)
                     }
+                }
+                // RetroArch: el juego cargado (lo que RetroArch acaba de abrir, según el PC)
+                if wantedMode == LinkState.modeRetroArch, let g = c.game, !g.title.isEmpty {
+                    Text([g.title, g.core].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(PepoFont.nunito(12, .regular))
+                        .foregroundColor(Pepo.textDim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 if c.slot == 0 {
                     // Mientras se espera el eco va marcado el modo pedido (es lo pedido)

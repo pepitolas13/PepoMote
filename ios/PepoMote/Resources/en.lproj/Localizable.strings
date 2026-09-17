@@ -164,19 +164,25 @@
 
 /* RetroArch */
 "channel_retroarch" = "RetroArch";
-"channel_retroarch_sub" = "RetroPad, NES pad or light gun";
+"channel_retroarch_sub" = "Each console's pad, sideways Wii or light gun";
 "mode_retroarch" = "RetroArch";
 "activating_retroarch" = "Activating RetroArch…";
 "warn_needs_retroarch" = "The PC needs a newer PepoMote for RetroArch";
 "in_retroarch" = "In RetroArch I am:";
 "retropad" = "RetroPad";
-"nes_pad" = "NES pad";
+"nes_pad" = "Sideways Wii";
 "light_gun" = "Light gun";
-"retro_pad_help" = "RetroPad: two sticks and every button · NES pad: the phone sideways, B and A · Light gun: aim with the phone, B fires and A reloads";
+"retro_pad_help" = "Console: the pad of the game RetroArch loads (tap it to pick another) · Sideways Wii: the phone sideways, B and A · Light gun: aim with the phone, B fires and A reloads";
 "retro_menu" = "Menu";
 "retro_ff" = "Fast";
-"retro_select" = "Select";
-"retro_start" = "Start";
+"retro_coin" = "Coin";
+"retro_fire" = "Fire";
+"retro_layout_picker_title" = "Pad in RetroArch";
+"retro_layout_auto" = "Automatic (%@)";
+"retro_layout_full" = "Full RetroPad";
+"retro_layout_hint_game" = "Remembered for %@";
+"retro_layout_hint_no_game" = "Until RetroArch loads a game";
+"retro_layout_changed" = "Pad: %@";
 "side_ask_retroarch" = "Keep the RetroPad this way?";
 "kb_title_retroarch" = "Keyboard for RetroArch";
 "kb_help_retroarch" = "Types into the RetroArch window (bring it to the front; with a keyboard in the game, enable game focus). Delete removes a character, Type sends the text and continues, Accept sends the text and Enter.";

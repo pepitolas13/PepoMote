@@ -40,6 +40,8 @@ final class ControlClient {
         var onNunchukChanged: (Bool) -> Void = { _ in }
         /// Eco del `screen_only`: el receptor aplica (o no) el modo «solo pantalla».
         var onScreenOnlyChanged: (Bool) -> Void = { _ in }
+        /// RetroArch: el juego cargado según el receptor (`game`; nil = ninguno).
+        var onGameChanged: (RetroGame?) -> Void = { _ in }
         var onNotice: (String) -> Void
         var onClosed: () -> Void
     }
@@ -219,6 +221,9 @@ final class ControlClient {
         case "screen_only":
             let on = obj["on"] as? Bool ?? false
             DispatchQueue.main.async { self.callbacks.onScreenOnlyChanged(on) }
+        case "game":
+            let game = RetroGame.parse(obj)
+            DispatchQueue.main.async { self.callbacks.onGameChanged(game) }
         case "notice":
             if let text = obj["text"] as? String, !text.trimmingCharacters(in: .whitespaces).isEmpty {
                 DispatchQueue.main.async { self.callbacks.onNotice(text) }
@@ -275,10 +280,14 @@ final class ControlClient {
 
     func sendMode(_ mode: String) { sendJson(["m": "mode", "mode": mode]) }
 
-    /// Mando dentro del modo actual: Wii U o Switch usan vocabularios distintos.
-    func sendPad(_ pad: String) {
+    /// Mando dentro del modo actual: Wii U o Switch usan vocabularios distintos;
+    /// en RetroArch, con `layout` (la plantilla de consola que se enseña, solo
+    /// para la ventana del receptor) si se sabe.
+    func sendPad(_ pad: String, layout: String? = nil) {
         queue.async {
-            self.sendJson(["m": "pad", "pad": self.mode == LinkState.modeSwitch ? LinkState.padPro : pad])
+            var msg: [String: Any] = ["m": "pad", "pad": self.mode == LinkState.modeSwitch ? LinkState.padPro : pad]
+            if let layout { msg["layout"] = layout }
+            self.sendJson(msg)
         }
     }
 

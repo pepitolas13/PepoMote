@@ -154,6 +154,21 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// RetroArch: el mando de cada consola (NES, Mega Drive, N64, PlayStation) y el RetroPad completo.
+    func testRetroArchConsolePads() throws {
+        AppModel.shared.gamePadSide = .left
+        let size = CGSize(width: 852, height: 393)
+        for (console, title) in [("nes", "Alter Ego"), ("md", "Cave Story"), ("n64", "Mario 64"), ("psx", "Crash")] {
+            if case .connected(var c) = connected(mode: LinkState.modeRetroArch, pad: LinkState.padRetroPad) {
+                c.game = RetroGame(console: console, system: "", core: "core", title: title, path: "/roms/\(title).zip")
+                LinkState.shared.publish(.connected(c))
+            }
+            try shoot(GamePadScreen(onDisconnect: {}), "gamepad-retro-\(console)", size)
+        }
+        LinkState.shared.publish(connected(mode: LinkState.modeRetroArch, pad: LinkState.padRetroPad))
+        try shoot(GamePadScreen(onDisconnect: {}), "gamepad-retro-retropad", size)
+    }
+
     func testSwitchControllers() throws {
         AppModel.shared.gamePadSide = .left
         for (dev, size) in Self.switchLandscape {
