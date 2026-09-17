@@ -13,7 +13,7 @@ func retroLabel(_ label: String) -> String {
 private let cYellow = Color(red: 0xE0 / 255.0, green: 0xB4 / 255.0, blue: 0x2A / 255.0)
 
 /// Relleno de un botón de consola (`card` = el de siempre).
-private func tint(_ color: RetroColor) -> Color? {
+private func retroFill(_ color: RetroColor) -> Color? {
     switch color {
     case .card: return nil
     case .red: return Color(red: 0xD9 / 255.0, green: 0x4A / 255.0, blue: 0x4A / 255.0)
@@ -73,7 +73,7 @@ struct FaceCluster: View {
             ForEach(layout.face, id: \.slot) { f in
                 let btn = base * CGFloat(f.size)
                 let b = bias(f)
-                let fill = tint(f.color)
+                let fill = retroFill(f.color)
                 Group {
                     if f.primary {
                         RoundButton(label: retroLabel(f.label), size: btn, bit: f.bit,
