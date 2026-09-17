@@ -1,17 +1,17 @@
 # Jugar con dos móviles Android
 
-Instala **PepoMote 1.8 en los dos móviles**. Uno ejecuta Dolphin o Eden y recibe los controles; el otro hace de mando. Es la misma APK y puedes elegir su función desde el inicio.
+Instala **la misma compilación actual de PepoMote en los dos móviles**. Uno ejecuta Dolphin, Eden o RetroArch y recibe los controles; el otro hace de mando. Es la misma APK y puedes elegir su función desde el inicio. Para RetroArch necesitas una compilación que incluya esta integración; los servidores anteriores solo anuncian Dolphin y Eden.
 
-PepoMote requiere Android 8 o posterior. El móvil donde se ejecutan los juegos también debe cumplir los requisitos de Dolphin o Eden; la compatibilidad y el rendimiento del emulador dependen de ese dispositivo.
+PepoMote requiere Android 8 o posterior. El móvil donde se ejecutan los juegos también debe cumplir los requisitos del emulador; su compatibilidad y rendimiento dependen de ese dispositivo.
 
 ## Primera conexión
 
-1. Instala y abre una vez Dolphin oficial o Eden oficial en el móvil donde vas a jugar. Termina su bienvenida y cierra cualquier partida abierta.
+1. Instala y abre una vez Dolphin oficial, Eden oficial o RetroArch en el móvil donde vas a jugar. Termina su bienvenida y cierra cualquier partida abierta.
 2. Conecta los móviles a la misma Wi-Fi. También puedes conectar el mando al punto de acceso del móvil servidor.
 3. En el móvil de los juegos, abre PepoMote y toca **Servidor**.
 4. En el móvil mando, toca **Conectar → Escanear QR**. Si prefieres escribir el código, toca **Conectar con código**, elige el otro Android y escribe los **4 dígitos** que aparecen en su pantalla Servidor.
 
-La dirección local se elige automáticamente. El mando reconoce que está conectado a un Android y ofrece **Dolphin y Eden**. La conexión queda guardada para la próxima vez. Las conexiones que ya tengas con un PC siguen disponibles.
+La dirección local se elige automáticamente. El mando reconoce que está conectado a un Android y ofrece **Dolphin, Eden y RetroArch** cuando el servidor los anuncia. La conexión queda guardada para la próxima vez. Las conexiones que ya tengas con un PC siguen disponibles.
 
 **Desde Android 1.8.1**, el botón **Conectar con código** sirve también para un PC: elígelo y escribe los cuatro dígitos que muestra PepoMote junto a su QR. Puedes tocar directamente cualquier dispositivo cercano para introducir el código. La app también acepta los códigos de seis dígitos de los servidores Android 1.8.0.
 
@@ -25,7 +25,7 @@ En la misma Wi-Fi, el QR y el código bastan. Para conectar desde otra red, prep
 
 ## Configurar los controles
 
-Conecta los mandos antes de configurar. En el panel del servidor, elige el emulador y toca **Configurar Dolphin** o **Configurar Eden**.
+Conecta los mandos antes de configurar. Para Dolphin y Eden, en el panel del servidor elige el emulador y toca **Configurar Dolphin** o **Configurar Eden**. RetroArch tiene su [propia guía más abajo](#retroarch).
 
 1. Toca **Ir al permiso**.
 2. En la pantalla de Android, toca **Usar esta carpeta** y después **Permitir**.
@@ -43,11 +43,79 @@ Android exige que confirmes el permiso y la detención del emulador. Esta últim
 
 El servidor sigue activo mientras el emulador está delante. La notificación permite volver a PepoMote o detenerlo. Puedes conectar hasta **cuatro mandos principales**, cada uno con su jugador. El jugador 1 también puede cambiar de consola desde su mando.
 
-En Dolphin puedes activar el **Nunchuk en el mismo móvil**. En Eden se utiliza el **Pro Controller**. Este servidor Android ofrece esos dos emuladores; las funciones de puntero y Wii U siguen disponibles al conectar con el receptor de un PC.
+En Dolphin puedes activar el **Nunchuk en el mismo móvil**. En Eden se utiliza el **Pro Controller**. Este servidor Android ofrece esos dos emuladores y RetroArch (ver más abajo); las funciones de puntero y Wii U siguen disponibles al conectar con el receptor de un PC.
 
 Los móviles sin giroscopio mantienen la conexión, los botones y los sticks. El movimiento que requiere giroscopio necesita ese sensor. En Android se conservan las pulsaciones y liberaciones aunque lleguen juntas, también después de un periodo sin pulsar. Algunos teléfonos retienen las teclas de volumen para detectar combinaciones antes de enviarlas a la app; esa parte depende de Android.
 
 **Movimiento en Eden:** las versiones oficiales contrastadas mezclan el movimiento recibido con los sensores del móvil servidor para el jugador 1. No ofrecen un ajuste independiente que quite esa interferencia. Los botones y sticks no dependen de esos sensores. PepoMote lo avisa en su panel y no cambia los sensores globales del teléfono.
+
+## RetroArch
+
+Esta integración permite que el servidor Android haga de receptor para **RetroArch** en
+el mismo móvil: el mando de cada consola (NES, SNES, Mega Drive, N64,
+PlayStation…), el Mando de Wii de lado y las teclas rápidas, con el mismo
+mando en red de RetroArch que usa el receptor del PC
+([SETUP-RETROARCH.md](SETUP-RETROARCH.md)). Sin pistola de luz (no hay ratón
+que mover) y sin teclado.
+
+### Activar el mando en red (solo una vez)
+
+RetroArch guarda su configuración en `Android/data/com.retroarch…/files/`,
+una carpeta que Android 11 y posteriores no dejan leer ni escribir a ninguna
+otra app. PepoMote no puede activarlo por ti, así que la pantalla Servidor te
+lo guía y comprueba que RetroArch responde a los comandos de red:
+
+1. En la pantalla Servidor, toca **RetroArch**. Si no está instalado,
+   **Instalar RetroArch** abre la página oficial de plataformas, donde puedes
+   elegir la descarga para Android.
+2. Abre RetroArch → Ajustes → Interfaz de usuario → activa **Mostrar ajustes
+   avanzados**.
+3. Ajustes → Red → activa **Comandos de red** (puerto 55355) y, debajo,
+   **RetroPad de red** (puerto base 55400) con **RetroPad de red del usuario 1**
+   (y 2, 3 y 4 si juegan más móviles).
+4. Menú principal → **Archivo de configuración → Guardar configuración actual**.
+   Después, sal de RetroArch para que vuelva a abrirse con esos ajustes.
+5. Vuelve a PepoMote y toca **Abrir RetroArch**. En cuanto RetroArch
+   responde, la tarjeta dice **Conexión con RetroArch comprobada** y PepoMote lo recuerda; la
+   notificación del servidor también lo dice.
+
+La respuesta confirma los **comandos de red**; el RetroPad de red y sus usuarios
+se activan por separado y no devuelven confirmación. Si no llegan los botones,
+revisa el paso 3. **Ver la guía otra vez** está disponible también mientras
+RetroArch responde. Los nombres del menú se han contrastado con las
+[traducciones oficiales de RetroArch 1.22.2](https://github.com/libretro/RetroArch/blob/v1.22.2/intl/msg_hash_es.h).
+
+RetroArch solo atiende la red mientras está delante (en segundo plano para su
+bucle), así que PepoMote no ve la respuesta mientras miras su pantalla: abre
+RetroArch, espera unos segundos y vuelve.
+
+### Jugar
+
+Con el servidor activo, abre RetroArch (o toca **Jugar con RetroArch**): el
+servidor pasa solo al modo RetroArch cuando RetroArch empieza a responder y el
+móvil mando cambia al RetroPad. Si después abres Dolphin o Eden, al pedir los
+mandos vuelve al último modo de Dolphin o Eden, incluso si la primera petición
+llega durante los segundos de espera tras pasar RetroArch al fondo. El jugador 1 puede cambiar el modo cuando quiera
+desde su mando o desde los chips del servidor.
+
+Cada móvil es un jugador: el 1 en el puerto 55400, el 2 en el 55401… con su
+**Usuario N** del mando en red activado en RetroArch. Si RetroArch tiene el
+mando en red pero no los comandos de red, el mando sigue funcionando a ciegas
+a 60 Hz (la tarjeta lo avisa).
+
+### El mando de cada consola
+
+RetroArch apunta el juego que acaba de cargar en
+`RetroArch/playlists/builtin/content_history.lpl`, en la memoria del móvil.
+Con **Elegir la carpeta RetroArch** (un permiso de solo lectura de Android, un
+toque en «Usar esta carpeta»), el servidor lo lee cada 2 s y el móvil enseña el
+mando de esa consola, como con el receptor del PC: la consola sale del núcleo,
+de la extensión del ROM y de la base de datos del historial (las fichas
+`.info` de los núcleos están en la carpeta privada de RetroArch, que no se
+puede leer). Sin carpeta, el móvil enseña el RetroPad completo y la consola se
+puede elegir a mano en su selector. Si RetroArch no tiene acceso a todos los
+archivos, guarda sus datos en `Android/data` y esa carpeta no se puede elegir:
+en ese caso, mando a mano.
 
 ## Jugar desde redes distintas
 
@@ -84,6 +152,12 @@ La configuración actúa sobre controles y perfiles, sin importar un paquete com
 
 ## Qué se ha comprobado
 
-La integración se ha contrastado con Dolphin oficial 2606a y Eden oficial 0.2.1 y sus fuentes disponibles durante el desarrollo. Las pruebas automáticas cubren botones, sticks, movimiento, código y QR, tráfico entre cliente y servidor, cuatro jugadores, pérdida de señal, reconexión, configuración, restauración y la interfaz. El ciclo de vida del servidor se comprueba en Android API 26 y 35.
+La integración se ha contrastado con Dolphin oficial 2606a y Eden oficial 0.2.1 y sus fuentes disponibles durante el desarrollo. RetroArch en el servidor Android usa el mismo protocolo que el receptor del PC (verificado con RetroArch 1.22.2 real en Windows) y se prueba contra un RetroArch falso en UDP; todavía no se ha probado con RetroArch en un Android real. Las pruebas automáticas cubren botones, sticks, movimiento, código y QR, tráfico entre cliente y servidor, cuatro jugadores, pérdida de señal, reconexión, configuración, restauración y la interfaz. Incluyen la liberación al cerrar o caducar la entrada, la vuelta del segundo plano sin botones atascados, la compactación de pulsaciones y el cambio de carpeta sin conservar el juego anterior. El ciclo de vida del servidor se comprueba en Android API 26 y 35.
+
+La liberación de RetroArch usa un datagrama de un byte por jugador antes de cerrar
+o resincronizar: su [receptor oficial de mandos](https://github.com/libretro/RetroArch/blob/v1.22.2/input/input_driver.c#L6024-L6035)
+vacía botones y ejes al recibir un datagrama de longitud distinta de `remote_message`.
+Al volver del segundo plano, ese vaciado ocupa un fotograma y después se recompone
+el estado actual del mando.
 
 Dolphin se ha probado además con la versión de desarrollo en móviles reales. Las pruebas de software no garantizan el comportamiento de todos los fabricantes; no se ha medido una partida entre dos redes físicas distintas. Si encuentras un problema, indica los modelos, las versiones de Android y del emulador y si utilizabas Wi-Fi local o VPN.

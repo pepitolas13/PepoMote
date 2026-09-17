@@ -406,7 +406,7 @@ internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: B
                 LinkState.requestMode(LinkState.MODE_SWITCH)
             }
         }
-        if (supportsRetroArch && !androidReceiver) {
+        if (supportsRetroArch) {
             ModeChip(stringResource(R.string.mode_retroarch), selected = current == LinkState.MODE_RETROARCH, compact = compact, dense = dense) {
                 LinkState.requestMode(LinkState.MODE_RETROARCH)
             }

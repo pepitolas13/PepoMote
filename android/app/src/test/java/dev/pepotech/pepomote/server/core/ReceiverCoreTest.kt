@@ -77,7 +77,7 @@ class ReceiverCoreTest {
                 assertEquals(slot, ok.getInt("slot"))
                 assertEquals(slot + 1, ok.getInt("player"))
                 assertEquals("android", ok.getString("platform"))
-                assertEquals(listOf("dolphin", "switch"), (0 until ok.getJSONArray("modes").length()).map { ok.getJSONArray("modes").getString(it) })
+                assertEquals(listOf("dolphin", "switch", "retroarch"), (0 until ok.getJSONArray("modes").length()).map { ok.getJSONArray("modes").getString(it) })
                 assertEquals("dolphin", ok.getString("mode"))
                 assertEquals("wiimote", ok.getString("pad"))
                 assertEquals("own", ok.getString("nunchuk"))

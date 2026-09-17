@@ -168,13 +168,15 @@ la carpeta al ver RetroArch abierto (Windows).
 
 ## RetroArch en Android o en otro PC
 
-El mando en red funciona en cualquier RetroArch con red, Android incluido,
-pero PepoMote solo lo activa por sí mismo en el PC donde corre el receptor:
-en otro equipo, activa a mano en RetroArch Ajustes → Red → **Mando en red**
-(puerto base 55400) y **Comandos de red** (55355), y apunta el receptor a
-ese equipo… que hoy no es posible: el receptor manda a `127.0.0.1`. El
-servidor Android de PepoMote (dos Android) ofrece Dolphin y Eden; RetroArch
-en Android no está incluido de momento.
+El mando en red funciona en cualquier RetroArch con red, pero el receptor
+del PC solo manda a `127.0.0.1`: RetroArch tiene que correr en el mismo
+equipo. En **Android**, el servidor Android de PepoMote (dos Android) hace
+de receptor para el RetroArch de ese mismo móvil: el mismo mando en red, las
+mismas teclas rápidas y el mando de cada consola leyendo el historial de la
+carpeta `RetroArch`; sin pistola ni teclado, y con el mando en red y los
+comandos de red activados a mano en RetroArch (Android no deja que otra app
+toque `Android/data`, y la pantalla Servidor te guía y comprueba la conexión de comandos). Ver
+[ANDROID-SERVER.md](ANDROID-SERVER.md#retroarch).
 
 ## Problemas típicos
 

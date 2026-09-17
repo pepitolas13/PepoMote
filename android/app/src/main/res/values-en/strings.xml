@@ -140,7 +140,7 @@
     <!-- first run -->
     <string name="onboarding_sub">Your phone, your PC\'s controller in 3 steps</string>
     <string name="ob1_title">Choose where to play</string>
-    <string name="ob1_body">Open PepoMote on your PC, or tap Server on the Android where you will run Dolphin or Eden.</string>
+    <string name="ob1_body">Open PepoMote on your PC, or tap Server on the Android where you will run Dolphin, Eden or RetroArch.</string>
     <string name="ob2_title">Scan the QR</string>
     <string name="ob2_body">On the controller phone: Connect → scan the receiver QR code. Use the same Wi-Fi on both devices.</string>
     <string name="ob3_title">Point. Click. Play.</string>
@@ -208,9 +208,10 @@
     <!-- RetroArch -->
     <string name="channel_retroarch">RetroArch</string>
     <string name="channel_retroarch_sub">Each console\'s pad, sideways Wii or light gun</string>
+    <string name="channel_retroarch_android_sub">Each console\'s pad or the sideways Wii Remote</string>
     <string name="mode_retroarch">RetroArch</string>
     <string name="activating_retroarch">Activating RetroArch…</string>
-    <string name="warn_needs_retroarch">Update the PC receiver to use RetroArch.</string>
+    <string name="warn_needs_retroarch">Update PepoMote on the receiver (PC or server phone) to use RetroArch.</string>
     <string name="shortcut_retroarch">RetroArch</string>
     <string name="shortcut_retroarch_long">Controller for RetroArch</string>
     <string name="in_retroarch">In RetroArch I am:</string>
@@ -250,7 +251,7 @@
     <string name="server_enter_code">Enter the code shown on the other phone’s Server screen. You can also scan its QR code.</string>
     <string name="server_pair_code">Pairing code</string>
     <string name="server_running_short">Android server running</string>
-    <string name="server_intro">This phone runs Dolphin or Eden. Another phone with PepoMote becomes your controller.</string>
+    <string name="server_intro">This phone runs Dolphin, Eden or RetroArch. Another phone with PepoMote becomes your controller.</string>
     <string name="server_background_hint">Stays active while you play. Stop the server when you finish.</string>
     <string name="server_starting">Starting server…</string>
     <string name="server_stopped">Server stopped</string>
@@ -259,7 +260,7 @@
     <string name="server_error_port">Cannot start: another app is using the connection port. Close it or change its port, then try again.</string>
     <string name="server_error_start">The server could not start. Check the network connection and try again.</string>
     <string name="server_notification_title">PepoMote · Android server</string>
-    <string name="server_notification_body">Ready for controllers while you play in Dolphin or Eden.</string>
+    <string name="server_notification_body">Ready for controllers while you play in Dolphin, Eden or RetroArch.</string>
     <string name="server_pair_step">1. Connect your controller</string>
     <string name="server_pair_hint">Use the same Wi-Fi or this phone’s hotspot. On the controller: Connect → Scan QR, or Connect with code → choose this server and enter the 4 digits.</string>
     <string name="server_qr_description">QR code to connect another phone to this Android server</string>
@@ -292,7 +293,7 @@
     <string name="server_restart_hint">For %1$s to read the new controls, open its app information and tap Force stop. Then return here and open it. Swiping it away from recent apps may not be enough. Do this without a game running.</string>
     <string name="server_app_info">Open app information</string>
     <string name="server_app_info_missing">Open Android Settings → Apps → the emulator → Force stop. Then return to PepoMote.</string>
-    <string name="server_change_players_hint">If you add players or change the Nunchuk, set up controls again with those controllers connected and restart the emulator. Player 1 can switch between Dolphin and Eden from their controller.</string>
+    <string name="server_change_players_hint">If you add players or change the Nunchuk, set up controls again with those controllers connected and restart the emulator. Player 1 can switch between Dolphin, Eden and RetroArch from their controller.</string>
     <string name="server_preserved_changes">%1$d changes you made after the backup were preserved.</string>
     <string name="server_done">Got it</string>
     <string name="server_code_failed">The code is incorrect or has changed. Tap Connect with code, choose the PC or phone and enter its current code. You can also scan its QR.</string>
@@ -373,5 +374,43 @@
     <string name="pair_link_label">Link copied from the server</string>
     <string name="server_copy_link">Copy link</string>
     <string name="server_link_copied">Link copied</string>
+    <string name="server_notice_modes">This Android server offers Dolphin, Eden and RetroArch</string>
+    <string name="server_notice_player_one">Only Player 1 can change the server mode</string>
+    <string name="server_notice_text">This Android server does not accept text</string>
+    <string name="server_notice_screen">This Android server does not stream its screen</string>
+    <string name="server_notice_retro_no_gun">The light gun needs the PC receiver: you keep your RetroArch pad</string>
+    <string name="server_notice_retro_opened">RetroArch is answering: RetroArch mode</string>
+    <string name="server_notice_retro_back">An emulator asked for the controllers: %1$s mode</string>
+    <string name="server_retroarch_osd">PepoMote: phone controller connected</string>
+    <string name="server_notification_retroarch">RetroArch is answering · connection checked</string>
+    <string name="server_retroarch_connection_ready">RetroArch connection checked</string>
+    <string name="server_retroarch_check_pad">If buttons do not work, check that “Network RetroPad” and each controller\'s user are enabled in RetroArch.</string>
+    <string name="server_retroarch_details">RetroArch · Each console\'s pad (NES, SNES, Mega Drive, N64, PlayStation…), the sideways Wii Remote and hotkeys. No light gun on Android.</string>
+    <string name="server_retroarch_install_first">Install RetroArch (retroarch.com or Google Play) and open it once.</string>
+    <string name="server_retroarch_missing">RetroArch was not found. Install it and open it once before continuing.</string>
+    <string name="server_retroarch_setup_title">Enable the network gamepad in RetroArch (once)</string>
+    <string name="server_retroarch_setup_why">Android does not let PepoMote touch RetroArch\'s settings, so you flip these switches in its menu. PepoMote checks and remembers the command connection; the network gamepad is enabled separately.</string>
+    <string name="server_retroarch_steps">1. Open RetroArch → Settings → User Interface → enable “Show Advanced Settings”.\n2. Settings → Network → enable “Network Commands” (port 55355).\n3. Below it, enable “Network RetroPad” (base port 55400) and user 1. For more controllers, also users 2, 3 and 4.\n4. Main Menu → Configuration File → Save Current Configuration. Then quit RetroArch, come back here and tap “Open RetroArch”.</string>
+    <string name="server_retroarch_open">Open RetroArch</string>
+    <string name="server_retroarch_waiting">Waiting for RetroArch to answer… It only answers while it is in front: open it, give it a few seconds and come back; PepoMote remembers.</string>
+    <string name="server_retroarch_responding">RetroArch %1$s is answering · %2$d polls per second</string>
+    <string name="server_retroarch_verified_hint">RetroArch %1$s already answered. It only answers while it is in front: open it and play.</string>
+    <string name="server_retroarch_show_guide">Show the guide again</string>
+    <string name="server_retroarch_degraded">Controllers are in RetroArch but it does not answer network commands: the pad is sent blind at 60 Hz. Enable “Network Commands” in RetroArch.</string>
+    <string name="server_retroarch_players_hint">Each phone is one player: player 1 uses port 55400, player 2 55401… Enable as many network RetroPad “User N” entries in RetroArch as phones.</string>
+    <string name="server_retroarch_folder_title">Each console\'s pad</string>
+    <string name="server_retroarch_folder_hint">RetroArch notes in its RetroArch folder which game it just loaded. With permission to read it, the phone shows that console\'s pad. Without it, the full RetroPad (the console can be picked by hand on the phone).</string>
+    <string name="server_retroarch_folder_pick">Choose the RetroArch folder</string>
+    <string name="server_retroarch_folder_change">Change folder</string>
+    <string name="server_retroarch_folder_forget">Remove</string>
+    <string name="server_retroarch_folder_linked">RetroArch folder linked</string>
+    <string name="server_retroarch_folder_missing">playlists/builtin/content_history.lpl is not in that folder. Choose the RetroArch folder in the phone\'s storage (RetroArch creates it when it has all-files access).</string>
+    <string name="server_retroarch_folder_denied">Android did not grant read access. Choose the folder again.</string>
+    <string name="server_retroarch_game">Last game loaded: %1$s · %2$s (%3$s)</string>
+    <string name="server_retroarch_no_game">RetroArch\'s history has no game yet.</string>
+    <string name="server_retroarch_folder_dialog_title">RetroArch folder</string>
+    <string name="server_retroarch_folder_dialog_hint">Android\'s folder picker will open at the RetroArch folder in the phone\'s storage. PepoMote only reads it.</string>
+    <string name="server_retroarch_folder_dialog_steps">1. Tap “Use this folder”.\n2. Tap “Allow”.\n3. Return here: the phone will show each console\'s pad.</string>
+    <string name="server_retroarch_folder_dialog_fallback">If Android shows another location, open the side menu, tap this phone and enter RetroArch.</string>
     <string name="pair_link_invalid">This link is invalid. Copy the complete link from the server.</string>
 </resources>

@@ -51,6 +51,12 @@ internal fun ServerPairingCard(state: ServerUiState) {
             peers.forEach { peer ->
                 Text(stringResource(R.string.server_player, peer.slot + 1, peer.name),
                     style = MaterialTheme.typography.titleMedium)
+                // Modo RetroArch: qué mando enseña ese móvil (la consola del juego, el RetroPad o el Wii de lado)
+                peer.retroPad?.let { pad ->
+                    Text(dev.pepotech.pepomote.control.RetroLayouts.byId(peer.retroLayout)?.name
+                        ?: stringResource(if (pad == "nes") R.string.nes_pad else R.string.retropad),
+                        style = MaterialTheme.typography.bodySmall, color = PepoColors.TextDim)
+                }
                 Text(stringResource(if (peer.lastInputAgeMs != null && peer.lastInputAgeMs < 1000)
                     R.string.server_receiving else R.string.server_waiting_input, peer.inputHz.toInt()),
                     color = if (peer.lastInputAgeMs != null && peer.lastInputAgeMs < 1000) PepoColors.Ok else PepoColors.TextDim,

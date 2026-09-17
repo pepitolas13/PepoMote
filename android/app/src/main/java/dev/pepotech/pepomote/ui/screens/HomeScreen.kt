@@ -62,7 +62,7 @@ fun HomeScreen(
     update: UpdateCheck.Version? = null,
     onOpenUpdate: (UpdateCheck.Version) -> Unit = {},
     onDismissUpdate: (UpdateCheck.Version) -> Unit = {},
-    /** Tarjeta RetroArch (solo con receptor de PC). */
+    /** Tarjeta RetroArch (receptor de PC y servidor Android). */
     onRetroArch: () -> Unit = {}
 ) {
     Column(
@@ -179,11 +179,11 @@ fun HomeScreen(
                     onClick = onSwitch
                 )
             }
-            // RetroArch: RetroPad de dos sticks, mando de NES o pistola de luz
-            if (!androidReceiver) item {
+            // RetroArch: la pistola necesita el ratón del receptor de PC.
+            item {
                 ChannelCard(
                     title = stringResource(R.string.channel_retroarch),
-                    subtitle = stringResource(R.string.channel_retroarch_sub),
+                    subtitle = stringResource(if (androidReceiver) R.string.channel_retroarch_android_sub else R.string.channel_retroarch_sub),
                     glyph = ChannelGlyph.Retro,
                     accent = PepoColors.Warn,
                     onClick = onRetroArch

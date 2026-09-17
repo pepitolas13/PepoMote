@@ -16,6 +16,13 @@ import dev.pepotech.pepomote.server.core.ReceiverConfig
 import dev.pepotech.pepomote.server.core.ReceiverMode
 import dev.pepotech.pepomote.server.core.ReceiverSnapshot
 import dev.pepotech.pepomote.server.core.ReceiverPeerSnapshot
+import dev.pepotech.pepomote.server.core.RetroStatus
+import dev.pepotech.pepomote.server.retro.Console
+import dev.pepotech.pepomote.server.retro.RetroArchApp
+import dev.pepotech.pepomote.server.retro.RetroFolder
+import dev.pepotech.pepomote.server.retro.RetroGameInfo
+import android.content.ComponentName
+import android.content.IntentFilter
 import dev.pepotech.pepomote.server.setup.AndroidBackupStore
 import dev.pepotech.pepomote.server.setup.EmulatorTarget
 import dev.pepotech.pepomote.server.setup.SetupJournal
@@ -49,6 +56,8 @@ class AndroidServerUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Before fun clearPendingSetup() {
+        RetroArchApp.forgetVerified(compose.activity)
+        RetroFolder.forget(compose.activity)
         compose.activity.getSharedPreferences("server_setup_pending", Context.MODE_PRIVATE).edit().clear().commit()
         ServerSetupJobs.refresh(compose.activity)
         ServerSetupJobs.dismissError()
@@ -85,6 +94,98 @@ class AndroidServerUiTest {
         compose.onNodeWithText("Mando", substring = false).assertDoesNotExist()
         compose.onNodeWithText("Nunchuk", substring = false).assertDoesNotExist()
         capture("android-controller-home-ui-test.png")
+    }
+
+    @Test fun androidHomeOffersRetroArch() {
+        home(android = true)
+        compose.onNodeWithText("RetroArch", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("pistola", substring = true).assertDoesNotExist()
+    }
+
+    @Test fun androidChipsOfferRetroArchWhenTheServerAnnouncesIt() {
+        compose.setContent { PepoMoteTheme {
+            ModeChips("dolphin", supportsCemu = true, supportsSwitch = true, supportsRetroArch = true, androidReceiver = true)
+        } }
+        compose.onNodeWithText("RetroArch").assertIsDisplayed()
+        compose.onNodeWithText("Eden").assertIsDisplayed()
+        compose.onNodeWithText("Puntero").assertDoesNotExist()
+        compose.onNodeWithText("Wii U").assertDoesNotExist()
+    }
+
+    @Test fun retroArchCardOffersInstallThenTheOneTimeGuideAndTheFolderPicker() {
+        ServerState.mutable.value = ServerUiState(
+            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "1234"),
+            hosts = listOf("192.168.1.20"),
+            receiver = ReceiverSnapshot(true, ReceiverMode.Dolphin, 26761, 26760, emptyList(), 0))
+        compose.setContent { PepoMoteTheme { ServerScreen {} } }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("RetroArch", substring = false))
+        compose.onNodeWithText("RetroArch", substring = false).performClick()
+        compose.onNodeWithText("Instalar RetroArch").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Abrir RetroArch").assertDoesNotExist()
+        capture("server-retroarch-install-ui-test.png")
+    }
+
+    @Test fun installedRetroArchGetsTheOneTimeGuideAndTheFolderPicker() {
+        // Con RetroArch instalado: la guía de una sola vez, abrirlo y la carpeta para el mando de cada consola
+        val component = ComponentName("com.retroarch.aarch64", "com.retroarch.browser.mainmenu.MainMenuActivity")
+        shadowOf(compose.activity.packageManager).addActivityIfNotPresent(component)
+        shadowOf(compose.activity.packageManager).addIntentFilterForActivity(component, IntentFilter(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) })
+        ServerState.mutable.value = ServerUiState(
+            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "1234"),
+            hosts = listOf("192.168.1.20"),
+            receiver = ReceiverSnapshot(true, ReceiverMode.RetroArch, 26761, 26760, emptyList(), 0))
+        compose.setContent { PepoMoteTheme { ServerScreen {} } }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Abrir RetroArch"))
+        compose.onNodeWithText("Activa el mando en red en RetroArch (solo una vez)").assertIsDisplayed()
+        compose.onNodeWithText("1. Abre RetroArch", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Instalar RetroArch").assertDoesNotExist()
+        capture("server-retroarch-guide-ui-test.png")
+        compose.onNodeWithText("Abrir RetroArch").performClick()
+        assertEquals("com.retroarch.aarch64", shadowOf(compose.activity).nextStartedActivity.component!!.packageName)
+        compose.onNodeWithText("Elegir la carpeta RetroArch").performScrollTo().performClick()
+        compose.onNodeWithText("1. Toca «Usar esta carpeta».", substring = true).assertIsDisplayed()
+        capture("server-retroarch-folder-ui-test.png")
+        compose.onNodeWithText("Ir al permiso").performClick()
+        val intent = shadowOf(compose.activity).nextStartedActivityForResult.intent
+        assertEquals(Intent.ACTION_OPEN_DOCUMENT_TREE, intent.action)
+        @Suppress("DEPRECATION")
+        assertEquals(DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:RetroArch"),
+            intent.getParcelableExtra<Uri>(DocumentsContract.EXTRA_INITIAL_URI))
+    }
+
+    @Test fun retroArchAnsweringShowsReadyLiveStatusAndTheLoadedGame() {
+        val component = ComponentName("com.retroarch.aarch64", "com.retroarch.browser.mainmenu.MainMenuActivity")
+        shadowOf(compose.activity.packageManager).addActivityIfNotPresent(component)
+        shadowOf(compose.activity.packageManager).addIntentFilterForActivity(component, IntentFilter(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) })
+        RetroArchApp.markVerified(compose.activity, "1.22.2")
+        ServerState.mutable.value = ServerUiState(
+            config = ReceiverConfig("Android de prueba", "test-only-qr-credential", "1234"),
+            hosts = listOf("192.168.1.20"),
+            receiver = ReceiverSnapshot(true, ReceiverMode.RetroArch, 26761, 26760, emptyList(), 0,
+                retro = RetroStatus(reachable = true, version = "1.22.2", pollsPerSec = 60f,
+                    game = RetroGameInfo(Console.Md, "Mega Drive", "Genesis Plus GX", "Cave Story", "/roms/cave.zip"))))
+        compose.setContent { PepoMoteTheme { ServerScreen {} } }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Jugar con RetroArch"))
+        compose.onNodeWithText("Conexión con RetroArch comprobada").assertIsDisplayed()
+        compose.onNodeWithText("RetroArch 1.22.2 responde · 60 sondeos por segundo").assertIsDisplayed()
+        compose.onNodeWithText("Elegir la carpeta RetroArch").assertExists()
+        compose.onNodeWithText("Ver la guía otra vez").assertExists()
+        capture("server-retroarch-ready-ui-test.png")
+        // Sin RetroArch delante pero ya comprobado: sigue listo, con la guía a mano
+        ServerState.mutable.value = ServerState.flow.value.copy(receiver = ServerState.flow.value.receiver!!.copy(retro = RetroStatus()))
+        compose.onNodeWithText("Conexión con RetroArch comprobada").assertIsDisplayed()
+        compose.onNodeWithText("RetroArch 1.22.2 ya respondió.", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Ver la guía otra vez").performScrollTo().performClick()
+        compose.onNodeWithText("1. Abre RetroArch", substring = true).assertIsDisplayed()
+    }
+
+    @Test fun retroArchDesinstaladoVuelveAOfrecerInstalarAunqueRespondieraAntes() {
+        RetroArchApp.markVerified(compose.activity, "1.22.2")
+        ServerState.mutable.value = ServerUiState(
+            receiver = ReceiverSnapshot(true, ReceiverMode.RetroArch, 26761, 26760, emptyList(), 0))
+        compose.setContent { PepoMoteTheme { ServerScreen {} } }
+        compose.onNodeWithText("Instalar RetroArch").assertExists()
+        compose.onNodeWithText("Jugar con RetroArch").assertDoesNotExist()
     }
 
     @Test fun androidModeChipsCannotOfferPointerOrCemuEvenWithStalePcCapabilities() {

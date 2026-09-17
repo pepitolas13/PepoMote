@@ -32,13 +32,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun ServerScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val state by ServerState.flow.collectAsState()
     val jobs by ServerSetupJobs.flow.collectAsState()
     var selectedName by rememberSaveable { mutableStateOf(state.receiver?.mode?.name ?: "Dolphin") }
-    val target = EmulatorTarget.entries.first { it.name == selectedName }
+    // Dolphin y Eden se preparan por su carpeta (EmulatorTarget); RetroArch tiene su propia tarjeta
+    val retroSelected = selectedName == ReceiverMode.RetroArch.name
+    val target = EmulatorTarget.entries.firstOrNull { it.name == selectedName } ?: EmulatorTarget.Dolphin
     var resumeVersion by remember { mutableIntStateOf(0) }
     var statuses by remember { mutableStateOf(emptyMap<EmulatorTarget, SetupStatus>()) }
     var permissionTarget by rememberSaveable { mutableStateOf<String?>(null) }
@@ -178,17 +181,18 @@ fun ServerScreen(onBack: () -> Unit) {
         item {
             ServerCard {
                 Text(stringResource(R.string.server_choose_game), style = MaterialTheme.typography.titleLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    EmulatorTarget.entries.forEach { choice ->
-                        FilterChip(selected = choice == target, enabled = !jobs.busy,
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReceiverMode.entries.forEach { choice ->
+                        FilterChip(selected = choice.name == selectedName, enabled = !jobs.busy,
                             onClick = {
                                 selectedName = choice.name; options = false
-                                ServerForegroundService.setMode(if (choice == EmulatorTarget.Dolphin) ReceiverMode.Dolphin else ReceiverMode.Eden)
-                            }, label = { Text(choice.name) }, modifier = Modifier.weight(1f),
+                                ServerForegroundService.setMode(choice)
+                            }, label = { Text(choice.name, maxLines = 1, softWrap = false) },
                             colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PepoColors.Blue,
                                 selectedLabelColor = PepoColors.OnAccent, labelColor = PepoColors.Text))
                     }
                 }
+                if (retroSelected) RetroArchCard(state, onError = { localError = it }) else {
                 val status = statuses[target]
                 val pendingRestart = jobs.restart[target] != null
                 val changedPlayers = status?.prepared == true && state.receiver?.peers?.isNotEmpty() == true &&
@@ -259,6 +263,7 @@ fun ServerScreen(onBack: () -> Unit) {
                 if (state.running) Text(stringResource(if ((state.receiver?.dsuClients ?: 0) > 0)
                     R.string.server_emulator_connected else R.string.server_emulator_waiting),
                     style = MaterialTheme.typography.bodySmall, color = PepoColors.TextDim)
+                }
             }
         }
         item { Text(stringResource(R.string.server_background_hint), style = MaterialTheme.typography.bodySmall) }

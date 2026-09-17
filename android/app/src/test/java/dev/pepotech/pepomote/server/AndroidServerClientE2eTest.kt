@@ -20,6 +20,9 @@ import dev.pepotech.pepomote.server.core.ReceiverProtocolTest.Companion.buffer
 import dev.pepotech.pepomote.server.core.ReceiverProtocolTest.Companion.checkHeader
 import dev.pepotech.pepomote.server.core.ReceiverProtocolTest.Companion.request
 import dev.pepotech.pepomote.server.core.ReceiverProtocolTest.Companion.u
+import dev.pepotech.pepomote.server.retro.Console
+import dev.pepotech.pepomote.server.retro.FakeRetroArch
+import dev.pepotech.pepomote.server.retro.RetroGameInfo
 import dev.pepotech.pepomote.service.LinkForegroundService
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.PadIntent
@@ -102,6 +105,7 @@ class AndroidServerClientE2eTest {
             assertEquals(0, connected.slot)
             assertFalse(connected.supportsCemu)
             assertTrue(connected.supportsSwitch)
+            assertTrue(connected.supportsRetroArch)
             assertFalse(connected.textInput)
             assertEquals(false, connected.screenOnly)
             await("Pending desktop mode is discarded") { LinkState.pendingMode == null && LinkState.intent.value == PadIntent.None }
@@ -191,6 +195,41 @@ class AndroidServerClientE2eTest {
             stopClient(client)
             await("Restarted receiver also releases its client") { restarted.snapshot().peers.isEmpty() }
             assertSavedPcAndPreferencesUnchanged()
+        }
+    }
+
+    @Test fun retroArchModeDrivesTheFakeRetroArchThroughTheRealClientAndService() {
+        val ports = FakeRetroArch.freePorts()
+        FakeRetroArch(ports).start().use { ra ->
+            ReceiverCore(config("0042").copy(retroPorts = ports)).use { receiver ->
+                receiver.start()
+                PairStore.save(context, temporaryPair(receiver, "0042"))
+                // La tarjeta RetroArch del inicio: el modo se pide antes de conectar y el ok lo confirma
+                LinkState.requestMode(LinkState.MODE_RETROARCH)
+                val client = startClient()
+                await("Client is in RetroArch mode as RetroPad") {
+                    (LinkState.flow.value as? UiLink.Connected)?.let { it.mode == LinkState.MODE_RETROARCH && it.supportsRetroArch && it.pad == LinkState.PAD_RETROPAD } == true
+                }
+                assertTrue(Route.isGamePad(LinkState.flow.value))
+                assertTrue(Route.isRetroArch(LinkState.flow.value))
+                await("Receiver follows the phone into RetroArch mode") { receiver.snapshot().mode == ReceiverMode.RetroArch }
+                client.engine.kind = SenderKind.SWITCH
+                client.engine.rotation = Frame.ROTATION_90
+                ButtonState.reset()
+                ButtonState.set(ButtonState.A or ButtonState.DPAD_UP, true)
+                advanceInput(client, 40)
+                await("A and Up reach the RetroPad of player 1") { ra.buttons(0) == ((1 shl 8) or (1 shl 4)) }
+                assertEquals("one datagram per frame, never queued", 0, ra.doubles)
+                LinkState.sendHotkey?.invoke("save_state", true)
+                await("The hotkey reaches RetroArch as a network command") { ra.commands().any { it.second == "SAVE_STATE" } }
+                receiver.setGame(RetroGameInfo(Console.Md, "Mega Drive", "Genesis Plus GX", "Cave Story", "/roms/cave.zip"))
+                await("The loaded game reaches the client") { (LinkState.flow.value as? UiLink.Connected)?.game?.console == "md" }
+                assertEquals("md", LinkState.effectiveRetroLayout(LinkState.flow.value as UiLink.Connected))
+                await("The phone reports its console pad to the server") { receiver.snapshot().peers.singleOrNull()?.retroLayout == "md" }
+                stopClient(client)
+                await("Everything is released when the phone leaves") { ra.buttons(0) == 0 }
+                assertSavedPcAndPreferencesUnchanged()
+            }
         }
     }
 

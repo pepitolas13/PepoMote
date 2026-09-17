@@ -140,7 +140,7 @@
     <!-- primer arranque -->
     <string name="onboarding_sub">Tu móvil, mando de tu PC u otro Android en 3 pasos</string>
     <string name="ob1_title">Elige dónde vas a jugar</string>
-    <string name="ob1_body">Abre PepoMote en el PC, o pulsa Servidor en el Android donde usarás Dolphin o Eden.</string>
+    <string name="ob1_body">Abre PepoMote en el PC, o pulsa Servidor en el Android donde usarás Dolphin, Eden o RetroArch.</string>
     <string name="ob2_title">Escanea el QR</string>
     <string name="ob2_body">En el móvil que usarás como mando: Conectar → escanea el QR del receptor. Ambos en la misma Wi-Fi.</string>
     <string name="ob3_title">Apunta. Haz clic. Juega.</string>
@@ -208,9 +208,10 @@
     <!-- RetroArch -->
     <string name="channel_retroarch">RetroArch</string>
     <string name="channel_retroarch_sub">El mando de cada consola, Wii de lado o pistola</string>
+    <string name="channel_retroarch_android_sub">El mando de cada consola o el Mando de Wii de lado</string>
     <string name="mode_retroarch">RetroArch</string>
     <string name="activating_retroarch">Activando RetroArch…</string>
-    <string name="warn_needs_retroarch">Actualiza el receptor del PC para usar RetroArch.</string>
+    <string name="warn_needs_retroarch">Actualiza PepoMote en el receptor (PC o móvil servidor) para usar RetroArch.</string>
     <string name="shortcut_retroarch">RetroArch</string>
     <string name="shortcut_retroarch_long">Mando para RetroArch</string>
     <string name="in_retroarch">En RetroArch soy:</string>
@@ -250,7 +251,7 @@
     <string name="server_enter_code">Escribe el código que aparece en la pantalla Servidor del otro móvil. También puedes escanear su QR.</string>
     <string name="server_pair_code">Código de conexión</string>
     <string name="server_running_short">Servidor Android activo</string>
-    <string name="server_intro">Este móvil ejecuta Dolphin o Eden. Otro móvil con PepoMote se convierte en tu mando.</string>
+    <string name="server_intro">Este móvil ejecuta Dolphin, Eden o RetroArch. Otro móvil con PepoMote se convierte en tu mando.</string>
     <string name="server_background_hint">Permanece activo mientras juegas. Detén el servidor al terminar.</string>
     <string name="server_starting">Iniciando servidor…</string>
     <string name="server_stopped">Servidor detenido</string>
@@ -259,7 +260,7 @@
     <string name="server_error_port">No se puede iniciar: otra aplicación está usando el puerto de conexión. Ciérrala o cambia su puerto y vuelve a intentarlo.</string>
     <string name="server_error_start">No se ha podido iniciar el servidor. Comprueba la conexión de red y vuelve a intentarlo.</string>
     <string name="server_notification_title">PepoMote · Servidor Android</string>
-    <string name="server_notification_body">Listo para recibir mandos mientras juegas en Dolphin o Eden.</string>
+    <string name="server_notification_body">Listo para recibir mandos mientras juegas en Dolphin, Eden o RetroArch.</string>
     <string name="server_pair_step">1. Conecta tu mando</string>
     <string name="server_pair_hint">Usa la misma Wi-Fi o el punto de acceso de este móvil. En el mando: Conectar → Escanear QR, o Conectar con código → elige este servidor y escribe los 4 dígitos.</string>
     <string name="server_qr_description">QR para conectar otro móvil a este servidor Android</string>
@@ -292,7 +293,7 @@
     <string name="server_restart_hint">Para que %1$s lea los nuevos controles, abre su información de aplicación y pulsa Forzar detención. Luego vuelve aquí y ábrelo. Deslizarlo de recientes puede no ser suficiente. Hazlo sin una partida abierta.</string>
     <string name="server_app_info">Abrir información de la aplicación</string>
     <string name="server_app_info_missing">Abre Ajustes de Android → Aplicaciones → el emulador → Forzar detención. Después vuelve a PepoMote.</string>
-    <string name="server_change_players_hint">Si añades jugadores o cambias el Nunchuk, vuelve a preparar los controles con esos mandos conectados y reinicia el emulador. El jugador 1 puede cambiar entre Dolphin y Eden desde su mando.</string>
+    <string name="server_change_players_hint">Si añades jugadores o cambias el Nunchuk, vuelve a preparar los controles con esos mandos conectados y reinicia el emulador. El jugador 1 puede cambiar entre Dolphin, Eden y RetroArch desde su mando.</string>
     <string name="server_preserved_changes">Se han conservado %1$d cambios que hiciste después de la copia.</string>
     <string name="server_done">Entendido</string>
     <string name="server_code_failed">El código no es correcto o ha cambiado. Pulsa Conectar con código, elige el PC o móvil e introduce el código que muestra ahora. También puedes escanear su QR.</string>
@@ -373,5 +374,43 @@
     <string name="pair_link_label">Enlace copiado del servidor</string>
     <string name="server_copy_link">Copiar enlace</string>
     <string name="server_link_copied">Enlace copiado</string>
+    <string name="server_notice_modes">Este servidor Android ofrece Dolphin, Eden y RetroArch</string>
+    <string name="server_notice_player_one">Solo el jugador 1 puede cambiar el modo del servidor</string>
+    <string name="server_notice_text">Este servidor Android no acepta texto</string>
+    <string name="server_notice_screen">Este servidor Android no envía la pantalla</string>
+    <string name="server_notice_retro_no_gun">La pistola de luz necesita el receptor del PC: sigues con tu mando de RetroArch</string>
+    <string name="server_notice_retro_opened">RetroArch responde: modo RetroArch</string>
+    <string name="server_notice_retro_back">Un emulador ha pedido los mandos: modo %1$s</string>
+    <string name="server_retroarch_osd">PepoMote: mando del movil conectado</string>
+    <string name="server_notification_retroarch">RetroArch responde · conexión comprobada</string>
+    <string name="server_retroarch_connection_ready">Conexión con RetroArch comprobada</string>
+    <string name="server_retroarch_check_pad">Si no llegan los botones, comprueba que «RetroPad de red» y el usuario de cada mando estén activados en RetroArch.</string>
+    <string name="server_retroarch_details">RetroArch · El mando de cada consola (NES, SNES, Mega Drive, N64, PlayStation…), el Mando de Wii de lado y las teclas rápidas. Sin pistola de luz en Android.</string>
+    <string name="server_retroarch_install_first">Instala RetroArch (retroarch.com o Google Play) y ábrelo una vez.</string>
+    <string name="server_retroarch_missing">No se encuentra RetroArch. Instálalo y ábrelo una vez antes de continuar.</string>
+    <string name="server_retroarch_setup_title">Activa el mando en red en RetroArch (solo una vez)</string>
+    <string name="server_retroarch_setup_why">Android no deja que PepoMote toque los ajustes de RetroArch, así que estos interruptores los activas tú en su menú. PepoMote comprueba la conexión de comandos y la recuerda; el mando en red se activa aparte.</string>
+    <string name="server_retroarch_steps">1. Abre RetroArch → Ajustes → Interfaz de usuario → activa «Mostrar ajustes avanzados».\n2. Ajustes → Red → activa «Comandos de red» (puerto 55355).\n3. Debajo, activa «RetroPad de red» (puerto base 55400) y el usuario 1. Para más mandos, también los usuarios 2, 3 y 4.\n4. Menú principal → Archivo de configuración → Guardar configuración actual. Después, sal de RetroArch, vuelve aquí y toca «Abrir RetroArch».</string>
+    <string name="server_retroarch_open">Abrir RetroArch</string>
+    <string name="server_retroarch_waiting">Esperando a que RetroArch responda… Solo responde mientras está delante: ábrelo, deja pasar unos segundos y vuelve; PepoMote lo recuerda.</string>
+    <string name="server_retroarch_responding">RetroArch %1$s responde · %2$d sondeos por segundo</string>
+    <string name="server_retroarch_verified_hint">RetroArch %1$s ya respondió. Solo responde mientras está delante: ábrelo y juega.</string>
+    <string name="server_retroarch_show_guide">Ver la guía otra vez</string>
+    <string name="server_retroarch_degraded">Hay mandos en RetroArch pero no responde a los comandos de red: el mando va a ciegas a 60 Hz. Activa «Comandos de red» en RetroArch.</string>
+    <string name="server_retroarch_players_hint">Cada móvil es un jugador: el 1 usa el puerto 55400, el 2 el 55401… Activa en RetroArch tantos «Usuario N» del mando en red como móviles.</string>
+    <string name="server_retroarch_folder_title">El mando de cada consola</string>
+    <string name="server_retroarch_folder_hint">RetroArch apunta en su carpeta RetroArch qué juego acaba de cargar. Con permiso para leerla, el móvil enseña el mando de esa consola. Sin él, el RetroPad completo (la consola se puede elegir a mano en el móvil).</string>
+    <string name="server_retroarch_folder_pick">Elegir la carpeta RetroArch</string>
+    <string name="server_retroarch_folder_change">Cambiar carpeta</string>
+    <string name="server_retroarch_folder_forget">Quitar</string>
+    <string name="server_retroarch_folder_linked">Carpeta RetroArch enlazada</string>
+    <string name="server_retroarch_folder_missing">En esa carpeta no está playlists/builtin/content_history.lpl. Elige la carpeta RetroArch de la memoria del móvil (RetroArch la crea si tiene acceso a todos los archivos).</string>
+    <string name="server_retroarch_folder_denied">Android no ha concedido el permiso de lectura. Vuelve a elegir la carpeta.</string>
+    <string name="server_retroarch_game">Último juego cargado: %1$s · %2$s (%3$s)</string>
+    <string name="server_retroarch_no_game">Todavía no hay ningún juego en el historial de RetroArch.</string>
+    <string name="server_retroarch_folder_dialog_title">Carpeta RetroArch</string>
+    <string name="server_retroarch_folder_dialog_hint">Se abrirá el selector de carpetas de Android en la carpeta RetroArch de la memoria del móvil. PepoMote solo la lee.</string>
+    <string name="server_retroarch_folder_dialog_steps">1. Toca «Usar esta carpeta».\n2. Toca «Permitir».\n3. Vuelve aquí: el móvil enseñará el mando de cada consola.</string>
+    <string name="server_retroarch_folder_dialog_fallback">Si Android muestra otra ubicación, abre el menú lateral, toca este móvil y entra en RetroArch.</string>
     <string name="pair_link_invalid">Este enlace no es válido. Copia el enlace completo desde el servidor.</string>
 </resources>

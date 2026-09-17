@@ -1,5 +1,12 @@
 package dev.pepotech.pepomote.server.core
 
+import dev.pepotech.pepomote.control.RetroLayouts
+import dev.pepotech.pepomote.server.retro.RetroGameInfo
+import dev.pepotech.pepomote.server.retro.RetroHistory
+import dev.pepotech.pepomote.server.retro.RetroLink
+import dev.pepotech.pepomote.server.retro.RetroLive
+import dev.pepotech.pepomote.server.retro.RetroPadKind
+import dev.pepotech.pepomote.server.retro.RetroPorts
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -21,24 +28,64 @@ import java.security.SecureRandom
 import java.util.ArrayDeque
 import java.util.Collections
 
-data class ReceiverConfig(val name: String, val token: String, val pairCode: String, val port: Int = 26761, val dsuPort: Int = 26760) {
+data class ReceiverConfig(
+    val name: String, val token: String, val pairCode: String, val port: Int = 26761, val dsuPort: Int = 26760,
+    /** Puertos del mando en red y de los comandos de red de RetroArch (sus valores de serie). */
+    val retroPorts: RetroPorts = RetroPorts(),
+    /** Avisos que se mandan a los móviles y a RetroArch (el servicio los pasa traducidos). */
+    val texts: ReceiverTexts = ReceiverTexts(),
+) {
     init {
         require(name.isNotBlank() && name.length <= 128)
         require(token.isNotBlank() && token.length <= 256)
         require(pairCode.length in 4..8 && pairCode.all { it in '0'..'9' })
         require(port in 0..65535 && dsuPort in 0..65535)
         require(port == 0 || port != dsuPort)
+        require(retroPorts.cmd in 1..65535 && retroPorts.base in 1..65532)
     }
 }
+
+/** Textos del receptor (en inglés por defecto; ServerForegroundService los traduce). */
+data class ReceiverTexts(
+    val modesOnly: String = "This Android receiver supports Dolphin, Eden and RetroArch only",
+    val playerOne: String = "Only Player 1 can change the receiver mode",
+    val textUnavailable: String = "Text input is unavailable on this Android receiver",
+    val screenUnavailable: String = "Screen streaming is unavailable on this Android receiver",
+    val retroNoGun: String = "The light gun needs the PC receiver: this Android keeps your current RetroArch pad",
+    val retroOpened: String = "RetroArch is answering: RetroArch mode",
+    /** `%s` = nombre del modo al que se vuelve. */
+    val retroBack: String = "An emulator asked for the controllers: %s mode",
+    val retroOsdReady: String = "PepoMote: phone controller connected",
+    val dolphinName: String = "Dolphin",
+    val edenName: String = "Eden",
+) {
+    fun modeName(mode: ReceiverMode): String = when (mode) {
+        ReceiverMode.Dolphin -> dolphinName
+        ReceiverMode.Eden -> edenName
+        ReceiverMode.RetroArch -> "RetroArch"
+    }
+}
+
+/** Qué se sabe de RetroArch (enlace y juego cargado) para el panel. */
+data class RetroStatus(
+    val reachable: Boolean = false,
+    val degraded: Boolean = false,
+    val version: String? = null,
+    val pollsPerSec: Float = 0f,
+    val game: RetroGameInfo? = null,
+)
 
 data class ReceiverPeerSnapshot(
     val id: String, val slot: Int, val name: String, val ownNunchuk: Boolean,
     val batteryPct: Int, val inputHz: Double, val lastInputAgeMs: Long?, val framesReceived: Long,
+    /** Modo RetroArch: mando (`retropad`/`nes`) y plantilla de consola que enseña el móvil. */
+    val retroPad: String? = null, val retroLayout: String? = null,
 )
 
 data class ReceiverSnapshot(
     val running: Boolean, val mode: ReceiverMode, val port: Int, val dsuPort: Int,
     val peers: List<ReceiverPeerSnapshot>, val dsuClients: Int, val error: String? = null,
+    val retro: RetroStatus = RetroStatus(),
 )
 
 /**
@@ -56,8 +103,14 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
     private var port = config.port
     private var dsuPort = config.dsuPort
     private var error: String? = null
+    /** RetroArch: el juego cargado (lo pone el servicio) y lo que dice el enlace. */
+    private var retroGame: RetroGameInfo? = null
+    private var retroLive = RetroLive()
+    private var retroLostAt = 0L
+    /** Último modo que no era RetroArch: adonde se vuelve cuando un emulador pide los mandos. */
+    private var lastNonRetroMode = ReceiverMode.Dolphin
 
-    private class Run(val server: ServerSocketChannel, val selector: Selector, val pmp: DatagramSocket, val dsu: DatagramSocket) {
+    private class Run(val server: ServerSocketChannel, val selector: Selector, val pmp: DatagramSocket, val dsu: DatagramSocket, val retro: RetroLink) {
         val connections = LinkedHashMap<SocketChannel, Peer>()
         val sessions = HashMap<Int, Peer>()
         val clients = LinkedHashMap<SocketAddress, Subscription>()
@@ -100,9 +153,13 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
         var rateFrames = 0L
         var rateStarted = created
         var inputHz = 0.0
+        var retroPad = RetroPadKind.RetroPad
+        var retroLayout: String? = null
+        /** RetroArch: ya se soltó todo tras el último paquete (entrada caducada). */
+        var retroReleased = true
     }
 
-    private class Subscription { val expires = LongArray(4) }
+    private class Subscription(var pendingRetroReturn: Boolean) { val expires = LongArray(4) }
     private class FailureWindow(val started: Long, var attempts: Int = 0)
     private class Rate(private val maximum: Int) {
         private var started = 0L
@@ -125,6 +182,7 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
             var selector: Selector? = null
             var pmp: DatagramSocket? = null
             var dsu: DatagramSocket? = null
+            var retro: RetroLink? = null
             try {
                 server = ServerSocketChannel.open()
                 server.configureBlocking(false)
@@ -139,7 +197,9 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
                 dsu.bind(InetSocketAddress(LOOPBACK, config.dsuPort))
                 selector = Selector.open()
                 server.register(selector, SelectionKey.OP_ACCEPT)
-                val run = Run(server, selector, pmp, dsu)
+                retro = RetroLink(config.retroPorts, config.texts.retroOsdReady) { live -> retroLiveChanged(live) }
+                retro.start()
+                val run = Run(server, selector, pmp, dsu, retro)
                 port = actualPort
                 dsuPort = dsu.localPort
                 error = null
@@ -150,6 +210,7 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
             } catch (e: Exception) {
                 runCatching { server?.close() }; runCatching { selector?.close() }
                 pmp?.close(); dsu?.close()
+                runCatching { retro?.close() }
                 current = null
                 error = e.message ?: "Receiver could not bind its ports"
                 failure = if (e is IOException) e else IOException(error, e)
@@ -175,6 +236,8 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
             runCatching { run.selector.close() }
             run
         }
+        // The link joins its own thread and that thread takes our lock in its callback: close it unlocked.
+        stopped.retro.close()
         // A callback may close us from the control thread; never join the calling thread.
         for (thread in stopped.threads) if (thread !== Thread.currentThread()) {
             try { thread.join(1000) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
@@ -201,10 +264,13 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
                 java.lang.Integer.toUnsignedString(it.session!!), it.slot, it.name, it.ownNunchuk,
                 it.input?.batteryPct ?: 0, if (it.lastInput == 0L || now - it.lastInput >= SECOND) 0.0 else it.inputHz,
                 if (it.lastInput == 0L) null else ((now - it.lastInput) / 1_000_000).coerceAtLeast(0), it.frames,
+                retroPad = if (mode == ReceiverMode.RetroArch) it.retroPad.wire else null,
+                retroLayout = if (mode == ReceiverMode.RetroArch) it.retroLayout else null,
             )
         } ?: emptyList()
         return ReceiverSnapshot(run != null, mode, port, dsuPort, Collections.unmodifiableList(peers),
-            run?.clients?.values?.count { it.expires.any { deadline -> deadline > now } } ?: 0, error)
+            run?.clients?.values?.count { it.expires.any { deadline -> deadline > now } } ?: 0, error,
+            RetroStatus(retroLive.reachable, retroLive.degraded, retroLive.version, retroLive.pollsPerSec, retroGame))
     }
 
     private fun launch(run: Run, label: String, work: () -> Unit) {
@@ -312,14 +378,37 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
                 val requested = ReceiverMode.entries.firstOrNull { it.wire == message.optString("mode") }
                 if (requested == null) {
                     enqueueLocked(run, peer, modeMessage())
-                    noticeLocked(run, peer, "This Android receiver supports Dolphin and Eden only")
+                    noticeLocked(run, peer, config.texts.modesOnly)
                 } else if (peer.slot != 0) {
                     enqueueLocked(run, peer, modeMessage())
-                    noticeLocked(run, peer, "Only Player 1 can change the receiver mode")
+                    noticeLocked(run, peer, config.texts.playerOne)
                 } else if (requested == mode) enqueueLocked(run, peer, modeMessage())
                 else changeModeLocked(run, requested, byReceiver = false)
             }
-            "pad" -> enqueueLocked(run, peer, padMessage(peer))
+            "pad" -> {
+                if (mode == ReceiverMode.RetroArch) {
+                    // RetroPad o Mando Wii de lado, y la plantilla de consola que enseña (solo para el panel);
+                    // la pistola necesita un ratón que mover: en este Android no la hay
+                    val kind = RetroPadKind.parse(message.optString("pad"))
+                    val layout = layoutId(message)
+                    if (peer.retroLayout != layout) { peer.retroLayout = layout; run.eventDirty = true }
+                    if (kind == RetroPadKind.Gun) noticeLocked(run, peer, config.texts.retroNoGun)
+                    else if (kind != null && kind != peer.retroPad) {
+                        run.retro.release(peer.slot)
+                        peer.retroReleased = true
+                        peer.retroPad = kind
+                        run.eventDirty = true
+                    }
+                }
+                enqueueLocked(run, peer, padMessage(peer))
+            }
+            "hotkey" -> {
+                // Tecla rápida de RetroArch por nombre (PROTOCOL.md §3); las de mantener llevan down true/false
+                val name = message.optString("name")
+                val down = message.optBoolean("down", true)
+                val ok = mode == ReceiverMode.RetroArch && run.retro.hotkey(peer.slot, name, down)
+                enqueueLocked(run, peer, JSONObject().put("m", "hotkey").put("name", name).put("down", down).put("ok", ok))
+            }
             "nunchuk" -> {
                 val own = message.optBoolean("own", false)
                 if (peer.ownNunchuk != own) {
@@ -330,8 +419,8 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
                 enqueueLocked(run, peer, JSONObject().put("m", "nunchuk").put("own", own))
             }
             "screen_only" -> enqueueLocked(run, peer, JSONObject().put("m", "screen_only").put("on", false))
-            "text" -> noticeLocked(run, peer, "Text input is unavailable on this Android receiver")
-            "screen" -> noticeLocked(run, peer, "Screen streaming is unavailable on this Android receiver")
+            "text" -> noticeLocked(run, peer, config.texts.textUnavailable)
+            "screen" -> noticeLocked(run, peer, config.texts.screenUnavailable)
             // Unknown additive messages are ignored, per PMP v1.
         }
     }
@@ -371,32 +460,50 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
         peer.session = session
         peer.name = message.optString("name", "Controller").filter { !it.isISOControl() }.take(80).ifBlank { "Controller" }
         peer.ownNunchuk = message.optString("nunchuk", "none") == "own"
+        RetroPadKind.parse(message.optString("pad"))?.takeIf { it != RetroPadKind.Gun }?.let { peer.retroPad = it }
+        peer.retroLayout = layoutId(message)
         peer.lastTraffic = now
         run.sessions[session] = peer
         enqueueLocked(run, peer, okMessage(peer, session))
+        // Qué juego tiene RetroArch (o null): siempre la primera línea tras `ok`, en cualquier modo
+        enqueueLocked(run, peer, RetroHistory.gameMessage(retroGame))
+        run.retro.setPresent(slot, mode == ReceiverMode.RetroArch)
         run.eventDirty = true
     }
 
     private fun okMessage(peer: Peer, session: Int) = JSONObject()
         .put("m", "ok").put("pv", 1).put("session_id", session.toLong() and 0xffffffffL)
         .put("udp_port", port).put("name", config.name).put("platform", "android")
-        .put("modes", JSONArray().put("dolphin").put("switch")).put("mode", mode.wire)
+        .put("modes", JSONArray().put("dolphin").put("switch").put("retroarch")).put("mode", mode.wire)
         .put("slot", peer.slot).put("player", peer.slot + 1).put("role", "wiimote")
-        .put("pad", effectivePad()).put("half", JSONObject.NULL).put("side", JSONObject.NULL)
+        .put("pad", effectivePad(peer)).put("half", JSONObject.NULL).put("side", JSONObject.NULL)
         .put("nunchuk", if (peer.ownNunchuk) "own" else "none").put("screen_only", false)
         .put("text_input", false).put("pair_token", config.token)
 
-    private fun effectivePad() = if (mode == ReceiverMode.Eden) "pro" else "wiimote"
+    private fun effectivePad(peer: Peer) = when (mode) {
+        ReceiverMode.Eden -> "pro"
+        ReceiverMode.RetroArch -> peer.retroPad.wire
+        ReceiverMode.Dolphin -> "wiimote"
+    }
+    /** `pad.layout` / `hello.layout`: un id de plantilla de consola (protocol/retro-layouts.json) o nada. */
+    private fun layoutId(message: JSONObject): String? = message.optString("layout", "").takeIf { it in RetroLayouts.LAYOUT_IDS }
     private fun modeMessage(byReceiver: Boolean = false) = JSONObject().put("m", "mode").put("mode", mode.wire)
         .apply { if (byReceiver) put("by", "pc") }
-    private fun padMessage(peer: Peer) = JSONObject().put("m", "pad").put("pad", effectivePad())
+    private fun padMessage(peer: Peer) = JSONObject().put("m", "pad").put("pad", effectivePad(peer))
         .put("player", peer.slot + 1).put("half", JSONObject.NULL).put("side", JSONObject.NULL)
+        .put("layout", if (mode == ReceiverMode.RetroArch) peer.retroLayout ?: JSONObject.NULL else JSONObject.NULL)
 
     private fun changeModeLocked(run: Run, requested: ReceiverMode, byReceiver: Boolean) {
         mode = requested
+        // Solo un emulador que se suscriba después de este cambio puede pedir volver por DSU.
+        run.clients.values.forEach { it.pendingRetroReturn = false }
+        if (requested != ReceiverMode.RetroArch) lastNonRetroMode = requested
         val now = System.nanoTime()
         for (peer in run.sessions.values.toList()) {
             neutralizeLocked(run, peer, now)
+            // El enlace suelta lo que tuviera pulsado quien deja de ser mando de RetroArch
+            run.retro.setPresent(peer.slot, requested == ReceiverMode.RetroArch)
+            peer.retroReleased = true
             enqueueLocked(run, peer, modeMessage(byReceiver))
             enqueueLocked(run, peer, padMessage(peer))
         }
@@ -436,6 +543,7 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
         peer.session?.let { session ->
             if (run.sessions.remove(session) != null) {
                 emitLocked(run, peer, System.nanoTime(), forceDisconnected = true)
+                run.retro.setPresent(peer.slot, false)
                 run.eventDirty = true
             }
         }
@@ -485,6 +593,11 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
                     frame.copy(buttons = frame.buttons and ((1 shl 17) or (1 shl 18)).inv(), stickX = 0, stickY = 0, stickRX = 0, stickRY = 0)
                 else frame
                 peer.lastInput = now; peer.lastTraffic = now; peer.frames++; peer.dirty = true
+                if (mode == ReceiverMode.RetroArch) {
+                    // Al mando en red de RetroArch (el enlace lo dosifica a un datagrama por fotograma)
+                    run.retro.pushInput(peer.slot, peer.retroPad, frame)
+                    peer.retroReleased = false
+                }
                 if (now - peer.lastOutput >= OUTPUT_INTERVAL) emitLocked(run, peer, now)
             }
         }
@@ -512,7 +625,12 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
                         if (request.slots == 0) return@synchronized
                         expireSubscriptionsLocked(run, now)
                         if (run.clients.size >= MAX_DSU_CLIENTS && !run.clients.containsKey(packet.socketAddress)) return@synchronized
-                        val sub = run.clients.getOrPut(packet.socketAddress) { run.eventDirty = true; Subscription() }
+                        val sub = run.clients.getOrPut(packet.socketAddress) {
+                            run.eventDirty = true
+                            Subscription(pendingRetroReturn = mode == ReceiverMode.RetroArch)
+                        }
+                        // Si llegó antes de vencer la espera, sus renovaciones reintentan el cambio.
+                        if (sub.pendingRetroReturn) emulatorAskedLocked(run, now)
                         for (slot in 0..3) if (request.slots and (1 shl slot) != 0) {
                             sub.expires[slot] = now + 3 * SECOND
                             val peer = run.sessions.values.firstOrNull { it.slot == slot }
@@ -536,6 +654,11 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
                 disconnectLocked(run, peer); continue
             }
             if (peer.session == null) continue
+            if (mode == ReceiverMode.RetroArch && !peer.retroReleased && peer.lastInput != 0L && now - peer.lastInput >= RELEASE_AFTER) {
+                // Sin paquetes: soltar en RetroArch (un botón pulsado seguiría pulsado para siempre)
+                run.retro.release(peer.slot)
+                peer.retroReleased = true
+            }
             if (now - peer.lastPing >= SECOND) {
                 peer.lastPing = now
                 enqueueLocked(run, peer, JSONObject().put("m", "ping").put("t", now / 1000))
@@ -569,7 +692,8 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
         val connected = !forceDisconnected && peer.lastInput != 0L && now - peer.lastInput < SECOND
         val neutral = forceDisconnected || peer.lastInput == 0L || now - peer.lastInput >= RELEASE_AFTER
         val raw = peer.input ?: neutralInput(now / 1000)
-        val sample = if (neutral) neutralInput(raw.tSensorUs + (if (peer.lastInput == 0L) 0 else (now - peer.lastInput) / 1000), raw.batteryPct) else raw
+        // En modo RetroArch los mandos van al mando en red, nunca al DSU
+        val sample = if (neutral || mode == ReceiverMode.RetroArch) neutralInput(raw.tSensorUs + (if (peer.lastInput == 0L) 0 else (now - peer.lastInput) / 1000), raw.batteryPct) else raw
         val touch = mode == ReceiverMode.Dolphin && connected && !neutral && now < peer.pulseUntil
         val destinations = if (only != null) listOf(only) else run.clients.entries.filter { it.value.expires[peer.slot] > now }.map { it.key }
         if (destinations.isNotEmpty()) {
@@ -579,6 +703,53 @@ class ReceiverCore(private val config: ReceiverConfig, private val onState: (Rec
         if (only == null) {
             peer.lastOutput = now; peer.sentConnected = connected; peer.sentNeutral = neutral; peer.sentTouch = touch; peer.dirty = false
         }
+    }
+
+    /** El juego que RetroArch tiene cargado (lo lee el servicio de la carpeta RetroArch): se difunde a los móviles. */
+    fun setGame(game: RetroGameInfo?) {
+        synchronized(lock) {
+            if (retroGame == game) return
+            retroGame = game
+            val run = current ?: return
+            val message = RetroHistory.gameMessage(game)
+            for (peer in run.sessions.values.toList()) enqueueLocked(run, peer, message)
+            run.eventDirty = true
+        }
+        publish(snapshot())
+    }
+
+    /**
+     * El enlace con RetroArch cambia de estado (hilo del enlace). Cuando RetroArch
+     * empieza a responder (está delante, con la red activada), el receptor pasa
+     * solo al modo RetroArch, como el modo automático del PC; solo en el flanco,
+     * para que el jugador 1 pueda elegir otro modo con RetroArch abierto.
+     */
+    private fun retroLiveChanged(live: RetroLive) {
+        synchronized(lock) {
+            val run = current ?: return
+            val before = retroLive
+            retroLive = live
+            if (!live.reachable && before.reachable) retroLostAt = System.nanoTime()
+            if (live.reachable && !before.reachable && mode != ReceiverMode.RetroArch) {
+                changeModeLocked(run, ReceiverMode.RetroArch, byReceiver = true)
+                for (peer in run.sessions.values.toList()) noticeLocked(run, peer, config.texts.retroOpened)
+            }
+            run.eventDirty = true
+        }
+    }
+
+    /**
+     * Un emulador nuevo pide los mandos por DSU (Dolphin o Eden acaba de abrirse)
+     * mientras RetroArch lleva un rato sin responder: se vuelve al último modo
+     * que no era RetroArch.
+     */
+    private fun emulatorAskedLocked(run: Run, now: Long) {
+        if (mode != ReceiverMode.RetroArch || retroLive.reachable) return
+        if (retroLostAt != 0L && now - retroLostAt < 2 * SECOND) return
+        val back = lastNonRetroMode
+        changeModeLocked(run, back, byReceiver = true)
+        val text = String.format(config.texts.retroBack, config.texts.modeName(back))
+        for (peer in run.sessions.values.toList()) noticeLocked(run, peer, text)
     }
 
     private fun send(socket: DatagramSocket, target: SocketAddress, bytes: ByteArray) {

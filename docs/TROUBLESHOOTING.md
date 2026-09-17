@@ -640,7 +640,11 @@ Guía completa: [SETUP-SWITCH.md](SETUP-SWITCH.md).
 
 ## RetroArch
 
-- **No aparece RetroArch en el móvil:** el receptor del PC tiene que ser de esta versión (anuncia `retroarch` en sus modos); el servidor Android no lo ofrece.
+- **No aparece RetroArch en el móvil:** tanto el mando como el receptor (PC o servidor Android) deben incluir esta integración. El receptor lo anuncia como `retroarch` en sus modos; los servidores Android anteriores no lo ofrecen.
+- **Servidor Android: «Esperando a que RetroArch responda»:** RetroArch solo atiende la red mientras está delante. Activa Comandos de red y RetroPad de red en Ajustes → Red, con «Mostrar ajustes avanzados» activado, y guarda en Menú principal → Archivo de configuración → Guardar configuración actual. Sal de RetroArch y vuelve a abrirlo. Android no deja que PepoMote toque `Android/data`. Ver [ANDROID-SERVER.md](ANDROID-SERVER.md#retroarch).
+- **Servidor Android: conexión comprobada pero los botones no funcionan:** la respuesta comprueba los comandos de red; activa también RetroPad de red y RetroPad de red del usuario 1 (y los demás jugadores) en RetroArch. Puedes abrir «Ver la guía otra vez» desde el panel.
+- **Servidor Android: el móvil no cambia al mando de la consola:** enlaza la carpeta RetroArch (Servidor → RetroArch → Elegir la carpeta RetroArch). Si RetroArch no tiene acceso a todos los archivos, guarda su historial en `Android/data`, que no se puede leer: elige la consola a mano en el móvil.
+- **Servidor Android: no hay Pistola:** el servidor Android no tiene ratón que mover; el selector del móvil no la ofrece y el servidor, si se la piden, mantiene el mando anterior.
 - **«Esperando a RetroArch» en el receptor:** RetroArch no contesta a los comandos de red (UDP 55355). Ciérralo, pulsa **Configurar RetroArch** y ábrelo; en RetroArch, Ajustes → Red → Comandos de red debe estar activado, y Ajustes → Entrada → Mando en red también (PepoMote pone ambos en `retroarch.cfg`, pero solo con RetroArch cerrado, porque lo reescribe al salir).
 - **«Abierto pero no responde a los comandos de red»:** el mando funciona en modo degradado (sin sincronizar con los fotogramas). Activa los comandos de red y reinicia RetroArch.
 - **RetroArch se cierra solo al poco de enlazar:** en la 1.22.2 y anteriores el comando de red `GET_STATUS` cierra RetroArch si el núcleo cargado no está en su lista de información (fallo de RetroArch corregido en enero de 2026). PepoMote solo pregunta el estado a versiones posteriores; si otro programa usa la interfaz de comandos, es él.

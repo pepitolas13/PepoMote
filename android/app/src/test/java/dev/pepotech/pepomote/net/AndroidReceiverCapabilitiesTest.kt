@@ -7,7 +7,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class AndroidReceiverCapabilitiesTest {
-    private fun handshake(platform: String?): ControlClient.Ok {
+    private fun handshake(platform: String?, modes: String = "\"pointer\",\"dolphin\",\"cemu\",\"switch\""): ControlClient.Ok {
         val replies = LinkedBlockingQueue<ControlClient.Ok>()
         ServerSocket(0).use { server ->
             server.soTimeout = 4000
@@ -26,7 +26,7 @@ class AndroidReceiverCapabilitiesTest {
                     socket.soTimeout = 4000
                     assertTrue(socket.getInputStream().bufferedReader().readLine().contains("hello"))
                     val identity = platform?.let { "\"platform\":\"$it\"," }.orEmpty()
-                    socket.getOutputStream().write(("""{"m":"ok",${identity}"session_id":17,"mode":"dolphin","modes":["pointer","dolphin","cemu","switch"],"text_input":false,"pair_token":"permanent-token"}""" + "\n").toByteArray())
+                    socket.getOutputStream().write(("""{"m":"ok",${identity}"session_id":17,"mode":"dolphin","modes":[$modes],"text_input":false,"pair_token":"permanent-token"}""" + "\n").toByteArray())
                     socket.getOutputStream().flush()
                     return replies.poll(3, TimeUnit.SECONDS) ?: error("No handshake response")
                 }
@@ -36,11 +36,23 @@ class AndroidReceiverCapabilitiesTest {
 
     @Test fun androidReceiverNeverEnablesWiiU() {
         val ok = handshake("android")
-        assertFalse("Android receivers only support Dolphin and Eden", ok.supportsCemu)
+        assertFalse("el servidor Android no ofrece Wii U", ok.supportsCemu)
+        assertFalse("un servidor Android anterior no anuncia RetroArch", ok.supportsRetroArch)
         assertTrue(ok.supportsSwitch)
         assertEquals(ReceiverCapabilities.ANDROID, ok.platform)
         assertFalse(ok.textInput)
         assertEquals("permanent-token", ok.pairToken)
+    }
+
+    @Test fun androidServerOffersRetroArchOnlyWhenItAnnouncesIt() {
+        val ok = handshake("android", "\"dolphin\",\"switch\",\"retroarch\"")
+        assertTrue(ok.supportsRetroArch)
+        assertFalse(ok.supportsCemu)
+        assertEquals(listOf("dolphin", "switch", "retroarch"), ReceiverCapabilities.modes("android", true, true, true))
+        assertEquals(listOf("dolphin", "switch"), ReceiverCapabilities.modes("android", true, true, false))
+        assertEquals("retroarch", ReceiverCapabilities.select("retroarch", "dolphin", "android", false, true, true))
+        assertEquals("dolphin", ReceiverCapabilities.select("retroarch", "dolphin", "android", false, true, false))
+        assertEquals("dolphin", ReceiverCapabilities.select("pointer", "dolphin", "android", false, true, true))
     }
 
     @Test fun existingPcReceiverKeepsItsModes() {

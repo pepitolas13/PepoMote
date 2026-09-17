@@ -25,6 +25,10 @@
         <package android:name="dev.legacy.eden_emulator.nightly" />
         <package android:name="com.miHoYo.Yuanshen" />
         <package android:name="com.miHoYo.Yuanshen.nightly" />
+        <!-- RetroArch: retroarch.com de 64 bits, Google Play y 32 bits -->
+        <package android:name="com.retroarch.aarch64" />
+        <package android:name="com.retroarch" />
+        <package android:name="com.retroarch.ra32" />
     </queries>
 
     <application

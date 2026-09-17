@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.zip.CRC32
 
-enum class ReceiverMode(val wire: String) { Dolphin("dolphin"), Eden("switch") }
+enum class ReceiverMode(val wire: String) { Dolphin("dolphin"), Eden("switch"), RetroArch("retroarch") }
 
 internal data class ReceiverInput(
     val sessionId: Int, val seq: Int, val tSensorUs: Long,

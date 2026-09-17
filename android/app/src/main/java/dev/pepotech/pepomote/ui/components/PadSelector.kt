@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.pepotech.pepomote.control.RetroLayouts
+import dev.pepotech.pepomote.net.ReceiverCapabilities
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.theme.PepoColors
@@ -199,11 +200,13 @@ private fun RetroPadSelector(link: UiLink.Connected, compact: Boolean, help: Str
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    for ((pad, label) in listOf(
-                        LinkState.PAD_RETROPAD to layoutName,
-                        LinkState.PAD_NES to stringResource(R.string.nes_pad),
-                        LinkState.PAD_GUN to stringResource(R.string.light_gun)
-                    )) {
+                    val pads = buildList {
+                        add(LinkState.PAD_RETROPAD to layoutName)
+                        add(LinkState.PAD_NES to stringResource(R.string.nes_pad))
+                        // La pistola mueve el ratón del PC: el servidor Android no tiene
+                        if (link.platform != ReceiverCapabilities.ANDROID) add(LinkState.PAD_GUN to stringResource(R.string.light_gun))
+                    }
+                    for ((pad, label) in pads) {
                         Segment(
                             label = label,
                             selected = link.pad == pad,

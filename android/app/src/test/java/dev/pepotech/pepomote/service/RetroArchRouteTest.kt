@@ -8,11 +8,15 @@ class RetroArchRouteTest {
     private fun link(pad: String = "retropad", mode: String = "retroarch") =
         UiLink.Connected("PC", mode, null, 0f, supportsCemu = true, supportsSwitch = true, supportsRetroArch = true, pad = pad)
 
-    @Test fun retroarchIsOfferedOnlyByPcReceiversThatAnnounceIt() {
+    @Test fun retroarchSeOfreceEnPcYAndroidCuandoLoAnuncian() {
         assertEquals(listOf("pointer", "dolphin", "cemu", "switch", "retroarch"), Route.availableModes(link()))
         assertEquals(listOf("pointer", "dolphin", "cemu", "switch"), Route.availableModes(link().copy(supportsRetroArch = false)))
-        assertEquals(listOf("dolphin", "switch"), ReceiverCapabilities.modes(ReceiverCapabilities.ANDROID, true, true, true))
-        assertEquals("dolphin", ReceiverCapabilities.select("retroarch", "dolphin", ReceiverCapabilities.ANDROID, false, true, true))
+        val android = link().copy(platform = ReceiverCapabilities.ANDROID)
+        assertEquals(listOf("dolphin", "switch", "retroarch"), Route.availableModes(android))
+        assertEquals(listOf("dolphin", "switch"), Route.availableModes(android.copy(supportsRetroArch = false)))
+        assertEquals(listOf("dolphin", "switch", "retroarch"), ReceiverCapabilities.modes(ReceiverCapabilities.ANDROID, true, true, true))
+        assertEquals("retroarch", ReceiverCapabilities.select("retroarch", "dolphin", ReceiverCapabilities.ANDROID, false, true, true))
+        assertEquals("dolphin", ReceiverCapabilities.select("retroarch", "dolphin", ReceiverCapabilities.ANDROID, false, true, false))
         assertEquals("retroarch", ReceiverCapabilities.select("retroarch", "pointer", ReceiverCapabilities.DESKTOP, false, false, true))
         assertEquals(emptyList<String>(), Route.availableModes(link().copy(slot = 1)))
     }

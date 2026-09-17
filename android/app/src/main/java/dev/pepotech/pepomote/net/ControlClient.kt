@@ -152,7 +152,7 @@ class ControlClient(
                         confirmedMode = msg.optString("mode", "pointer")
                         if (confirmedPlatform == ReceiverCapabilities.ANDROID) {
                             confirmedMode = ReceiverCapabilities.select(null, confirmedMode, confirmedPlatform,
-                                false, supportsMode(msg, "switch"))
+                                false, supportsMode(msg, "switch"), supportsMode(msg, "retroarch"))
                         }
                         callbacks.onOk(
                             Ok(
@@ -187,7 +187,7 @@ class ControlClient(
                     "pong" -> Unit
                     "mode" -> {
                         val received = msg.optString("mode", "pointer")
-                        if (confirmedPlatform != ReceiverCapabilities.ANDROID || received in listOf("dolphin", "switch")) {
+                        if (confirmedPlatform != ReceiverCapabilities.ANDROID || received in listOf("dolphin", "switch", "retroarch")) {
                             confirmedMode = received
                         }
                         callbacks.onModeChanged(confirmedMode, msg.optString("by") == "pc")
@@ -312,8 +312,9 @@ class ControlClient(
     private companion object {
         /** `ok.modes` contiene "cemu" (un receptor antiguo no manda `modes`). */
         fun supportsMode(ok: JSONObject, mode: String): Boolean {
+            // El servidor Android puede anunciar Dolphin, Eden y RetroArch; nunca puntero ni Wii U.
             if (ReceiverCapabilities.platform(ok.optString("platform")) == ReceiverCapabilities.ANDROID &&
-                mode !in listOf("dolphin", "switch")) return false
+                mode !in listOf("dolphin", "switch", "retroarch")) return false
             val modes = ok.optJSONArray("modes") ?: return false
             for (i in 0 until modes.length()) {
                 if (modes.optString(i) == mode) return true

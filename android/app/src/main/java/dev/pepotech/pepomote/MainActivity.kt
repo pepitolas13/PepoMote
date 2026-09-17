@@ -163,8 +163,9 @@ class MainActivity : ComponentActivity() {
      */
     internal fun openController(mode: String, dolphinOnly: Boolean) {
         val androidReceiver = PairStore.load(this)?.platform == ReceiverCapabilities.ANDROID
+        // RetroArch se pide con optimismo: el ok del servidor Android decide si lo tiene
         val requested = if (androidReceiver) ReceiverCapabilities.select(mode, LinkState.MODE_DOLPHIN,
-            ReceiverCapabilities.ANDROID, false, true) else mode
+            ReceiverCapabilities.ANDROID, false, true, true) else mode
         controllerDolphinOnly = dolphinOnly && !androidReceiver
         linkRole = LinkState.ROLE_WIIMOTE
         when {
@@ -410,7 +411,7 @@ class MainActivity : ComponentActivity() {
         controllerDolphinOnly = false
         // Saved PC shortcuts and pending Nunchuk requests cannot leak into an Android session.
         LinkState.pendingMode = LinkState.pendingMode?.takeIf {
-            it == LinkState.MODE_DOLPHIN || it == LinkState.MODE_SWITCH
+            it == LinkState.MODE_DOLPHIN || it == LinkState.MODE_SWITCH || it == LinkState.MODE_RETROARCH
         }
         LinkState.clearIntent()
     }

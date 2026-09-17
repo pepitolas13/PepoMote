@@ -12,8 +12,8 @@ object ReceiverCapabilities {
         add("dolphin")
         if (platform != ANDROID && supportsCemu) add("cemu")
         if (supportsSwitch) add("switch")
-        // RetroArch: solo el receptor del PC (el servidor Android no lo ofrece)
-        if (platform != ANDROID && supportsRetroArch) add("retroarch")
+        // RetroArch: lo anuncian en ok.modes tanto el receptor del PC como el servidor Android.
+        if (supportsRetroArch) add("retroarch")
     }
 
     /** A saved PC preference must not open a desktop-only layout on Android. */

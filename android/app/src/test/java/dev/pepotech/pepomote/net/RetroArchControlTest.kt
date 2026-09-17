@@ -84,7 +84,7 @@ class RetroArchControlTest {
         }
     }
 
-    @Test fun androidReceiversNeverAnnounceRetroArch() {
+    @Test fun servidorAndroidAnunciaRetroArchSiLoSoporta() {
         val ok = LinkedBlockingQueue<ControlClient.Ok>()
         ServerSocket(0).use { listener ->
             listener.soTimeout = 4000
@@ -104,10 +104,20 @@ class RetroArchControlTest {
                     val reader = socket.getInputStream().bufferedReader()
                     val writer = socket.getOutputStream().bufferedWriter()
                     reader.readLine()
-                    writer.write("""{"m":"ok","session_id":1,"mode":"dolphin","platform":"android","modes":["dolphin","switch","retroarch"]}"""); writer.newLine(); writer.flush()
+                    writer.write("""{"m":"ok","session_id":1,"mode":"retroarch","platform":"android","modes":["dolphin","switch","retroarch"],"pad":"retropad"}"""); writer.newLine(); writer.flush()
                     val confirmed = ok.poll(3, TimeUnit.SECONDS) ?: error("no ok")
-                    assertFalse(confirmed.supportsRetroArch)
+                    assertEquals(ReceiverCapabilities.ANDROID, confirmed.platform)
+                    assertEquals("retroarch", confirmed.mode)
+                    assertEquals("retropad", confirmed.pad)
+                    assertTrue(confirmed.supportsRetroArch)
                     assertTrue(confirmed.supportsSwitch)
+                    assertFalse(confirmed.supportsCemu)
+                    // Un servidor Android anterior conserva Dolphin y Eden sin ofrecer RetroArch.
+                    writer.write("""{"m":"ok","session_id":2,"mode":"dolphin","platform":"android","modes":["dolphin","switch"]}"""); writer.newLine(); writer.flush()
+                    val legacy = ok.poll(3, TimeUnit.SECONDS) ?: error("sin respuesta del servidor anterior")
+                    assertFalse(legacy.supportsRetroArch)
+                    assertTrue(legacy.supportsSwitch)
+                    assertEquals("dolphin", legacy.mode)
                 }
             } finally { client.close() }
         }
