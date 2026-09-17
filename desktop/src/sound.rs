@@ -3,7 +3,7 @@
 //! Aislados del resto: el audio del sistema falla de mil maneras (sin
 //! dispositivo, sin plugin ALSA de PipeWire, o cpal entrando en pánico en su
 //! propio hilo con ciertos drivers) y nada de eso puede tocar al receptor.
-//! Cada chime va en su hilo dentro de `catch_unwind`, con espera por tiempo
+//! Las campanitas comparten un hilo persistente dentro de `catch_unwind`, con espera por tiempo
 //! (nunca `sleep_until_end`: si el hilo de audio murió esperaríamos para
 //! siempre) y un pánico desactiva el sonido para el resto de la sesión.
 
@@ -13,7 +13,7 @@ use std::any::Any;
 use std::mem::ManuallyDrop;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::{mpsc, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Un pánico del audio (o un hilo colgado): sin más chimes en esta sesión.
@@ -25,6 +25,12 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 /// Desde cuándo (ms de reloj propio) está ocupado.
 static BUSY_SINCE_MS: AtomicU64 = AtomicU64::new(0);
 static ORIGIN: OnceLock<Instant> = OnceLock::new();
+static WORKER: OnceLock<Option<mpsc::SyncSender<Chime>>> = OnceLock::new();
+
+struct Chime {
+    what: &'static str,
+    notes: Vec<(f32, u64)>,
+}
 
 /// Margen tras la última nota antes de cerrar el dispositivo.
 const NOTE_MARGIN: Duration = Duration::from_millis(150);
@@ -65,7 +71,8 @@ pub fn disabled() -> bool {
 }
 
 /// Abre y cierra la salida por defecto sin sonar (para `--diag`; llamar
-/// dentro de `catch_unwind`).
+/// dentro de `catch_unwind`). Solo en el proceso de diagnóstico, que termina
+/// antes de arrancar el receptor y su trabajador de audio.
 pub fn probe() -> Result<(), String> {
     play_blocking(&[])
 }
@@ -91,16 +98,39 @@ fn play_notes(what: &'static str, notes: Vec<(f32, u64)>) {
         return; // se pierde este chime; jamás se apilan hilos
     }
     BUSY_SINCE_MS.store(elapsed_ms(), Ordering::Relaxed);
-    let spawned = std::thread::Builder::new()
-        .name("pmp-sound".into())
-        .spawn(move || {
-            let r = catch_unwind(AssertUnwindSafe(|| play_blocking(&notes)));
-            note_outcome(what, r);
-            BUSY.store(false, Ordering::Release);
-        });
-    if spawned.is_err() {
+    let worker = WORKER.get_or_init(|| match start_worker(play_blocking) {
+        Ok((sender, _thread)) => Some(sender), // el hilo queda vivo, sin join al cerrar
+        Err(error) => {
+            disable(&format!("no se pudo crear el hilo de audio: {error}"));
+            None
+        }
+    });
+    if !worker.as_ref().is_some_and(|sender| sender.try_send(Chime { what, notes }).is_ok()) {
         BUSY.store(false, Ordering::Release);
     }
+}
+
+/// CPAL guarda un enumerador COM global ligado al primer hilo que lo usa.
+/// Ese hilo debe seguir vivo entre campanitas, incluso si no hay dispositivo:
+/// https://github.com/RustAudio/cpal/issues/1302
+/// El Sender estático conserva el trabajador durante toda la vida del receptor.
+fn start_worker<F>(mut play: F) -> std::io::Result<(mpsc::SyncSender<Chime>, std::thread::JoinHandle<()>)>
+where
+    F: FnMut(&[(f32, u64)]) -> Result<(), String> + Send + 'static,
+{
+    let (sender, receiver) = mpsc::sync_channel::<Chime>(1);
+    let thread = std::thread::Builder::new()
+        .name("pmp-sound".into())
+        .spawn(move || {
+            while let Ok(chime) = receiver.recv() {
+                if !disabled() {
+                    let r = catch_unwind(AssertUnwindSafe(|| play(&chime.notes)));
+                    note_outcome(chime.what, r);
+                }
+                BUSY.store(false, Ordering::Release);
+            }
+        })?;
+    Ok((sender, thread))
 }
 
 /// Reproduce y espera por tiempo. Stream y sink van en `ManuallyDrop`: si
@@ -230,6 +260,31 @@ mod tests {
         DISABLED.store(true, Ordering::Relaxed);
         play_notes("prueba", CONNECT.to_vec());
         assert!(!BUSY.load(Ordering::Relaxed), "con el sonido desactivado no se ocupa nada");
+        reset();
+    }
+
+    #[test]
+    fn conserva_el_hilo_de_audio_entre_campanitas_aunque_no_haya_dispositivo() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let (seen, received) = mpsc::channel();
+        let mut calls = 0;
+        let (worker, thread) = start_worker(move |_| {
+            calls += 1;
+            seen.send(std::thread::current().id()).unwrap();
+            if calls == 1 { Err("sin dispositivo".into()) } else { Ok(()) }
+        }).unwrap();
+        worker.send(Chime { what: "conexión", notes: CONNECT.to_vec() }).unwrap();
+        let first = received.recv_timeout(Duration::from_secs(2)).unwrap();
+        // La primera campanita ya ha empezado: la segunda es otro trabajo,
+        // como un segundo móvil que entra después del primero.
+        worker.send(Chime { what: "desconexión", notes: DISCONNECT.to_vec() }).unwrap();
+        let second = received.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        thread.join().unwrap(); // solo el trabajador falso de esta prueba
+        assert_eq!(first, second, "COM debe pertenecer al mismo hilo vivo");
+        assert!(!disabled(), "se puede volver a probar tras conectar una salida de audio");
+        assert!(ERROR_LOGGED.load(Ordering::Relaxed));
         reset();
     }
 
