@@ -53,10 +53,10 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private func connected(mode: String, pad: String = LinkState.padGamepad, role: String = LinkState.roleWiimote, slot: Int = 0) -> UiLink {
-        .connected(ConnectedLink(pcName: "SALON", mode: mode, rttMs: 12, sensorHz: 100, slot: slot, role: role, player: slot + 1, supportsCemu: true, pad: pad, supportsSwitch: true))
+        .connected(ConnectedLink(pcName: "SALON", mode: mode, rttMs: 12, sensorHz: 100, slot: slot, role: role, player: slot + 1, supportsCemu: true, pad: pad, supportsSwitch: true, supportsRetroArch: true))
     }
 
-    private func shoot<V: View>(_ view: V, _ name: String, _ size: CGSize, minBytes: Int = 10_000) throws {
+    private func shoot<V: View>(_ view: V, _ name: String, _ size: CGSize, minBytes: Int = 10_000, settleSeconds: Double = 0.15) throws {
         guard let dir else { return }
         let content = view
             .environmentObject(AppModel.shared)
@@ -75,7 +75,7 @@ final class ScreenshotTests: XCTestCase {
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
         // una vuelta del run loop: las rejillas perezosas crean sus celdas
-        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        RunLoop.main.run(until: Date().addingTimeInterval(settleSeconds))
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
         let image = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
@@ -157,16 +157,28 @@ final class ScreenshotTests: XCTestCase {
     /// RetroArch: el mando de cada consola (NES, Mega Drive, N64, PlayStation) y el RetroPad completo.
     func testRetroArchConsolePads() throws {
         AppModel.shared.gamePadSide = .left
-        let size = CGSize(width: 852, height: 393)
-        for (console, title) in [("nes", "Alter Ego"), ("md", "Cave Story"), ("n64", "Mario 64"), ("psx", "Crash")] {
-            if case .connected(var c) = connected(mode: LinkState.modeRetroArch, pad: LinkState.padRetroPad) {
-                c.game = RetroGame(console: console, system: "", core: "core", title: title, path: "/roms/\(title).zip")
-                LinkState.shared.publish(.connected(c))
+        let state = LinkState.shared
+        state.clearIntent()
+        for (device, size) in [
+            ("iphone-16", CGSize(width: 852, height: 393)),
+            ("iphone-se-safe", CGSize(width: 548, height: 320)),
+            ("ipad-mini", CGSize(width: 1133, height: 744)),
+        ] {
+            for (console, title) in [("nes", "Alter Ego"), ("md", "Cave Story"), ("n64", "Mario 64"), ("psx", "Crash"), ("retropad", "")] {
+                if case .connected(var c) = connected(mode: LinkState.modeRetroArch, pad: LinkState.padRetroPad) {
+                    c.game = title.isEmpty ? nil : RetroGame(console: console, system: "", core: "core", title: title, path: "/roms/\(title).zip")
+                    state.publish(.connected(c))
+                }
+                // Una imagen con píxeles no basta: tiene que ser el mando
+                // operativo de esta consola, sin el aviso «Activando Wii U».
+                XCTAssertTrue(Route.isRetroPad(state.link))
+                XCTAssertTrue(Route.extendedOperative(state.link, state.intent))
+                XCTAssertEqual(Route.wantedMode(state.link, state.intent), LinkState.modeRetroArch)
+                XCTAssertEqual(state.effectiveRetroLayout(state.link.connected), console)
+                try shoot(GamePadScreen(onDisconnect: {}), "gamepad-retro-\(console)-\(device)", size,
+                          settleSeconds: HeaderCollapse.autoSeconds + 0.3)
             }
-            try shoot(GamePadScreen(onDisconnect: {}), "gamepad-retro-\(console)", size)
         }
-        LinkState.shared.publish(connected(mode: LinkState.modeRetroArch, pad: LinkState.padRetroPad))
-        try shoot(GamePadScreen(onDisconnect: {}), "gamepad-retro-retropad", size)
     }
 
     func testSwitchControllers() throws {
