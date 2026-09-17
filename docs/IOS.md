@@ -1,10 +1,17 @@
 # PepoMote en iPhone y iPad
 
 La app de iOS/iPadOS es el mismo emisor que la de Android: puntero, mando de
-Wii para Dolphin, GamePad de Wii U para Cemu (con doble pantalla), mandos de Switch para Eden, Nunchuk,
+Wii para Dolphin, GamePad de Wii U para Cemu (con doble pantalla), Pro Controller para Eden, mandos por consola para RetroArch, Nunchuk,
 varios PCs, reconexión automática, español/inglés y tema claro/oscuro.
 Funciona en iOS/iPadOS **15 o superior** (desde iPhone 7 hasta los iPad con
 iPadOS 26).
+
+Desde la 1.10 puedes usar RetroArch con el receptor en PC o con el
+[servidor Android](ANDROID-SERVER.md). Con Android se ofrecen los mandos por
+consola y el mando de lado; la pistola y el teclado solo aparecen con un
+receptor en PC que los admita. Una pistola elegida antes en PC se sustituye
+por el RetroPad durante la sesión Android, conservando la preferencia del
+PC. [Guía de RetroArch](SETUP-RETROARCH.md).
 
 No está en la App Store: se instala con tu propio Apple ID (el gratuito vale).
 Hay tres formas. **La que recomiendo personalmente es SideStore** (es la que
@@ -44,12 +51,14 @@ altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/do
 
 1. Instala el **receptor** en el PC como siempre (`PepoMote.exe` en Windows,
    el AppImage o el tar.gz en Linux, o el DMG en un Mac con chip Apple —beta,
-   ver [MACOS.md](MACOS.md)—): en su ventana verás el QR.
+   ver [MACOS.md](MACOS.md)—): en su ventana verás el QR. Para jugar a Dolphin,
+   Eden o RetroArch en otro Android, instala allí la APK y abre **Servidor**:
+   el iPhone/iPad se conecta escaneando su QR.
 2. En el iPhone/iPad, con iOS 16 o superior, activa el **modo Desarrollador**:
    Ajustes → Privacidad y seguridad → Modo Desarrollador → activar (pide
    reiniciar). Sin él, iOS no abre las apps instaladas fuera de la App Store.
    En iOS 15 no hace falta.
-3. Móvil y PC en la **misma Wi-Fi**.
+3. Mando y receptor en la **misma Wi-Fi**.
 
 ## Instalar con SideStore (mi recomendación: sin PC encendido)
 

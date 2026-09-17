@@ -169,7 +169,8 @@ final class LinkService {
         }
         // Preferencias separadas: el vocabulario de un modo no reemplaza al otro.
         link.sendPad = { [weak self] p in
-            guard let self, let mode = self.link.link.connected?.mode else { return }
+            guard let self, let current = self.link.link.connected, current.receiver.acceptsPad(p) else { return }
+            let mode = current.mode
             if mode == LinkState.modeSwitch, LinkState.validSwitchPad(p) { AppPrefs.switchPad = p }
             else if mode == LinkState.modeCemu, [LinkState.padGamepad, LinkState.padWiimote].contains(p) { AppPrefs.cemuPad = p }
             else if mode == LinkState.modeRetroArch, LinkState.validRetroPad(p) { AppPrefs.retroPad = p }
@@ -177,7 +178,10 @@ final class LinkService {
             ButtonState.shared.reset()
             self.control?.sendPad(p)
         }
-        link.sendText = { [weak self] t in self?.control?.sendText(t) }
+        link.sendText = { [weak self] t in
+            guard let self, self.link.link.connected?.receiver.textInput == true else { return }
+            self.control?.sendText(t)
+        }
         link.sendNunchuk = { [weak self] own in self?.control?.sendNunchuk(own) }
         link.sendScreenOnly = { [weak self] on in self?.control?.sendScreenOnly(on) }
         link.sendHotkey = { [weak self] name, down in
@@ -202,7 +206,8 @@ final class LinkService {
             ownNunchuk: ok.nunchuk == "own",
             screenOnly: ok.screenOnly,
             supportsSwitch: ok.supportsSwitch,
-            supportsRetroArch: ok.supportsRetroArch
+            supportsRetroArch: ok.supportsRetroArch,
+            receiver: ok.receiver
         )))
         if let m = link.pendingMode {
             link.pendingMode = nil
@@ -228,7 +233,8 @@ final class LinkService {
         else if mode == LinkState.modeCemu { control?.sendPad(AppPrefs.cemuPad) }
         else if mode == LinkState.modeRetroArch {
             // con la plantilla de consola que toca (solo cuenta siendo el RetroPad)
-            let pad = AppPrefs.retroPad
+            guard let receiver = link.link.connected?.receiver else { return }
+            let pad = receiver.restoredPad(AppPrefs.retroPad)
             let layout = link.wouldBeRetroLayout(link.link.connected)
             lastSentLayout = pad == LinkState.padRetroPad ? layout : nil
             control?.sendPad(pad, layout: layout)

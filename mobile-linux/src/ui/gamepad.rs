@@ -143,6 +143,9 @@ struct View<'a> {
     supports_cemu: bool,
     supports_switch: bool,
     supports_retroarch: bool,
+    supports_pointer: bool,
+    retro_pads: &'static [&'static str],
+    has_keyboard: bool,
     switch: bool,
     /// RetroArch: el mismo trazado que Switch con etiquetas de RetroPad
     /// (L2/R2, Select/Start, Menú, Rápido) y su selector de tres mandos.
@@ -336,6 +339,7 @@ impl GamePadUi {
                 supports_cemu,
                 supports_switch,
                 supports_retroarch,
+                receiver,
                 pad,
                 ..
             } => View {
@@ -349,6 +353,9 @@ impl GamePadUi {
                 supports_cemu: *supports_cemu,
                 supports_switch: *supports_switch,
                 supports_retroarch: *supports_retroarch,
+                supports_pointer: receiver.supports_pointer(),
+                retro_pads: receiver.retro_pads(),
+                has_keyboard: inp.status.has_keyboard(),
                 switch: inp.wanted_mode == "switch",
                 retro: inp.wanted_mode == "retroarch",
                 layout: if inp.wanted_mode == "retroarch" && pad == "retropad" { inp.layout } else { &pmp::retro::RETROPAD },
@@ -376,6 +383,9 @@ impl GamePadUi {
                 supports_cemu: false,
                 supports_switch: false,
                 supports_retroarch: false,
+                supports_pointer: false,
+                retro_pads: &[],
+                has_keyboard: false,
                 switch: inp.wanted_mode == "switch",
                 retro: inp.wanted_mode == "retroarch",
                 layout: if inp.wanted_mode == "retroarch" { inp.layout } else { &pmp::retro::RETROPAD },
@@ -467,7 +477,7 @@ impl GamePadUi {
             Rotation::Right => tr!("gp.rotate_right"),
         };
         self.chip(cv, place(66.0 * s), giro, chip_font, false, theme::text(), Chip::Rotate);
-        if matches!(v.mode, "cemu" | "switch" | "retroarch") {
+        if v.has_keyboard {
             // teclado del móvil para el teclado en pantalla de Cemu (GamePad y Pro) o de RetroArch
             self.chip(cv, place(64.0 * s), tr!("common.keyboard"), chip_font, false, theme::text(), Chip::Keyboard);
         }
@@ -485,7 +495,9 @@ impl GamePadUi {
                 self.chip(cv, place(58.0 * s), tr!("common.mode_cemu"), chip_font, on, theme::text(), Chip::Mode("cemu"));
             }
             self.chip(cv, place(66.0 * s), tr!("common.mode_dolphin"), chip_font, v.mode == "dolphin" && !v.optimistic, theme::text(), Chip::Mode("dolphin"));
-            self.chip(cv, place(66.0 * s), tr!("common.mode_pointer"), chip_font, v.mode == "pointer" && !v.optimistic, theme::text(), Chip::Mode("pointer"));
+            if v.supports_pointer {
+                self.chip(cv, place(66.0 * s), tr!("common.mode_pointer"), chip_font, v.mode == "pointer" && !v.optimistic, theme::text(), Chip::Mode("pointer"));
+            }
         }
         let title_font = FontId::proportional(13.0 * s);
         let kind = Self::kind(v);
@@ -597,14 +609,17 @@ impl GamePadUi {
         let gap = 4.0 * s;
         let font = 12.0 * s;
         let label = tr!("common.in_retroarch");
-        let choices = [(v.layout_name, "retropad"), (tr!("common.nes_pad"), "nes"), (tr!("common.light_gun"), "gun")];
+        let choices = v.retro_pads;
+        if choices.is_empty() { return 0.0; }
+        let n = choices.len() as f32;
         let label_w = cv.text_width(label, FontId::proportional(font)) + 8.0 * s;
         let available = r.width() - 12.0 * s - label_w;
-        let w = ((available - 2.0 * gap) / 3.0).min(96.0 * s);
-        let total = label_w + 3.0 * w + 2.0 * gap;
+        let w = ((available - (n - 1.0) * gap) / n).min(96.0 * s);
+        let total = label_w + n * w + (n - 1.0) * gap;
         let x = r.center().x - total / 2.0;
         cv.text(Pos2::new(x, y + h / 2.0), Align2::LEFT_CENTER, label, FontId::proportional(font), theme::text_dim());
-        for (i, (label, pad)) in choices.iter().enumerate() {
+        for (i, pad) in choices.iter().enumerate() {
+            let label = match *pad { "nes" => tr!("common.nes_pad"), "gun" => tr!("common.light_gun"), _ => v.layout_name };
             let rc = Rect::from_min_size(Pos2::new(x + label_w + i as f32 * (w + gap), y), Vec2::new(w, h));
             let seg = if v.pending == Some(*pad) { Seg::Pending } else if v.pad == *pad && v.pending.is_none() { Seg::On } else { Seg::Off };
             let size = font.min(font * (w - 10.0 * s) / cv.text_width(label, FontId::proportional(font)).max(1.0));
@@ -1005,7 +1020,7 @@ impl GamePadUi {
         let chip_font = 13.0 * s;
         let close = Rect::from_min_size(Pos2::new(r.left() + 8.0 * s, r.top() + 8.0 * s), Vec2::new(34.0 * s, chip_h));
         self.chip(cv, close, "✕", chip_font, false, theme::error(), Chip::Exit);
-        if keyboard && v.mode == "cemu" {
+        if keyboard && v.mode == "cemu" && v.has_keyboard {
             let kb = Rect::from_min_size(Pos2::new(r.right() - 8.0 * s - 64.0 * s, r.top() + 8.0 * s), Vec2::new(64.0 * s, chip_h));
             self.chip(cv, kb, tr!("common.keyboard"), chip_font, false, theme::text(), Chip::Keyboard);
         }
@@ -1241,16 +1256,16 @@ mod tests {
         Status::Connected {
             pc_name: "PC".into(), mode: "switch".into(), mode_by_pc: false,
             slot: 0, player: 1, role: crate::link::Role::Wiimote, rtt_ms: None,
-            supports_cemu: true, supports_switch: true, supports_retroarch: true, pad: pad.into(),
+            supports_cemu: true, supports_switch: true, supports_retroarch: true, receiver: crate::link::ReceiverCapabilities::default(), pad: pad.into(),
             notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None, game: None,
         }
     }
 
     fn retro_status(pad: &str) -> Status {
         match switch_status(pad) {
-            Status::Connected { pc_name, mode_by_pc, slot, player, role, rtt_ms, supports_cemu, supports_switch, supports_retroarch, notice, mode_seq, pad_seq, own_nunchuk, screen_only, .. } => Status::Connected {
+            Status::Connected { pc_name, mode_by_pc, slot, player, role, rtt_ms, supports_cemu, supports_switch, supports_retroarch, receiver, notice, mode_seq, pad_seq, own_nunchuk, screen_only, .. } => Status::Connected {
                 pc_name, mode: "retroarch".into(), mode_by_pc, slot, player, role, rtt_ms, supports_cemu, supports_switch, supports_retroarch,
-                pad: pad.into(), notice, mode_seq, pad_seq, own_nunchuk, screen_only, game: None,
+                pad: pad.into(), notice, mode_seq, pad_seq, own_nunchuk, screen_only, game: None, receiver,
             },
             other => other,
         }
@@ -1325,6 +1340,52 @@ mod tests {
                 });
             });
         });
+    }
+
+    #[test]
+    fn android_oculta_pistola_y_teclado_pero_conserva_nes_y_consolas() {
+        let mut status = retro_status("retropad");
+        let mut ui = GamePadUi::new();
+        let buttons = Buttons::new();
+        let size = Vec2::new(700.0, 370.0);
+        render_mode(&mut ui, &buttons, &status, size, "retroarch");
+        assert!(has(&ui, Target::Chip(Chip::Pad("gun"))));
+        assert!(has(&ui, Target::Chip(Chip::Keyboard)));
+        if let Status::Connected { receiver, .. } = &mut status {
+            *receiver = crate::link::ReceiverCapabilities::from_ok(&serde_json::json!({"platform":"android", "text_input":false}));
+        }
+        render_mode(&mut ui, &buttons, &status, size, "retroarch");
+        assert!(ui.active);
+        assert!(!has(&ui, Target::Chip(Chip::Pad("gun"))));
+        assert!(!has(&ui, Target::Chip(Chip::Keyboard)));
+        assert!(has(&ui, Target::Chip(Chip::Pad("nes"))));
+        assert!(has(&ui, Target::Chip(Chip::LayoutPicker)));
+        assert!(has(&ui, Target::Chip(Chip::Hotkey("save_state"))));
+    }
+
+    #[test]
+    fn android_oculta_puntero_del_selector_de_modos_y_pc_lo_conserva() {
+        let mut status = retro_status("retropad");
+        let mut ui = GamePadUi::new();
+        let buttons = Buttons::new();
+        let size = Vec2::new(700.0, 370.0);
+        render_mode(&mut ui, &buttons, &status, size, "retroarch");
+        assert!(has(&ui, Target::Chip(Chip::Mode("pointer"))));
+        if let Status::Connected { receiver, supports_cemu, .. } = &mut status {
+            *receiver = crate::link::ReceiverCapabilities::from_ok(&serde_json::json!({"platform":"android"}));
+            *supports_cemu = false;
+        }
+        render_mode(&mut ui, &buttons, &status, size, "retroarch");
+        assert!(!has(&ui, Target::Chip(Chip::Mode("pointer"))));
+        assert!(!has(&ui, Target::Chip(Chip::Mode("cemu"))));
+        for mode in ["dolphin", "switch", "retroarch"] {
+            assert!(has(&ui, Target::Chip(Chip::Mode(mode))));
+        }
+        if let Status::Connected { receiver, .. } = &mut status {
+            *receiver = crate::link::ReceiverCapabilities::default();
+        }
+        render_mode(&mut ui, &buttons, &status, size, "retroarch");
+        assert!(has(&ui, Target::Chip(Chip::Mode("pointer"))));
     }
 
     fn render_layout(gamepad: &mut GamePadUi, buttons: &Buttons, size: Vec2, layout: &'static pmp::retro::Layout, no_screen: bool) {

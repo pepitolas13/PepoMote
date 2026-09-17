@@ -72,6 +72,13 @@ usuarios de Mac tengan que volver a dar los permisos.
    genera `SHA256SUMS.txt` (incluida la fuente de AltStore) y prepara el Release
    como **borrador** con las notas guardadas. Todas las plataformas son
    obligatorias: si falta un paquete o falla un job, no se prepara la entrega.
+   Antes de compilar, el flujo comprueba que Android, iOS, los paquetes Rust
+   y sus archivos de bloqueo coinciden con el tag y que existen las notas.
+   Los trabajos ejecutan las pruebas del protocolo y de las apps, las pruebas
+   de todos los mandos en Windows y RetroArch en Linux, lint y firma/alineación de Android y los
+   tests de iOS en simulador. Los paquetes Rust usan `--locked` para conservar
+   las dependencias revisadas. Esto valida las compilaciones y las pruebas
+   automatizadas; no sustituye jugar en dispositivos reales.
 4. Revisa el borrador y descarga los paquetes para verificar sus huellas,
    versiones y firma de Android. Cuando todos estén correctos, publícalo con
    `gh release edit vX.Y.Z --draft=false --latest --title "PepoMote X.Y — título"`.

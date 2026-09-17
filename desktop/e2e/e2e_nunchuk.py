@@ -87,11 +87,14 @@ for seq in range(1, 120):
 check(got is not None, "DSU: PadData del pad 3 (Nunchuk) recibido")
 if got:
     check(got[21] == 2 and got[31] == 1, "DSU: pad 3 conectado")
-    check(list(got[40:44]) == [228, 78, 128, 128], f"DSU: stick LX/LY = 228/78 (got {list(got[40:44])})")
+    # Perfil Wii actual: RX=0 es el centinela «sin puntero IR». El Nunchuk
+    # separado no lleva puntero; sus dos ejes siguen siendo LX/LY.
+    check(list(got[40:44]) == [228, 78, 0, 128], f"DSU: stick LX/LY = 228/78, sin puntero IR (got {list(got[40:44])})")
     check(got[53] == 0xFF and got[52] == 0xFF, "DSU: C→L1 y Z→R1 analógicos")
     check(list(got[48:52]) == [0, 0, 0, 0], "DSU: A/B intactos (C/Z ya no son Cross/Circle)")
     check(got[37] & (3 << 2) == (3 << 2), "DSU: C/Z en el bitmask (L1/R1)")
-# 5) pad 0 (mando) sigue con stick neutro
+# 5) pad 0 no hereda el stick ni C/Z del Nunchuk. Sin Nunchuk propio,
+# LX transporta roll (192 = 0 grados) cuando hay puntero IR; RX/RY son IR.
 dsu0 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); dsu0.settimeout(1)
 dsu0.sendto(dsu_request(0), (HOST, DSU)); got0 = None
 for seq in range(120, 200):
@@ -101,7 +104,9 @@ for seq in range(120, 200):
     except socket.timeout:
         continue
     if d[:4] == b"DSUS" and d[20] == 0: got0 = d; break
-check(got0 is not None and list(got0[40:44]) == [128, 128, 128, 128], "DSU: pad 0 (mando) con sticks neutros")
+check(got0 is not None and list(got0[40:42]) == [192 if got0[42] != 0 else 128, 128]
+      and got0[52] == 0 and got0[53] == 0,
+      f"DSU: pad 0 conserva roll neutro y no hereda stick ni C/Z (got {list(got0[40:44]) if got0 else None})")
 # 6) Nunchuk en el mismo móvil: un tercer móvil, mando con "nunchuk":"own"
 s3, f3, ok3 = hello({"token": token, "nunchuk": "own", "name": "MandoNunchukE2E"})
 check(ok3.get("m") == "ok" and ok3.get("slot") == 1, f"mando+nunchuk: slot 1 ({ok3})")
@@ -123,7 +128,8 @@ for seq in range(1, 120):
     time.sleep(0.004)
 check(got1 is not None, "DSU: PadData del pad 1 (mando + Nunchuk) recibido")
 if got1:
-    check(list(got1[40:44]) == [228, 78, 128, 128], f"DSU: stick del Nunchuk en el pad del mando (got {list(got1[40:44])})")
+    # RX/RY contienen el puntero IR del mando, ver e2e_dolphin_ir.py.
+    check(list(got1[40:42]) == [228, 78], f"DSU: stick del Nunchuk en el pad del mando (got {list(got1[40:42])})")
     check(got1[49] == 0xFF and got1[53] == 0xFF and got1[52] == 0xFF, "DSU: A→Cross, C→L1 y Z→R1 distinguibles en el mismo pad")
 # 7) el mensaje nunchuk apaga y enciende el Nunchuk propio (eco)
 s3.sendall(b'{"m":"nunchuk","own":false}\n'); r = recv(f3, "nunchuk")

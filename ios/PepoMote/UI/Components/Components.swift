@@ -466,14 +466,17 @@ struct ModeChips: View {
     let supportsCemu: Bool
     var supportsSwitch = false
     var supportsRetroArch = false
+    var supportsPointer = true
     var compact = false
     /// Chips estrechos (iPhone): caben cuatro en una fila.
     var dense = false
 
     var body: some View {
         HStack(spacing: compact ? 6 : dense ? 8 : 10) {
-            ModeChip(label: tr("mode_pointer"), selected: current == LinkState.modePointer, compact: compact, dense: dense) {
-                LinkState.shared.requestMode(LinkState.modePointer)
+            if supportsPointer {
+                ModeChip(label: tr("mode_pointer"), selected: current == LinkState.modePointer, compact: compact, dense: dense) {
+                    LinkState.shared.requestMode(LinkState.modePointer)
+                }
             }
             ModeChip(label: tr("mode_dolphin"), selected: current == LinkState.modeDolphin, compact: compact, dense: dense) {
                 LinkState.shared.requestMode(LinkState.modeDolphin)
@@ -608,16 +611,23 @@ struct KeyboardDialog: View {
 /// Hoja que presenta el teclado de Cemu sobre la pantalla actual.
 struct KeyboardSheet: View {
     let onClose: () -> Void
+    @ObservedObject private var state = LinkState.shared
 
     var body: some View {
         ZStack {
             Pepo.background.ignoresSafeArea()
             VStack {
-                KeyboardDialog(onSend: { LinkState.shared.sendText?($0) }, onClose: onClose)
+                if state.link.connected?.hasKeyboard == true {
+                    KeyboardDialog(onSend: { LinkState.shared.sendText?($0) }, onClose: onClose)
+                }
                 Spacer()
             }
             .padding(.top, 12)
         }
+        .onChange(of: state.link.connected?.hasKeyboard) { available in
+            if available != true { onClose() }
+        }
+        .onAppear { if state.link.connected?.hasKeyboard != true { onClose() } }
     }
 }
 
@@ -645,6 +655,7 @@ struct PadSelector: View {
         }
         .onChange(of: link.pad) { _ in pending = nil }
         .onChange(of: link.mode) { _ in pending = nil }
+        .onChange(of: link.receiver) { _ in pending = nil }
     }
 
     /// «En RetroArch soy: [ RetroPad ] [ NES ] [ Pistola ]»: el mando apaisado
@@ -655,11 +666,9 @@ struct PadSelector: View {
         let prefixW: CGFloat = inlinePrefix ? 130 : 0
         let segmentsW = min(max(width - prefixW - 24, 200), compact ? 360 : 400)
         let layoutName = RetroLayouts.byId(state.wouldBeRetroLayout(link))?.name ?? tr("retropad")
-        let pads: [(String, String)] = [
-            (LinkState.padRetroPad, layoutName),
-            (LinkState.padNes, tr("nes_pad")),
-            (LinkState.padGun, tr("light_gun"))
-        ]
+        let pads: [(String, String)] = link.receiver.retroPads.map { pad in
+            (pad, pad == LinkState.padRetroPad ? layoutName : tr(pad == LinkState.padNes ? "nes_pad" : "light_gun"))
+        }
         return VStack(spacing: 2) {
             if !inlinePrefix {
                 Text(tr("in_retroarch"))

@@ -4,6 +4,12 @@ Pruebas de extremo a extremo contra un receptor REAL: TCP/UDP del protocolo
 PMP, cliente DSU como el de Dolphin/Cemu/Eden, y los archivos de configuración que
 escribe. Necesitan Python 3 (sin dependencias).
 
+En Windows, `python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe`
+ejecuta las cinco suites aisladas: RetroArch, Eden, Cemu, Nunchuk y puntero IR
+de Wii. Es la misma selección que usa la CI de Windows y la preparación de
+la release. Son comprobaciones con clientes/emuladores simulados por sockets;
+no sustituyen probar los juegos en cada dispositivo.
+
 Arranca un receptor de pruebas AISLADO (no toca tu configuración, ni Dolphin,
 ni Cemu ni Eden, y convive con el receptor normal):
 

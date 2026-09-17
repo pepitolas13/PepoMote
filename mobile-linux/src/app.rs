@@ -110,6 +110,10 @@ impl RequestedPads {
         match mode { "cemu" => Some(self.cemu), "switch" => Some(self.switch), "retroarch" => Some(self.retro), _ => None }
     }
 
+    fn for_receiver(&self, mode: &str, receiver: &link::ReceiverCapabilities) -> Option<&'static str> {
+        self.get(mode).map(|pad| receiver.restored_pad(pad))
+    }
+
     fn set(&mut self, mode: &str, pad: &'static str) {
         match mode {
             "cemu" if matches!(pad, "gamepad" | "wiimote") => self.cemu = pad,
@@ -168,10 +172,10 @@ fn seqs(status: &Status) -> (u32, u32) {
 /// 3. Nunchuk si ese es el papel (el del `ok`, o el pedido mientras conecta);
 /// 4. si no, el layout Wii.
 fn route(status: &Status, link_role: Role, intent: Intent) -> Screen {
-    if let Status::Connected { mode, role, pad, .. } = status {
+    if let Status::Connected { mode, role, pad, receiver, .. } = status {
         // RetroArch: solo el RetroPad es el apaisado de dos sticks; el mando
         // de NES y la pistola son el layout Wii de siempre
-        if *role == Role::Wiimote && (mode == "switch" || (mode == "cemu" && pad != "wiimote") || (mode == "retroarch" && pad == "retropad")) {
+        if *role == Role::Wiimote && (mode == "switch" || (mode == "cemu" && pad != "wiimote") || (mode == "retroarch" && receiver.restored_pad(pad) == "retropad")) {
             return Screen::GamePad;
         }
     }
@@ -230,6 +234,7 @@ fn settle(status: &Status, intent: Intent, now: Instant) -> (Intent, Option<&'st
 /// pasado `PAD_TIMEOUT` (PC antiguo: no contesta).
 fn settle_pad(status: &Status, req: Option<PadRequest>, now: Instant) -> Option<PadRequest> {
     let r = req?;
+    if !status.accepts_pad(r.pad) { return None; }
     match status {
         Status::Connected { pad_seq, .. } if *pad_seq > r.seq => None,
         Status::Connected { .. } if now.saturating_duration_since(r.since) > PAD_TIMEOUT => None,
@@ -555,14 +560,15 @@ impl MobileApp {
     }
 
     fn request_pad(&mut self, mode: &str, pad: &'static str) {
+        let Some(link) = &self.link else { return };
+        let status = link.status();
+        if !matches!(&status, Status::Connected { mode: current, .. } if current == mode) || !status.accepts_pad(pad) { return; }
         self.requested_pads.set(mode, pad);
         self.gamepad.release(&self.buttons);
         self.controller.release(&self.buttons);
-        if let Some(link) = &self.link {
-            let seq = seqs(&link.status()).1;
-            if matches!(link.status(), Status::Connected { mode: current, .. } if current == mode) { link.send_pad(pad); }
-            self.pad_pending = Some(PadRequest { pad, seq, since: Instant::now() });
-        }
+        let seq = seqs(&status).1;
+        link.send_pad(pad);
+        self.pad_pending = Some(PadRequest { pad, seq, since: Instant::now() });
     }
 
     /// `mode_seq` de la sesión vigente (0 si no la hay o aún conecta).
@@ -637,13 +643,14 @@ impl MobileApp {
     fn mode_has_keyboard(&self) -> bool {
         self.link
             .as_ref()
-            .is_some_and(|l| matches!(l.status(), Status::Connected { mode, .. } if matches!(mode.as_str(), "cemu" | "switch" | "retroarch")))
+            .is_some_and(|l| l.status().has_keyboard())
     }
 
     /// Abre el teclado para Cemu tapando la pantalla de juego: los dedos que
     /// hubiera se sueltan (sus toques ya no llegarán al mando), pero la
     /// pantalla no cambia, así los INPUT siguen saliendo igual.
     fn open_text_dialog(&mut self) {
+        if !self.mode_has_keyboard() { self.text_dialog = None; return; }
         self.gamepad.release(&self.buttons);
         self.controller.release(&self.buttons);
         self.text_dialog = Some(TextDialog::new());
@@ -752,7 +759,7 @@ impl MobileApp {
             }
             Status::Connecting | Status::Reconnecting { .. } | Status::Connected { .. } => {
                 let reconnecting = matches!(status, Status::Reconnecting { .. });
-                if let Status::Connected { mode, role, pad, .. } = &status {
+                if let Status::Connected { mode, role, pad, receiver, .. } = &status {
                     match mode.as_str() { "switch" => self.extended_mode = "switch", "cemu" => self.extended_mode = "cemu", "retroarch" => self.extended_mode = "retroarch", _ => {} }
                     let signature = format!("{mode}/{role:?}/{pad}");
                     if self.last_layout.as_ref() != Some(&signature) {
@@ -763,7 +770,7 @@ impl MobileApp {
                     if self.last_mode.as_ref() != Some(mode) {
                         self.pad_pending = None;
                         if *role == Role::Wiimote {
-                            if let Some(pad) = self.requested_pads.get(mode) { l.send_pad(pad); }
+                            if let Some(pad) = self.requested_pads.for_receiver(mode, receiver) { l.send_pad(pad); }
                         }
                         self.last_mode = Some(mode.clone());
                     }
@@ -1878,6 +1885,24 @@ mod tests {
     }
 
     #[test]
+    fn android_restaura_retropad_sin_borrar_la_pistola_del_pc() {
+        let mut choices = RequestedPads::default();
+        choices.set("retroarch", "gun");
+        let android = link::ReceiverCapabilities::from_ok(&serde_json::json!({"platform":"android"}));
+        assert_eq!(choices.for_receiver("retroarch", &android), Some("retropad"));
+        assert_eq!(choices.get("retroarch"), Some("gun"), "el fallback no es una elección del usuario");
+        assert_eq!(choices.for_receiver("switch", &android), Some("pro"));
+        assert_eq!(choices.for_receiver("retroarch", &link::ReceiverCapabilities::default()), Some("gun"));
+        let mut st = conn("retroarch", Role::Wiimote, "gun", 0, true, 1);
+        if let Status::Connected { receiver, .. } = &mut st { *receiver = android; }
+        let now = Instant::now();
+        let req = Some(PadRequest { pad: "gun", seq: 0, since: now });
+        assert_eq!(settle_pad(&st, req, now), None, "no queda petición imposible pendiente");
+        assert_eq!(route(&st, Role::Wiimote, Intent::None), Screen::GamePad);
+        assert_eq!(settle(&st, Intent::for_mode("retroarch", 0, now), now), (Intent::None, None));
+    }
+
+    #[test]
     fn switch_routes_every_controller_kind_to_gamepad() {
         for pad in ["pro", "joycons", "joycon_side", "joycon_r"] {
             let status = conn("switch", Role::Wiimote, pad, 0, true, 1);
@@ -1898,6 +1923,7 @@ mod tests {
             supports_cemu,
             supports_switch: true,
             supports_retroarch: true,
+            receiver: link::ReceiverCapabilities::default(),
             pad: pad.into(),
             notice: None,
             mode_seq,

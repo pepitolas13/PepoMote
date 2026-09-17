@@ -284,11 +284,11 @@ struct GamePadScreen: View {
                 containerPxH: Int((size.height * displayScale).rounded())
             )
             : m.screenRequest(scale: displayScale)
-        let onKeyboard: (() -> Void)? = operative ? { keyboardOpen = true } : nil
+        let onKeyboard: (() -> Void)? = operative && connected?.hasKeyboard == true ? { keyboardOpen = true } : nil
         return Group {
             if fullScreen {
                 FullScreenGamePadView(
-                    size: size, client: screenLink.client, showKeyboard: fullScreenKb,
+                    size: size, client: screenLink.client, showKeyboard: fullScreenKb && connected?.hasKeyboard == true,
                     onKeyboard: { keyboardOpen = true }, onDisconnect: onDisconnect
                 )
             } else {
@@ -691,7 +691,7 @@ private struct GamePadHeaderCard: View {
                 }
                 if c.slot == 0 {
                     // Mientras se espera el eco va marcado el modo pedido (es lo pedido)
-                    ModeChips(current: operative ? c.mode : wantedMode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, compact: true)
+                    ModeChips(current: operative ? c.mode : wantedMode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, supportsPointer: c.receiver.supportsPointer, compact: true)
                 }
                 // RetroArch: guardar/cargar estado, ranura, rebobinar, pausa…
                 if operative, Route.isRetroArch(link) {

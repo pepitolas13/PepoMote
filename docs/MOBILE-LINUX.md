@@ -82,6 +82,13 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
   `PepoMote-Mobile --autoconnect switch`. Requiere que el receptor anuncie
   compatibilidad con Switch; hasta su confirmación los controles quedan
   atenuados. Ver [Configurar Switch](SETUP-SWITCH.md).
+- **RetroArch**: el mando de la consola del juego cargado, el RetroPad completo
+  o el mando de Wii de lado, con accesos para guardar/cargar estado y otras
+  teclas rápidas. Funciona con un receptor en PC o con el
+  [servidor Android](ANDROID-SERVER.md). Pistola y teclado solo se ofrecen
+  con un receptor en PC que los admita; al pasar de PC a Android se restaura
+  un mando compatible sin borrar la elección del PC. Puedes elegir la
+  consola a mano si el receptor no la reconoce. Ver [Configurar RetroArch](SETUP-RETROARCH.md).
 - La cabecera enseña RTT y la frecuencia real del sensor.
 
 ## Sensores

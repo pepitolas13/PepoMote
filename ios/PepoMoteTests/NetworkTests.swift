@@ -147,6 +147,32 @@ final class FakeReceiver {
 }
 
 final class ControlClientTests: XCTestCase {
+    func testAndroidConservaCapacidadesYFiltraTextoYPistolaAntesDeEnviar() throws {
+        let rx = try FakeReceiver()
+        defer { rx.stop() }
+        let okE = expectation(description: "ok Android")
+        var got: ControlClient.Ok?
+        let client = ControlClient(
+            host: "127.0.0.1", port: Int(rx.port), token: "tok", deviceName: "iPad", deviceModel: "Apple iPad", role: "wiimote",
+            callbacks: ControlClient.Callbacks(
+                onOk: { got = $0; okE.fulfill() },
+                onError: { code, msg in XCTFail("error \(code): \(msg)") },
+                onModeChanged: { _, _ in }, onPadChanged: { _, _ in }, onNotice: { _ in }, onClosed: {}
+            )
+        )
+        defer { client.close() }
+        _ = try XCTUnwrap(rx.nextLine())
+        rx.sendLine("{\"m\":\"ok\",\"session_id\":1,\"mode\":\"retroarch\",\"modes\":[\"dolphin\",\"switch\",\"retroarch\"],\"pad\":\"retropad\",\"platform\":\"android\",\"text_input\":false}")
+        wait(for: [okE], timeout: 5)
+        XCTAssertEqual(got?.receiver.platform, "android")
+        XCTAssertEqual(got?.receiver.textInput, false)
+        XCTAssertEqual(got?.supportsRetroArch, true)
+        client.sendText("no se envía")
+        client.sendPad("gun")
+        client.sendPad("nes")
+        XCTAssertEqual(rx.nextLine(), "{\"m\":\"pad\",\"pad\":\"nes\"}")
+    }
+
     func testHelloOkModoAvisoYCierre() throws {
         let rx = try FakeReceiver()
         defer { rx.stop() }

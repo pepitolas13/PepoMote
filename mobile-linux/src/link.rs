@@ -82,8 +82,10 @@ pub enum Status {
         /// El receptor anuncia `modes` con "cemu": sabe de Wii U (1.3+).
         supports_cemu: bool,
         supports_switch: bool,
-        /// El receptor anuncia `modes` con "retroarch" (receptor del PC con el mando en red).
+        /// El receptor anuncia `modes` con "retroarch" (mando en red de PC o Android).
         supports_retroarch: bool,
+        /// Confirmadas al conectar; los ecos de modo y mando no las reemplazan.
+        receiver: ReceiverCapabilities,
         /// Tipo de mando efectivo: "gamepad", "pro" o "wiimote" en Wii U; "pro" en
         /// Switch; "retropad", "nes" o "gun" en RetroArch.
         pad: String,
@@ -135,7 +137,53 @@ pub fn parse_game(msg: &Value) -> Option<GameInfo> {
     (!g.title.is_empty() || !g.path.is_empty() || g.console.is_some()).then_some(g)
 }
 
+/// Capacidades del `ok`; un PC antiguo conserva teclado y pistola.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReceiverCapabilities {
+    pub platform: String,
+    pub text_input: bool,
+}
+
+impl Default for ReceiverCapabilities {
+    fn default() -> Self { Self { platform: "desktop".into(), text_input: true } }
+}
+
+impl ReceiverCapabilities {
+    pub fn from_ok(ok: &Value) -> Self {
+        let android = ok["platform"].as_str().is_some_and(|p| p.eq_ignore_ascii_case("android"));
+        Self {
+            platform: if android { "android" } else { "desktop" }.into(),
+            text_input: !android && ok["text_input"].as_bool().unwrap_or(true),
+        }
+    }
+
+    pub fn retro_pads(&self) -> &'static [&'static str] {
+        if self.platform == "android" { &["retropad", "nes"] } else { &["retropad", "nes", "gun"] }
+    }
+
+    pub fn supports_pointer(&self) -> bool {
+        self.platform != "android"
+    }
+
+    pub fn accepts_pad(&self, pad: &str) -> bool {
+        pad != "gun" || self.platform != "android"
+    }
+
+    /// Fallback de sesión: nunca reemplaza la elección guardada del PC.
+    pub fn restored_pad<'a>(&self, pad: &'a str) -> &'a str {
+        if self.accepts_pad(pad) { pad } else { "retropad" }
+    }
+}
+
 impl Status {
+    pub fn has_keyboard(&self) -> bool {
+        matches!(self, Self::Connected { mode, receiver, .. }
+            if receiver.text_input && matches!(mode.as_str(), "cemu" | "switch" | "retroarch"))
+    }
+
+    pub fn accepts_pad(&self, pad: &str) -> bool {
+        matches!(self, Self::Connected { receiver, .. } if receiver.accepts_pad(pad))
+    }
     /// Extended input is only enabled after the receiver confirms support.
     pub fn ext_confirmed(&self) -> bool {
         matches!(self, Self::Connected { mode, role: Role::Wiimote, pad, supports_cemu, supports_switch, supports_retroarch, .. }
@@ -232,17 +280,20 @@ impl Link {
     /// Elegir GamePad/Mando de Wii en Cemu, o Pro Controller en Switch. El receptor contesta con el eco del tipo efectivo; uno
     /// antiguo no contesta y no pasa nada.
     pub fn send_pad(&self, pad: &str) {
+        if !self.status().accepts_pad(pad) { return; }
         send_json(&self.writer, &json!({"m":"pad","pad":pad}));
     }
 
     /// RetroArch: el mismo `pad` con la plantilla de consola que se enseña
     /// (`layout`, solo para la ventana del receptor; uno antiguo lo ignora).
     pub fn send_pad_layout(&self, pad: &str, layout: &str) {
+        if !self.status().accepts_pad(pad) { return; }
         send_json(&self.writer, &pad_layout_message(pad, layout));
     }
 
     /// Teclado del móvil → teclado en pantalla de Cemu o Switch. Sin respuesta; un receptor antiguo lo ignora.
     pub fn send_text(&self, text: &str) {
+        if !matches!(self.status(), Status::Connected { receiver, .. } if receiver.text_input) { return; }
         send_json(&self.writer, &text_message(text));
     }
 
@@ -430,7 +481,8 @@ fn switch_pad_vocabulary_normalizes_to_pro() {
 fn pad_of(ok: &Value, slot: u8) -> String {
     if ok["mode"] == "switch" { return "pro".to_owned(); }
     if ok["mode"] == "retroarch" {
-        return ok["pad"].as_str().filter(|p| is_retro_pad(p)).unwrap_or("retropad").to_owned();
+        let pad = ok["pad"].as_str().filter(|p| is_retro_pad(p)).unwrap_or("retropad");
+        return ReceiverCapabilities::from_ok(ok).restored_pad(pad).to_owned();
     }
     valid_pad(ok["pad"].as_str())
         .unwrap_or(if ok["mode"] == "switch" || slot != 0 { "pro" } else { "gamepad" })
@@ -442,7 +494,7 @@ fn pad_of(ok: &Value, slot: u8) -> String {
 /// `nunchuk` (eco del Nunchuk propio) y `notice`. Cualquier otro se ignora
 /// (devuelve `false`).
 fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
-    let Status::Connected { mode, mode_by_pc, pad, player, notice, mode_seq, pad_seq, own_nunchuk, screen_only, game, .. } = st else {
+    let Status::Connected { mode, mode_by_pc, pad, player, notice, mode_seq, pad_seq, own_nunchuk, screen_only, game, receiver, .. } = st else {
         return false;
     };
     match msg["m"].as_str() {
@@ -459,6 +511,7 @@ fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
             if mode == "switch" { *pad = "pro".to_owned(); }
             // RetroArch solo conoce sus tres mandos; cualquier otro nombre es el RetroPad
             if mode == "retroarch" && !is_retro_pad(pad) { *pad = "retropad".to_owned(); }
+            if mode == "retroarch" { *pad = receiver.restored_pad(pad).to_owned(); }
             *mode_by_pc = msg["by"].as_str() == Some("pc");
             *mode_seq = mode_seq.wrapping_add(1);
             true
@@ -468,6 +521,7 @@ fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
                 *pad = "pro".to_owned();
             } else if mode == "retroarch" {
                 *pad = msg["pad"].as_str().filter(|p| is_retro_pad(p)).unwrap_or("retropad").to_owned();
+                *pad = receiver.restored_pad(pad).to_owned();
             } else if let Some(p) = valid_pad(msg["pad"].as_str()) {
                 *pad = p.to_owned();
             }
@@ -731,6 +785,7 @@ fn session(
                     supports_cemu: supports_cemu(&msg),
                     supports_switch: supports_switch(&msg),
                     supports_retroarch: supports_retroarch(&msg),
+                    receiver: ReceiverCapabilities::from_ok(&msg),
                     pad: pad_of(&msg, slot),
                     notice: None,
                     mode_seq: 0,
@@ -755,7 +810,8 @@ fn session(
                     send_json(&ctx.writer, &json!({"m":"mode","mode":m}));
                 }
                 if let Some(p) = restore_pad.take() {
-                    send_json(&ctx.writer, &json!({"m":"pad","pad":p}));
+                    let receiver = ReceiverCapabilities::from_ok(&msg);
+                    send_json(&ctx.writer, &json!({"m":"pad","pad":receiver.restored_pad(&p)}));
                 }
             }
             Some("err") => {
@@ -1474,6 +1530,7 @@ mod tests {
             supports_cemu: true,
             supports_switch: true,
             supports_retroarch: true,
+            receiver: ReceiverCapabilities::default(),
             pad: "gamepad".into(),
             notice: None,
             mode_seq: 0,
@@ -1512,6 +1569,93 @@ mod tests {
         // el mensaje de tecla rápida
         assert_eq!(hotkey_message("save_state", true), json!({"m":"hotkey","name":"save_state","down":true}));
         assert_eq!(hotkey_message("rewind", false)["down"], false);
+    }
+
+    #[test]
+    fn android_descarta_la_pistola_del_ok_sin_cambiar_los_mandos_de_pc() {
+        assert_eq!(pad_of(&json!({"mode":"retroarch", "pad":"gun", "platform":"android", "text_input":false}), 0), "retropad");
+        assert_eq!(pad_of(&json!({"mode":"retroarch", "pad":"nes", "platform":"android"}), 0), "nes");
+        assert_eq!(pad_of(&json!({"mode":"retroarch", "pad":"gun"}), 0), "gun");
+    }
+
+    #[test]
+    fn capacidades_del_receptor_respetan_android_y_el_pc_antiguo() {
+        for ok in [json!({}), json!({"platform":"desktop"}), json!({"platform":"otro", "text_input":"false"})] {
+            let caps = ReceiverCapabilities::from_ok(&ok);
+            assert_eq!(caps.platform, "desktop");
+            assert!(caps.text_input);
+            assert!(caps.supports_pointer());
+            assert_eq!(caps.retro_pads(), &["retropad", "nes", "gun"]);
+            assert_eq!(caps.restored_pad("gun"), "gun");
+        }
+        for ok in [json!({"platform":"android"}), json!({"platform":"ANDROID", "text_input":true})] {
+            let caps = ReceiverCapabilities::from_ok(&ok);
+            assert_eq!(caps.platform, "android");
+            assert!(!caps.text_input);
+            assert!(!caps.supports_pointer());
+            assert_eq!(caps.retro_pads(), &["retropad", "nes"]);
+            assert_eq!(caps.restored_pad("gun"), "retropad");
+            assert_eq!(caps.restored_pad("nes"), "nes");
+            assert_eq!(caps.restored_pad("pro"), "pro");
+        }
+        assert!(!ReceiverCapabilities::from_ok(&json!({"text_input":false})).text_input);
+    }
+
+    #[test]
+    fn android_filtra_texto_y_pistola_antes_de_enviar_al_socket() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let writer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (reader, _) = listener.accept().unwrap();
+        reader.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        let mut reader = BufReader::new(reader);
+        let mut st = connected();
+        if let Status::Connected { mode, receiver, .. } = &mut st {
+            *mode = "retroarch".into();
+            *receiver = ReceiverCapabilities::from_ok(&json!({"platform":"android"}));
+        }
+        let link = Link {
+            status: Arc::new(Mutex::new(st)), writer: Arc::new(Mutex::new(Some(writer))),
+            stop: Arc::new(AtomicBool::new(false)), sensor_hz: Arc::new(AtomicU32::new(0)),
+            endpoint: Arc::new(Mutex::new(None)),
+        };
+        link.send_text("no se envía");
+        link.send_pad("gun");
+        link.send_pad_layout("gun", "nes");
+        link.send_pad("nes");
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&line).unwrap(), json!({"m":"pad", "pad":"nes"}));
+        if let Status::Connected { mode, receiver, .. } = &mut *link.status.lock().unwrap() {
+            *mode = "pointer".into();
+            *receiver = ReceiverCapabilities::default();
+        }
+        link.send_text("Link");
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&line).unwrap(), json!({"m":"text", "text":"Link"}));
+    }
+
+    #[test]
+    fn modo_y_pad_conservan_las_capacidades_y_no_reactivan_pistola_ni_teclado() {
+        let mut st = connected();
+        let caps = ReceiverCapabilities::from_ok(&json!({"platform":"android", "text_input":false}));
+        if let Status::Connected { receiver, .. } = &mut st { *receiver = caps.clone(); }
+        let now = Instant::now();
+        for mode in ["retroarch", "switch", "dolphin", "retroarch"] {
+            assert!(apply_update(&mut st, &json!({"m":"mode", "mode":mode, "by":"pc"}), now));
+            assert!(matches!(&st, Status::Connected { receiver, .. } if receiver == &caps));
+            assert!(!st.has_keyboard());
+        }
+        assert!(apply_update(&mut st, &json!({"m":"pad", "pad":"gun", "player":2}), now));
+        assert!(matches!(&st, Status::Connected { receiver, pad, player: 2, pad_seq: 1, .. } if receiver == &caps && pad == "retropad"));
+        assert!(!st.accepts_pad("gun"));
+        assert!(st.accepts_pad("nes"));
+        assert!(st.ext_confirmed());
+        let mut pc = connected();
+        apply_update(&mut pc, &json!({"m":"mode", "mode":"retroarch"}), now);
+        assert!(pc.has_keyboard());
+        assert!(pc.accepts_pad("gun"));
+        assert!(!Status::Disconnected.has_keyboard());
     }
 
     #[test]

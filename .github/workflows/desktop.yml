@@ -25,9 +25,9 @@ jobs:
         run: cargo test --release
       # Receptor real aislado + RetroArch falso por sockets (desktop/e2e/README.md):
       # retroarch.cfg, un datagrama por fotograma, teclas rápidas, resincronización
-      - name: e2e RetroArch (receptor aislado)
+      - name: e2e de todos los mandos (receptor aislado)
         env:
-          PEPOMOTE_E2E_SUITES: e2e_retroarch
+          PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir
         run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe
       - uses: actions/upload-artifact@v4
         with:

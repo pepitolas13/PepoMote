@@ -25,8 +25,9 @@ final class ControlClient {
         /// El receptor conoce «solo pantalla» (`ok.screen_only`); nil = receptor anterior a 1.6.
         var screenOnly: Bool? = nil
         var supportsSwitch: Bool = false
-        /// `modes` contiene "retroarch": el receptor del PC entiende RetroArch.
+        /// `modes` contiene "retroarch": el receptor de PC o Android entiende RetroArch.
         var supportsRetroArch: Bool = false
+        var receiver = ReceiverCapabilities()
     }
 
     struct Callbacks {
@@ -65,6 +66,7 @@ final class ControlClient {
     private let defaultPort: Int
     private var buffer = Data()
     private var mode = LinkState.modePointer
+    private var receiver = ReceiverCapabilities()
     private var running = true
     private var closedNotified = false
     private var lastDataNs: UInt64 = DispatchTime.now().uptimeNanoseconds
@@ -181,6 +183,7 @@ final class ControlClient {
         switch m {
         case "ok":
             mode = obj["mode"] as? String ?? LinkState.modePointer
+            receiver = ReceiverCapabilities(ok: obj)
             let ok = Ok(
                 sessionId: UInt32(truncatingIfNeeded: (obj["session_id"] as? NSNumber)?.int64Value ?? 0),
                 udpPort: (obj["udp_port"] as? NSNumber)?.intValue ?? defaultPort,
@@ -194,7 +197,8 @@ final class ControlClient {
                 nunchuk: obj["nunchuk"] as? String ?? "none",
                 screenOnly: obj["screen_only"] as? Bool,
                 supportsSwitch: ControlClient.supportsSwitch(obj),
-                supportsRetroArch: ControlClient.supportsRetroArch(obj)
+                supportsRetroArch: ControlClient.supportsRetroArch(obj),
+                receiver: receiver
             )
             DispatchQueue.main.async { self.callbacks.onOk(ok) }
         case "err":
@@ -285,6 +289,7 @@ final class ControlClient {
     /// para la ventana del receptor) si se sabe.
     func sendPad(_ pad: String, layout: String? = nil) {
         queue.async {
+            guard self.receiver.acceptsPad(pad) else { return }
             var msg: [String: Any] = ["m": "pad", "pad": self.mode == LinkState.modeSwitch ? LinkState.padPro : pad]
             if let layout { msg["layout"] = layout }
             self.sendJson(msg)
@@ -303,7 +308,12 @@ final class ControlClient {
     func sendHotkey(_ name: String, down: Bool) { sendJson(["m": "hotkey", "name": name, "down": down]) }
 
     /// Texto para el teclado en pantalla del emulador de Wii U o Switch.
-    func sendText(_ text: String) { sendLine(TextInput.encode(text)) }
+    func sendText(_ text: String) {
+        queue.async {
+            guard self.receiver.textInput else { return }
+            self.sendLine(TextInput.encode(text))
+        }
+    }
 
     private func sendJson(_ obj: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]), let s = String(data: data, encoding: .utf8) else { return }

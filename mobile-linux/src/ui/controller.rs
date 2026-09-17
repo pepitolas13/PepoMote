@@ -126,12 +126,14 @@ pub fn hotkey_label(name: &str) -> &'static str {
 /// Selector segmentado «En RetroArch soy: [<consola>] [Wii de lado] [Pistola]».
 /// El primer segmento lleva el nombre de la plantilla que toca (`layout_name`);
 /// tocarlo estando ya elegido abre el selector de consola.
-pub fn retro_pad_selector(ui: &mut egui::Ui, pad: &str, pending: Option<&str>, layout_name: &str) -> Option<Action> {
+pub fn retro_pad_selector(ui: &mut egui::Ui, pad: &str, pending: Option<&str>, layout_name: &str, receiver: &crate::link::ReceiverCapabilities) -> Option<Action> {
     let mut out = None;
     ui.label(RichText::new(tr!("common.in_retroarch")).size(13.0).color(theme::text_dim()));
     ui.horizontal(|ui| {
-        let w = ((ui.available_width() - 16.0) / 3.0).max(70.0);
-        for (label, p) in [(layout_name, "retropad"), (tr!("common.nes_pad"), "nes"), (tr!("common.light_gun"), "gun")] {
+        let pads = receiver.retro_pads();
+        let w = ((ui.available_width() - 8.0 * (pads.len() - 1) as f32) / pads.len() as f32).max(70.0);
+        for &p in pads {
+            let label = match p { "nes" => tr!("common.nes_pad"), "gun" => tr!("common.light_gun"), _ => layout_name };
             let on = pad == p && pending.is_none();
             let pend = pending == Some(p);
             let (fill, color) = if on {
@@ -311,7 +313,7 @@ impl ControllerUi {
                 }
                 // Mando de Wii dentro de Wii U: el teclado para el teclado en
                 // pantalla de Cemu, como en el GamePad
-                if matches!(status, Status::Connected { mode, .. } if mode == "cemu")
+                if status.has_keyboard() && matches!(status, Status::Connected { mode, .. } if mode == "cemu")
                     && ui.button(RichText::new(tr!("common.keyboard")).size(14.0).color(theme::text())).clicked()
                 {
                     action = Action::Keyboard;
@@ -319,14 +321,14 @@ impl ControllerUi {
             });
         });
 
-        if let Status::Connected { mode, supports_cemu, supports_switch, supports_retroarch, player, pad, .. } = status {
+        if let Status::Connected { mode, supports_cemu, supports_switch, supports_retroarch, player, pad, receiver, .. } = status {
             let wiiu = mode == "cemu";
             // RetroArch: 1 y 2 son B y A del RetroPad, la A grande es X y Home el menú
             self.retro = mode == "retroarch" && *supports_retroarch;
             if show_chips {
                 ui.horizontal_wrapped(|ui| {
                     // selección por igualdad exacta del modo
-                    if ui.selectable_label(mode == "pointer", RichText::new(format!("  {}  ", tr!("common.mode_pointer"))).size(14.0)).clicked() {
+                    if receiver.supports_pointer() && ui.selectable_label(mode == "pointer", RichText::new(format!("  {}  ", tr!("common.mode_pointer"))).size(14.0)).clicked() {
                         action = Action::Mode("pointer");
                     }
                     if ui.selectable_label(mode == "dolphin", RichText::new(format!("  {}  ", tr!("common.mode_dolphin"))).size(14.0)).clicked() {
@@ -355,7 +357,7 @@ impl ControllerUi {
                 );
             } else if mode == "retroarch" && *supports_retroarch {
                 // RetroArch: qué mando soy (RetroPad / NES / pistola) y las teclas rápidas
-                if let Some(a) = retro_pad_selector(ui, pad, pad_pending, layout_name) {
+                if let Some(a) = retro_pad_selector(ui, pad, pad_pending, layout_name, receiver) {
                     action = a;
                 }
                 ui.label(RichText::new(tr!("ctl.retro_pad_help")).size(11.0).color(theme::text_dim()));
@@ -681,7 +683,7 @@ mod tests {
         Status::Connected {
             pc_name: "PC".into(), mode: mode.into(), mode_by_pc: false,
             slot: 0, player: 1, role: crate::link::Role::Wiimote, rtt_ms: None,
-            supports_cemu: true, supports_switch: true, supports_retroarch: true, pad: "wiimote".into(),
+            supports_cemu: true, supports_switch: true, supports_retroarch: true, receiver: crate::link::ReceiverCapabilities::default(), pad: "wiimote".into(),
             notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None, game: None,
         }
     }

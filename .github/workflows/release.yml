@@ -8,20 +8,68 @@ permissions:
   contents: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Comprobar versiones y notas antes de compilar
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+          tag = os.environ["TAG"]
+          if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+              raise SystemExit(f"Tag de versión no válido: {tag}")
+          expected = tag[1:]
+          versions = {}
+          for folder, name in [("desktop", "pepomote"), ("mobile-linux", "pepomote-mobile"), ("pmp", "pmp")]:
+              manifest = Path(folder, "Cargo.toml")
+              versions[str(manifest)] = tomllib.loads(manifest.read_text(encoding="utf-8"))["package"]["version"]
+              lock = Path(folder, "Cargo.lock")
+              packages = tomllib.loads(lock.read_text(encoding="utf-8"))["package"]
+              for package in {name, "pmp"}:
+                  versions[f"{lock}:{package}"] = next(p["version"] for p in packages if p["name"] == package)
+          for path, pattern in [
+              ("android/app/build.gradle.kts", r'versionName\s*=\s*"([^"]+)"'),
+              ("ios/project.yml", r'MARKETING_VERSION:\s*"([^"]+)"'),
+          ]:
+              versions[path] = re.search(pattern, Path(path).read_text(encoding="utf-8")).group(1)
+          for source, version in versions.items():
+              if version != expected:
+                  raise SystemExit(f"{source}: versión {version}, se esperaba {expected}")
+          notes = Path("docs/releases", f"{tag}.md")
+          if not notes.is_file() or not notes.read_text(encoding="utf-8").strip():
+              raise SystemExit(f"Faltan las notas de la versión: {notes}")
+          print(f"Todas las versiones coinciden con {tag}; notas presentes.")
+          PY
+
   windows:
+    needs: version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build (release)
         working-directory: desktop
-        run: cargo build --release
+        run: cargo build --release --locked
+      - name: Pruebas del protocolo y del receptor
+        run: |
+          cargo test --release --locked --manifest-path pmp/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --release --locked --manifest-path desktop/Cargo.toml
+      - name: Mandos de extremo a extremo (RetroArch, Eden, Cemu y Dolphin)
+        env:
+          PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir
+        run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: desktop/target/release/PepoMote.exe
 
   linux:
+    needs: version
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +81,15 @@ jobs:
             libxcb-xfixes0-dev libxkbcommon-dev libssl-dev libasound2-dev libudev-dev file wget
       - name: Build (release)
         working-directory: desktop
-        run: cargo build --release
+        run: cargo build --release --locked
+      - name: Pruebas del protocolo y del receptor
+        run: |
+          cargo test --release --locked --manifest-path pmp/Cargo.toml
+          cargo test --release --locked --manifest-path desktop/Cargo.toml
+      - name: RetroArch de extremo a extremo
+        env:
+          PEPOMOTE_E2E_SUITES: e2e_retroarch
+        run: python3 desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote
       - name: AppImage
         run: bash packaging/linux/appimage.sh
       - name: Tarball (binario + lanzador + install.sh)
@@ -57,6 +113,7 @@ jobs:
   # Receptor para macOS (Apple Silicon): .app firmado con la identidad del
   # secret (o ad hoc) y DMG. Todas las plataformas deben terminar correctamente.
   macos:
+    needs: version
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -68,7 +125,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build (release)
         working-directory: desktop
-        run: cargo build --release
+        run: cargo build --release --locked
+      - name: Pruebas del protocolo y del receptor
+        run: |
+          cargo test --release --locked --manifest-path pmp/Cargo.toml
+          cargo test --release --locked --manifest-path desktop/Cargo.toml
       - name: Identidad de firma (secret) o ad hoc
         env:
           MACOS_SIGN_P12_B64: ${{ secrets.MACOS_SIGN_P12_B64 }}
@@ -78,6 +139,11 @@ jobs:
         run: |
           if [ "$HAS_NOTARY" = "true" ]; then export NOTARIZE=1; fi
           bash packaging/macos/bundle.sh
+      - name: Comprobar el arranque del receptor empaquetado
+        run: |
+          out="$(dist/PepoMote.app/Contents/MacOS/PepoMote --diag)"
+          echo "$out" | grep -q "diagnóstico"
+          echo "$out" | grep -q "^macOS: bundle: .*PepoMote.app"
       # OPCIONAL: solo con una cuenta Developer ID (secrets APPLE_NOTARY_*).
       # Con el certificado autofirmado este paso no se ejecuta y la primera
       # apertura pasa por «Abrir igualmente» (docs/MACOS.md).
@@ -98,6 +164,7 @@ jobs:
           path: dist/PepoMote-macOS.dmg
 
   mobile:
+    needs: version
     runs-on: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -109,7 +176,11 @@ jobs:
             libxcb-shape0-dev libxcb-xfixes0-dev libgl1-mesa-dev file wget
       - name: Build (release)
         working-directory: mobile-linux
-        run: cargo build --release
+        run: cargo build --release --locked
+      - name: Pruebas del protocolo y del mando
+        run: |
+          cargo test --release --locked --manifest-path pmp/Cargo.toml
+          cargo test --release --locked --manifest-path mobile-linux/Cargo.toml
       - name: AppImage
         run: bash packaging/linux-mobile/appimage.sh aarch64
       - name: Debian package (Mobian)
@@ -122,6 +193,7 @@ jobs:
             dist/pepomote-mobile*arm64.deb
 
   mobile_musl:
+    needs: version
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -137,7 +209,9 @@ jobs:
             # DINÁMICO: el musl estático (por defecto en Rust) no puede hacer dlopen
             # y winit carga libwayland-client/libEGL así → la app moría al arrancar
             export RUSTFLAGS="-C target-feature=-crt-static"
-            cargo build --release'
+            cargo build --release --locked
+            cargo test --release --locked --manifest-path ../pmp/Cargo.toml
+            cargo test --release --locked'
       - name: Tarball
         run: bash packaging/linux-mobile/tarball.sh aarch64-musl
       - uses: actions/upload-artifact@v4
@@ -146,6 +220,7 @@ jobs:
           path: dist/PepoMote-Mobile-aarch64-musl.tar.gz
 
   android:
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -165,14 +240,18 @@ jobs:
             echo "::error::Falta el secret KEYSTORE_B64 (ver docs/RELEASE.md)"; exit 1
           fi
           echo "$KEYSTORE_B64" | base64 -d > android/pepomote.jks
-      - name: Build signed APK
+      - name: Pruebas, lint y APK firmada
         working-directory: android
         env:
           KEYSTORE_PATH: pepomote.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+        run: chmod +x gradlew && ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon
+      - name: Comprobar firma y alineación
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 android/app/build/outputs/apk/release/app-release.apk
       - name: Rename
         run: cp android/app/build/outputs/apk/release/app-release.apk PepoMote.apk
       - uses: actions/upload-artifact@v4
@@ -181,7 +260,9 @@ jobs:
           path: PepoMote.apk
 
   ios:
+    needs: version
     runs-on: macos-15
+    timeout-minutes: 45
     # IPA sin firmar (AltStore / Sideloadly lo firman con el Apple ID de quien lo
     # instala). El IPA es obligatorio para completar la versión.
     steps:
@@ -192,10 +273,20 @@ jobs:
           if [ -n "$latest" ]; then sudo xcode-select -s "$latest"; fi
           xcodebuild -version
           brew install xcodegen
+      - name: Generar proyecto
+        working-directory: ios
+        run: xcodegen generate
+      - name: Pruebas en el simulador
+        working-directory: ios
+        run: |
+          mkdir -p ../build
+          device="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in d["devices"].items() if "iOS" in k for v in vs if v.get("isAvailable") and v["name"].startswith("iPhone")))')"
+          xcodebuild test -project PepoMote.xcodeproj -scheme PepoMote \
+            -destination "platform=iOS Simulator,id=$device" -resultBundlePath ../build/tests.xcresult \
+            CODE_SIGNING_ALLOWED=NO -quiet
       - name: IPA sin firmar
         working-directory: ios
         run: |
-          xcodegen generate
           xcodebuild build -project PepoMote.xcodeproj -scheme PepoMote -configuration Release \
             -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath ../build/dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -quiet
@@ -233,7 +324,7 @@ jobs:
           raw = f"https://raw.githubusercontent.com/{repo}/main"
           version = tag.lstrip("v")
           today = datetime.date.today().isoformat()
-          notes = f"PepoMote {version} para iPhone y iPad: puntero, mando de Wii para Dolphin, GamePad de Wii U para Cemu (con doble pantalla), Nunchuk y Pro Controller para Eden. Botones y sticks también sin giroscopio. Notas completas: {base}/releases/tag/{tag}"
+          notes = f"PepoMote {version} para iPhone y iPad: llega RetroArch con el mando de cada consola, también con un Android como receptor. Incluye puntero, Wii para Dolphin, Wii U para Cemu con doble pantalla, Nunchuk y Pro Controller para Eden. Botones y sticks también sin giroscopio. Notas completas: {base}/releases/tag/{tag}"
           src = {
               "name": "PepoTech",
               "identifier": "dev.pepotech.altstore",
@@ -249,7 +340,7 @@ jobs:
                   "bundleIdentifier": "dev.pepotech.pepomote",
                   "developerName": "PepoTech",
                   "subtitle": "Tu iPhone o iPad, mando de tu PC",
-                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual a Cemu con un GamePad de Wii U con doble pantalla y a Eden con un Pro Controller. Los botones y sticks funcionan aunque el dispositivo no tenga giroscopio. Necesita el receptor PepoMote en el PC (Windows, Linux o macOS).",
+                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual, a Cemu con un GamePad de Wii U con doble pantalla, a Eden con un Pro Controller y a RetroArch con el mando de cada consola. Los botones y sticks funcionan aunque el dispositivo no tenga giroscopio. Necesita el receptor PepoMote en Windows, Linux o macOS, o el servidor Android para Dolphin, Eden y RetroArch. La pistola y el teclado de RetroArch necesitan un receptor en PC.",
                   "iconURL": f"{raw}/assets/brand/logo.png",
                   "tintColor": "3FA9F5",
                   "category": "utilities",

@@ -229,7 +229,7 @@ struct WiimoteNunchukScreen: View {
                 }
                 if let c = link.link.connected {
                     if showModeChips(c, showChips) {
-                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, compact: true)
+                        ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, supportsPointer: c.receiver.supportsPointer, compact: true)
                     }
                     // Aquí siempre: apagarlo devuelve el mando de siempre
                     NunchukChip(link: c, compact: true)

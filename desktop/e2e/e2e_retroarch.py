@@ -279,6 +279,19 @@ def hold(phone, seconds, buttons=0, stick=(0, 0), right=(0, 0), hz=100):
         time.sleep(1 / hz)
 
 
+def hold_checked(phone, ra, buttons, expected, slot, label):
+    # Con reset por fotograma, un retraso puntual del SO puede vaciar un pad.
+    # Medir un intervalo, como en la prueba de Windows, en lugar de escoger
+    # justo ese fotograma. Se sigue exigiendo el mapa COMPLETO de botones.
+    start = ra.frames
+    hold(phone, 0.8, buttons=buttons)
+    rows = ra.snapshot()[1][start + 8:]
+    correct = sum(b[slot] == expected for b, _, _ in rows)
+    check(rows and correct / len(rows) >= 0.9,
+          f"{label} ({correct}/{len(rows)} fotogramas; esperado={expected:#06x}; últimos={[b[slot] for b, _, _ in rows[-8:]]})")
+    return rows
+
+
 def write_info(core, systemid, corename, systemname):
     """info/<core>_libretro.info as RetroArch ships them (same key = "value" format)."""
     d = RA_DIR / "info"
@@ -511,20 +524,18 @@ def main():
     # --- second player, NES pad, disconnect mid-press
     p2 = Phone("Phone B", pad="nes")
     check(p2.ok["slot"] == 1 and p2.ok["pad"] == "nes", "second phone: player 2, nes pad from hello")
-    hold(p2, 0.3, buttons=BTN_ONE | BTN_TWO | BTN_RIGHT)
-    b2 = ra.snapshot()[1][-1][0]
-    check(b2[1] == (1 << RP_B) | (1 << RP_A) | (1 << RP_RIGHT), "player 2 on its own port: 1→B, 2→A, right")
-    check(b2[0] == 0, "player 1 untouched")
-    hold(p2, 0.2, buttons=BTN_A | BTN_B)
-    check(ra.snapshot()[1][-1][0][1] == (1 << RP_X) | (1 << RP_Y), "nes: big A/B → X/Y")
+    rows = hold_checked(p2, ra, BTN_ONE | BTN_TWO | BTN_RIGHT,
+                        (1 << RP_B) | (1 << RP_A) | (1 << RP_RIGHT), 1,
+                        "player 2 on its own port: 1→B, 2→A, right")
+    check(all(b[0] == 0 for b, _, _ in rows), "player 1 untouched")
+    hold_checked(p2, ra, BTN_A | BTN_B, (1 << RP_X) | (1 << RP_Y), 1, "nes: big A/B → X/Y")
     hold(p2, 0.2, buttons=BTN_TWO)
     p2.close()
     time.sleep(0.4)
     check(ra.snapshot()[1][-1][0][1] == 0, "phone gone mid-press: released")
 
     # --- mode change with something pressed releases it
-    hold(p1, 0.2, buttons=BTN_B)
-    check(ra.snapshot()[1][-1][0][0] == 1 << RP_B, "B pressed before leaving the mode")
+    hold_checked(p1, ra, BTN_B, 1 << RP_B, 0, "B pressed before leaving the mode")
     p1.mode("pointer")
     time.sleep(0.4)
     check(ra.snapshot()[1][-1][0][0] == 0, "leaving RetroArch mode releases B")

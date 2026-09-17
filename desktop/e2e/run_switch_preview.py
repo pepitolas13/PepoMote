@@ -1,4 +1,4 @@
-"""Build-independent runner for local, isolated RetroArch/Switch/Cemu/Nunchuk checks.
+"""Build-independent runner for isolated RetroArch/Switch/Cemu/Nunchuk/Wii IR checks.
 
 Usage: python run_switch_preview.py <PepoMote.exe> [output-directory]
 All settings/emulator directories and ports are isolated from the user's.
@@ -106,7 +106,7 @@ if not BIN.is_file():
     raise SystemExit(f"Executable does not exist: {BIN}")
 # PEPOMOTE_E2E_SUITES=e2e_retroarch,e2e_eden limita las suites (la CI corre solo
 # las que no dependen de rutas de Windows)
-SUITES = [s for s in os.environ.get("PEPOMOTE_E2E_SUITES", "e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk").split(",") if s]
+SUITES = [s for s in os.environ.get("PEPOMOTE_E2E_SUITES", "e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir").split(",") if s]
 for suite in SUITES:
     run_suite(suite)
 print("All isolated integration suites passed", flush=True)

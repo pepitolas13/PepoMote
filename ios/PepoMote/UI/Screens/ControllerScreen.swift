@@ -153,7 +153,7 @@ struct ControllerScreen: View {
                     let dense = m.colW < 420
                     VStack(spacing: 5) {
                         HStack(spacing: dense ? 8 : 10) {
-                            if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, dense: dense) }
+                            if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, supportsPointer: c.receiver.supportsPointer, dense: dense) }
                             if nunchuk && !(dense && c.supportsSwitch) { NunchukChip(link: c, dense: dense).padding(.leading, 4) }
                         }
                         if nunchuk && dense && c.supportsSwitch { NunchukChip(link: c, dense: dense) }
@@ -239,7 +239,7 @@ struct ControllerScreen: View {
             .layoutPriority(0)
             Spacer(minLength: 4)
             // Modo Wii U: texto para el teclado en pantalla de Cemu; en RetroArch, para su ventana
-            if let c = link.link.connected, c.mode == LinkState.modeCemu || c.mode == LinkState.modeRetroArch {
+            if let c = link.link.connected, c.hasKeyboard, c.mode == LinkState.modeCemu || c.mode == LinkState.modeRetroArch {
                 KeyboardButton(compact: true) { keyboardOpen = true }
                     .fixedSize()
                     .layoutPriority(2)

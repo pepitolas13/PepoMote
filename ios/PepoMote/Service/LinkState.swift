@@ -24,11 +24,17 @@ struct ConnectedLink: Equatable {
     var screenOnly: Bool? = nil
     /// El receptor anuncia Switch en `ok.modes`.
     var supportsSwitch: Bool = false
-    /// El receptor anuncia RetroArch en `ok.modes` (receptor del PC con el mando en red).
+    /// El receptor anuncia RetroArch en `ok.modes` (mando en red de PC o Android).
     var supportsRetroArch: Bool = false
     /// RetroArch: el juego cargado según el receptor (mensaje `game`); con su
     /// consola se elige la plantilla de mando. Se conserva al cambiar de modo.
     var game: RetroGame? = nil
+    /// Capacidades confirmadas al conectar; los ecos de modo/pad las conservan.
+    var receiver = ReceiverCapabilities()
+
+    var hasKeyboard: Bool {
+        receiver.textInput && [LinkState.modeCemu, LinkState.modeSwitch, LinkState.modeRetroArch].contains(mode)
+    }
 }
 
 enum UiLink: Equatable {
@@ -218,6 +224,7 @@ final class LinkState: ObservableObject {
         if connected.mode == modeSwitch { connected.pad = padPro }
         // RetroArch solo conoce sus tres mandos; cualquier otro nombre es el RetroPad
         if connected.mode == modeRetroArch, !validRetroPad(connected.pad) { connected.pad = padRetroPad }
+        if connected.mode == modeRetroArch { connected.pad = connected.receiver.restoredPad(connected.pad) }
     }
 
     func publishNotice(_ text: String) {
