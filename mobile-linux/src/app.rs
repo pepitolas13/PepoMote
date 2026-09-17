@@ -316,6 +316,13 @@ pub struct MobileApp {
     /// RetroArch: teclas de mantener (rebobinar) que el GamePad tiene bajo el
     /// dedo ahora mismo, ya avisadas al receptor.
     hotkey_holds: Vec<&'static str>,
+    /// RetroArch: mando de consola elegido a mano (retro_layouts.json).
+    retro_layouts: store::RetroLayouts,
+    /// RetroArch: el selector de mando de consola está abierto (tapa la
+    /// pantalla de juego como el teclado).
+    layout_picker: bool,
+    /// RetroArch: última plantilla avisada al receptor (`pad.layout`).
+    last_sent_layout: Option<&'static str>,
 }
 
 fn describe_sensors(fake: bool) -> String {
@@ -379,6 +386,9 @@ impl MobileApp {
             intent: Intent::None,
             requested_pads: RequestedPads::default(),
             hotkey_holds: Vec::new(),
+            retro_layouts: store::load_retro_layouts(),
+            layout_picker: false,
+            last_sent_layout: None,
             last_mode: None,
             last_layout: None,
             extended_mode: "cemu",
@@ -493,6 +503,54 @@ impl MobileApp {
     fn release_hotkeys(&mut self) {
         for n in std::mem::take(&mut self.hotkey_holds) {
             self.send_hotkey(n, false);
+        }
+    }
+
+    /// Lo que el receptor sabe del juego cargado en RetroArch.
+    fn retro_game(&self) -> Option<link::GameInfo> {
+        match self.link.as_ref().map(|l| l.status()) {
+            Some(Status::Connected { game, .. }) => game,
+            _ => None,
+        }
+    }
+
+    /// Plantilla de consola que toca como RetroPad: la elegida a mano para
+    /// este juego (o la global), si no la consola que anunció el PC, si no el
+    /// RetroPad completo.
+    fn effective_retro_layout(&self) -> &'static str {
+        let game = self.retro_game();
+        let chosen = self.retro_layouts.choice_for(game.as_ref().map(|g| g.path.as_str()));
+        pmp::retro::effective_layout(game.as_ref().and_then(|g| g.console.as_deref()), chosen)
+    }
+
+    fn open_layout_picker(&mut self) {
+        self.gamepad.release(&self.buttons);
+        self.controller.release(&self.buttons);
+        self.layout_picker = true;
+    }
+
+    /// El selector de mando de consola: la elección se guarda (por juego si
+    /// hay uno cargado) y la pantalla de juego la recoge en el siguiente frame.
+    fn ui_layout_picker(&mut self, ui: &mut egui::Ui) {
+        let game = self.retro_game();
+        let path = game.as_ref().map(|g| g.path.as_str()).filter(|p| !p.is_empty());
+        let auto_id = pmp::retro::effective_layout(game.as_ref().and_then(|g| g.console.as_deref()), None);
+        let auto_name = pmp::retro::layout(auto_id).map_or("RetroPad", |l| l.name);
+        let chosen = self.retro_layouts.choice_for(path).map(str::to_owned);
+        let title = game.as_ref().map(|g| g.title.as_str()).filter(|t| !t.is_empty());
+        match crate::ui::layout_picker::show(ui, auto_name, chosen.as_deref(), title) {
+            Some(crate::ui::layout_picker::Pick::Auto) => {
+                self.retro_layouts.pick(path, None);
+                store::save_retro_layouts(&self.retro_layouts);
+                self.layout_picker = false;
+            }
+            Some(crate::ui::layout_picker::Pick::Layout(id)) => {
+                self.retro_layouts.pick(path, Some(id));
+                store::save_retro_layouts(&self.retro_layouts);
+                self.layout_picker = false;
+            }
+            Some(crate::ui::layout_picker::Pick::Close) => self.layout_picker = false,
+            None => {}
         }
     }
 
@@ -708,6 +766,21 @@ impl MobileApp {
                             if let Some(pad) = self.requested_pads.get(mode) { l.send_pad(pad); }
                         }
                         self.last_mode = Some(mode.clone());
+                    }
+                    // RetroArch como RetroPad: la plantilla de consola que se enseña
+                    // (por el juego que anunció el PC o la elegida a mano) va al
+                    // receptor en cuanto cambia, y se avisa en pantalla
+                    if mode == "retroarch" && *role == Role::Wiimote && pad == "retropad" {
+                        let eff = self.effective_retro_layout();
+                        if self.last_sent_layout != Some(eff) {
+                            if self.last_sent_layout.is_some() {
+                                l.notify(&tr!("gp.layout_changed", pmp::retro::layout(eff).map_or("RetroPad", |x| x.name)));
+                            }
+                            l.send_pad_layout("retropad", eff);
+                            self.last_sent_layout = Some(eff);
+                        }
+                    } else {
+                        self.last_sent_layout = None;
                     }
                 } else {
                     self.gamepad.release(&self.buttons);
@@ -1336,7 +1409,8 @@ impl MobileApp {
         let hz = link.sensor_hz();
         let pending = self.pad_pending.map(|p| p.pad);
         let press = self.press();
-        match self.controller.show(ui, &self.buttons, &status, !self.dolphin_only && slot0, pending, hz, press) {
+        let layout_name = pmp::retro::layout(self.effective_retro_layout()).map_or("RetroPad", |l| l.name);
+        match self.controller.show(ui, &self.buttons, &status, !self.dolphin_only && slot0, pending, hz, press, layout_name) {
             Action::Exit => {
                 self.close_link();
                 self.screen = Screen::Home;
@@ -1348,6 +1422,7 @@ impl MobileApp {
                 self.request_pad(mode, p);
             }
             Action::Keyboard => self.open_text_dialog(),
+            Action::LayoutPicker => self.open_layout_picker(),
             Action::Hotkey(n) => self.send_hotkey(n, true),
             Action::Hold(n, down) => self.send_hotkey(n, down),
             Action::None => {}
@@ -1377,6 +1452,10 @@ impl MobileApp {
                 _ => self.extended_mode,
             }
         });
+        // RetroArch: la plantilla de consola que toca y el juego cargado
+        let game = if wanted_mode == "retroarch" { self.retro_game() } else { None };
+        let layout_id = if wanted_mode == "retroarch" { self.effective_retro_layout() } else { "retropad" };
+        let layout = pmp::retro::layout(layout_id).unwrap_or(&pmp::retro::RETROPAD);
         let inputs = GamePadInputs {
             status: &status,
             rotation: self.settings.rotation,
@@ -1390,6 +1469,8 @@ impl MobileApp {
             full_screen: self.settings.gamepad_full_screen,
             keyboard_button: self.settings.gamepad_full_screen_kb,
             press: self.press(),
+            layout,
+            game: game.as_ref().map(|g| g.title.as_str()).filter(|t| !t.is_empty()),
         };
         match self.gamepad.show(ui, &self.buttons, &inputs) {
             GamePadAction::Exit => {
@@ -1407,6 +1488,7 @@ impl MobileApp {
                 log_line(&format!("giro apaisado: borde superior a la {}", r.label()));
             }
             GamePadAction::Keyboard => self.open_text_dialog(),
+            GamePadAction::LayoutPicker => self.open_layout_picker(),
             GamePadAction::Hotkey(n) => self.send_hotkey(n, true),
             GamePadAction::None => {}
         }
@@ -1672,6 +1754,14 @@ impl eframe::App for MobileApp {
         if !text_open {
             self.text_dialog = None;
         }
+        // El selector de mando de consola, igual: solo en RetroArch y en una pantalla de juego
+        let picker_open = self.layout_picker
+            && matches!(self.screen, Screen::Controller | Screen::GamePad)
+            && self.session_mode().as_deref() == Some("retroarch");
+        if !picker_open {
+            self.layout_picker = false;
+        }
+        let text_open = text_open || picker_open;
 
         // Idioma: ES / EN arriba a la derecha del inicio (se guarda en settings.json)
         if self.screen == Screen::Home {
@@ -1700,6 +1790,9 @@ impl eframe::App for MobileApp {
                     .inner_margin(if full_now { 0.0 } else if on_gamepad && !text_open { 6.0 } else { 16.0 }),
             )
             .show(ctx, |ui| {
+                if picker_open {
+                    return self.ui_layout_picker(ui);
+                }
                 if text_open {
                     return self.ui_text(ui);
                 }
@@ -1811,6 +1904,7 @@ mod tests {
             pad_seq: 0,
             own_nunchuk: false,
             screen_only: None,
+            game: None,
         }
     }
 

@@ -362,6 +362,15 @@ pub fn circle_button(cv: &Canvas, c: Pos2, r: f32, label: &str, font: f32, down:
     Shape::Circle { c, r }
 }
 
+/// Botón redondo con relleno propio (los colores de cada consola en
+/// RetroArch): pulsado, más pequeño y más oscuro; texto blanco.
+pub fn circle_button_tinted(cv: &Canvas, c: Pos2, r: f32, label: &str, font: f32, down: bool, fill: Color32) -> Shape {
+    let fill = if down { fill.gamma_multiply(0.7) } else { fill };
+    cv.circle(c, if down { r * 0.94 } else { r }, fill, Stroke::new(1.0_f32, theme::card_border()));
+    cv.text(c, Align2::CENTER_CENTER, label, FontId::proportional(font), theme::ON_ACCENT);
+    Shape::Circle { c, r }
+}
+
 /// Botón rectangular redondeado con etiqueta centrada.
 pub fn rect_button(cv: &Canvas, r: Rect, rounding: f32, label: &str, font: f32, down: bool, primary: bool) -> Shape {
     let (fill, text) = button_colors(down, primary);

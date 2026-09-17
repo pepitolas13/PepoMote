@@ -28,6 +28,7 @@ use crate::theme;
 use crate::ui::dpad;
 use crate::ui::nunchuk::{knob_pos, stick_value};
 use crate::ui::touch::{self, fit_rect, Canvas, Input, Phase, Press, Seg, Shape, Transform};
+use pmp::retro::RightStick;
 use egui::{Align2, Color32, FontId, ImageData, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -47,6 +48,8 @@ pub enum Action {
     /// RetroArch: tecla rápida de un toque (nombre del protocolo). Las de
     /// mantener se leen con [`GamePadUi::held_hotkeys`].
     Hotkey(&'static str),
+    /// RetroArch: abrir el selector de mando de consola.
+    LayoutPicker,
 }
 
 /// Lo que la app pasa cada frame.
@@ -73,6 +76,11 @@ pub struct Inputs<'a> {
     pub keyboard_button: bool,
     /// Los dos ajustes de pulsación (deslizar / mantener al salir).
     pub press: Press,
+    /// RetroArch: plantilla de consola que tocaría como RetroPad (la del
+    /// RetroPad completo fuera de RetroArch).
+    pub layout: &'static pmp::retro::Layout,
+    /// RetroArch: título del juego cargado, para la cabecera.
+    pub game: Option<&'a str>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -92,6 +100,8 @@ enum Chip {
     Hotkey(&'static str),
     /// RetroArch: tecla de mantener (pulsada mientras el dedo esté encima).
     Hold(&'static str),
+    /// RetroArch: el segmento de la consola, ya elegido: abre el selector.
+    LayoutPicker,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -106,6 +116,8 @@ enum Target {
     Dpad,
     /// Los chips y segmentos disparan al levantar el dedo encima.
     Chip(Chip),
+    /// N64: botón C (0 arriba, 1 abajo, 2 izquierda, 3 derecha) → stick derecho.
+    CButton(u8),
 }
 
 struct StickUi {
@@ -135,6 +147,13 @@ struct View<'a> {
     /// RetroArch: el mismo trazado que Switch con etiquetas de RetroPad
     /// (L2/R2, Select/Start, Menú, Rápido) y su selector de tres mandos.
     retro: bool,
+    /// La plantilla que se pinta (el RetroPad completo fuera de RetroArch o
+    /// cuando el mando no es el RetroPad).
+    layout: &'static pmp::retro::Layout,
+    /// Nombre de la plantilla que tocaría como RetroPad (primer segmento).
+    layout_name: &'static str,
+    /// Título del juego cargado en RetroArch (cabecera).
+    game: Option<&'a str>,
     /// El receptor ha confirmado Wii U y somos GamePad/Pro: se juega.
     active: bool,
     optimistic: bool,
@@ -155,6 +174,8 @@ pub struct GamePadUi {
     /// Centro y media anchura de la cruceta del último frame, y sus bits pulsados.
     dpad: (Pos2, f32),
     dpad_held: u32,
+    /// N64: botones C bajo algún dedo (bit por dirección).
+    c_held: u8,
     touch_rect: Rect,
     /// Zona cuyo tamaño se pide al receptor: la táctil de siempre o, en
     /// pantalla completa, toda el área (la imagen se ajusta dentro).
@@ -197,6 +218,32 @@ fn veil() -> Color32 {
 }
 
 /// Medidas del trazado en fila (sin pantalla táctil), en unidades virtuales.
+/// Amarillo de los botones C de N64.
+const C_YELLOW: Color32 = Color32::from_rgb(0xE0, 0xB4, 0x2A);
+
+/// Relleno de un botón de consola (`card` = el de siempre).
+fn tint(color: pmp::retro::Color) -> Option<Color32> {
+    use pmp::retro::Color as C;
+    Some(match color {
+        C::Card => return None,
+        C::Red => Color32::from_rgb(0xD9, 0x4A, 0x4A),
+        C::Yellow => C_YELLOW,
+        C::Green => Color32::from_rgb(0x3F, 0xA5, 0x5B),
+        C::Blue => theme::blue(),
+        C::Pink => Color32::from_rgb(0xD9, 0x6B, 0xB0),
+        C::Purple => Color32::from_rgb(0x8A, 0x63, 0xC9),
+    })
+}
+
+/// Etiqueta de un botón de plantilla: las palabras (`$coin`, `$fire`) se traducen.
+pub fn face_label(label: &'static str) -> &'static str {
+    match label {
+        "$coin" => tr!("gp.coin"),
+        "$fire" => tr!("gp.fire"),
+        other => other,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RowMetrics {
     /// Diámetro del stick = lado de la cruceta = lado del rombo.
@@ -231,6 +278,7 @@ impl GamePadUi {
             touches: HashMap::new(),
             dpad: (Pos2::ZERO, 1.0),
             dpad_held: 0,
+            c_held: 0,
             input: Input::default(),
             transform: Transform::Straight,
             screen: Rect::NOTHING,
@@ -303,6 +351,9 @@ impl GamePadUi {
                 supports_retroarch: *supports_retroarch,
                 switch: inp.wanted_mode == "switch",
                 retro: inp.wanted_mode == "retroarch",
+                layout: if inp.wanted_mode == "retroarch" && pad == "retropad" { inp.layout } else { &pmp::retro::RETROPAD },
+                layout_name: inp.layout.name,
+                game: inp.game,
                 active: inp.status.ext_confirmed() && mode == inp.wanted_mode,
                 optimistic: inp.optimistic,
                 pending: inp.pad_pending,
@@ -327,6 +378,9 @@ impl GamePadUi {
                 supports_retroarch: false,
                 switch: inp.wanted_mode == "switch",
                 retro: inp.wanted_mode == "retroarch",
+                layout: if inp.wanted_mode == "retroarch" { inp.layout } else { &pmp::retro::RETROPAD },
+                layout_name: inp.layout.name,
+                game: None,
                 active: false,
                 optimistic: inp.optimistic,
                 pending: None,
@@ -336,7 +390,7 @@ impl GamePadUi {
             },
         };
         self.transform = Transform::for_screen(rect, inp.rotation);
-        let key = format!("{}/{}/{:?}/{}/{}/{}", view.mode, view.pad, self.transform, view.active, inp.full_screen, view.no_screen);
+        let key = format!("{}/{}/{:?}/{}/{}/{}/{}", view.mode, view.pad, self.transform, view.active, inp.full_screen, view.no_screen, view.layout.id);
         if self.layout_key.as_ref() != Some(&key) {
             self.release(buttons);
             self.layout_key = Some(key);
@@ -369,6 +423,7 @@ impl GamePadUi {
             Some(Chip::Rotate) => Action::Rotation(inp.rotation.toggled()),
             Some(Chip::Keyboard) => Action::Keyboard,
             Some(Chip::Hotkey(n)) => Action::Hotkey(n),
+            Some(Chip::LayoutPicker) => Action::LayoutPicker,
             Some(Chip::Hold(_)) => Action::None,
             None => Action::None,
         }
@@ -379,6 +434,7 @@ impl GamePadUi {
     pub fn release(&mut self, buttons: &Buttons) {
         self.touches.clear();
         self.dpad_held = 0;
+        self.c_held = 0;
         self.fired = None;
         for st in &mut self.sticks {
             st.knob = Vec2::ZERO;
@@ -437,6 +493,10 @@ impl GamePadUi {
         if let Some(ms) = v.rtt_ms {
             line.push_str(&format!(" · {ms:.0} ms"));
         }
+        if let Some(g) = v.game {
+            line.push_str(" · ");
+            line.push_str(g);
+        }
         if sensor_hz > 0.0 {
             line.push_str(&format!(" · {sensor_hz:.0} Hz"));
         }
@@ -466,8 +526,11 @@ impl GamePadUi {
         let zl = l.translate(Vec2::new(0.0, sh_ + 4.0 * s));
         let rr = Rect::from_min_size(Pos2::new(r.right() - 6.0 * s - sw, by), Vec2::new(sw, sh_));
         let zr = rr.translate(Vec2::new(0.0, sh_ + 4.0 * s));
-        let (zl_label, zr_label) = if v.retro { ("L2", "R2") } else { ("ZL", "ZR") };
-        for (rc, label, bit) in [(l, "L", pmp::BTN_L), (zl, zl_label, pmp::BTN_ZL), (rr, "R", pmp::BTN_R), (zr, zr_label, pmp::BTN_ZR)] {
+        // Etiquetas de la consola en RetroArch (y solo los hombros que tenga)
+        let sh = &v.layout.shoulders;
+        let labels = if v.retro { [sh.l, sh.l2, sh.r, sh.r2] } else { [Some("L"), Some("ZL"), Some("R"), Some("ZR")] };
+        for (rc, label, bit) in [(l, labels[0], pmp::BTN_L), (zl, labels[1], pmp::BTN_ZL), (rr, labels[2], pmp::BTN_R), (zr, labels[3], pmp::BTN_ZR)] {
+            let Some(label) = label else { continue };
             let shape = touch::rect_button(cv, rc, 8.0 * s, label, 13.0 * s, pressed & bit != 0, false);
             self.hits.push((shape, Target::Button(bit)));
         }
@@ -517,7 +580,7 @@ impl GamePadUi {
 
     fn kind(v: &View) -> &'static str {
         if v.retro {
-            match v.pad { "nes" => tr!("common.nes_pad"), "gun" => tr!("common.light_gun"), _ => tr!("common.retropad") }
+            match v.pad { "nes" => tr!("common.nes_pad"), "gun" => tr!("common.light_gun"), _ => v.layout.name }
         } else if v.switch || v.pro {
             tr!("common.pro")
         } else {
@@ -525,14 +588,16 @@ impl GamePadUi {
         }
     }
 
-    /// «En RetroArch soy: [RetroPad] [NES] [Pistola]».
+    /// «En RetroArch soy: [<consola>] [Wii de lado] [Pistola]»: el primer
+    /// segmento lleva el nombre de la plantilla que toca y, ya elegido, abre
+    /// el selector de consola.
     fn retro_selector(&mut self, cv: &Canvas, v: &View, y: f32, s: f32) -> f32 {
         let r = cv.rect();
         let h = 26.0 * s;
         let gap = 4.0 * s;
         let font = 12.0 * s;
         let label = tr!("common.in_retroarch");
-        let choices = [(tr!("common.retropad"), "retropad"), (tr!("common.nes_pad"), "nes"), (tr!("common.light_gun"), "gun")];
+        let choices = [(v.layout_name, "retropad"), (tr!("common.nes_pad"), "nes"), (tr!("common.light_gun"), "gun")];
         let label_w = cv.text_width(label, FontId::proportional(font)) + 8.0 * s;
         let available = r.width() - 12.0 * s - label_w;
         let w = ((available - 2.0 * gap) / 3.0).min(96.0 * s);
@@ -544,7 +609,8 @@ impl GamePadUi {
             let seg = if v.pending == Some(*pad) { Seg::Pending } else if v.pad == *pad && v.pending.is_none() { Seg::On } else { Seg::Off };
             let size = font.min(font * (w - 10.0 * s) / cv.text_width(label, FontId::proportional(font)).max(1.0));
             let shape = touch::segment(cv, rc, label, size, seg);
-            self.hits.push((shape, Target::Chip(Chip::Pad(pad))));
+            let target = if *pad == "retropad" && seg == Seg::On { Chip::LayoutPicker } else { Chip::Pad(pad) };
+            self.hits.push((shape, Target::Chip(target)));
         }
         h
     }
@@ -603,13 +669,17 @@ impl GamePadUi {
         h
     }
 
-    /// Etiqueta y tamaño de letra de −, Home y +: en RetroArch, Select, Menú y Start.
-    fn center_labels(v: &View) -> ((&'static str, f32), (&'static str, f32), (&'static str, f32)) {
-        if v.retro {
-            ((tr!("gp.select"), 8.5), (tr!("gp.menu"), 9.0), (tr!("gp.start"), 8.5))
-        } else {
-            (("−", 18.0), ("Home", 10.0), ("+", 18.0))
+    /// Los botones del centro con su tamaño de letra: −, Home y +; en
+    /// RetroArch los de la consola (Select/Start, Mode/Start, Pause, Run…) con
+    /// Menú en medio (o delante si la consola solo tiene uno).
+    fn center_buttons(v: &View) -> Vec<(&'static str, f32, u32)> {
+        if !v.retro {
+            return vec![("−", 18.0, pmp::BTN_MINUS), ("Home", 10.0, pmp::BTN_HOME), ("+", 18.0, pmp::BTN_PLUS)];
         }
+        let mut out: Vec<(&'static str, f32, u32)> = v.layout.center.iter().map(|c| (face_label(c.label), 8.5, c.bit)).collect();
+        let menu = (tr!("gp.menu"), 9.0, pmp::BTN_HOME);
+        if out.len() >= 2 { out.insert(1, menu) } else { out.insert(0, menu) }
+        out
     }
 
     /// La pastilla bajo −/Home/+: Capturar en Switch, avance rápido en RetroArch.
@@ -632,18 +702,37 @@ impl GamePadUi {
         // anillo tiene margen)
         let ring_r = 46.0 * s;
         let sy = by + 2.0 * sh_ + 14.0 * s + ring_r;
+        let lay = v.layout;
         let l3 = Pos2::new(lx + ring_r + 18.0 * s, sy + 20.0 * s);
         let r3 = Pos2::new(rx - ring_r - 18.0 * s, sy + 20.0 * s);
-        self.button(cv, l3, 14.0 * s, "L3", 10.0 * s, pmp::BTN_STICK_L, pressed, false);
-        self.button(cv, r3, 14.0 * s, "R3", 10.0 * s, pmp::BTN_STICK_R, pressed, false);
-        self.stick(cv, Side::Left, Pos2::new(lx, sy), ring_r, s);
-        self.stick(cv, Side::Right, Pos2::new(rx, sy), ring_r, s);
+        if lay.stick_clicks {
+            self.button(cv, l3, 14.0 * s, "L3", 10.0 * s, pmp::BTN_STICK_L, pressed, false);
+            self.button(cv, r3, 14.0 * s, "R3", 10.0 * s, pmp::BTN_STICK_R, pressed, false);
+        }
+        if lay.left_stick {
+            self.stick(cv, Side::Left, Pos2::new(lx, sy), ring_r, s);
+        }
+        match lay.right_stick {
+            RightStick::Analog => self.stick(cv, Side::Right, Pos2::new(rx, sy), ring_r, s),
+            RightStick::CButtons => self.cbuttons(cv, Pos2::new(rx, sy), ring_r, s),
+            RightStick::None => {}
+        }
 
-        // Cruceta bajo el stick izquierdo; A/B/X/Y en rombo bajo el derecho
+        // Cruceta bajo el stick izquierdo (sin stick, en medio del hueco de los
+        // dos y más grande); los botones frontales bajo el derecho, igual
         let arm = 30.0 * s;
         let dc = Pos2::new(lx, sy + ring_r + 10.0 * s + arm * 1.5);
-        self.dpad(cv, dc, arm, s, pressed);
-        self.face(cv, Pos2::new(rx, dc.y), 21.0 * s, 31.0 * s, s, pressed);
+        let mid = (sy + dc.y) / 2.0;
+        if lay.left_stick {
+            self.dpad(cv, dc, arm, s, pressed);
+        } else {
+            self.dpad(cv, Pos2::new(lx, mid), arm * 1.4, s, pressed);
+        }
+        if lay.right_stick == RightStick::None {
+            self.face_cluster(cv, lay, Pos2::new(rx, mid), 21.0 * s * 1.4, 31.0 * s * 1.4, pressed);
+        } else {
+            self.face_cluster(cv, lay, Pos2::new(rx, dc.y), 21.0 * s, 31.0 * s, pressed);
+        }
 
         // Centro: pantalla táctil 16:9 (solo GamePad con pantalla) y las filas de sistema
         let zone_l = lx + ring_r + 36.0 * s;
@@ -663,10 +752,12 @@ impl GamePadUi {
             tr.bottom() + 6.0 * s + 20.0 * s
         };
         let br2 = 20.0 * s;
-        let (minus, home, plus) = Self::center_labels(v);
-        self.button(cv, Pos2::new(cx - 62.0 * s, rows_y), br2, minus.0, minus.1 * s, pmp::BTN_MINUS, pressed, false);
-        self.button(cv, Pos2::new(cx, rows_y), br2, home.0, home.1 * s, pmp::BTN_HOME, pressed, false);
-        self.button(cv, Pos2::new(cx + 62.0 * s, rows_y), br2, plus.0, plus.1 * s, pmp::BTN_PLUS, pressed, false);
+        let centers = Self::center_buttons(v);
+        let n = centers.len() as f32;
+        for (i, (label, font, bit)) in centers.iter().enumerate() {
+            let x = cx + (i as f32 - (n - 1.0) / 2.0) * 62.0 * s;
+            self.button(cv, Pos2::new(x, rows_y), br2, label, font * s, *bit, pressed, false);
+        }
         if v.switch || v.retro {
             self.pill(cv, Rect::from_center_size(Pos2::new(cx, rows_y + 50.0 * s), Vec2::new(76.0 * s, 24.0 * s)), Self::pill_label(v), pmp::BTN_SCREEN, s, pressed);
         } else if !v.pro {
@@ -694,8 +785,11 @@ impl GamePadUi {
         let cy = by + sh_ + 2.0 * s;
         let l3 = Pos2::new(x0 + 6.0 * s + sw + 6.0 * s + 14.0 * s, cy);
         let r3 = Pos2::new(r.right() - 6.0 * s - sw - 6.0 * s - 14.0 * s, cy);
-        self.button(cv, l3, 14.0 * s, "L3", 10.0 * s, pmp::BTN_STICK_L, pressed, false);
-        self.button(cv, r3, 14.0 * s, "R3", 10.0 * s, pmp::BTN_STICK_R, pressed, false);
+        let lay = v.layout;
+        if lay.stick_clicks {
+            self.button(cv, l3, 14.0 * s, "L3", 10.0 * s, pmp::BTN_STICK_L, pressed, false);
+            self.button(cv, r3, 14.0 * s, "R3", 10.0 * s, pmp::BTN_STICK_R, pressed, false);
+        }
         // Pads, pegados abajo (los sticks antes en los hits: el anillo tiene margen)
         let half = m.pad / 2.0;
         let py = r.bottom() - 6.0 * s - half;
@@ -703,19 +797,37 @@ impl GamePadUi {
         let dc = Pos2::new(ls.x + m.pad + 10.0 * s, py);
         let rs = Pos2::new(r.right() - 6.0 * s - half, py);
         let ac = Pos2::new(rs.x - m.pad - 10.0 * s, py);
-        self.stick(cv, Side::Left, ls, half, s);
-        self.stick(cv, Side::Right, rs, half, s);
-        self.dpad(cv, dc, m.pad / 3.0, s, pressed);
-        self.face(cv, ac, m.face_r, half - m.face_r, s, pressed);
+        if lay.left_stick {
+            self.stick(cv, Side::Left, ls, half, s);
+            self.dpad(cv, dc, m.pad / 3.0, s, pressed);
+        } else {
+            // sin stick, la cruceta ocupa los dos huecos
+            self.dpad(cv, Pos2::new((ls.x + dc.x) / 2.0, py), m.pad * 1.35 / 3.0, s, pressed);
+        }
+        match lay.right_stick {
+            RightStick::Analog => {
+                self.stick(cv, Side::Right, rs, half, s);
+                self.face_cluster(cv, lay, ac, m.face_r, half - m.face_r, pressed);
+            }
+            RightStick::CButtons => {
+                self.cbuttons(cv, rs, half, s);
+                self.face_cluster(cv, lay, ac, m.face_r, half - m.face_r, pressed);
+            }
+            RightStick::None => {
+                let k = 1.35;
+                self.face_cluster(cv, lay, Pos2::new((rs.x + ac.x) / 2.0, py), m.face_r * k, (half - m.face_r) * k, pressed);
+            }
+        }
         // Centro: columna −, Home, + (y TV/Pad, Soplar), centrada en el cuerpo
         let br2 = 20.0 * s;
         let (bw, bh) = (76.0 * s, 24.0 * s);
         let gap = 6.0 * s;
-        let total = 6.0 * br2 + 2.0 * gap + if v.switch || v.retro { bh + gap } else if v.pro { 0.0 } else { 2.0 * (bh + gap) };
+        let centers = Self::center_buttons(v);
+        let n = centers.len() as f32;
+        let total = n * 2.0 * br2 + (n - 1.0) * gap + if v.switch || v.retro { bh + gap } else if v.pro { 0.0 } else { 2.0 * (bh + gap) };
         let mut y = by + (r.bottom() - by - total) / 2.0;
-        let (minus, home, plus) = Self::center_labels(v);
-        for ((label, font), bit) in [(minus, pmp::BTN_MINUS), (home, pmp::BTN_HOME), (plus, pmp::BTN_PLUS)] {
-            self.button(cv, Pos2::new(cx, y + br2), br2, label, font * s, bit, pressed, false);
+        for (label, font, bit) in &centers {
+            self.button(cv, Pos2::new(cx, y + br2), br2, label, font * s, *bit, pressed, false);
             y += 2.0 * br2 + gap;
         }
         if v.switch || v.retro {
@@ -739,14 +851,63 @@ impl GamePadUi {
         self.hits.push((shape, Target::Dpad));
     }
 
-    /// A/B/X/Y en rombo alrededor de `ac`: radio `br`, a `off` del centro (A a
-    /// la derecha, azul; el texto crece con el botón).
-    fn face(&mut self, cv: &Canvas, ac: Pos2, br: f32, off: f32, _s: f32, pressed: u32) {
-        let font = br * (16.0 / 21.0);
-        self.button(cv, ac + Vec2::new(0.0, -off), br, "X", font, pmp::BTN_X, pressed, false);
-        self.button(cv, ac + Vec2::new(-off, 0.0), br, "Y", font, pmp::BTN_Y, pressed, false);
-        self.button(cv, ac + Vec2::new(0.0, off), br, "B", font, pmp::BTN_B, pressed, false);
-        self.button(cv, ac + Vec2::new(off, 0.0), br, "A", font, pmp::BTN_A, pressed, true);
+    /// Los botones frontales de la plantilla alrededor de `ac` (radio `br`, a
+    /// `off` del centro): el rombo de siempre (X arriba, Y izquierda, A a la
+    /// derecha en azul, B abajo), dos en fila (a distinta altura si la consola
+    /// los tenía así), uno, seis en dos filas o tres en fila. El texto crece
+    /// con el botón; los colores son los de cada consola.
+    fn face_cluster(&mut self, cv: &Canvas, lay: &pmp::retro::Layout, ac: Pos2, br: f32, off: f32, pressed: u32) {
+        use pmp::retro::Shape as S;
+        for f in lay.face {
+            let (dx, dy, k) = match (lay.shape, f.slot) {
+                (S::Diamond, "top") => (0.0, -1.0, 1.0),
+                (S::Diamond, "left") => (-1.0, 0.0, 1.0),
+                (S::Diamond, "right") => (1.0, 0.0, 1.0),
+                (S::Diamond, "bottom") => (0.0, 1.0, 1.0),
+                (S::Two, "left") => (-0.8, 0.35 * lay.stagger as f32, 1.2),
+                (S::Two, "right") => (0.8, -0.35 * lay.stagger as f32, 1.2),
+                (S::Single, _) => (0.0, 0.0, 1.6),
+                (S::Grid2x3, "tl") => (-0.95, -0.55, 0.95),
+                (S::Grid2x3, "tm") => (0.0, -0.55, 0.95),
+                (S::Grid2x3, "tr") => (0.95, -0.55, 0.95),
+                (S::Grid2x3, "bl") => (-0.95, 0.55, 0.95),
+                (S::Grid2x3, "bm") => (0.0, 0.55, 0.95),
+                (S::Grid2x3, "br") => (0.95, 0.55, 0.95),
+                (S::Row3, "l") => (-1.0, 0.0, 1.05),
+                (S::Row3, "m") => (0.0, 0.0, 1.05),
+                (S::Row3, "r") => (1.0, 0.0, 1.05),
+                _ => (0.0, 0.0, 1.0),
+            };
+            let r = br * k * f.size;
+            let c = ac + Vec2::new(dx * off, dy * off);
+            let font = r * (16.0 / 21.0);
+            let label = face_label(f.label);
+            let down = pressed & f.bit != 0;
+            let shape = match tint(f.color) {
+                Some(fill) if !f.primary => touch::circle_button_tinted(cv, c, r, label, font, down, fill),
+                _ => touch::circle_button(cv, c, r, label, font, down, f.primary),
+            };
+            self.hits.push((shape, Target::Button(f.bit)));
+        }
+    }
+
+    /// N64: los cuatro botones C en el hueco del stick derecho; emiten los
+    /// ejes de ese stick a ±127 (así los lee Mupen64Plus).
+    fn cbuttons(&mut self, cv: &Canvas, c: Pos2, ring_r: f32, s: f32) {
+        let d = ring_r * 0.58;
+        let r = ring_r * 0.34;
+        for (dir, label, dx, dy) in [(0u8, "▲", 0.0, -1.0), (1, "▼", 0.0, 1.0), (2, "◀", -1.0, 0.0), (3, "▶", 1.0, 0.0)] {
+            let down = self.c_held & (1 << dir) != 0;
+            let shape = touch::circle_button_tinted(cv, c + Vec2::new(dx * d, dy * d), r, label, 11.0 * s, down, C_YELLOW);
+            self.hits.push((shape, Target::CButton(dir)));
+        }
+    }
+
+    /// Los botones C pulsados → stick derecho (+Y arriba en el cable).
+    fn apply_cbuttons(&self, buttons: &Buttons) {
+        let h = self.c_held;
+        let axis = |plus: u8, minus: u8| -> i8 { (if h & plus != 0 { 127 } else { 0 }) - (if h & minus != 0 { 127 } else { 0 }) };
+        buttons.set_stick2(axis(8, 4), axis(1, 2));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -943,6 +1104,10 @@ impl GamePadUi {
                 }
                 self.dpad_at(pos, buttons);
             }
+            Target::CButton(d) => {
+                self.c_held |= 1 << d;
+                self.apply_cbuttons(buttons);
+            }
             Target::Chip(Chip::Hold(n)) => {
                 if !self.held.contains(&n) {
                     self.held.push(n);
@@ -1026,6 +1191,10 @@ impl GamePadUi {
                 let (x, y, _) = buttons.touch();
                 buttons.set_touch(x, y, false);
             }
+            Some(Target::CButton(d)) => {
+                self.c_held &= !(1 << d);
+                self.apply_cbuttons(buttons);
+            }
             // una tecla de mantener se suelta al levantar el dedo, esté donde esté
             Some(Target::Chip(Chip::Hold(n))) => {
                 self.held.retain(|h| *h != n);
@@ -1073,7 +1242,7 @@ mod tests {
             pc_name: "PC".into(), mode: "switch".into(), mode_by_pc: false,
             slot: 0, player: 1, role: crate::link::Role::Wiimote, rtt_ms: None,
             supports_cemu: true, supports_switch: true, supports_retroarch: true, pad: pad.into(),
-            notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None,
+            notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None, game: None,
         }
     }
 
@@ -1081,7 +1250,7 @@ mod tests {
         match switch_status(pad) {
             Status::Connected { pc_name, mode_by_pc, slot, player, role, rtt_ms, supports_cemu, supports_switch, supports_retroarch, notice, mode_seq, pad_seq, own_nunchuk, screen_only, .. } => Status::Connected {
                 pc_name, mode: "retroarch".into(), mode_by_pc, slot, player, role, rtt_ms, supports_cemu, supports_switch, supports_retroarch,
-                pad: pad.into(), notice, mode_seq, pad_seq, own_nunchuk, screen_only,
+                pad: pad.into(), notice, mode_seq, pad_seq, own_nunchuk, screen_only, game: None,
             },
             other => other,
         }
@@ -1099,6 +1268,7 @@ mod tests {
                     status, rotation: Rotation::Left, show_chips: true, optimistic: false,
                     wanted_mode, pad_pending: None, sensor_hz: 200.0, screen: None,
                     no_screen: false, full_screen: true, keyboard_button: true, press: Press::default(),
+                    layout: &pmp::retro::RETROPAD, game: None,
                 });
             });
         });
@@ -1114,7 +1284,9 @@ mod tests {
             assert!(ui.active, "RetroPad confirmado: se juega");
             assert_eq!(mask(&ui), required);
             assert!(ui.touch_size_px(1.0).is_none(), "sin pantalla táctil");
-            for pad in ["retropad", "nes", "gun"] {
+            // el segmento de la consola, ya elegido, abre el selector; los otros dos piden su mando
+            assert!(ui.hits.iter().any(|(_, t)| *t == Target::Chip(Chip::LayoutPicker)), "selector consola");
+            for pad in ["nes", "gun"] {
                 assert!(ui.hits.iter().any(|(_, t)| *t == Target::Chip(Chip::Pad(pad))), "selector {pad}");
             }
             assert!(ui.hits.iter().any(|(_, t)| *t == Target::Chip(Chip::Hotkey("save_state"))));
@@ -1149,9 +1321,98 @@ mod tests {
                     status, rotation: Rotation::Left, show_chips: true, optimistic: false,
                     wanted_mode: "switch", pad_pending: None, sensor_hz: 200.0, screen: None,
                     no_screen: false, full_screen: true, keyboard_button: true, press,
+                    layout: &pmp::retro::RETROPAD, game: None,
                 });
             });
         });
+    }
+
+    fn render_layout(gamepad: &mut GamePadUi, buttons: &Buttons, size: Vec2, layout: &'static pmp::retro::Layout, no_screen: bool) {
+        let status = retro_status("retropad");
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                gamepad.show(ui, buttons, &Inputs {
+                    status: &status, rotation: Rotation::Left, show_chips: true, optimistic: false,
+                    wanted_mode: "retroarch", pad_pending: None, sensor_hz: 200.0, screen: None,
+                    no_screen, full_screen: false, keyboard_button: false, press: Press::default(),
+                    layout, game: Some("Cave Story"),
+                });
+            });
+        });
+    }
+
+    fn has(gamepad: &GamePadUi, target: Target) -> bool {
+        gamepad.hits.iter().any(|(_, t)| *t == target)
+    }
+
+    #[test]
+    fn cada_plantilla_de_consola_ensena_solo_sus_botones() {
+        use pmp::retro::layout as lay;
+        let common = pmp::BTN_HOME | pmp::BTN_SCREEN;
+        let cases: [(&str, u32, bool, bool, bool); 7] = [
+            // id, botones aparte de Menú/Rápido, stick izq., stick der., botones C
+            ("nes", pmp::BTN_A | pmp::BTN_B | pmp::BTN_MINUS | pmp::BTN_PLUS, false, false, false),
+            ("gba", pmp::BTN_A | pmp::BTN_B | pmp::BTN_L | pmp::BTN_R | pmp::BTN_MINUS | pmp::BTN_PLUS, false, false, false),
+            ("snes", pmp::BTN_A | pmp::BTN_B | pmp::BTN_X | pmp::BTN_Y | pmp::BTN_L | pmp::BTN_R | pmp::BTN_MINUS | pmp::BTN_PLUS, false, false, false),
+            ("md", pmp::BTN_A | pmp::BTN_B | pmp::BTN_X | pmp::BTN_Y | pmp::BTN_L | pmp::BTN_R | pmp::BTN_MINUS | pmp::BTN_PLUS, false, false, false),
+            ("ms", pmp::BTN_A | pmp::BTN_B | pmp::BTN_PLUS, false, false, false),
+            ("n64", pmp::BTN_B | pmp::BTN_Y | pmp::BTN_L | pmp::BTN_R | pmp::BTN_ZL | pmp::BTN_PLUS, true, false, true),
+            ("psx", pmp::BTN_A | pmp::BTN_B | pmp::BTN_X | pmp::BTN_Y | pmp::BTN_L | pmp::BTN_R | pmp::BTN_ZL | pmp::BTN_ZR | pmp::BTN_STICK_L | pmp::BTN_STICK_R | pmp::BTN_MINUS | pmp::BTN_PLUS, true, true, false),
+        ];
+        for (id, bits, left, right, cbuttons) in cases {
+            for (size, no_screen) in [(Vec2::new(700.0, 370.0), false), (Vec2::new(700.0, 370.0), true), (Vec2::new(360.0, 640.0), false)] {
+                let mut ui = GamePadUi::new();
+                render_layout(&mut ui, &Buttons::new(), size, lay(id).unwrap(), no_screen);
+                assert!(ui.active, "{id}");
+                assert_eq!(mask(&ui), bits | common, "{id} {size:?} sin pantalla {no_screen}");
+                assert_eq!(has(&ui, Target::Stick(Side::Left)), left, "{id}: stick izquierdo");
+                assert_eq!(has(&ui, Target::Stick(Side::Right)), right, "{id}: stick derecho");
+                assert_eq!(has(&ui, Target::CButton(0)), cbuttons, "{id}: botones C");
+                assert!(has(&ui, Target::Dpad), "{id}: cruceta");
+                assert!(has(&ui, Target::Chip(Chip::LayoutPicker)), "{id}: el segmento de la consola abre el selector");
+                assert!(!has(&ui, Target::Chip(Chip::Pad("retropad"))), "{id}: ya somos RetroPad");
+            }
+        }
+        // el RetroPad completo es lo de siempre
+        let mut ui = GamePadUi::new();
+        render_layout(&mut ui, &Buttons::new(), Vec2::new(700.0, 370.0), &pmp::retro::RETROPAD, false);
+        let required = pmp::BTN_A | pmp::BTN_B | pmp::BTN_X | pmp::BTN_Y | pmp::BTN_L | pmp::BTN_R |
+            pmp::BTN_ZL | pmp::BTN_ZR | pmp::BTN_STICK_L | pmp::BTN_STICK_R | pmp::BTN_MINUS | pmp::BTN_PLUS | pmp::BTN_HOME | pmp::BTN_SCREEN;
+        assert_eq!(mask(&ui), required);
+        // NES: B a la izquierda de A; Mega Drive: X Y Z arriba de A B C
+        let mut ui = GamePadUi::new();
+        render_layout(&mut ui, &Buttons::new(), Vec2::new(700.0, 370.0), lay("nes").unwrap(), false);
+        assert!(position(&ui, Target::Button(pmp::BTN_B)).x < position(&ui, Target::Button(pmp::BTN_A)).x);
+        let mut ui = GamePadUi::new();
+        render_layout(&mut ui, &Buttons::new(), Vec2::new(700.0, 370.0), lay("md").unwrap(), false);
+        assert!(position(&ui, Target::Button(pmp::BTN_L)).y < position(&ui, Target::Button(pmp::BTN_Y)).y, "X (bit L) encima de A (bit Y)");
+        assert!(position(&ui, Target::Button(pmp::BTN_Y)).x < position(&ui, Target::Button(pmp::BTN_B)).x && position(&ui, Target::Button(pmp::BTN_B)).x < position(&ui, Target::Button(pmp::BTN_A)).x, "A B C de izquierda a derecha");
+    }
+
+    #[test]
+    fn los_botones_c_de_n64_mueven_el_stick_derecho() {
+        let mut ui = GamePadUi::new();
+        let b = Buttons::new();
+        render_layout(&mut ui, &b, Vec2::new(700.0, 370.0), pmp::retro::layout("n64").unwrap(), false);
+        let up = position(&ui, Target::CButton(0));
+        let right = position(&ui, Target::CButton(3));
+        assert!(up.y < right.y && up.x < right.x, "▲ arriba y ▶ a la derecha");
+        ui.begin(1, up, &b);
+        assert_eq!(b.stick2(), (0, 127), "C arriba = stick derecho arriba");
+        ui.begin(2, right, &b);
+        assert_eq!(b.stick2(), (127, 127));
+        ui.end(1, up, &b);
+        assert_eq!(b.stick2(), (127, 0));
+        ui.end(2, right, &b);
+        assert_eq!(b.stick2(), (0, 0));
+        assert_eq!(b.physical(), 0, "los C no son bits");
+        // cambiar de plantilla suelta lo que hubiera
+        ui.begin(3, up, &b);
+        assert_eq!(b.stick2(), (0, 127));
+        render_layout(&mut ui, &b, Vec2::new(700.0, 370.0), pmp::retro::layout("nes").unwrap(), false);
+        assert_eq!(b.stick2(), (0, 0));
+        assert_eq!(ui.c_held, 0);
     }
 
     fn mask(gamepad: &GamePadUi) -> u32 {

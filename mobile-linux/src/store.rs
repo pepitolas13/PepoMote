@@ -186,6 +186,81 @@ pub fn clear_axes() {
     }
 }
 
+/// Mando de consola elegido a mano en RetroArch: `global` («auto» o un id de
+/// `pmp::retro::LAYOUT_IDS`) y, por juego (ruta del contenido que anuncia el
+/// receptor), la plantilla que se prefiere (tope 50, el más viejo fuera).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RetroLayouts {
+    pub global: String,
+    pub by_path: Vec<(String, String)>,
+}
+
+impl Default for RetroLayouts {
+    fn default() -> Self {
+        Self { global: "auto".to_owned(), by_path: Vec::new() }
+    }
+}
+
+impl RetroLayouts {
+    /// La elegida a mano para ese juego (o la global), o None = automático.
+    pub fn choice_for(&self, path: Option<&str>) -> Option<&str> {
+        path.and_then(|p| self.by_path.iter().find(|(k, _)| k == p).map(|(_, v)| v.as_str()))
+            .or_else(|| (self.global != "auto").then_some(self.global.as_str()))
+    }
+
+    /// Elegir `id` (None = automático) para el juego `path` (None = sin juego
+    /// cargado: vale para todos hasta que RetroArch cargue uno).
+    pub fn pick(&mut self, path: Option<&str>, id: Option<&str>) {
+        match path {
+            Some(p) => {
+                self.by_path.retain(|(k, _)| k != p);
+                match id {
+                    Some(id) => {
+                        self.by_path.push((p.to_owned(), id.to_owned()));
+                        if self.by_path.len() > 50 {
+                            self.by_path.remove(0);
+                        }
+                    }
+                    // «Automático» con un juego: ese juego sigue al PC, y la global también
+                    None => self.global = "auto".to_owned(),
+                }
+            }
+            None => self.global = id.unwrap_or("auto").to_owned(),
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn retro_layouts_por_juego_y_global_con_tope() {
+    let mut r = RetroLayouts::default();
+    assert_eq!(r.choice_for(Some("a.zip")), None, "de serie, automático");
+    r.pick(None, Some("md3"));
+    assert_eq!(r.choice_for(None), Some("md3"), "sin juego: global");
+    assert_eq!(r.choice_for(Some("a.zip")), Some("md3"), "la global vale para todos");
+    r.pick(Some("a.zip"), Some("nes"));
+    assert_eq!(r.choice_for(Some("a.zip")), Some("nes"), "el juego manda");
+    assert_eq!(r.choice_for(Some("b.zip")), Some("md3"));
+    r.pick(Some("a.zip"), None);
+    assert_eq!((r.choice_for(Some("a.zip")), r.choice_for(None)), (None, None), "automático con juego: ese juego y la global");
+    for i in 0..60 {
+        r.pick(Some(&format!("g{i}.zip")), Some("snes"));
+    }
+    assert_eq!(r.by_path.len(), 50, "tope");
+    assert_eq!(r.choice_for(Some("g0.zip")), None, "el más viejo fuera");
+    assert_eq!(r.choice_for(Some("g59.zip")), Some("snes"));
+    let json = serde_json::to_string(&r).unwrap();
+    assert_eq!(serde_json::from_str::<RetroLayouts>(&json).unwrap(), r, "ida y vuelta");
+}
+
+pub fn load_retro_layouts() -> RetroLayouts {
+    read_json("retro_layouts.json").unwrap_or_default()
+}
+
+pub fn save_retro_layouts(r: &RetroLayouts) {
+    write_json("retro_layouts.json", r);
+}
+
 pub fn load_settings() -> Settings {
     config_file("settings.json")
         .and_then(|p| std::fs::read_to_string(p).ok())

@@ -23,6 +23,8 @@ pub enum Action {
     /// `"wiimote"`, desde el selector «En Cemu soy») o en RetroArch
     /// (`"retropad"`, `"nes"`, `"gun"`).
     Pad(&'static str),
+    /// RetroArch: abrir el selector de mando de consola.
+    LayoutPicker,
     /// Abrir el teclado para el teclado en pantalla de Cemu (modo Wii U).
     Keyboard,
     /// RetroArch: tecla rápida de un toque (nombre del protocolo).
@@ -121,13 +123,15 @@ pub fn hotkey_label(name: &str) -> &'static str {
     }
 }
 
-/// Selector segmentado «En RetroArch soy: [RetroPad] [NES] [Pistola]».
-pub fn retro_pad_selector(ui: &mut egui::Ui, pad: &str, pending: Option<&str>) -> Option<&'static str> {
+/// Selector segmentado «En RetroArch soy: [<consola>] [Wii de lado] [Pistola]».
+/// El primer segmento lleva el nombre de la plantilla que toca (`layout_name`);
+/// tocarlo estando ya elegido abre el selector de consola.
+pub fn retro_pad_selector(ui: &mut egui::Ui, pad: &str, pending: Option<&str>, layout_name: &str) -> Option<Action> {
     let mut out = None;
     ui.label(RichText::new(tr!("common.in_retroarch")).size(13.0).color(theme::text_dim()));
     ui.horizontal(|ui| {
         let w = ((ui.available_width() - 16.0) / 3.0).max(70.0);
-        for (label, p) in [(tr!("common.retropad"), "retropad"), (tr!("common.nes_pad"), "nes"), (tr!("common.light_gun"), "gun")] {
+        for (label, p) in [(layout_name, "retropad"), (tr!("common.nes_pad"), "nes"), (tr!("common.light_gun"), "gun")] {
             let on = pad == p && pending.is_none();
             let pend = pending == Some(p);
             let (fill, color) = if on {
@@ -140,8 +144,14 @@ pub fn retro_pad_selector(ui: &mut egui::Ui, pad: &str, pending: Option<&str>) -
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
             ui.painter().rect(rect, egui::Rounding::same(15.0), fill, Stroke::new(1.0_f32, theme::card_border()));
             ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(13.0), color);
-            if resp.clicked() && pad != p {
-                out = Some(p);
+            if resp.clicked() {
+                out = if pad != p {
+                    Some(Action::Pad(p))
+                } else if on && p == "retropad" {
+                    Some(Action::LayoutPicker)
+                } else {
+                    None
+                };
             }
         }
     });
@@ -256,6 +266,7 @@ impl ControllerUi {
         pad_pending: Option<&str>,
         sensor_hz: f32,
         press: Press,
+        layout_name: &str,
     ) -> Action {
         let mut action = Action::None;
         self.press = press;
@@ -344,8 +355,8 @@ impl ControllerUi {
                 );
             } else if mode == "retroarch" && *supports_retroarch {
                 // RetroArch: qué mando soy (RetroPad / NES / pistola) y las teclas rápidas
-                if let Some(p) = retro_pad_selector(ui, pad, pad_pending) {
-                    action = Action::Pad(p);
+                if let Some(a) = retro_pad_selector(ui, pad, pad_pending, layout_name) {
+                    action = a;
                 }
                 ui.label(RichText::new(tr!("ctl.retro_pad_help")).size(11.0).color(theme::text_dim()));
                 if let hk @ (Action::Hotkey(_) | Action::Hold(..)) = retro_hotkeys(ui, &mut self.rewind_held) {
@@ -671,7 +682,7 @@ mod tests {
             pc_name: "PC".into(), mode: mode.into(), mode_by_pc: false,
             slot: 0, player: 1, role: crate::link::Role::Wiimote, rtt_ms: None,
             supports_cemu: true, supports_switch: true, supports_retroarch: true, pad: "wiimote".into(),
-            notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None,
+            notice: None, mode_seq: 1, pad_seq: 1, own_nunchuk: false, screen_only: None, game: None,
         }
     }
 
@@ -681,7 +692,7 @@ mod tests {
         let size = Vec2::new(400.0, 900.0);
         let _ = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), ..Default::default() }, |ctx| {
             egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
-                ctl.show(ui, buttons, status, false, None, 0.0, press);
+                ctl.show(ui, buttons, status, false, None, 0.0, press, "RetroPad");
             });
         });
     }

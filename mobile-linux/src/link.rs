@@ -99,6 +99,9 @@ pub enum Status {
         /// El receptor confirmó «solo pantalla» (`ok.screen_only` o eco de
         /// `screen_only`); `None` = receptor anterior a 1.6, que no lo conoce.
         screen_only: Option<bool>,
+        /// Último juego cargado en RetroArch según el receptor (`game`): con
+        /// él se elige la plantilla de consola. Solo se usa en modo RetroArch.
+        game: Option<GameInfo>,
     },
     Failed {
         code: String,
@@ -111,6 +114,25 @@ pub enum Status {
         pc_name: String,
         attempt: u32,
     },
+}
+
+/// Lo que el receptor sabe del juego cargado en RetroArch (mensaje `game`).
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct GameInfo {
+    /// Id de consola de `pmp::retro::CONSOLE_IDS`, o None si no se conoce.
+    pub console: Option<String>,
+    pub system: String,
+    pub core: String,
+    pub title: String,
+    pub path: String,
+}
+
+/// `{"m":"game",...}` → ficha; None cuando el receptor no tiene juego
+/// (todas las cadenas vacías).
+pub fn parse_game(msg: &Value) -> Option<GameInfo> {
+    let s = |k: &str| msg[k].as_str().unwrap_or("").to_owned();
+    let g = GameInfo { console: msg["console"].as_str().map(str::to_owned), system: s("system"), core: s("core"), title: s("title"), path: s("path") };
+    (!g.title.is_empty() || !g.path.is_empty() || g.console.is_some()).then_some(g)
 }
 
 impl Status {
@@ -211,6 +233,12 @@ impl Link {
     /// antiguo no contesta y no pasa nada.
     pub fn send_pad(&self, pad: &str) {
         send_json(&self.writer, &json!({"m":"pad","pad":pad}));
+    }
+
+    /// RetroArch: el mismo `pad` con la plantilla de consola que se enseña
+    /// (`layout`, solo para la ventana del receptor; uno antiguo lo ignora).
+    pub fn send_pad_layout(&self, pad: &str, layout: &str) {
+        send_json(&self.writer, &pad_layout_message(pad, layout));
     }
 
     /// Teclado del móvil → teclado en pantalla de Cemu o Switch. Sin respuesta; un receptor antiguo lo ignora.
@@ -363,9 +391,26 @@ fn valid_pad(s: Option<&str>) -> Option<&str> {
     s.filter(|p| matches!(*p, "gamepad" | "pro" | "wiimote") || is_switch_pad(p) || is_retro_pad(p))
 }
 
+/// `{"m":"pad","pad":…,"layout":…}`: el mando y su plantilla de consola.
+pub fn pad_layout_message(pad: &str, layout: &str) -> Value {
+    json!({"m":"pad","pad":pad,"layout":layout})
+}
+
 /// `{"m":"hotkey","name":…,"down":…}`: una tecla rápida de RetroArch.
 pub fn hotkey_message(name: &str, down: bool) -> Value {
     json!({"m":"hotkey","name":name,"down":down})
+}
+
+#[cfg(test)]
+#[test]
+fn game_message_and_layout_message() {
+    let g = parse_game(&json!({"m":"game","console":"md","system":"Mega Drive","core":"Genesis Plus GX","title":"Cave Story","path":"C:\\r\\cs.zip"})).unwrap();
+    assert_eq!(g.console.as_deref(), Some("md"));
+    assert_eq!((g.system.as_str(), g.core.as_str(), g.title.as_str(), g.path.as_str()), ("Mega Drive", "Genesis Plus GX", "Cave Story", "C:\\r\\cs.zip"));
+    let unknown = parse_game(&json!({"m":"game","console":null,"system":"","core":"dosbox_pure","title":"game","path":"g.zip"})).unwrap();
+    assert_eq!(unknown.console, None);
+    assert_eq!(parse_game(&json!({"m":"game","console":null,"system":"","core":"","title":"","path":""})), None, "sin juego");
+    assert_eq!(pad_layout_message("retropad", "md"), json!({"m":"pad","pad":"retropad","layout":"md"}));
 }
 
 #[cfg(test)]
@@ -397,7 +442,7 @@ fn pad_of(ok: &Value, slot: u8) -> String {
 /// `nunchuk` (eco del Nunchuk propio) y `notice`. Cualquier otro se ignora
 /// (devuelve `false`).
 fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
-    let Status::Connected { mode, mode_by_pc, pad, player, notice, mode_seq, pad_seq, own_nunchuk, screen_only, .. } = st else {
+    let Status::Connected { mode, mode_by_pc, pad, player, notice, mode_seq, pad_seq, own_nunchuk, screen_only, game, .. } = st else {
         return false;
     };
     match msg["m"].as_str() {
@@ -430,6 +475,11 @@ fn apply_update(st: &mut Status, msg: &Value, now: Instant) -> bool {
                 *player = p as u8;
             }
             *pad_seq = pad_seq.wrapping_add(1);
+            true
+        }
+        // Qué juego tiene RetroArch (se conserva al cambiar de modo: solo cuenta en RetroArch)
+        Some("game") => {
+            *game = parse_game(msg);
             true
         }
         Some("notice") => {
@@ -687,6 +737,7 @@ fn session(
                     pad_seq: 0,
                     own_nunchuk: msg["nunchuk"].as_str() == Some("own"),
                     screen_only: msg["screen_only"].as_bool(),
+                    game: None,
                 };
                 // la pantalla del GamePad va por otra conexión TCP al mismo
                 // puerto PMP que este control (el `udp_port` del ok es ese
@@ -1429,6 +1480,7 @@ mod tests {
             pad_seq: 0,
             own_nunchuk: false,
             screen_only: None,
+            game: None,
         }
     }
 
