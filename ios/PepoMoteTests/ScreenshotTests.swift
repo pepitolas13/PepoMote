@@ -61,6 +61,12 @@ final class ScreenshotTests: XCTestCase {
         let content = view
             .environmentObject(AppModel.shared)
             .environmentObject(L10n.shared)
+            // Las capturas muestran el estado final, nunca una mezcla de la
+            // tarjeta que se está plegando y los botones que quedan debajo.
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
             .frame(width: size.width, height: size.height)
             .background(Pepo.background)
         let host = UIHostingController(rootView: content)
