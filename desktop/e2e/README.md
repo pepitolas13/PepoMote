@@ -35,7 +35,7 @@ en el entorno:
 - `python e2e_retroarch.py` — modo RetroArch contra un RetroArch FALSO (el
   propio script escucha en el puerto base del mando en red y en el de
   comandos, consume un datagrama por jugador y fotograma a 60 fps como
-  `input_driver.c` y contesta `VERSION`/`GET_STATUS`): `retroarch.cfg`
+  `input_driver.c` y contesta `VERSION` y `GET_STATUS`): `retroarch.cfg`
   escrito con copia byte a byte e idempotente, vocabulario `pad`
   (retropad/nes/gun), sondas y `SHOW_MSG`, botón al fotograma siguiente y
   latch, sin cola (nunca dos datagramas esperando), sticks (escala y signo),
@@ -43,7 +43,16 @@ en el entorno:
   `FAST_FORWARD_HOLD` cada fotograma, `hotkey` (un toque y mantener),
   refresco que sobrevive al vaciado por fotograma de Windows, segundo
   jugador en su puerto con mando de NES, soltar al irse el móvil o al cambiar
-  de modo, y resincronización tras un RetroArch mudo.
+  de modo, resincronización tras un RetroArch mudo, y `GET_STATUS` nunca a
+  una 1.22.2 (la cierra si el núcleo no está en su lista de información) y
+  sí a una 1.23.0, solo después de su `VERSION`.
+- `python real_retroarch.py <PepoMote.exe> <carpeta RetroArch> <núcleo> --wipe`
+  — a mano, fuera de la CI: lo mismo contra un RetroArch DE VERDAD (una copia
+  del zip oficial, nunca tu instalación: borra su `retroarch.cfg`, saves,
+  states y capturas) con el núcleo 2048 fuera de su carpeta: cfg y copia,
+  sondas, vivo 5 s sin `GET_STATUS`, Start y cruceta llegan al núcleo
+  (capturas del tablero), Home abre el menú, `SAVE_STATE`, avance rápido y
+  modo automático al reabrirlo. Necesita Pillow. Comprobado con la 1.22.2.
 - `python e2e_dolphin_ir.py` — puntero IR del perfil Wii (Dolphin ≥ 2407,
   `protocol/DSU.md`): el sentido de los ejes cruzado con el Mando Wii de
   Cemu (mismo motor), yaw/pitch/roll con giroscopio y quaternion coherentes,

@@ -5,8 +5,10 @@
 //! retrasa todo; más lento deja fotogramas vacíos, y en Windows un
 //! fotograma vacío puede poner el mando a cero (`errno` no es `EAGAIN`
 //! tras un `recvfrom` sin datos). Así que aquí no hay temporizador: el
-//! reloj lo da el propio RetroArch. Siempre hay UNA sonda (`VERSION` o
-//! `GET_STATUS`) en camino por la interfaz de comandos; RetroArch la
+//! reloj lo da el propio RetroArch. Siempre hay UNA sonda (`VERSION`; una
+//! de cada 30 es `GET_STATUS` si la versión lo aguanta: la 1.22.2 y las
+//! anteriores se cierran con él, ver `protocol::status_query_safe`) en
+//! camino por la interfaz de comandos; RetroArch la
 //! contesta dentro del mismo sondeo en que lee el mando, así que cada
 //! respuesta = un fotograma consumido = hueco para un datagrama por
 //! jugador. Nunca hay más de un datagrama en espera por jugador, sea cual
@@ -388,8 +390,19 @@ const REACH_TTL: Duration = Duration::from_millis(1200);
 const DEGRADED_AFTER: Duration = Duration::from_secs(3);
 const DEGRADED_TICK: Duration = Duration::from_micros(16_667);
 const DEGRADED_REFRESH: Duration = Duration::from_millis(50);
-/// Cada cuántas sondas va un GET_STATUS en vez de VERSION.
+/// Cada cuántas sondas va un GET_STATUS en vez de VERSION (solo si la
+/// versión de RetroArch lo aguanta, ver `protocol::status_query_safe`).
 const STATUS_EVERY: u32 = 30;
+
+/// Qué sonda toca: una repetición (la anterior no se contestó) es siempre
+/// `VERSION`; `GET_STATUS` solo cada `STATUS_EVERY` y con versión segura.
+fn probe_for(probes: u32, retry: bool, status_ok: bool) -> &'static str {
+    if !retry && status_ok && probes % STATUS_EVERY == 0 {
+        protocol::CMD_GET_STATUS
+    } else {
+        protocol::CMD_VERSION
+    }
+}
 
 fn run(link: &Arc<Link>, shared: &SharedState) {
     let ports = link.ports;
@@ -417,11 +430,12 @@ fn run(link: &Arc<Link>, shared: &SharedState) {
 
     let mut outstanding: Option<Instant> = None;
     let mut probes: u32 = 0;
+    // Solo tras leer una versión que aguante GET_STATUS
+    let mut status_ok = false;
     let mut last_reply: Option<Instant> = None;
     let mut synced = false;
     let mut replies_window = (Instant::now(), 0u32);
     let mut last_running_check = Instant::now() - Duration::from_secs(10);
-    let mut running = false;
     let mut degraded = false;
     let mut next_degraded_tick = Instant::now();
     let mut next_degraded_refresh = Instant::now();
@@ -440,24 +454,30 @@ fn run(link: &Arc<Link>, shared: &SharedState) {
         // Reloj: siempre una sonda en camino
         let retry = if synced { PROBE_RETRY } else { PROBE_RETRY_IDLE };
         if outstanding.is_none_or(|t| now.duration_since(t) > retry) {
-            let probe = if probes % STATUS_EVERY == 0 { protocol::CMD_GET_STATUS } else { protocol::CMD_VERSION };
-            probes = probes.wrapping_add(1);
-            send_cmd(probe);
+            let retrying = outstanding.is_some();
+            send_cmd(probe_for(probes, retrying, status_ok));
+            if !retrying {
+                probes = probes.wrapping_add(1);
+            }
             outstanding = Some(now);
         }
         // ¿Sigue ahí?
         if synced && last_reply.is_some_and(|t| now.duration_since(t) > REACH_TTL) {
             synced = false;
+            status_ok = false;
             crate::log_line!("RetroArch: ya no responde a la interfaz de comandos");
             publish(link, &|l| {
                 l.reachable = false;
                 l.polls_per_sec = 0.0;
+                // El que vuelva puede ser otra versión: se vuelve a preguntar
+                l.version = None;
+                l.activity = None;
             });
             shared.lock_tolerant().retroarch_live = link.live();
         }
         if !synced && now.duration_since(last_running_check) >= Duration::from_secs(2) {
             last_running_check = now;
-            running = super::running_exe().0 && !std::env::var_os("PEPOMOTE_ASSUME_EMULATOR_CLOSED").is_some();
+            let running = super::running_exe().0 && !std::env::var_os("PEPOMOTE_ASSUME_EMULATOR_CLOSED").is_some();
             let mute_for = last_reply.map_or(now.duration_since(replies_window.0), |t| now.duration_since(t));
             let want = running && mute_for > DEGRADED_AFTER;
             if want != degraded {
@@ -519,7 +539,10 @@ fn run(link: &Arc<Link>, shared: &SharedState) {
             shared.lock_tolerant().retroarch_live = link.live();
         }
         match protocol::parse_reply(&reply) {
-            Reply::Version(v) => publish(link, &|l| l.version = Some(v.clone())),
+            Reply::Version(v) => {
+                status_ok = protocol::status_query_safe(&v);
+                publish(link, &|l| l.version = Some(v.clone()));
+            }
             Reply::Status(a) => publish(link, &|l| l.activity = Some(a.clone())),
             Reply::Other(_) => {}
         }
@@ -568,6 +591,16 @@ fn run(link: &Arc<Link>, shared: &SharedState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn la_sonda_de_estado_solo_va_a_versiones_seguras_y_nunca_al_repetir() {
+        assert_eq!(probe_for(0, false, false), protocol::CMD_VERSION, "sin versión leída: VERSION");
+        assert_eq!(probe_for(0, false, true), protocol::CMD_GET_STATUS);
+        assert_eq!(probe_for(0, true, true), protocol::CMD_VERSION, "repetición: siempre VERSION");
+        assert_eq!(probe_for(1, false, true), protocol::CMD_VERSION);
+        assert_eq!(probe_for(STATUS_EVERY * 3, false, true), protocol::CMD_GET_STATUS);
+        assert_eq!(probe_for(STATUS_EVERY, false, false), protocol::CMD_VERSION, "1.22.2: nunca GET_STATUS");
+    }
     use crate::net::codec;
     use protocol::RetroPad;
 

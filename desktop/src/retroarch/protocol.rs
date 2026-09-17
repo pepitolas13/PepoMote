@@ -181,6 +181,33 @@ pub const CMD_GET_STATUS: &str = "GET_STATUS";
 /// `SHOW_MSG <texto>`: aviso en pantalla de RetroArch (180 fotogramas).
 pub const CMD_SHOW_MSG: &str = "SHOW_MSG";
 
+/// `GET_STATUS` cierra RetroArch 1.22.2 (y anteriores) cuando el núcleo
+/// cargado no está en su lista de información (núcleo fuera de `cores/`,
+/// sin `.info` o sin caché todavía): `command_get_status` copia un puntero
+/// nulo (comprobado con la 1.22.2 oficial en Windows: salida 0xC0000005).
+/// Corregido en master el 6-ene-2026 (68e8274a31), después de la 1.22.2
+/// del 20-nov-2025; las nightlies posteriores siguen diciendo «1.22.2», así
+/// que el estado solo se pregunta a versiones estrictamente mayores.
+pub const STATUS_UNSAFE_UPTO: (u32, u32, u32) = (1, 22, 2);
+
+/// «1.22.2» → (1, 22, 2); «1.23» → (1, 23, 0). Ignora sufijos («-dev»).
+pub fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = text.trim().split('.');
+    let num = |p: Option<&str>| -> Option<u32> {
+        let digits: String = p?.chars().take_while(|c| c.is_ascii_digit()).collect();
+        digits.parse().ok()
+    };
+    let major = num(parts.next())?;
+    let minor = num(parts.next()).unwrap_or(0);
+    let patch = num(parts.next()).unwrap_or(0);
+    Some((major, minor, patch))
+}
+
+/// ¿Se le puede preguntar el estado sin cerrarlo?
+pub fn status_query_safe(version: &str) -> bool {
+    parse_version(version).is_some_and(|v| v > STATUS_UNSAFE_UPTO)
+}
+
 /// Qué hace RetroArch según `GET_STATUS`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Activity {
@@ -301,6 +328,20 @@ mod tests {
         );
         assert_eq!(parse_reply("GET_STATUS ERROR"), Reply::Status(Activity::Contentless));
         assert_eq!(parse_reply("READ_CORE_MEMORY 0 -1"), Reply::Other("READ_CORE_MEMORY 0 -1".into()));
+    }
+
+    #[test]
+    fn get_status_solo_a_versiones_posteriores_a_la_1_22_2() {
+        assert_eq!(parse_version("1.22.2"), Some((1, 22, 2)));
+        assert_eq!(parse_version("1.23"), Some((1, 23, 0)));
+        assert_eq!(parse_version("1.22.3-dev\n"), Some((1, 22, 3)));
+        assert_eq!(parse_version("nightly"), None);
+        for v in ["1.22.2", "1.22.1", "1.21.0", "1.9.0", "1.22", "nightly", ""] {
+            assert!(!status_query_safe(v), "{v}");
+        }
+        for v in ["1.22.3", "1.23.0", "1.23", "2.0.0", "1.22.10"] {
+            assert!(status_query_safe(v), "{v}");
+        }
     }
 
     #[test]

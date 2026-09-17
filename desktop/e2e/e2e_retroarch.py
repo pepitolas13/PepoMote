@@ -2,7 +2,8 @@
 
 A fake RetroArch listens on the network-gamepad ports (one datagram per
 player per frame, exactly like input_driver.c) and on the command interface
-(VERSION / GET_STATUS replies, hotkeys, SHOW_MSG). Optionally it empties the
+(VERSION replies; GET_STATUS, which must only reach versions after 1.22.2
+because it crashes the released ones; hotkeys; SHOW_MSG). Optionally it empties the
 pad on frames without a datagram, which is what a Windows build does.
 
 Set PEPOMOTE_RETROARCH_DIR, PEPOMOTE_PORT, PEPOMOTE_RETROARCH_PORT,
@@ -81,6 +82,9 @@ class FakeRetroArch(threading.Thread):
         self.stopped = False
         self.frames = 0
         self.probes = 0
+        self.version = "1.22.2"        # what VERSION answers (the released RetroArch)
+        self.status_requests = 0       # GET_STATUS received (crashes a real <= 1.22.2)
+        self.status_after_probes = None  # probes answered before the first GET_STATUS
 
     def stop(self):
         self.stopped = True
@@ -101,9 +105,15 @@ class FakeRetroArch(threading.Thread):
                         continue
                     if tok == "VERSION":
                         self.probes += 1
-                        self.cmd.sendto(b"1.22.2\n", src)
+                        self.cmd.sendto((self.version + "\n").encode(), src)
                     elif tok == "GET_STATUS":
+                        # A real RetroArch <= 1.22.2 dies here when the core is not in
+                        # its info list (command_get_status copies a NULL); the fake
+                        # only counts so that the check below names the regression
+                        if self.status_after_probes is None:
+                            self.status_after_probes = self.probes
                         self.probes += 1
+                        self.status_requests += 1
                         self.cmd.sendto(b"GET_STATUS PLAYING snes9x,Test Game.sfc\n", src)
                     elif tok.startswith("SHOW_MSG "):
                         self.osd.append(tok[9:])
@@ -437,6 +447,22 @@ def main():
     f4 = ra.frames
     hold(p1, 1.5, buttons=BTN_A)
     check(ra.held_fraction(0, RP_A, f4 + 45) > 0.8, "after the restart the held A is sent again")
+    hold(p1, 0.3)
+
+    # --- GET_STATUS crashes the released RetroArch (1.22.2 and older) when the
+    # core is not in its info list: a 1.22.2 must never be asked for its status
+    check(ra.probes > 3 * 30 and ra.status_requests == 0,
+          f"RetroArch 1.22.2 never received GET_STATUS ({ra.probes} probes answered)")
+    # --- a newer RetroArch (fix merged January 2026) is asked, but only after
+    # its VERSION reply says it is safe
+    ra.mute = True
+    time.sleep(1.6)  # past REACH_TTL: the receiver drops the sync and forgets the version
+    ra.version = "1.23.0"
+    n0 = ra.probes
+    ra.mute = False
+    eventually(lambda: ra.status_requests >= 1, "RetroArch 1.23.0: GET_STATUS asked (one probe in 30)", timeout=5)
+    check(ra.status_after_probes is not None and ra.status_after_probes >= n0 + 1,
+          f"and only after its VERSION reply ({ra.status_after_probes - n0} probes answered first)")
     hold(p1, 0.3)
 
     p1.close()

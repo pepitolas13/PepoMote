@@ -26,6 +26,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("retroarch.osd_ready", "PepoMote: mando del movil conectado", "PepoMote: phone controller connected"),
     ("win.mode_retroarch", "Modo RetroArch: todos juegan", "RetroArch mode: everyone plays"),
     ("win.retroarch_live", "RetroArch {0} responde · {1} · {2} sondeos/s", "RetroArch {0} is responding · {1} · {2} polls/s"),
+    ("win.retroarch_live_short", "RetroArch {0} responde · {1} sondeos/s", "RetroArch {0} is responding · {1} polls/s"),
     ("win.retroarch_playing", "jugando {0} ({1})", "playing {0} ({1})"),
     ("win.retroarch_paused", "en pausa: {0} ({1})", "paused: {0} ({1})"),
     ("win.retroarch_menu", "en el menú", "in the menu"),

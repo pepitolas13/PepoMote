@@ -640,13 +640,23 @@ impl PepoMoteApp {
         // Estado vivo: responde (y qué corre), abierto pero mudo, o cerrado
         let live = &snap.retroarch_live;
         let (text, color) = if live.reachable {
-            let what = match &live.activity {
-                Some(crate::retroarch::Activity::Playing { core, content }) => tr!("win.retroarch_playing", content, core),
-                Some(crate::retroarch::Activity::Paused { core, content }) => tr!("win.retroarch_paused", content, core),
-                _ => tr!("win.retroarch_menu").to_owned(),
-            };
             let version = live.version.clone().unwrap_or_default();
-            (tr!("win.retroarch_live", version, what, live.polls_per_sec.round() as i64), theme::ok())
+            let polls = live.polls_per_sec.round() as i64;
+            // Qué corre solo se sabe en versiones posteriores a la 1.22.2 (a
+            // las demás no se les pregunta: se cierran con GET_STATUS)
+            let text = match &live.activity {
+                Some(crate::retroarch::Activity::Playing { core, content }) => {
+                    tr!("win.retroarch_live", version, tr!("win.retroarch_playing", content, core), polls)
+                }
+                Some(crate::retroarch::Activity::Paused { core, content }) => {
+                    tr!("win.retroarch_live", version, tr!("win.retroarch_paused", content, core), polls)
+                }
+                Some(crate::retroarch::Activity::Contentless) => {
+                    tr!("win.retroarch_live", version, tr!("win.retroarch_menu"), polls)
+                }
+                None => tr!("win.retroarch_live_short", version, polls),
+            };
+            (text, theme::ok())
         } else if live.degraded {
             (tr!("win.retroarch_degraded").to_owned(), theme::warn())
         } else {

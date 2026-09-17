@@ -25,9 +25,14 @@ configuración al salir y pisaría el cambio. Solo hace falta una vez: si las
 claves ya están, PepoMote no toca nada aunque RetroArch esté abierto.
 
 La ventana del receptor dice en todo momento si RetroArch responde, qué
-versión es y qué está corriendo («jugando Super Mario World.sfc (snes9x)»),
-y RetroArch enseña «PepoMote: mando del móvil conectado» en su pantalla al
-enlazar.
+versión es y a cuántos sondeos por segundo contesta, y RetroArch enseña
+«PepoMote: mando del móvil conectado» en su pantalla al enlazar. Qué está
+corriendo («jugando Super Mario World.sfc (snes9x)») solo se lo pregunta a
+versiones posteriores a la 1.22.2: en la 1.22.2 y anteriores el comando de
+red `GET_STATUS` cierra RetroArch cuando el núcleo cargado no está en su
+lista de información (núcleo fuera de `cores/`, sin archivo `.info` o sin
+caché todavía). Es un fallo de RetroArch corregido en enero de 2026, y
+PepoMote no manda ese comando a esas versiones.
 
 ## Los tres mandos
 
@@ -132,10 +137,20 @@ en Android no está incluido de momento.
 - **«RetroArch está abierto pero no responde a los comandos de red»**: el
   mando sigue funcionando en modo degradado (solo cambios, sin sincronizar
   con los fotogramas). Activa los comandos de red y reinicia RetroArch.
+- **RetroArch se cierra solo al poco de enlazar**: en la 1.22.2 y anteriores
+  el comando de red `GET_STATUS` cierra RetroArch si el núcleo no está en
+  su lista de información (ver arriba). PepoMote no se lo manda a esas
+  versiones; si otro programa usa la interfaz de comandos (un frontend,
+  un script), es él quien pregunta.
 - **Un botón se queda pulsado un solo fotograma o se suelta solo** con otros
   programas que usan el mando en red: es el despiste de `errno` de RetroArch
   en Windows; PepoMote lo esquiva refrescando el mando cada fotograma. Si te
   pasa con PepoMote, mira que la ventana del receptor diga «responde».
+- **El receptor dice «responde» pero el juego no se mueve**: RetroArch pausa
+  el contenido mientras su ventana no está en primer plano (Ajustes →
+  Interfaz → «Pausar el contenido cuando no está activo»). Haz clic en su
+  ventana o desactiva esa opción (`pause_nonactive`). Los comandos (Menú,
+  capturas, estados) sí funcionan con la ventana detrás.
 - **El mando no aparece en el juego**: en RetroArch, Ajustes → Entrada →
   Mando en red activado y el jugador 1 (o el que sea) habilitado; Ajustes →
   Entrada → Usuarios máximos ≥ número de móviles. Los mandos en red no salen
