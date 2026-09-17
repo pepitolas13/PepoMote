@@ -72,7 +72,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.key
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.RetroLayouts
+import dev.pepotech.pepomote.control.RightStick
+import dev.pepotech.pepomote.ui.components.CButtons
+import dev.pepotech.pepomote.ui.components.FaceCluster
+import dev.pepotech.pepomote.ui.components.needs
+import dev.pepotech.pepomote.ui.components.retroLabel
 import dev.pepotech.pepomote.net.ScreenClient
 import dev.pepotech.pepomote.sensor.SenderKind
 import dev.pepotech.pepomote.service.GamePadSide
@@ -139,6 +146,10 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val retroPad = wantedMode == LinkState.MODE_RETROARCH
     val operative = Route.isGamePad(link) && connected?.mode == wantedMode
     val pro = switchPad || retroPad || connected?.pad == LinkState.PAD_PRO
+    // RetroArch: la plantilla de la consola del juego cargado (o la elegida a
+    // mano); fuera de RetroArch, el RetroPad de siempre (nada cambia)
+    val retroChoice by LinkState.retroLayoutChoice.collectAsState()
+    val layout = if (retroPad) RetroLayouts.byId(LinkState.effectiveRetroLayout(connected, retroChoice)) ?: RetroLayouts.RETROPAD else RetroLayouts.RETROPAD
     val engine = LinkState.motion
     val rotation = rememberDisplayRotation()
     val screen by ScreenLink.client.collectAsState()
@@ -243,7 +254,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             // crecen con k y los pads llenan la columna; en cualquier móvil con
             // pantalla, lo de siempre; sin pantalla, en fila o apilado según cuál
             // dé pads más grandes
-            val m = padMetrics(maxWidth.value, maxHeight.value, noScreenPref, pro, switchPad)
+            val m = padMetrics(maxWidth.value, maxHeight.value, noScreenPref, pro, switchPad, retroPad, layout.needs())
             val gap = m.gap.dp
             val k = m.k
             val headerH = m.headerH.dp
@@ -254,7 +265,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             val shoulderW = m.shoulderW.dp
             val padSize = m.padSize.dp
             val clickSize = m.clickSize.dp
-            val faceBtn = m.faceBtn.dp
+            val dpadSize = m.dpadSize.dp
+            val faceBox = m.faceBox.dp
             val touchW = m.touchW.dp
             val touchH = m.touchH.dp
 
@@ -303,7 +315,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         .fillMaxWidth()
                         .height(bodyH)
                 ) {
-                    Row(
+                    // Cada plantilla es un trazado nuevo: ningún botón hereda el bit de otro
+                    key(layout.id) { Row(
                         modifier = Modifier
                             .fillMaxSize()
                             .alpha(if (operative) 1f else 0.4f),
@@ -319,17 +332,21 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             horizontalAlignment = Alignment.Start,
                             verticalArrangement = Arrangement.Top
                         ) {
+                            // Hombros y stick según la plantilla (RetroArch): sin
+                            // stick, la cruceta ocupa su hueco y crece
+                            val lLabel = if (retroPad) layout.shoulders.l else "L"
+                            val zlLabel = if (retroPad) layout.shoulders.l2 else "ZL"
                             val shoulders: @Composable () -> Unit = {
                                 Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-                                    ShoulderButton("L", ButtonState.L, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
-                                    ShoulderButton(if (retroPad) "L2" else "ZL", ButtonState.ZL, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                                    if (lLabel != null) ShoulderButton(lLabel, ButtonState.L, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                                    if (zlLabel != null) ShoulderButton(zlLabel, ButtonState.ZL, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                                 }
                             }
                             val click: @Composable () -> Unit = {
-                                RoundButton("L3", clickSize, ButtonState.STICK_L, textSize = (12 * k).roundToInt())
+                                if (layout.stickClicks) RoundButton("L3", clickSize, ButtonState.STICK_L, textSize = (12 * k).roundToInt())
                             }
                             val stick: @Composable () -> Unit = {
-                                AnalogStick(padSize) { x, y -> ButtonState.setStick(x, y) }
+                                if (layout.leftStick) AnalogStick(padSize) { x, y -> ButtonState.setStick(x, y) }
                             }
                             if (m.row) {
                                 Row(
@@ -341,26 +358,30 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                 }
                                 Spacer(Modifier.weight(1f))
                                 Row(
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(gap)
+                                    horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally)
                                 ) {
                                     stick()
-                                    PadCross(sizeDp = padSize)
+                                    PadCross(sizeDp = dpadSize)
                                 }
                             } else {
                                 shoulders()
                                 Spacer(Modifier.weight(1f))
-                                Row(
-                                    verticalAlignment = Alignment.Bottom,
-                                    horizontalArrangement = Arrangement.spacedBy(gap)
-                                ) {
-                                    stick()
-                                    click()
+                                if (layout.leftStick) {
+                                    Row(
+                                        verticalAlignment = Alignment.Bottom,
+                                        horizontalArrangement = Arrangement.spacedBy(gap)
+                                    ) {
+                                        stick()
+                                        click()
+                                    }
+                                    // Tablet: stick y cruceta juntos, abajo (donde llega el
+                                    // pulgar), en vez de repartidos por toda la altura
+                                    if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
                                 }
-                                // Tablet: stick y cruceta juntos, abajo (donde llega el
-                                // pulgar), en vez de repartidos por toda la altura
-                                if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
-                                PadCross(sizeDp = padSize)
+                                PadCross(sizeDp = dpadSize)
+                                if (!layout.leftStick) Spacer(Modifier.weight(1f))
                             }
                         }
 
@@ -377,17 +398,20 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             val pillW = m.pillW.dp
                             val pillH = m.pillH.dp
                             val roundBtn = m.roundBtn.dp
-                            // RetroArch: − / + son Select / Start, Home abre el menú de
-                            // RetroArch y Capturar es el avance rápido (mantener)
-                            val minus: @Composable () -> Unit = {
-                                if (retroPad) RoundButton(stringResource(R.string.retro_select), roundBtn, ButtonState.MINUS, textSize = (9 * k).roundToInt())
-                                else RoundButton("−", roundBtn, ButtonState.MINUS, textSize = (19 * k).roundToInt())
-                            }
+                            // RetroArch: los botones del centro de la consola (Select/Start,
+                            // Mode/Start, Pause, Run…) con Menú (el menú de RetroArch) en
+                            // medio, y Capturar es el avance rápido (mantener)
                             val home: @Composable () -> Unit = { RoundButton(stringResource(if (retroPad) R.string.retro_menu else R.string.home_btn), roundBtn, ButtonState.HOME, textSize = ((if (retroPad) 10 else 12) * k).roundToInt()) }
-                            val plus: @Composable () -> Unit = {
-                                if (retroPad) RoundButton(stringResource(R.string.retro_start), roundBtn, ButtonState.PLUS, textSize = (9 * k).roundToInt())
-                                else RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt())
-                            }
+                            val centers: List<@Composable () -> Unit> = if (retroPad) {
+                                val own: List<@Composable () -> Unit> = layout.center.map { c ->
+                                    { RoundButton(retroLabel(c.label), roundBtn, c.bit, textSize = (9 * k).roundToInt()) }
+                                }
+                                if (own.size >= 2) listOf(own[0], home) + own.drop(1) else listOf(home) + own
+                            } else listOf(
+                                { RoundButton("−", roundBtn, ButtonState.MINUS, textSize = (19 * k).roundToInt()) },
+                                home,
+                                { RoundButton("+", roundBtn, ButtonState.PLUS, textSize = (19 * k).roundToInt()) }
+                            )
                             val tv: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.tv_pad), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt()) }
                             val blow: @Composable () -> Unit = { ShoulderButton(stringResource(R.string.blow), ButtonState.MIC, pillW, pillH, textSize = (12 * k).roundToInt()) }
                             val capture: @Composable () -> Unit = { ShoulderButton(stringResource(if (retroPad) R.string.retro_ff else R.string.capture), ButtonState.SCREEN, pillW, pillH, textSize = (12 * k).roundToInt()) }
@@ -397,9 +421,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(gap)
                                 ) {
-                                    minus()
-                                    home()
-                                    plus()
+                                    for (c in centers) c()
                                     if (switchPad || retroPad) capture()
                                     if (!pro) {
                                         tv()
@@ -409,7 +431,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             } else {
                                 if (pro) {
                                     Text(
-                                        stringResource(if (retroPad) R.string.retropad else R.string.pro_controller),
+                                        if (retroPad) layout.name else stringResource(R.string.pro_controller),
                                         style = MaterialTheme.typography.bodyMedium,
                                         textAlign = TextAlign.Center
                                     )
@@ -425,9 +447,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                     horizontalArrangement = Arrangement.spacedBy(rowGap)
                                 ) {
                                     if (switchPad || retroPad) capture() else if (!pro) tv()
-                                    minus()
-                                    home()
-                                    plus()
+                                    for (c in centers) c()
                                     if (!pro) blow()
                                 }
                             }
@@ -444,21 +464,29 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.Top
                         ) {
+                            val rLabel = if (retroPad) layout.shoulders.r else "R"
+                            val zrLabel = if (retroPad) layout.shoulders.r2 else "ZR"
                             val shoulders: @Composable () -> Unit = {
                                 Column(
                                     horizontalAlignment = Alignment.End,
                                     verticalArrangement = Arrangement.spacedBy(gap)
                                 ) {
-                                    ShoulderButton("R", ButtonState.R, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
-                                    ShoulderButton(if (retroPad) "R2" else "ZR", ButtonState.ZR, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                                    if (rLabel != null) ShoulderButton(rLabel, ButtonState.R, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
+                                    if (zrLabel != null) ShoulderButton(zrLabel, ButtonState.ZR, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
                                 }
                             }
                             val click: @Composable () -> Unit = {
-                                RoundButton("R3", clickSize, ButtonState.STICK_R, textSize = (12 * k).roundToInt())
+                                if (layout.stickClicks) RoundButton("R3", clickSize, ButtonState.STICK_R, textSize = (12 * k).roundToInt())
                             }
+                            // El hueco del stick derecho: stick, los botones C de N64 o nada
                             val stick: @Composable () -> Unit = {
-                                AnalogStick(padSize) { x, y -> ButtonState.setStick2(x, y) }
+                                when (layout.rightStick) {
+                                    RightStick.ANALOG -> AnalogStick(padSize) { x, y -> ButtonState.setStick2(x, y) }
+                                    RightStick.CBUTTONS -> CButtons(padSize) { x, y -> ButtonState.setStick2(x, y) }
+                                    RightStick.NONE -> Unit
+                                }
                             }
+                            val hasRight = layout.rightStick != RightStick.NONE
                             if (m.row) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -469,27 +497,31 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                                 }
                                 Spacer(Modifier.weight(1f))
                                 Row(
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(gap)
+                                    horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally)
                                 ) {
-                                    FaceButtons(padSize, faceBtn)
+                                    FaceCluster(layout, faceBox, faceBox)
                                     stick()
                                 }
                             } else {
                                 shoulders()
                                 Spacer(Modifier.weight(1f))
-                                Row(
-                                    verticalAlignment = Alignment.Bottom,
-                                    horizontalArrangement = Arrangement.spacedBy(gap)
-                                ) {
-                                    click()
-                                    stick()
+                                if (hasRight) {
+                                    Row(
+                                        verticalAlignment = Alignment.Bottom,
+                                        horizontalArrangement = Arrangement.spacedBy(gap)
+                                    ) {
+                                        click()
+                                        stick()
+                                    }
+                                    if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
                                 }
-                                if (k > 1f) Spacer(Modifier.height(gap * 2)) else Spacer(Modifier.weight(1f))
-                                FaceButtons(padSize, faceBtn)
+                                FaceCluster(layout, faceBox, faceBox)
+                                if (!hasRight) Spacer(Modifier.weight(1f))
                             }
                         }
-                    }
+                    } }
 
                     if (!operative) {
                         // Inerte hasta que el receptor confirme el modo: nada llega a los controles
@@ -771,8 +803,9 @@ private fun GamePadHeaderCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            val retroChoice by LinkState.retroLayoutChoice.collectAsState()
             val padName = when {
-                wantedMode == LinkState.MODE_RETROARCH -> stringResource(R.string.retropad)
+                wantedMode == LinkState.MODE_RETROARCH -> RetroLayouts.byId(LinkState.wouldBeRetroLayout(link, retroChoice))?.name ?: stringResource(R.string.retropad)
                 wantedMode == LinkState.MODE_SWITCH || link.pad == LinkState.PAD_PRO -> stringResource(R.string.pro_controller)
                 else -> stringResource(R.string.gamepad)
             }
@@ -804,6 +837,16 @@ private fun GamePadHeaderCard(
                 )
             }
         }
+        // RetroArch: el juego cargado (lo que RetroArch acaba de abrir, según el PC)
+        if (wantedMode == LinkState.MODE_RETROARCH && link.game != null && link.game.title.isNotEmpty()) {
+            Text(
+                listOf(link.game.title, link.game.core).filter { it.isNotEmpty() }.joinToString(" · "),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = PepoColors.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         if (link.slot == 0) {
             // Mientras se espera el eco, Wii U ya va marcado (es lo pedido)
             ModeChips(
@@ -822,35 +865,6 @@ private fun GamePadHeaderCard(
     }
 }
 
-/**
- * Rombo: X arriba, Y izquierda, A derecha (azul, destacado), B abajo. El
- * texto crece con el botón (18 y 20 sp en los 44 dp de un móvil).
- */
-@Composable
-internal fun FaceButtons(size: Dp, btn: Dp) {
-    val text = (btn.value * 18f / 44f).roundToInt()
-    Box(Modifier.size(size)) {
-        Box(Modifier.align(BiasAlignment(0f, -1f))) {
-            RoundButton("X", btn, ButtonState.X, textSize = text)
-        }
-        Box(Modifier.align(BiasAlignment(-1f, 0f))) {
-            RoundButton("Y", btn, ButtonState.Y, textSize = text)
-        }
-        Box(Modifier.align(BiasAlignment(1f, 0f))) {
-            RoundButton(
-                "A", btn, ButtonState.A,
-                background = PepoColors.Blue,
-                pressedColor = PepoColors.BlueHover,
-                textColor = PepoColors.OnAccent,
-                textSize = (btn.value * 20f / 44f).roundToInt(),
-                pop = true
-            )
-        }
-        Box(Modifier.align(BiasAlignment(0f, 1f))) {
-            RoundButton("B", btn, ButtonState.B, textSize = text)
-        }
-    }
-}
 
 /**
  * Pantalla táctil del GamePad: rectángulo 16:9 con marco fino. Un solo

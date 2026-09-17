@@ -1,5 +1,8 @@
 package dev.pepotech.pepomote.ui.components
 
+import dev.pepotech.pepomote.control.RetroLayout
+import dev.pepotech.pepomote.control.RightStick
+
 /**
  * Medidas del GamePad de Wii U para un tamaño de pantalla (dp, todo escalado
  * al tamaño real; misma fórmula letra por letra que `PadMetrics` en iOS). En
@@ -42,19 +45,44 @@ data class PadMetrics(
     val pillH: Float,
     val touchW: Float,
     val touchH: Float,
+    /** Cruceta: el stick izquierdo ocupa `padSize`; sin él (plantillas de RetroArch) crece. */
+    val dpadSize: Float,
+    /** Caja de los botones frontales: `padSize`, o mayor sin stick derecho. */
+    val faceBox: Float,
 ) {
     /** Tamaño de texto de los botones (sp): crece con la tablet. */
     fun text(base: Float): Float = base * k
 }
 
-fun padMetrics(w: Float, h: Float, noScreen: Boolean = false, pro: Boolean = false, switchPad: Boolean = false): PadMetrics {
+/**
+ * Lo que la plantilla de consola necesita del trazado (RetroArch): con lo
+ * del RetroPad no cambia ningún número.
+ */
+data class PadNeeds(val leftStick: Boolean = true, val rightStick: RightStick = RightStick.ANALOG, val centerButtons: Int = 2) {
+    companion object {
+        val RETROPAD = PadNeeds()
+    }
+}
+
+fun RetroLayout.needs(): PadNeeds = PadNeeds(leftStick, rightStick, center.size)
+
+fun padMetrics(
+    w: Float,
+    h: Float,
+    noScreen: Boolean = false,
+    pro: Boolean = false,
+    switchPad: Boolean = false,
+    retroPad: Boolean = false,
+    needs: PadNeeds = PadNeeds.RETROPAD,
+): PadMetrics {
     val k = UiScale.gamePad(w, h)
-    val none = noScreen || pro || switchPad
-    val pills = if (switchPad) 1 else if (pro) 0 else 2
+    val none = noScreen || pro || switchPad || retroPad
+    // RetroArch como Switch: una pastilla (Rápido) y el selector alto
+    val pills = if (switchPad || retroPad) 1 else if (pro) 0 else 2
     val pillMax = 66f * k
     val pillH = 30f * k
     val gap = 6f
-    val selectorH = if (switchPad) 48f else 36f
+    val selectorH = if (switchPad || retroPad) 48f else 36f
     val bodyH = h - 38f - selectorH - gap * 3
     val shoulderH = minOf(maxOf(bodyH * 0.09f, 26f), 40f * k)
     val bottomRowH = minOf(maxOf(bodyH * 0.16f, 44f), 60f * k)
@@ -70,7 +98,8 @@ fun padMetrics(w: Float, h: Float, noScreen: Boolean = false, pro: Boolean = fal
         pad = minOf(padH, sideW - clickMax - gap)
     } else {
         val rb = bottomRowH * 0.85f
-        val need = rb * 3 + 10f * (2 + pills) + pillMax * pills + 20f
+        val n = 1 + needs.centerButtons
+        val need = rb * n + 10f * (n - 1 + pills) + pillMax * pills + 20f
         val sideS = (w - need - gap * 2) / 2
         val padStack = minOf(padH, sideS - clickMax - gap)
         val cw = if (pills == 0) rb else pillMax
@@ -90,16 +119,24 @@ fun padMetrics(w: Float, h: Float, noScreen: Boolean = false, pro: Boolean = fal
     val pillW: Float
     if (row) {
         rowGap = gap
-        roundBtn = if (switchPad) minOf(bottomRowH * 0.85f, (bodyH - pillH - gap * 3) / 3).coerceAtLeast(1f)
+        roundBtn = if (switchPad || retroPad) minOf(bottomRowH * 0.85f, (bodyH - pillH - gap * 3) / (1 + needs.centerButtons)).coerceAtLeast(1f)
             else bottomRowH * 0.85f
         pillW = if (pills == 0) 0f else pillMax
     } else {
         // La fila entera tiene que caber en el centro: pastillas y círculos se encogen juntos
         rowGap = if (centerW < 300f) 6f else 10f
         pillW = if (pills == 0) 0f else minOf(maxOf(centerW * 0.22f, 44f), pillMax)
-        roundBtn = minOf(maxOf((centerW - rowGap * (2 + pills) - pillW * pills) / 3, 28f), bottomRowH * 0.85f)
+        val n = 1 + needs.centerButtons
+        roundBtn = minOf(maxOf((centerW - rowGap * (n - 1 + pills) - pillW * pills) / n, 28f), bottomRowH * 0.85f)
     }
-    val touchW = if (switchPad) 0f else maxOf(minOf(centerW, (bodyH - bottomRowH - gap * 2) * (16f / 9f)), 64f)
+    val touchW = if (switchPad || retroPad) 0f else maxOf(minOf(centerW, (bodyH - bottomRowH - gap * 2) * (16f / 9f)), 64f)
+    // Sin stick izquierdo la cruceta ocupa su hueco y crece; sin stick
+    // derecho, los botones frontales igual (en fila, los dos huecos; apilado,
+    // la altura bajo los gatillos)
+    val slotH = bodyH - shoulderH * 2 - gap * 2
+    val grown = minOf(padSize * 1.35f, slotH, if (row) padSize * 2 + gap else slotH)
+    val dpadSize = if (needs.leftStick) padSize else grown
+    val faceBox = if (needs.rightStick == RightStick.NONE) grown else padSize
     return PadMetrics(
         w = w, h = h, k = k, noScreen = none, pro = pro, row = row,
         gap = gap, headerH = 38f, selectorH = selectorH, bodyH = bodyH,
@@ -108,5 +145,6 @@ fun padMetrics(w: Float, h: Float, noScreen: Boolean = false, pro: Boolean = fal
         centerW = centerW, bottomRowH = bottomRowH,
         rowGap = rowGap, roundBtn = roundBtn, pillW = pillW, pillH = pillH,
         touchW = touchW, touchH = touchW * (9f / 16f),
+        dpadSize = dpadSize, faceBox = faceBox,
     )
 }

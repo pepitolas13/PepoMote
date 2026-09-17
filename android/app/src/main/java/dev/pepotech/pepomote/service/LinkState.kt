@@ -1,6 +1,8 @@
 package dev.pepotech.pepomote.service
 
 import android.content.Context
+import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.control.RetroLayouts
 import android.os.SystemClock
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.sensor.MotionEngine
@@ -47,7 +49,13 @@ sealed class UiLink {
         /** El receptor entiende el apuntado por inclinación (`ok.tilt`); false en receptores anteriores. */
         val supportsTilt: Boolean = false,
         /** `ok.modes` contains "retroarch" (PC receiver with the RetroArch network gamepad). */
-        val supportsRetroArch: Boolean = false
+        val supportsRetroArch: Boolean = false,
+        /**
+         * RetroArch: el juego cargado según el receptor (mensaje `game`); con
+         * su consola se elige la plantilla de mando. Se conserva al cambiar de
+         * modo (solo cuenta en RetroArch).
+         */
+        val game: RetroGame? = null
     ) : UiLink()
 
     data class Failed(val code: String, val msg: String) : UiLink()
@@ -130,6 +138,43 @@ object LinkState {
     /** Modo Wii U: el móvil solo como pantalla táctil (pantalla completa); el eco lo confirma. */
     @Volatile
     var sendScreenOnly: ((Boolean) -> Unit)? = null
+
+    /**
+     * RetroArch: la plantilla de consola efectiva cambió (juego nuevo, eco de
+     * `pad` o elección a mano): el servicio la manda al receptor (`pad.layout`).
+     */
+    @Volatile
+    var sendLayout: (() -> Unit)? = null
+
+    /** RetroArch: mando de consola elegido a mano (preferencias); lo carga el servicio al conectar. */
+    private val _retroLayoutChoice = MutableStateFlow(RetroLayoutChoice())
+    val retroLayoutChoice: StateFlow<RetroLayoutChoice> = _retroLayoutChoice
+
+    internal fun loadRetroLayouts(context: Context) {
+        _retroLayoutChoice.value = AppPrefs.retroLayoutChoice(context)
+    }
+
+    /** Elegir a mano (null = automático) para el juego `path`; se guarda y se avisa al receptor. */
+    fun pickRetroLayout(context: Context, path: String?, id: String?) {
+        val next = _retroLayoutChoice.value.pick(path, id)
+        _retroLayoutChoice.value = next
+        AppPrefs.setRetroLayoutChoice(context, next)
+        sendLayout?.invoke()
+    }
+
+    /**
+     * Plantilla que tocaría como RetroPad en esta sesión: la elegida a mano
+     * para el juego (o la global), si no la consola que anunció el PC, si no
+     * el RetroPad completo.
+     */
+    fun wouldBeRetroLayout(link: UiLink.Connected?, choice: RetroLayoutChoice = _retroLayoutChoice.value): String {
+        val game = link?.game
+        return RetroLayouts.effective(game?.console, choice.choiceFor(game?.path?.takeIf { it.isNotEmpty() }))
+    }
+
+    /** La que se enseña: solo en RetroArch y siendo el RetroPad; si no, el RetroPad completo. */
+    fun effectiveRetroLayout(link: UiLink.Connected?, choice: RetroLayoutChoice = _retroLayoutChoice.value): String =
+        if (link?.mode == MODE_RETROARCH && link.pad == PAD_RETROPAD) wouldBeRetroLayout(link, choice) else RetroLayouts.RETROPAD.id
 
     /**
      * Modo RetroArch: tecla rápida por su nombre del protocolo (`save_state`,

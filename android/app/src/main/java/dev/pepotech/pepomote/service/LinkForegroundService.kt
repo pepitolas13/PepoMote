@@ -17,6 +17,7 @@ import dev.pepotech.pepomote.MainActivity
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.RetroLayouts
 import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.ControlClient
@@ -294,6 +295,10 @@ class LinkForegroundService : Service() {
                     LinkState.sendHotkey = { name, down ->
                         if ((LinkState.flow.value as? UiLink.Connected)?.mode == LinkState.MODE_RETROARCH) control?.sendHotkey(name, down)
                     }
+                    // RetroArch: la plantilla de consola elegida a mano, y el gancho para
+                    // avisar al receptor cuando cambie la efectiva
+                    LinkState.loadRetroLayouts(this@LinkForegroundService)
+                    LinkState.sendLayout = { syncRetroLayout() }
                     LinkState.publish(
                         UiLink.Connected(
                             pcName, ok.mode, null, 0f, ok.slot,
@@ -321,8 +326,7 @@ class LinkForegroundService : Service() {
                     }
                     // Reponer solo la elección del modo confirmado, después de su eco si estaba pendiente.
                     if (!nunchuk && requestedMode == null && (ok.mode == LinkState.MODE_CEMU && ok.supportsCemu || ok.mode == LinkState.MODE_SWITCH && ok.supportsSwitch || ok.mode == LinkState.MODE_RETROARCH && ok.supportsRetroArch)) {
-                        control?.restoreModePreferences(ok.mode, AppPrefs.pad(this@LinkForegroundService, ok.mode),
-                            cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
+                        restorePrefs(ok.mode)
                     }
                     // Doble pantalla: la pantalla GamePad abre el canal cuando
                     // toca; va al mismo puerto que este control. Un Nunchuk no tiene.
@@ -388,8 +392,7 @@ class LinkForegroundService : Service() {
                     LinkState.resolveIntent(this@LinkForegroundService, mode, byPc)
                     if (role == LinkState.ROLE_WIIMOTE) {
                         if (mode == LinkState.MODE_CEMU && before?.supportsCemu == true || mode == LinkState.MODE_SWITCH && before?.supportsSwitch == true || mode == LinkState.MODE_RETROARCH && before?.supportsRetroArch == true) {
-                            control?.restoreModePreferences(mode, AppPrefs.pad(this@LinkForegroundService, mode),
-                                cemuScreenOnly = AppPrefs.gamePadFullScreen(this@LinkForegroundService))
+                            restorePrefs(mode)
                         }
                         if (mode == LinkState.MODE_CEMU) {
                             sessionId?.let { ScreenLink.bind(pairing.host, pairing.port, it) }
@@ -402,6 +405,13 @@ class LinkForegroundService : Service() {
                     val before = LinkState.flow.value as? UiLink.Connected
                     if (before?.pad != pad || player != null && before.player != player) ButtonState.reset()
                     LinkState.updateConnected { it.copy(pad = PadPreference.effective(it.mode, pad), player = player ?: it.player) }
+                    syncRetroLayout()
+                }
+
+                override fun onGameChanged(game: RetroGame?) {
+                    if (gen != generation) return
+                    LinkState.updateConnected { it.copy(game = game) }
+                    syncRetroLayout()
                 }
 
                 override fun onNunchukChanged(own: Boolean) {
@@ -507,9 +517,43 @@ class LinkForegroundService : Service() {
         return moved
     }
 
+    /** RetroArch: última plantilla de consola avisada al receptor (`pad.layout`). */
+    private var lastSentLayout: String? = null
+
+    /** Repone el mando del modo confirmado (y, en RetroArch, la plantilla que toca). */
+    private fun restorePrefs(mode: String) {
+        val pad = AppPrefs.pad(this, mode)
+        val layout = if (mode == LinkState.MODE_RETROARCH) LinkState.wouldBeRetroLayout(LinkState.flow.value as? UiLink.Connected) else null
+        lastSentLayout = if (mode == LinkState.MODE_RETROARCH && pad == LinkState.PAD_RETROPAD) layout else null
+        control?.restoreModePreferences(mode, pad, cemuScreenOnly = AppPrefs.gamePadFullScreen(this), layout = layout)
+    }
+
+    /**
+     * RetroArch como RetroPad: la plantilla de consola que se enseña (por el
+     * juego que anunció el PC o la elegida a mano) va al receptor en cuanto
+     * cambia; si cambia jugando, se suelta todo y se avisa en pantalla.
+     */
+    private fun syncRetroLayout() {
+        val cur = LinkState.flow.value as? UiLink.Connected ?: return
+        if (cur.mode != LinkState.MODE_RETROARCH || cur.pad != LinkState.PAD_RETROPAD) {
+            lastSentLayout = null
+            return
+        }
+        val eff = LinkState.effectiveRetroLayout(cur)
+        if (eff == lastSentLayout) return
+        if (lastSentLayout != null) {
+            ButtonState.reset()
+            LinkState.publishNotice(getString(R.string.retro_layout_changed, RetroLayouts.byId(eff)?.name ?: eff))
+        }
+        lastSentLayout = eff
+        control?.sendPad(LinkState.PAD_RETROPAD, eff)
+    }
+
     /** Cierra el enlace actual (si lo hay) e invalida sus callbacks. */
     private fun teardownLink() {
         generation++
+        LinkState.sendLayout = null
+        lastSentLayout = null
         LinkState.sendMode = null
         LinkState.sendPad = null
         LinkState.sendText = null

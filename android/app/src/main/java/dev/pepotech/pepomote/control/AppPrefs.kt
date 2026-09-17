@@ -3,6 +3,7 @@ package dev.pepotech.pepomote.control
 import android.content.Context
 import androidx.core.content.edit
 import dev.pepotech.pepomote.service.PadPreference
+import dev.pepotech.pepomote.service.RetroLayoutChoice
 
 /** Preferencias simples de la app (aparte del emparejamiento). */
 object AppPrefs {
@@ -22,6 +23,14 @@ object AppPrefs {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
             putString(key, PadPreference.normalize(mode, pad))
         }
+    }
+
+    /** RetroArch: mando de consola elegido a mano (JSON de [RetroLayoutChoice]). */
+    fun retroLayoutChoice(context: Context): RetroLayoutChoice =
+        RetroLayoutChoice.decode(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("retroLayouts", null))
+
+    fun setRetroLayoutChoice(context: Context, choice: RetroLayoutChoice) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString("retroLayouts", choice.encode()) }
     }
 
     fun volDownIsB(context: Context): Boolean =

@@ -14,6 +14,30 @@ class PadMetricsTest {
     private val eps = 0.5f
 
     @Test
+    fun retroArchMideComoSwitchYSuPastillaRapidoSeVe() {
+        // Antes: RetroArch no llegaba a las medidas y la pastilla «Rápido» salía con 0 dp
+        for ((w, h) in listOf(640f to 240f, 734f to 320f, 852f to 393f, 1133f to 744f, 1376f to 1032f)) {
+            val retro = padMetrics(w, h, pro = true, retroPad = true)
+            val switch = padMetrics(w, h, pro = true, switchPad = true)
+            assertTrue("Rápido visible en $w x $h", retro.pillW > 0f)
+            assertEquals("selector alto como en Switch", 48f, retro.selectorH, 0f)
+            assertEquals("con lo del RetroPad, las mismas medidas que Switch", switch, retro)
+            assertEquals("el RetroPad no cambia la cruceta", retro.padSize, retro.dpadSize, 0f)
+            assertEquals(retro.padSize, retro.faceBox, 0f)
+            // sin sticks (NES, Mega Drive…) la cruceta y los botones crecen dentro del cuerpo
+            val nes = padMetrics(w, h, pro = true, retroPad = true, needs = PadNeeds(leftStick = false, rightStick = dev.pepotech.pepomote.control.RightStick.NONE, centerButtons = 2))
+            // (en una pantalla muy baja el alto ya limitaba al stick: la cruceta se queda igual)
+            assertTrue("$w x $h", nes.dpadSize >= nes.padSize && nes.dpadSize <= nes.padSize * 1.35f + 0.01f)
+            assertEquals(nes.dpadSize, nes.faceBox, 0f)
+            assertTrue(nes.dpadSize <= nes.bodyH - nes.shoulderH * 2 - nes.gap * 2 + 0.01f)
+            assertEquals("los sticks y hombros no cambian", retro.padSize, nes.padSize, 0f)
+            // Master System: un solo botón central (Pause) deja más sitio a Menú
+            val ms = padMetrics(w, h, pro = true, retroPad = true, needs = PadNeeds(false, dev.pepotech.pepomote.control.RightStick.NONE, 1))
+            assertTrue(ms.roundBtn >= retro.roundBtn)
+        }
+    }
+
+    @Test
     fun switchHasOneCapturePillAndNeverAStreamArea() {
         for ((w, h) in listOf(640f to 240f, 734f to 320f, 852f to 393f, 1133f to 744f, 1376f to 1032f)) {
             val m = padMetrics(w, h, pro = true, switchPad = true)

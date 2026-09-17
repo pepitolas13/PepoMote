@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.pepotech.pepomote.control.RetroLayouts
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.theme.PepoColors
@@ -154,6 +156,10 @@ fun PadSelector(link: UiLink.Connected, compact: Boolean = false, help: String? 
 @Composable
 private fun RetroPadSelector(link: UiLink.Connected, compact: Boolean, help: String?) {
     var pending by remember { mutableStateOf<String?>(null) }
+    // El primer segmento lleva la plantilla de consola que toca; ya elegido, abre el selector
+    var pickerOpen by remember { mutableStateOf(false) }
+    val retroChoice by LinkState.retroLayoutChoice.collectAsState()
+    val layoutName = RetroLayouts.byId(LinkState.wouldBeRetroLayout(link, retroChoice))?.name ?: stringResource(R.string.retropad)
     LaunchedEffect(link.pad) { pending = null }
     LaunchedEffect(pending) {
         if (pending != null) {
@@ -194,12 +200,12 @@ private fun RetroPadSelector(link: UiLink.Connected, compact: Boolean, help: Str
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     for ((pad, label) in listOf(
-                        LinkState.PAD_RETROPAD to R.string.retropad,
-                        LinkState.PAD_NES to R.string.nes_pad,
-                        LinkState.PAD_GUN to R.string.light_gun
+                        LinkState.PAD_RETROPAD to layoutName,
+                        LinkState.PAD_NES to stringResource(R.string.nes_pad),
+                        LinkState.PAD_GUN to stringResource(R.string.light_gun)
                     )) {
                         Segment(
-                            label = stringResource(label),
+                            label = label,
                             selected = link.pad == pad,
                             pending = pending == pad,
                             compact = compact
@@ -207,6 +213,8 @@ private fun RetroPadSelector(link: UiLink.Connected, compact: Boolean, help: Str
                             if (link.pad != pad) {
                                 pending = pad
                                 LinkState.sendPad?.invoke(pad)
+                            } else if (pad == LinkState.PAD_RETROPAD && pending == null) {
+                                pickerOpen = true
                             }
                         }
                     }
@@ -222,6 +230,7 @@ private fun RetroPadSelector(link: UiLink.Connected, compact: Boolean, help: Str
             }
         }
     }
+    if (pickerOpen) RetroLayoutPicker(link) { pickerOpen = false }
 }
 
 @Composable

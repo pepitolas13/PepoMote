@@ -10,11 +10,13 @@ import java.util.concurrent.TimeUnit
 /** RetroArch over the real loopback control channel: capability, pads and hotkeys. */
 class RetroArchControlTest {
     private data class Pad(val pad: String, val player: Int?)
+    private data class Game(val console: String?, val title: String)
 
     @Test fun retroArchCapabilityPadsAndHotkeys() {
         val ok = LinkedBlockingQueue<ControlClient.Ok>()
         val pads = LinkedBlockingQueue<Pad>()
         val modes = LinkedBlockingQueue<String>()
+        val games = LinkedBlockingQueue<Game>()
         ServerSocket(0).use { listener ->
             listener.soTimeout = 4000
             val client = ControlClient("127.0.0.1", listener.localPort, "test-token", "Test", "Test", "wiimote",
@@ -22,6 +24,7 @@ class RetroArchControlTest {
                     override fun onOk(value: ControlClient.Ok) { ok.add(value) }
                     override fun onPadChanged(pad: String, player: Int?) { pads.add(Pad(pad, player)) }
                     override fun onModeChanged(mode: String, byPc: Boolean) { modes.add(mode) }
+                    override fun onGameChanged(game: dev.pepotech.pepomote.service.RetroGame?) { games.add(Game(game?.console, game?.title ?: "")) }
                     override fun onNunchukChanged(own: Boolean) = Unit
                     override fun onError(code: String, msg: String) = Unit
                     override fun onNotice(text: String) = Unit
@@ -58,6 +61,19 @@ class RetroArchControlTest {
                     // el modo llega como cualquier otro
                     send("""{"m":"mode","mode":"retroarch"}""")
                     assertEquals("retroarch", modes.poll(3, TimeUnit.SECONDS))
+                    // el juego cargado según el receptor (y «ninguno»)
+                    send("""{"m":"game","console":"md","system":"Mega Drive","core":"Genesis Plus GX","title":"Cave Story","path":"C:\\\\r\\\\cs.zip"}""")
+                    assertEquals(Game("md", "Cave Story"), games.poll(3, TimeUnit.SECONDS))
+                    send("""{"m":"game","console":null,"system":"","core":"","title":"","path":""}""")
+                    assertEquals(Game(null, ""), games.poll(3, TimeUnit.SECONDS))
+                    // la plantilla de consola viaja en pad.layout (solo si se sabe)
+                    client.sendPad("retropad", "md")
+                    val withLayout = JSONObject(reader.readLine())
+                    assertEquals("pad", withLayout.getString("m"))
+                    assertEquals("retropad", withLayout.getString("pad"))
+                    assertEquals("md", withLayout.getString("layout"))
+                    client.sendPad("nes")
+                    assertFalse(JSONObject(reader.readLine()).has("layout"))
                     // un receptor antiguo no anuncia RetroArch
                     send("""{"m":"ok","session_id":2,"mode":"pointer","modes":["pointer","dolphin","cemu","switch"]}""")
                     val legacy = ok.poll(3, TimeUnit.SECONDS) ?: error("no legacy ok")

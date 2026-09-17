@@ -207,7 +207,7 @@
 
     <!-- RetroArch -->
     <string name="channel_retroarch">RetroArch</string>
-    <string name="channel_retroarch_sub">RetroPad, NES pad or light gun</string>
+    <string name="channel_retroarch_sub">Each console\'s pad, sideways Wii or light gun</string>
     <string name="mode_retroarch">RetroArch</string>
     <string name="activating_retroarch">Activating RetroArch…</string>
     <string name="warn_needs_retroarch">Update the PC receiver to use RetroArch.</string>
@@ -215,13 +215,20 @@
     <string name="shortcut_retroarch_long">Controller for RetroArch</string>
     <string name="in_retroarch">In RetroArch I am:</string>
     <string name="retropad">RetroPad</string>
-    <string name="nes_pad">NES pad</string>
+    <string name="nes_pad">Sideways Wii</string>
     <string name="light_gun">Light gun</string>
-    <string name="retro_pad_help">RetroPad: two sticks and every button · NES pad: the phone sideways, B and A · Light gun: aim with the phone, B fires and A reloads</string>
+    <string name="retro_pad_help">Console: the pad of the game RetroArch loads (tap it to pick another) · Sideways Wii: the phone sideways, B and A · Light gun: aim with the phone, B fires and A reloads</string>
     <string name="retro_menu">Menu</string>
     <string name="retro_ff">Fast</string>
-    <string name="retro_select">Select</string>
-    <string name="retro_start">Start</string>
+    <string name="retro_coin">Coin</string>
+    <string name="retro_fire">Fire</string>
+    <string name="retro_layout_picker_title">Pad in RetroArch</string>
+    <string name="retro_layout_auto">Automatic (%1$s)</string>
+    <string name="retro_layout_full">Full RetroPad</string>
+    <string name="retro_layout_hint_game">Remembered for %1$s</string>
+    <string name="retro_layout_hint_no_game">Until RetroArch loads a game</string>
+    <string name="retro_layout_changed">Pad: %1$s</string>
+    <string name="close">Close</string>
     <string name="side_ask_retroarch">Keep the RetroPad this way?</string>
     <string name="kb_retroarch_title">Keyboard for RetroArch</string>
     <string name="kb_retroarch_help">Types into the RetroArch window (bring it to the front; with a keyboard in the game, enable game focus). Delete removes a character, Type sends the text and continues, Accept sends the text and Enter.</string>

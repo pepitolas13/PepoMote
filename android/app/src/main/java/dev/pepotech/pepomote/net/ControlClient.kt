@@ -2,6 +2,7 @@ package dev.pepotech.pepomote.net
 
 import dev.pepotech.pepomote.control.TextInput
 import dev.pepotech.pepomote.service.PadPreference
+import dev.pepotech.pepomote.service.RetroGame
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -81,6 +82,8 @@ class ControlClient(
 
         /** Eco del `screen_only`: el receptor aplica (o no) el modo «solo pantalla». */
         fun onScreenOnlyChanged(on: Boolean) {}
+        /** RetroArch: el juego cargado según el receptor (`game`; null = ninguno). */
+        fun onGameChanged(game: RetroGame?) {}
 
         /** Aviso transitorio del receptor (banner ~6 s). */
         fun onNotice(text: String)
@@ -194,6 +197,7 @@ class ControlClient(
                         msg.optInt("player", 0).takeIf { it in 1..4 })
                     "nunchuk" -> callbacks.onNunchukChanged(msg.optBoolean("own", false))
                     "screen_only" -> callbacks.onScreenOnlyChanged(msg.optBoolean("on", false))
+                    "game" -> callbacks.onGameChanged(RetroGame.parse(msg))
                     "hotkey" -> Unit // eco de la tecla rápida de RetroArch: informativo
                     "notice" -> msg.optString("text").takeIf { it.isNotBlank() }?.let(callbacks::onNotice)
                     else -> Unit // mensaje desconocido: se ignora
@@ -226,15 +230,21 @@ class ControlClient(
     }
 
     /** Restore preferences only after the receiver confirmed their console mode. */
-    fun restoreModePreferences(mode: String, pad: String, cemuScreenOnly: Boolean) {
+    fun restoreModePreferences(mode: String, pad: String, cemuScreenOnly: Boolean, layout: String? = null) {
         // Apply this before pad: that message can also trigger Cemu profile configuration.
         if (mode == "cemu") sendScreenOnly(cemuScreenOnly)
-        sendPad(PadPreference.normalize(mode, pad))
+        sendPad(PadPreference.normalize(mode, pad), layout)
     }
 
-    /** Modo Wii U: "wiimote" (Mando Wii) o "gamepad" (volver a GamePad/Pro). */
-    fun sendPad(pad: String) {
-        sendJson(JSONObject().put("m", "pad").put("pad", PadPreference.effective(confirmedMode, pad)))
+    /**
+     * Modo Wii U: "wiimote" (Mando Wii) o "gamepad" (volver a GamePad/Pro);
+     * RetroArch: `retropad`, `nes` o `gun`, con `layout` (la plantilla de
+     * consola que se enseña, solo para la ventana del receptor) si se sabe.
+     */
+    fun sendPad(pad: String, layout: String? = null) {
+        val msg = JSONObject().put("m", "pad").put("pad", PadPreference.effective(confirmedMode, pad))
+        if (layout != null) msg.put("layout", layout)
+        sendJson(msg)
     }
 
     /** Nunchuk en el mismo móvil, encendido o apagado; el receptor lo confirma con el eco. */

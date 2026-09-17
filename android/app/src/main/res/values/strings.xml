@@ -207,7 +207,7 @@
 
     <!-- RetroArch -->
     <string name="channel_retroarch">RetroArch</string>
-    <string name="channel_retroarch_sub">RetroPad, mando NES o pistola</string>
+    <string name="channel_retroarch_sub">El mando de cada consola, Wii de lado o pistola</string>
     <string name="mode_retroarch">RetroArch</string>
     <string name="activating_retroarch">Activando RetroArch…</string>
     <string name="warn_needs_retroarch">Actualiza el receptor del PC para usar RetroArch.</string>
@@ -215,13 +215,20 @@
     <string name="shortcut_retroarch_long">Mando para RetroArch</string>
     <string name="in_retroarch">En RetroArch soy:</string>
     <string name="retropad">RetroPad</string>
-    <string name="nes_pad">Mando NES</string>
+    <string name="nes_pad">Wii de lado</string>
     <string name="light_gun">Pistola</string>
-    <string name="retro_pad_help">RetroPad: dos sticks y todos los botones · Mando NES: el móvil de lado, B y A · Pistola: apunta con el móvil, B dispara y A recarga</string>
+    <string name="retro_pad_help">Consola: el mando del juego que carga RetroArch (tócalo para elegir otro) · Wii de lado: el móvil de lado, B y A · Pistola: apunta con el móvil, B dispara y A recarga</string>
     <string name="retro_menu">Menú</string>
     <string name="retro_ff">Rápido</string>
-    <string name="retro_select">Select</string>
-    <string name="retro_start">Start</string>
+    <string name="retro_coin">Moneda</string>
+    <string name="retro_fire">Disparo</string>
+    <string name="retro_layout_picker_title">Mando en RetroArch</string>
+    <string name="retro_layout_auto">Automático (%1$s)</string>
+    <string name="retro_layout_full">RetroPad completo</string>
+    <string name="retro_layout_hint_game">Se recuerda para %1$s</string>
+    <string name="retro_layout_hint_no_game">Hasta que RetroArch cargue un juego</string>
+    <string name="retro_layout_changed">Mando: %1$s</string>
+    <string name="close">Cerrar</string>
     <string name="side_ask_retroarch">¿Quieres el RetroPad así?</string>
     <string name="kb_retroarch_title">Teclado para RetroArch</string>
     <string name="kb_retroarch_help">Escribe en la ventana de RetroArch (ponla en primer plano; con teclado en el juego, activa el foco de juego). Borrar quita un carácter, Escribir manda el texto y sigue, Aceptar manda el texto e Intro.</string>
