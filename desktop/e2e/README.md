@@ -43,16 +43,23 @@ en el entorno:
   `FAST_FORWARD_HOLD` cada fotograma, `hotkey` (un toque y mantener),
   refresco que sobrevive al vaciado por fotograma de Windows, segundo
   jugador en su puerto con mando de NES, soltar al irse el móvil o al cambiar
-  de modo, resincronización tras un RetroArch mudo, y `GET_STATUS` nunca a
+  de modo, resincronización tras un RetroArch mudo, `GET_STATUS` nunca a
   una 1.22.2 (la cierra si el núcleo no está en su lista de información) y
-  sí a una 1.23.0, solo después de su `VERSION`.
-- `python real_retroarch.py <PepoMote.exe> <carpeta RetroArch> <núcleo> --wipe`
+  sí a una 1.23.0, solo después de su `VERSION`; y la detección del juego
+  cargado por `content_history.lpl` + `info/*.info` (`game` justo tras `ok`
+  y al cambiar; Mega Drive, NES, extensión sobre núcleo multisistema,
+  miembro `#` de un zip, núcleo sin ficha por nombre, desconocido → `null`,
+  JSON a medias, misma entrada sin re-anuncio, eco de `pad.layout`).
+- `python real_retroarch.py <PepoMote.exe> <carpeta RetroArch> --wipe --core <núcleo 2048> [--game <rom> --game-core <núcleo> --console <id>]`
   — a mano, fuera de la CI: lo mismo contra un RetroArch DE VERDAD (una copia
   del zip oficial, nunca tu instalación: borra su `retroarch.cfg`, saves,
   states y capturas) con el núcleo 2048 fuera de su carpeta: cfg y copia,
   sondas, vivo 5 s sin `GET_STATUS`, Start y cruceta llegan al núcleo
   (capturas del tablero), Home abre el menú, `SAVE_STATE`, avance rápido y
-  modo automático al reabrirlo. Necesita Pillow. Comprobado con la 1.22.2.
+  modo automático al reabrirlo; con `--game`, además, carga un juego de
+  verdad y comprueba que el receptor lo anuncia desde el historial con su
+  consola (Cave Story en Genesis Plus GX → `md`). Necesita Pillow para
+  `--core`. Comprobado con la 1.22.2.
 - `python e2e_dolphin_ir.py` — puntero IR del perfil Wii (Dolphin ≥ 2407,
   `protocol/DSU.md`): el sentido de los ejes cruzado con el Mando Wii de
   Cemu (mismo motor), yaw/pitch/roll con giroscopio y quaternion coherentes,

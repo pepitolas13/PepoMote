@@ -53,9 +53,15 @@ fn current_pad(shared: &SharedState, slot:u8) -> PadState {
     let s=shared.lock_tolerant(); pad_state(s.mode,&s.players,slot)
 }
 
-fn pad_message(p:PadState) -> Value {
+/// `layout`: plantilla de consola que dice el móvil (`pad.layout`), devuelta
+/// tal cual (o null) para que se pueda comprobar de punta a punta.
+fn pad_message(p:PadState, layout: Option<&'static str>) -> Value {
     json!({"m":"pad","pad":p.pad,"half":null,
-        "side":null,"player":p.player})
+        "side":null,"player":p.player,"layout":layout})
+}
+
+fn layout_of(players: &[Option<crate::state::PlayerInfo>], slot: u8) -> Option<&'static str> {
+    players.get(slot as usize).and_then(|p| p.as_ref()).and_then(|p| p.retro_layout)
 }
 
 fn push_pad_states(shared: &SharedState, sessions: &Sessions) {
@@ -67,7 +73,7 @@ fn push_pad_states(shared: &SharedState, sessions: &Sessions) {
             let pad=pad_state(mode,&players,s.slot);
             if s.last_pad==Some(pad) {continue;}
             s.last_pad=Some(pad);
-            if let Some(w)=&s.writer {outgoing.push((w.clone(),pad_message(pad)));}
+            if let Some(w)=&s.writer {outgoing.push((w.clone(),pad_message(pad, layout_of(&players, s.slot))));}
         }
     }
     for (writer,message) in outgoing {send_line(&writer,&message);}
@@ -203,6 +209,8 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     let switch_pad = hello["pad"].as_str().and_then(SwitchPad::parse).unwrap_or_default();
     // Modo RetroArch: RetroPad, mando de NES o pistola (ausente o de otro modo = RetroPad)
     let retro_pad = hello["pad"].as_str().and_then(RetroPadKind::parse).unwrap_or_default();
+    // y la plantilla de consola que enseña (solo para la ventana)
+    let retro_layout = hello["layout"].as_str().and_then(crate::retroarch::layout_id);
 
     let session_id: u32 = rand::thread_rng().gen();
     let (slot, evicted_slots) = {
@@ -266,6 +274,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
             screen_only,
             switch_pad,
             retro_pad,
+            retro_layout,
             tilt: false,
         });
         if !s.injection_error {
@@ -295,6 +304,10 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         ok["token"] = json!(pairing.token);
     }
     let _ = send(&writer, &ok);
+    // Qué juego tiene RetroArch (o null): el móvil elige con él la plantilla
+    // de consola. Siempre la primera línea tras `ok`, en cualquier modo.
+    let game = shared.lock_tolerant().retroarch_game.clone();
+    let _ = send(&writer, &crate::retroarch::game_message(game.as_ref()));
     crate::sound::connect_chime(player);
     auto_configure(shared, sessions);
 
@@ -355,6 +368,12 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                                 let wii=value=="wiimote"; let changed=p.pad_wii!=wii;p.pad_wii=wii;changed
                             }
                             (Mode::RetroArch,Some(value)) => {
+                                // y la plantilla de consola que enseña (solo para la ventana)
+                                let layout=msg["layout"].as_str().and_then(crate::retroarch::layout_id);
+                                if p.retro_layout!=layout {
+                                    p.retro_layout=layout;
+                                    crate::log_line!("Móvil «{device_name}»: plantilla {}", layout.unwrap_or("ninguna"));
+                                }
                                 if let Some(kind)=RetroPadKind::parse(value) {
                                     let changed=p.retro_pad!=kind; p.retro_pad=kind; changed
                                 } else {false}
@@ -364,11 +383,14 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                     } else {false}
                 };
                 let effective=current_pad(shared,slot);
-                let wants_wii=shared.lock_tolerant().players[slot as usize].as_ref().is_some_and(|p|p.pad_wii);
+                let (wants_wii,layout)={
+                    let s=shared.lock_tolerant();
+                    (s.players[slot as usize].as_ref().is_some_and(|p|p.pad_wii), layout_of(&s.players, slot))
+                };
                 if let Some(sess)=sessions.lock_tolerant().get_mut(&session_id) {
                     sess.pad_wii=wants_wii;sess.last_pad=Some(effective);
                 }
-                let _=send(&writer,&pad_message(effective));
+                let _=send(&writer,&pad_message(effective, layout));
                 if changed {auto_configure(shared,sessions);}
             }
             Some("hotkey") => {

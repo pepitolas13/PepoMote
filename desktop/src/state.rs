@@ -315,6 +315,9 @@ pub struct PlayerInfo {
     /// Modo RetroArch: RetroPad apaisado, mando de NES (Mando Wii de lado) o
     /// pistola de luz (Mando Wii apuntando). Del `hello` o del mensaje `pad`.
     pub retro_pad: crate::retroarch::RetroPadKind,
+    /// Modo RetroArch: plantilla de consola que enseña el móvil (`pad.layout`,
+    /// uno de `pmp::retro::LAYOUT_IDS`); solo para la ventana.
+    pub retro_layout: Option<&'static str>,
     /// Sus INPUT piden apuntado por inclinación (flags bit4): el móvil no
     /// tiene giroscopio real (o eligió el acelerómetro en Ajustes).
     pub tilt: bool,
@@ -630,6 +633,9 @@ pub struct Shared {
     pub retroarch_cfg_status: Option<CfgStatus>,
     /// Qué se sabe de RetroArch ahora mismo (responde, versión, qué corre).
     pub retroarch_live: crate::retroarch::Live,
+    /// Último juego cargado en RetroArch según su historial (se anuncia a
+    /// los móviles con `game`; se conserva con RetroArch cerrado).
+    pub retroarch_game: Option<crate::retroarch::GameInfo>,
     /// Texto que un móvil quiere teclear en el PC (teclado en pantalla de
     /// Cemu) y que el inyector del SO aún no ha escrito.
     pub text_queue: Vec<(Mode, String)>,
@@ -697,6 +703,7 @@ impl Shared {
             retroarch_restore_pending: ra_restore,
             retroarch_cfg_status: None,
             retroarch_live: crate::retroarch::Live::default(),
+            retroarch_game: None,
             text_queue: Vec::new(),
             last_error: None,
             injection_error: false,
@@ -805,6 +812,7 @@ mod tests {
             screen_only: false,
             switch_pad: SwitchPad::Pro,
             retro_pad: crate::retroarch::RetroPadKind::RetroPad,
+            retro_layout: None,
             tilt: false,
         })
     }

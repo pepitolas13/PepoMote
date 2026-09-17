@@ -5,6 +5,8 @@
 //! que activarlas en `retroarch.cfg`, y eso lo hace PepoMote con RetroArch
 //! cerrado (lo reescribe entero al salir), igual que con Eden.
 mod cfg;
+mod consoles;
+mod history;
 mod link;
 mod mapping;
 mod paths;
@@ -12,8 +14,11 @@ mod protocol;
 
 use crate::state::{CfgStatus, Config, LockTolerant, Mode, SharedState};
 use crate::tr;
+pub use consoles::Console;
+pub use history::{game_message, GameInfo, GameWatch};
 pub use link::{link, ports, start, Live, Ports};
 pub use mapping::{RetroPadKind, GUN_MOUSE_BITS};
+pub(crate) use paths::data_dirs;
 pub use paths::running_exe;
 pub use protocol::Activity;
 use std::path::{Path, PathBuf};
@@ -99,6 +104,34 @@ pub(crate) fn learn_dir(shared: &SharedState, dir: Option<PathBuf>) {
         s.config.retroarch_dir = dir.to_string_lossy().into_owned();
         s.config.save();
     }
+}
+
+/// Id de plantilla de consola válido en `pad.layout` (los de
+/// `pmp::retro::LAYOUT_IDS`), como cadena estática.
+pub fn layout_id(s: &str) -> Option<&'static str> {
+    pmp::retro::LAYOUT_IDS.iter().copied().find(|l| *l == s)
+}
+
+/// Nombre de una plantilla para la ventana («Mega Drive»).
+pub fn layout_name(id: &str) -> &'static str {
+    pmp::retro::layout(id).map_or("RetroPad", |l| l.name)
+}
+
+/// Anuncia a la ventana y a los móviles el juego que RetroArch tiene cargado
+/// (o que no se sabe): el móvil elige con él la plantilla de consola.
+pub(crate) fn publish_game(shared: &SharedState, game: Option<GameInfo>) {
+    match &game {
+        Some(g) => crate::log_line!(
+            "RetroArch: juego cargado «{}» · {} ({}) → mando {}",
+            g.title,
+            if g.system.is_empty() { "?" } else { &g.system },
+            g.core,
+            g.console.map_or("RetroPad", Console::name)
+        ),
+        None => crate::log_line!("RetroArch: sin juego en el historial: mando RetroPad"),
+    }
+    shared.lock_tolerant().retroarch_game = game.clone();
+    crate::net::broadcast(&game_message(game.as_ref()), None);
 }
 
 fn observed() -> (bool, Option<PathBuf>) {
@@ -452,6 +485,18 @@ mod tests {
         assert!(any_needs_change(&files, Ports { base: 55410, cmd: 55355 }));
         let missing = vec![paths::ConfigFile { path: d.join("no.cfg"), why: "test" }];
         assert!(any_needs_change(&missing, PORTS), "un archivo que no existe hay que crearlo");
+    }
+
+    #[test]
+    fn las_plantillas_del_movil_y_las_consolas_del_receptor_casan() {
+        for c in Console::ALL {
+            assert_eq!(layout_id(c.as_str()), Some(c.as_str()));
+            assert_eq!(layout_name(c.as_str()), c.name(), "{}", c.as_str());
+        }
+        assert_eq!(layout_id("md3"), Some("md3"));
+        assert_eq!(layout_id("retropad"), Some("retropad"));
+        assert_eq!(layout_id("bogus"), None);
+        assert_eq!(layout_name("bogus"), "RetroPad");
     }
 
     #[test]

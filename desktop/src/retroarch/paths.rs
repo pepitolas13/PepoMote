@@ -221,6 +221,52 @@ pub(super) fn config_files_with(cfg: &Config) -> Vec<ConfigFile> {
     resolve_config_files(&env)
 }
 
+/// Carpeta de datos (`playlists/`, `info/`) de un `retroarch.cfg`. Windows:
+/// la del cfg (portable junto al exe; instalador `%APPDATA%\RetroArch`).
+/// Linux: la del cfg (`~/.config/retroarch`, Flatpak, Snap), y para
+/// `~/.retroarch.cfg` `~/.config/retroarch`. macOS: el cfg está en
+/// `…/RetroArch/config/`, los datos en `…/RetroArch/`.
+pub(super) fn data_dir_of(cfg: &Path, os: Os, home: Option<&Path>) -> PathBuf {
+    let parent = cfg.parent().map(Path::to_path_buf).unwrap_or_default();
+    match os {
+        Os::Windows => parent,
+        Os::Linux => {
+            if cfg.file_name().is_some_and(|n| n == ".retroarch.cfg") {
+                home.map(|h| h.join(".config").join("retroarch")).unwrap_or(parent)
+            } else {
+                parent
+            }
+        }
+        Os::MacOs => {
+            if parent.file_name().is_some_and(|n| n == "config") {
+                parent.parent().map(Path::to_path_buf).unwrap_or(parent)
+            } else {
+                parent
+            }
+        }
+    }
+}
+
+/// Las instalaciones de RetroArch conocidas (mismo orden que
+/// `config_files_with`): dónde leer el historial y las fichas. La «carpeta
+/// de la aplicación» (`:` en las rutas del cfg) es la del ejecutable si se
+/// conoce (Ajustes o aprendida), si no la de datos.
+pub(crate) fn data_dirs(cfg: &Config) -> Vec<super::history::DataDir> {
+    let home = directories::BaseDirs::new().map(|b| b.home_dir().to_owned());
+    let manual = PathBuf::from(cfg.retroarch_dir.trim());
+    let exe_dir = (!cfg.retroarch_dir.trim().is_empty()
+        && (manual.join("retroarch.exe").is_file() || manual.join("retroarch").is_file()))
+    .then_some(manual);
+    config_files_with(cfg)
+        .into_iter()
+        .map(|f| {
+            let dir = data_dir_of(&f.path, os(), home.as_deref());
+            let app_dir = exe_dir.clone().unwrap_or_else(|| dir.clone());
+            super::history::DataDir { cfg: f.path, dir, app_dir }
+        })
+        .collect()
+}
+
 /// Carpetas con RetroArch que se ven sin abrirlo (Steam), para «Detectar».
 pub(super) fn find_exe_dirs() -> Vec<PathBuf> {
     steam_dirs()

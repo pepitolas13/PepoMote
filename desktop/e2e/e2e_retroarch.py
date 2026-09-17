@@ -3,7 +3,9 @@
 A fake RetroArch listens on the network-gamepad ports (one datagram per
 player per frame, exactly like input_driver.c) and on the command interface
 (VERSION replies; GET_STATUS, which must only reach versions after 1.22.2
-because it crashes the released ones; hotkeys; SHOW_MSG). Optionally it empties the
+because it crashes the released ones; hotkeys; SHOW_MSG). The script also plays
+RetroArch's history playlist (content_history.lpl) and core info files, from
+which the receiver announces the loaded game and its console (`game`). Optionally it empties the
 pad on frames without a datagram, which is what a Windows build does.
 
 Set PEPOMOTE_RETROARCH_DIR, PEPOMOTE_PORT, PEPOMOTE_RETROARCH_PORT,
@@ -23,7 +25,11 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("PEPOMOTE_PORT", "26771"))
 BASE = int(os.environ.get("PEPOMOTE_RETROARCH_PORT", "55400"))
 CMD = int(os.environ.get("PEPOMOTE_RETROARCH_CMD_PORT", "55355"))
-CONFIG = Path(os.environ["PEPOMOTE_RETROARCH_DIR"]) / "retroarch.cfg"
+RA_DIR = Path(os.environ["PEPOMOTE_RETROARCH_DIR"])
+CONFIG = RA_DIR / "retroarch.cfg"
+HISTORY = RA_DIR / "playlists" / "builtin" / "content_history.lpl"
+SEP = "\\" if os.name == "nt" else "/"
+CORE_EXT = ".dll" if os.name == "nt" else ".so"
 COUNT = 0
 
 # PROTOCOL.md §4.2
@@ -273,6 +279,42 @@ def hold(phone, seconds, buttons=0, stick=(0, 0), right=(0, 0), hz=100):
         time.sleep(1 / hz)
 
 
+def write_info(core, systemid, corename, systemname):
+    """info/<core>_libretro.info as RetroArch ships them (same key = "value" format)."""
+    d = RA_DIR / "info"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{core}_libretro.info").write_text(
+        f'display_name = "{systemname} ({corename})"\ncorename = "{corename}"\nsystemname = "{systemname}"\nsystemid = "{systemid}"\n',
+        encoding="utf-8")
+
+
+def write_history(*entries):
+    """content_history.lpl with the given (path, core, label, db_name) entries, newest first."""
+    HISTORY.parent.mkdir(parents=True, exist_ok=True)
+    items = []
+    for path, core, label, db_name in entries:
+        items.append({"path": path, "label": label, "core_path": str(RA_DIR / "cores" / f"{core}_libretro{CORE_EXT}"),
+                      "core_name": f"x ({core})", "crc32": "", "db_name": db_name})
+    HISTORY.write_text(json.dumps({"version": "1.5", "default_core_path": "", "items": items}, indent=2), encoding="utf-8")
+
+
+def quiet(phone, pred, seconds, label):
+    """No message matching pred for `seconds` (others are dropped)."""
+    until = time.monotonic() + seconds
+    while time.monotonic() < until:
+        try:
+            m = phone.q.get(timeout=max(0.001, until - time.monotonic()))
+        except queue.Empty:
+            break
+        if pred(m):
+            raise AssertionError(f"{label}: unexpected {m}")
+    check(True, label)
+
+
+def is_game(console=None):
+    return lambda m: m.get("m") == "game" and (console is None or m.get("console") == console)
+
+
 def cfg_value(key):
     try:
         text = CONFIG.read_text(encoding="utf-8")
@@ -285,8 +327,19 @@ def cfg_value(key):
 
 
 def main():
-    original = b'video_fullscreen = "true"\r\nnetwork_cmd_enable = "false"\r\naudio_volume = "0.0"\r\n'
+    original = (b'video_fullscreen = "true"\r\nnetwork_cmd_enable = "false"\r\naudio_volume = "0.0"\r\n'
+                b'history_list_enable = "true"\r\n'
+                + f'content_history_path = ":{SEP}playlists{SEP}builtin{SEP}content_history.lpl"\r\n'.encode()
+                + f'libretro_info_path = ":{SEP}info"\r\n'.encode())
     CONFIG.write_bytes(original)
+    # RetroArch's history: what it just loaded (Cave Story on Genesis Plus GX, a
+    # multi-system core whose db_name lists every Sega system)
+    write_info("genesis_plus_gx", "mega_drive", "Genesis Plus GX", "Sega 8/16-bit (Various)")
+    write_info("fceumm", "nes", "FCEUmm", "Nintendo Entertainment System")
+    write_info("mgba", "game_boy_advance", "mGBA", "Game Boy Advance")
+    SEGA_DBS = "Sega - Game Gear|Sega - Master System - Mark III|Sega - Mega Drive - Genesis"
+    CAVE = (str(RA_DIR / "roms" / "cave_story_v0.7.0.zip"), "genesis_plus_gx", "", SEGA_DBS)
+    write_history(CAVE)
     ra = FakeRetroArch()
     ra.start()
     time.sleep(0.2)
@@ -315,6 +368,52 @@ def main():
     check(p1.pad("gun")["pad"] == "gun", "pad echo: gun")
     check(p1.pad("pro", effective="gun")["pad"] == "gun", "unknown pad in RetroArch mode: unchanged")
     check(p1.pad("retropad")["pad"] == "retropad", "pad echo: retropad")
+
+    # --- the loaded game: history playlist + core info → `game` (console template on the phone)
+    g = p1.receive(is_game(), timeout=6)
+    check(g["console"] == "md" and g["system"] == "Mega Drive" and g["core"] == "Genesis Plus GX"
+          and g["title"] == "cave_story_v0.7.0" and g["path"] == CAVE[0],
+          f"game announced from the history: {g['title']} · {g['system']} ({g['core']})")
+    write_history((str(RA_DIR / "roms" / "Zelda.nes"), "fceumm", "", "Nintendo - Nintendo Entertainment System.lpl"), CAVE)
+    g = p1.receive(is_game(), timeout=6)
+    check(g["console"] == "nes" and g["system"] == "NES" and g["core"] == "FCEUmm" and g["title"] == "Zelda",
+          "new top entry (Zelda.nes / FCEUmm) → nes")
+    time.sleep(0.05)
+    write_history((str(RA_DIR / "roms" / "Zelda.nes"), "fceumm", "", "Nintendo - Nintendo Entertainment System.lpl"), CAVE)
+    quiet(p1, is_game(), 4.5, "same entry rewritten (new mtime): no new announcement")
+    write_history((str(RA_DIR / "roms" / "sonic.sms"), "picodrive", "", ""))
+    g = p1.receive(is_game(), timeout=6)
+    check(g["console"] == "ms" and g["core"] == "picodrive", "sonic.sms on PicoDrive (no info file) → ms by extension")
+    write_history((str(RA_DIR / "roms" / "sonic.md"), "picodrive", "", ""))
+    g = p1.receive(is_game(), timeout=6)
+    check(g["console"] == "md" and g["system"] == "Mega Drive", "sonic.md on PicoDrive → md by the core name")
+    write_history((str(RA_DIR / "roms" / "pack.zip") + "#Tetris.gb", "mgba", "", ""))
+    g = p1.receive(is_game(), timeout=6)
+    check(g["console"] == "gb" and g["title"] == "Tetris" and g["core"] == "mGBA", "zip member Tetris.gb on mGBA → gb, title from the member")
+    write_history((str(RA_DIR / "roms" / "game.zip"), "dosbox_pure", "", ""))
+    g = p1.receive(is_game(), timeout=6)
+    check(g["console"] is None and g["core"] == "dosbox_pure" and g["title"] == "game", "unknown core (DOSBox Pure) → console null")
+    time.sleep(0.05)
+    HISTORY.write_text(HISTORY.read_text(encoding="utf-8")[:40], encoding="utf-8")
+    quiet(p1, is_game(), 4.5, "half-written history: kept the last game, no announcement")
+    write_history((str(RA_DIR / "roms" / "Zelda.nes"), "fceumm", "", ""))
+    g = p1.receive(is_game(), timeout=6)
+    check(g["console"] == "nes", "complete file again → nes")
+    # the phone tells the receiver which template it shows (for the window); echoed back
+    p1.send(m="pad", pad="retropad", layout="md")
+    check(p1.receive(lambda m: m.get("m") == "pad")["layout"] == "md", "pad.layout md echoed")
+    p1.send(m="pad", pad="retropad", layout="bogus")
+    check(p1.receive(lambda m: m.get("m") == "pad")["layout"] is None, "unknown layout → null")
+    p1.send(m="pad", pad="retropad")
+    check(p1.receive(lambda m: m.get("m") == "pad")["layout"] is None, "no layout → null")
+    # a phone that connects later gets the game right after ok
+    p3 = Phone("Phone C")
+    first = p3.q.get(timeout=3)
+    check(first["m"] == "game" and first["console"] == "nes", "late phone: game is the first line after ok")
+    p3.close()
+    time.sleep(0.3)
+    write_history(CAVE)
+    p1.receive(is_game("md"), timeout=6)
 
     # --- clock: the receiver probes the command interface once RetroArch answers
     eventually(lambda: ra.probes >= 5, "receiver probes the command interface")

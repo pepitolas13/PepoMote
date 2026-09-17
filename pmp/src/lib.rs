@@ -5,6 +5,8 @@
 //! mismos bytes.
 #![forbid(unsafe_code)]
 
+pub mod retro;
+
 pub const MAGIC: u32 = 0x3150_4D50; // "PMP1" en LE
 pub const TYPE_INPUT: u8 = 0x01;
 pub const TYPE_PING: u8 = 0x02;

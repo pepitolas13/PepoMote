@@ -1,5 +1,7 @@
 //! Modo automático: el receptor cambia de modo solo cuando el usuario abre
-//! o cierra Dolphin, Cemu o Eden (vigilante `emu-watch`, una muestra cada 2 s).
+//! o cierra Dolphin, Cemu, Eden o RetroArch (vigilante `emu-watch`, una
+//! muestra cada 2 s). El mismo vigilante mira el historial de RetroArch para
+//! anunciar a los móviles qué juego (y qué consola) acaba de cargar.
 //! Las reglas son puras (sin hilos ni procesos) y están testeadas aquí:
 //! - abrir Dolphin → modo Dolphin; abrir Cemu → modo Wii U (los dos en la
 //!   misma muestra: Dolphin);
@@ -157,9 +159,17 @@ pub fn start_watcher(shared: SharedState) {
         crate::threads::OnPanic::Restart { after: Duration::from_secs(5), max: 50 },
         move || {
         let mut debounce = Debounce::default();
+        // Qué juego acaba de cargar RetroArch: su historial cambia al cargar
+        // contenido (la misma partida reabierta no lo toca: se relee al abrirse)
+        let mut games = crate::retroarch::GameWatch::default();
+        let home = directories::BaseDirs::new().map(|b| b.home_dir().to_owned());
         loop {
             std::thread::sleep(Duration::from_secs(2));
             let sample = observe(&shared);
+            let cfg = shared.lock().unwrap_or_else(|e| e.into_inner()).config.clone();
+            if games.poll(&crate::retroarch::data_dirs(&cfg), home.as_deref(), sample.retroarch) {
+                crate::retroarch::publish_game(&shared, games.game().cloned());
+            }
             let (dolphin_pending, cemu_pending, cemu_cleanup, eden_pending, retroarch_pending) = {
                 let s = shared.lock().unwrap_or_else(|e| e.into_inner());
                 (s.dolphin_pending, s.cemu_pending, s.cemu_cleanup_pending, s.eden_pending, s.retroarch_pending)

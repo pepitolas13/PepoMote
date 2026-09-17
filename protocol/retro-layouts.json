@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "bits": { "A": 1, "B": 2, "X": 524288, "Y": 1048576, "L": 2097152, "R": 4194304, "ZL": 8388608, "ZR": 16777216, "STICK_L": 33554432, "STICK_R": 67108864, "PLUS": 64, "MINUS": 128 },
+  "console_ids": ["nes", "gb", "gba", "snes", "ms", "md", "pce", "arcade", "neogeo", "atari2600", "n64", "psx"],
+  "layouts": [
+    {
+      "id": "retropad",
+      "name": "RetroPad",
+      "shape": "diamond",
+      "stagger": 0,
+      "face": [
+        { "slot": "top", "label": "X", "bit": "X", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "left", "label": "Y", "bit": "Y", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "right", "label": "A", "bit": "A", "color": "card", "primary": true, "size": 1.00 },
+        { "slot": "bottom", "label": "B", "bit": "B", "color": "card", "primary": false, "size": 1.00 }
+      ],
+      "left_stick": true,
+      "right_stick": "analog",
+      "stick_clicks": true,
+      "shoulders": { "l": "L", "r": "R", "l2": "L2", "r2": "R2" },
+      "center": [ { "label": "Select", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "nes",
+      "name": "NES",
+      "shape": "two",
+      "stagger": 0,
+      "face": [
+        { "slot": "left", "label": "B", "bit": "B", "color": "red", "primary": false, "size": 1.00 },
+        { "slot": "right", "label": "A", "bit": "A", "color": "red", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "Select", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "gb",
+      "name": "Game Boy",
+      "shape": "two",
+      "stagger": 1,
+      "face": [
+        { "slot": "left", "label": "B", "bit": "B", "color": "purple", "primary": false, "size": 1.00 },
+        { "slot": "right", "label": "A", "bit": "A", "color": "purple", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "Select", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "gba",
+      "name": "Game Boy Advance",
+      "shape": "two",
+      "stagger": 1,
+      "face": [
+        { "slot": "left", "label": "B", "bit": "B", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "right", "label": "A", "bit": "A", "color": "card", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": "L", "r": "R", "l2": null, "r2": null },
+      "center": [ { "label": "Select", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "snes",
+      "name": "SNES",
+      "shape": "diamond",
+      "stagger": 0,
+      "face": [
+        { "slot": "top", "label": "X", "bit": "X", "color": "blue", "primary": false, "size": 1.00 },
+        { "slot": "left", "label": "Y", "bit": "Y", "color": "green", "primary": false, "size": 1.00 },
+        { "slot": "right", "label": "A", "bit": "A", "color": "red", "primary": true, "size": 1.00 },
+        { "slot": "bottom", "label": "B", "bit": "B", "color": "yellow", "primary": false, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": "L", "r": "R", "l2": null, "r2": null },
+      "center": [ { "label": "Select", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "ms",
+      "name": "Master System",
+      "shape": "two",
+      "stagger": 0,
+      "face": [
+        { "slot": "left", "label": "1", "bit": "B", "color": "card", "primary": true, "size": 1.00 },
+        { "slot": "right", "label": "2", "bit": "A", "color": "card", "primary": false, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "Pause", "bit": "PLUS" } ]
+    },
+    {
+      "id": "md",
+      "name": "Mega Drive",
+      "shape": "grid2x3",
+      "stagger": 0,
+      "face": [
+        { "slot": "tl", "label": "X", "bit": "L", "color": "card", "primary": false, "size": 0.80 },
+        { "slot": "tm", "label": "Y", "bit": "X", "color": "card", "primary": false, "size": 0.80 },
+        { "slot": "tr", "label": "Z", "bit": "R", "color": "card", "primary": false, "size": 0.80 },
+        { "slot": "bl", "label": "A", "bit": "Y", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "bm", "label": "B", "bit": "B", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "br", "label": "C", "bit": "A", "color": "card", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "Mode", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "md3",
+      "name": "Mega Drive (3)",
+      "shape": "row3",
+      "stagger": 0,
+      "face": [
+        { "slot": "l", "label": "A", "bit": "Y", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "m", "label": "B", "bit": "B", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "r", "label": "C", "bit": "A", "color": "card", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "Mode", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "pce",
+      "name": "PC Engine",
+      "shape": "two",
+      "stagger": 0,
+      "face": [
+        { "slot": "left", "label": "II", "bit": "B", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "right", "label": "I", "bit": "A", "color": "card", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "Select", "bit": "MINUS" }, { "label": "Run", "bit": "PLUS" } ]
+    },
+    {
+      "id": "arcade",
+      "name": "Arcade",
+      "shape": "grid2x3",
+      "stagger": 0,
+      "face": [
+        { "slot": "tl", "label": "Y", "bit": "Y", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "tm", "label": "X", "bit": "X", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "tr", "label": "L", "bit": "L", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "bl", "label": "B", "bit": "B", "color": "card", "primary": true, "size": 1.00 },
+        { "slot": "bm", "label": "A", "bit": "A", "color": "card", "primary": false, "size": 1.00 },
+        { "slot": "br", "label": "R", "bit": "R", "color": "card", "primary": false, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "$coin", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "neogeo",
+      "name": "Neo Geo",
+      "shape": "diamond",
+      "stagger": 0,
+      "face": [
+        { "slot": "top", "label": "D", "bit": "X", "color": "blue", "primary": false, "size": 1.00 },
+        { "slot": "left", "label": "C", "bit": "Y", "color": "green", "primary": false, "size": 1.00 },
+        { "slot": "right", "label": "B", "bit": "A", "color": "yellow", "primary": false, "size": 1.00 },
+        { "slot": "bottom", "label": "A", "bit": "B", "color": "red", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "$coin", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "atari2600",
+      "name": "Atari 2600",
+      "shape": "single",
+      "stagger": 0,
+      "face": [
+        { "slot": "center", "label": "$fire", "bit": "B", "color": "red", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": false,
+      "right_stick": "none",
+      "stick_clicks": false,
+      "shoulders": { "l": null, "r": null, "l2": null, "r2": null },
+      "center": [ { "label": "Select", "bit": "MINUS" }, { "label": "Reset", "bit": "PLUS" } ]
+    },
+    {
+      "id": "n64",
+      "name": "Nintendo 64",
+      "shape": "two",
+      "stagger": -1,
+      "face": [
+        { "slot": "left", "label": "B", "bit": "Y", "color": "green", "primary": false, "size": 0.90 },
+        { "slot": "right", "label": "A", "bit": "B", "color": "blue", "primary": true, "size": 1.20 }
+      ],
+      "left_stick": true,
+      "right_stick": "cbuttons",
+      "stick_clicks": false,
+      "shoulders": { "l": "L", "r": "R", "l2": "Z", "r2": null },
+      "center": [ { "label": "Start", "bit": "PLUS" } ]
+    },
+    {
+      "id": "psx",
+      "name": "PlayStation",
+      "shape": "diamond",
+      "stagger": 0,
+      "face": [
+        { "slot": "top", "label": "△", "bit": "X", "color": "green", "primary": false, "size": 1.00 },
+        { "slot": "left", "label": "□", "bit": "Y", "color": "pink", "primary": false, "size": 1.00 },
+        { "slot": "right", "label": "○", "bit": "A", "color": "red", "primary": false, "size": 1.00 },
+        { "slot": "bottom", "label": "✕", "bit": "B", "color": "blue", "primary": true, "size": 1.00 }
+      ],
+      "left_stick": true,
+      "right_stick": "analog",
+      "stick_clicks": true,
+      "shoulders": { "l": "L1", "r": "R1", "l2": "L2", "r2": "R2" },
+      "center": [ { "label": "Select", "bit": "MINUS" }, { "label": "Start", "bit": "PLUS" } ]
+    }
+  ]
+}

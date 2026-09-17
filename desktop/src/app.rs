@@ -120,6 +120,7 @@ struct Snapshot {
     eden_status: Option<CfgStatus>,
     retroarch_status: Option<CfgStatus>,
     retroarch_live: crate::retroarch::Live,
+    retroarch_game: Option<crate::retroarch::GameInfo>,
     error: Option<String>,
     port_notice: Option<String>,
     firewall: Option<crate::firewall::FirewallIssue>,
@@ -197,6 +198,7 @@ impl eframe::App for PepoMoteApp {
                 eden_status: s.eden_cfg_status.clone(),
                 retroarch_status: s.retroarch_cfg_status.clone(),
                 retroarch_live: s.retroarch_live.clone(),
+                retroarch_game: s.retroarch_game.clone(),
                 error: s.last_error.clone(),
                 port_notice: s.port_notice.clone(),
                 firewall: s.firewall,
@@ -663,6 +665,15 @@ impl PepoMoteApp {
             (tr!("win.retroarch_waiting").to_owned(), theme::blue())
         };
         ui.label(RichText::new(text).size(13.0).color(color));
+        // Último juego del historial: el móvil enseña el mando de su consola
+        if let Some(g) = &snap.retroarch_game {
+            let text = if g.console.is_some() {
+                tr!("win.retroarch_game", g.title, g.system, g.core)
+            } else {
+                tr!("win.retroarch_game_generic", g.title, g.core)
+            };
+            ui.label(RichText::new(text).size(12.0).color(theme::text_dim()));
+        }
         ui.horizontal_wrapped(|ui| {
             if ui.button(RichText::new(tr!("win.configure_retroarch")).size(13.0)).clicked() {
                 crate::retroarch::configure_now(&self.shared);
@@ -980,7 +991,10 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
                 tr!("win.badge_nunchuk_retroarch").to_owned()
             } else {
                 match p.retro_pad {
-                    crate::retroarch::RetroPadKind::RetroPad => tr!("win.badge_retropad", number),
+                    crate::retroarch::RetroPadKind::RetroPad => match p.retro_layout {
+                        Some(l) if l != "retropad" => tr!("win.badge_retro_console", number, crate::retroarch::layout_name(l)),
+                        _ => tr!("win.badge_retropad", number),
+                    },
                     crate::retroarch::RetroPadKind::Nes => tr!("win.badge_retro_nes", number),
                     crate::retroarch::RetroPadKind::Gun => tr!("win.badge_retro_gun", number),
                 }
