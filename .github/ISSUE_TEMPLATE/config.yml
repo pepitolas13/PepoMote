@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and setup help / Dudas y configuración
+    url: https://github.com/pepitolas13/PepoMote/discussions
+    about: Ask the community in English or Spanish / Pregunta a la comunidad en español o inglés.
+  - name: PepoTech Discord
+    url: https://discord.gg/Vx3MPuMPxb
+    about: Chat, share your setup and get help / Conversa, comparte tu configuración y pide ayuda.
+  - name: Security vulnerability / Vulnerabilidad de seguridad
+    url: https://github.com/pepitolas13/PepoMote/security/advisories/new
+    about: Report privately to the maintainer; email fallback in the security policy / Avisa en privado; correo alternativo en la política de seguridad.

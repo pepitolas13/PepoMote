@@ -1,0 +1,48 @@
+name: Suggest an improvement (English)
+description: Explain what would make PepoMote more useful for you.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea? Start with what you would like to do. You do not need a technical design or a finished solution.
+        Check [existing requests](https://github.com/pepitolas13/PepoMote/issues?q=is%3Aissue+label%3Aenhancement) first; a reaction or an example can strengthen an existing proposal. For an open-ended conversation, use [Discussions](https://github.com/pepitolas13/PepoMote/discussions).
+  - type: textarea
+    id: need
+    attributes:
+      label: What are you trying to do?
+      description: Describe a concrete situation, who it affects and what gets in the way today.
+      placeholder: "I use PepoMote to…. At the moment, I have to…."
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would a useful solution look like?
+      description: Explain the result you would like. It is fine if you are unsure how it should be implemented.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which areas would this affect?
+      multiple: true
+      options:
+        - Pointer / mouse
+        - Dolphin / Wii
+        - Cemu / Wii U
+        - Eden / Switch
+        - RetroArch
+        - Pairing / networking / multiplayer
+        - Installation / updates
+        - Accessibility / interface
+        - New integration / other
+  - type: textarea
+    id: context
+    attributes:
+      label: Devices, alternatives and examples
+      description: Optional. Mention your platforms, an existing workaround, or a sketch or example. Explain trade-offs if you know them; hide personal data and pairing secrets.
+  - type: markdown
+    attributes:
+      value: "Thanks for the suggestion. We weigh usefulness, platform compatibility and maintenance before committing to a feature. Please follow our [Code of Conduct](https://github.com/pepitolas13/PepoMote/blob/main/CODE_OF_CONDUCT.md)."

@@ -102,6 +102,14 @@ Cierra Eden, toca **Switch** en el móvil, espera el aviso de configuración. Ab
 - iOS (Mac): `brew install xcodegen && cd ios && xcodegen generate && xcodebuild -scheme PepoMote build` (la CI compila el IPA sin firmar en runners de macOS)
 - Spec del protocolo: [protocol/PROTOCOL.md](protocol/PROTOCOL.md) · notas DSU: [protocol/DSU.md](protocol/DSU.md)
 
+## Comunidad y contribuciones
+
+¿Tienes una duda, has encontrado un fallo o quieres echar una mano? Puedes participar en **español o en inglés**, tanto si programas como si simplemente disfrutas jugando. Probar un dispositivo, mejorar una guía o explicar bien un problema también ayuda a que PepoMote crezca.
+
+[Pedir ayuda](SUPPORT.es.md) · [Avisar de un fallo o proponer una idea](https://github.com/pepitolas13/PepoMote/issues/new/choose) · [Contribuir](CONTRIBUTING.es.md) · [Discussions](https://github.com/pepitolas13/PepoMote/discussions) · [Discord](https://discord.gg/Vx3MPuMPxb)
+
+Respeta nuestro [código de conducta](CODE_OF_CONDUCT.es.md). Para vulnerabilidades, utiliza las vías privadas de la [política de seguridad](docs/SECURITY.es.md).
+
 ## Legal
 
 PepoMote es un proyecto original e independiente — sin afiliación, respaldo ni patrocinio de Nintendo. No contiene assets, marcas, tipografías ni sonidos de Nintendo; "Wii" se usa solo de forma nominativa para describir compatibilidad con el emulador Dolphin, "Wii U" con Cemu, "Switch" con Eden y "RetroArch" con el frontend RetroArch (código abierto, GPL-3.0), con cuyo mando en red e interfaz de comandos habla PepoMote. No distribuye Dolphin, Cemu, Eden, RetroArch ni juegos. Ver [docs/LEGAL.md](docs/LEGAL.md).

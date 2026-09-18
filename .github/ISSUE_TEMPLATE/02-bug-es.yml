@@ -1,0 +1,80 @@
+name: Notificar un fallo (Español)
+description: Cuéntanos qué ha fallado para poder reproducirlo y ayudarte.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por dedicarle tiempo. Unos pocos datos concretos nos ayudan mucho a encontrar el problema.
+        Busca primero en las [incidencias existentes](https://github.com/pepitolas13/PepoMote/issues). Para dudas de configuración, consulta [Discussions](https://github.com/pepitolas13/PepoMote/discussions) o la [guía de ayuda](https://github.com/pepitolas13/PepoMote/blob/main/SUPPORT.es.md).
+        **¿Es un problema de seguridad?** Utiliza un [aviso privado](https://github.com/pepitolas13/PepoMote/security/advisories/new) o escribe a pepo@pepotech.es. Oculta los QR de emparejamiento, tokens y datos personales en lo que adjuntes.
+  - type: textarea
+    id: problem
+    attributes:
+      label: ¿Qué ha ocurrido y qué esperabas?
+      description: Explica qué estabas intentando hacer y qué resultado has visto.
+      placeholder: "Cuando hago…, PepoMote…. Esperaba que…."
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versiones de PepoMote en los dos dispositivos
+      description: Incluye la versión del mando y del receptor/servidor. Si has compilado el código, indica el commit. Si no conoces la versión, dilo.
+      placeholder: "Mando: 1.10.0; receptor/servidor: 1.10.0"
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Dispositivos y configuración
+      description: Incluye modelos, sistemas operativos y versión del emulador/núcleo cuando corresponda. No necesitamos direcciones IP ni datos privados de tu red.
+      placeholder: |
+        Móvil/tableta que hace de mando y sistema operativo:
+        PC/Android que hace de receptor y sistema operativo:
+        Emulador, versión, núcleo de RetroArch y juego (si procede):
+        Conexión: Wi-Fi doméstica / punto de acceso / VPN / otra
+        Número de jugadores:
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: ¿Dónde ocurre?
+      options:
+        - Emparejamiento o conexión
+        - Puntero / ratón
+        - Dolphin / Wii
+        - Cemu / Wii U
+        - Eden / Switch
+        - RetroArch
+        - Instalación o arranque de la aplicación
+        - Otro / no lo sé
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Pasos para reproducirlo
+      description: Empieza desde que abres la aplicación. Indica si ocurre siempre, a veces o una sola vez; si no consigues repetirlo, cuenta qué pasó justo antes.
+      placeholder: |
+        1. Abro…
+        2. Conecto…
+        3. Selecciono…
+        4. El problema aparece cuando…
+    validations:
+      required: true
+  - type: textarea
+    id: regression
+    attributes:
+      label: ¿Funcionaba antes? ¿Qué has probado?
+      description: Opcional. Indica la última versión que funcionaba o alguna solución provisional. Si no puedes probar la última versión, no pasa nada; coméntalo.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Capturas, grabación o registros relevantes
+      description: Opcional. Adjunta solo lo que ayude a entender el problema. Elimina antes los secretos de emparejamiento, credenciales y datos personales; no adjuntes juegos ni ROMs.
+  - type: markdown
+    attributes:
+      value: "Respeta nuestro [código de conducta](https://github.com/pepitolas13/PepoMote/blob/main/CODE_OF_CONDUCT.es.md). Un aviso no necesita ser perfecto para resultar útil."

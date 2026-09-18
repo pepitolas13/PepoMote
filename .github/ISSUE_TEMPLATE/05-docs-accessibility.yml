@@ -1,0 +1,43 @@
+name: Documentation & accessibility / Documentación y accesibilidad
+description: Improve a guide, translation or accessibility / Mejora una guía, traducción o la accesibilidad.
+title: "[Improvement]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **English or Spanish is welcome; answer once, in your preferred language.**
+        **Puedes responder en español o en inglés; no hace falta hacerlo en los dos.**
+        A confusing step, a poor translation or a difficult interaction is worth reporting. / Un paso confuso, una traducción poco clara o una interacción difícil merecen un aviso.
+        Please search [existing issues](https://github.com/pepitolas13/PepoMote/issues) first. / Busca primero en las incidencias existentes.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type of improvement / Tipo de mejora
+      options:
+        - Guide or documentation / Guía o documentación
+        - Translation or wording / Traducción o redacción
+        - Accessibility / Accesibilidad
+    validations:
+      required: true
+  - type: textarea
+    id: location
+    attributes:
+      label: Where is the problem? / ¿Dónde está el problema?
+      description: Link to a page or name the screen, platform and version. / Enlaza la página o indica la pantalla, plataforma y versión.
+    validations:
+      required: true
+  - type: textarea
+    id: barrier
+    attributes:
+      label: What is difficult or unclear? / ¿Qué resulta difícil o poco claro?
+      description: Describe the task and the barrier. You do not need to share medical or personal information. / Describe la tarea y la dificultad. No necesitas compartir información médica ni personal.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested change or example / Propuesta o ejemplo
+      description: Optional. A draft, screenshot or workaround can help. Remove personal data and pairing secrets. / Opcional. Puede ayudar un texto, una captura o una alternativa. Oculta datos personales y secretos de emparejamiento.
+  - type: markdown
+    attributes:
+      value: "Thank you / Gracias. [Code of Conduct](https://github.com/pepitolas13/PepoMote/blob/main/CODE_OF_CONDUCT.md) · [Código de conducta](https://github.com/pepitolas13/PepoMote/blob/main/CODE_OF_CONDUCT.es.md)."

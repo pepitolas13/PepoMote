@@ -1,0 +1,80 @@
+name: Bug report (English)
+description: Tell us what went wrong so we can reproduce it and help fix it.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. A few concrete details make it much easier to help.
+        Please search [existing issues](https://github.com/pepitolas13/PepoMote/issues) first. For setup questions, try [Discussions](https://github.com/pepitolas13/PepoMote/discussions) or the [support guide](https://github.com/pepitolas13/PepoMote/blob/main/SUPPORT.md).
+        **Security concern?** Use a [private report](https://github.com/pepitolas13/PepoMote/security/advisories/new) or email pepo@pepotech.es instead. Hide pairing QR codes, tokens and personal information in anything you attach.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened, and what did you expect?
+      description: Describe the task you were trying to complete and the result you saw.
+      placeholder: "When I…, PepoMote…. I expected…."
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: PepoMote versions on both devices
+      description: Include the controller and receiver/server versions. If built from source, include the commit. If unknown, say so.
+      placeholder: "Controller: 1.10.0; receiver/server: 1.10.0"
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Devices and setup
+      description: Include device models, operating systems and emulator version/core if relevant. No IP addresses or private network details are needed.
+      placeholder: |
+        Controller phone/tablet and OS:
+        Receiver PC/Android device and OS:
+        Emulator, version, RetroArch core and game (if relevant):
+        Connection: home Wi-Fi / hotspot / VPN / other
+        Number of players:
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Where does it happen?
+      options:
+        - Pairing or connection
+        - Pointer / mouse
+        - Dolphin / Wii
+        - Cemu / Wii U
+        - Eden / Switch
+        - RetroArch
+        - Installation or app startup
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Start from opening the app. Say whether it happens every time, sometimes, or only once; if you cannot reproduce it, describe what happened just before.
+      placeholder: |
+        1. Open…
+        2. Connect…
+        3. Select…
+        4. The problem appears when…
+    validations:
+      required: true
+  - type: textarea
+    id: regression
+    attributes:
+      label: Did this work before? What have you tried?
+      description: Optional. Include the last working version or any workaround. If you cannot try the latest release, that is fine; just mention it.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots, recording or relevant logs
+      description: Optional. Attach only what helps explain the problem. Remove pairing secrets, credentials and personal information first; do not attach games or ROMs.
+  - type: markdown
+    attributes:
+      value: "Please follow our [Code of Conduct](https://github.com/pepitolas13/PepoMote/blob/main/CODE_OF_CONDUCT.md). A report does not need to be perfect to be useful."

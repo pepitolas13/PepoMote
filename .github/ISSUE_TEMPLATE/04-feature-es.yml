@@ -1,0 +1,48 @@
+name: Proponer una mejora (Español)
+description: Cuéntanos qué haría PepoMote más útil para ti.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ¿Tienes una idea? Empieza por lo que te gustaría poder hacer. No necesitas un diseño técnico ni una solución cerrada.
+        Revisa las [propuestas existentes](https://github.com/pepitolas13/PepoMote/issues?q=is%3Aissue+label%3Aenhancement); una reacción o un ejemplo pueden ayudar a concretar una idea ya planteada. Si prefieres explorarla conversando, utiliza [Discussions](https://github.com/pepitolas13/PepoMote/discussions).
+  - type: textarea
+    id: need
+    attributes:
+      label: ¿Qué estás intentando hacer?
+      description: Describe una situación concreta, a quién afecta y qué te lo dificulta ahora.
+      placeholder: "Uso PepoMote para…. Ahora mismo tengo que…."
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: ¿Cómo sería una solución útil?
+      description: Explica el resultado que te gustaría conseguir. No pasa nada si no sabes cómo habría que implementarlo.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: ¿A qué partes afectaría?
+      multiple: true
+      options:
+        - Puntero / ratón
+        - Dolphin / Wii
+        - Cemu / Wii U
+        - Eden / Switch
+        - RetroArch
+        - Emparejamiento / red / multijugador
+        - Instalación / actualizaciones
+        - Accesibilidad / interfaz
+        - Nueva integración / otra
+  - type: textarea
+    id: context
+    attributes:
+      label: Dispositivos, alternativas y ejemplos
+      description: Opcional. Indica tus plataformas, alguna solución provisional, un boceto o un ejemplo. Si conoces inconvenientes, cuéntalos; oculta datos personales y secretos de emparejamiento.
+  - type: markdown
+    attributes:
+      value: "Gracias por la propuesta. Valoramos su utilidad, la compatibilidad y el mantenimiento antes de comprometernos a añadir una función. Respeta nuestro [código de conducta](https://github.com/pepitolas13/PepoMote/blob/main/CODE_OF_CONDUCT.es.md)."
