@@ -54,14 +54,13 @@ class UpdateCheckTest {
     }
 
     @Test
-    fun dueRespetaActivadoY24h() {
-        val day = 24L * 3600 * 1000
+    fun dueRespetaActivadoYUnaHoraYRecuperaReloj() {
+        val day = 3600L * 1000
         assertTrue(UpdateCheck.due(true, 0, 1))
         assertFalse(UpdateCheck.due(false, 0, 1_000_000_000_000L))
         assertFalse(UpdateCheck.due(true, 1000, 1000 + day - 1))
         assertTrue(UpdateCheck.due(true, 1000, 1000 + day))
-        // reloj hacia atrás: no dispara
-        assertFalse(UpdateCheck.due(true, 5000, 4000))
+        assertTrue(UpdateCheck.due(true, 5000, 4000))
     }
 
     @Test

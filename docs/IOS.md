@@ -19,9 +19,10 @@ uso yo), aunque también se puede con AltStore y con Sideloadly:
 
 - **SideStore** (mi recomendación): se renueva **en el propio iPhone/iPad**,
   sin ningún PC encendido. Solo necesita el PC el día que la instalas.
-- **AltStore**: igual de fácil de usar, pero para renovar la firma necesita
-  AltServer abierto en tu PC y en la misma Wi-Fi (sus autores trabajan en
-  quitar ese requisito).
+- **AltStore Classic**: usa AltServer local o remoto. La versión 2.3 ofrece
+  Remote AltServer sin ordenador y requiere iOS 17.4 o superior. Si usas una
+  versión anterior, sigue sus requisitos de AltServer y conexión.
+  [Notas oficiales de AltStore](https://faq.altstore.io/release-notes/altstore).
 - **Sideloadly**: sin tienda; instalas el `PepoMote.ipa` a mano desde el PC
   y lo repites cada 7 días.
 
@@ -46,6 +47,12 @@ web, un mensaje o un QR, no desde esta página de GitHub):
 sidestore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json
 altstore://source?url=https://github.com/pepitolas13/PepoMote/releases/latest/download/altstore.json
 ```
+
+AltStore Classic 2.2 o posterior admite también `altstore-classic://source?url=…`,
+que evita confundirlo con AltStore PAL. PepoMote muestra las novedades de la
+actualización y permite abrir la tienda; esta completa la firma e instalación.
+Si el enlace no abre tu versión de la tienda, copia la URL de la fuente y
+añádela desde Fuentes. [Actualizaciones y novedades](UPDATES.md).
 
 ## Antes de nada (una sola vez)
 

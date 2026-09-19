@@ -23,36 +23,14 @@ final class UpdateCheckTests: XCTestCase {
         XCTAssertEqual(v(1, 6, 0).description, "1.6.0")
     }
 
-    func testLaLocationDeGitHubDaLaVersion() {
-        let loc = "https://github.com/pepitolas13/PepoMote/releases/tag/v1.5.0"
-        XCTAssertEqual(UpdateCheck.version(fromLocation: loc), v(1, 5, 0))
-        XCTAssertEqual(UpdateCheck.version(fromLocation: loc + "?x=1"), v(1, 5, 0))
-        XCTAssertEqual(UpdateCheck.version(fromLocation: loc + "/"), v(1, 5, 0))
-        XCTAssertNil(UpdateCheck.version(fromLocation: "https://github.com/pepitolas13/PepoMote/releases"))
-        XCTAssertNil(UpdateCheck.version(fromLocation: ""))
-        XCTAssertNil(UpdateCheck.version(fromLocation: nil))
-    }
-
-    func testPendingSoloSiEsMayorYNoDescartada() {
-        let cur = v(1, 5, 0)
-        XCTAssertNil(UpdateCheck.pending(current: cur, latest: nil, dismissed: nil))
-        XCTAssertNil(UpdateCheck.pending(current: nil, latest: v(1, 6, 0), dismissed: nil))
-        XCTAssertNil(UpdateCheck.pending(current: cur, latest: v(1, 5, 0), dismissed: nil))
-        XCTAssertNil(UpdateCheck.pending(current: cur, latest: v(1, 4, 9), dismissed: nil))
-        XCTAssertEqual(UpdateCheck.pending(current: cur, latest: v(1, 6, 0), dismissed: nil), v(1, 6, 0))
-        XCTAssertNil(UpdateCheck.pending(current: cur, latest: v(1, 6, 0), dismissed: v(1, 6, 0)))
-        // se ocultó la 1.6.0, pero la 1.7.0 es otra: se anuncia
-        XCTAssertEqual(UpdateCheck.pending(current: cur, latest: v(1, 7, 0), dismissed: v(1, 6, 0)), v(1, 7, 0))
-    }
-
-    func testDueRespetaActivadoY24h() {
-        let day: TimeInterval = 24 * 3600
+    func testDueRespetaActivadoYUnaHora() {
+        let day: TimeInterval = 3600
         XCTAssertTrue(UpdateCheck.due(enabled: true, last: 0, now: 1), "nunca consultado: ya")
         XCTAssertFalse(UpdateCheck.due(enabled: false, last: 0, now: 1_000_000_000))
         XCTAssertFalse(UpdateCheck.due(enabled: true, last: 1000, now: 1000 + day - 1))
         XCTAssertTrue(UpdateCheck.due(enabled: true, last: 1000, now: 1000 + day))
-        // reloj hacia atrás: no dispara
-        XCTAssertFalse(UpdateCheck.due(enabled: true, last: 5000, now: 4000))
+        // El reloj hacia atrás no deja bloqueadas futuras comprobaciones.
+        XCTAssertTrue(UpdateCheck.due(enabled: true, last: 5000, now: 4000))
     }
 
     func testLaUrlDeLaReleaseYLaVersionActual() {

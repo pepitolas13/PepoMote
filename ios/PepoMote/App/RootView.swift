@@ -1,8 +1,14 @@
 import SwiftUI
 
+@MainActor
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var link = LinkState.shared
+    @ObservedObject private var updates = UpdateManager.shared
+
+    private var canOfferUpdate: Bool {
+        !model.scanning && (model.screen == .home || model.screen == .settings)
+    }
 
     /// Apaisado fijo mientras el GamePad o el mando + Nunchuk estén en
     /// pantalla; el resto gira solo si el bloqueo de giro del Centro de
@@ -38,9 +44,15 @@ struct RootView: View {
         }
         // Al salir del mando, como estaba
         .onChange(of: orientationMask) { m in OrientationLock.set(m) }
+        .onChange(of: canOfferUpdate) { updates.setPresentationAllowed($0) }
         .onAppear {
             OrientationLock.set(orientationMask)
-            model.startUpdateChecks()
+            updates.setPresentationAllowed(canOfferUpdate)
+            updates.setForeground(UIApplication.shared.applicationState == .active)
+        }
+        .sheet(item: $updates.offer) { release in
+            UpdateOfferSheet(release: release)
+                .onAppear { updates.markOfferPresented(release) }
         }
         .fullScreenCover(isPresented: $model.scanning) {
             QRScannerScreen { contents in

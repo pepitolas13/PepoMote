@@ -1,6 +1,7 @@
 import SwiftUI
 
 @main
+@MainActor
 struct PepoMoteApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel.shared
@@ -23,6 +24,7 @@ struct PepoMoteApp: App {
                 .onOpenURL { url in model.onPairContent(url.absoluteString) }
         }
         .onChange(of: scenePhase) { phase in
+            UpdateManager.shared.setForeground(phase == .active)
             // La doble pantalla del GamePad solo se recibe con la app a la vista
             ScreenLink.shared.setForeground(phase == .active)
         }

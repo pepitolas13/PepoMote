@@ -57,14 +57,12 @@ usuarios de Mac tengan que volver a dar los permisos.
    Las versiones del receptor y de todas las apps deben coincidir con el tag.
    La versión del `.deb` también tiene que ser estrictamente mayor que la
    del último publicado para que apt y «Software» ofrezcan la actualización.
-   **Ojo con lo que el guardián de la CI NO comprueba** (y muerde después):
-   el `versionCode` de Android (+1 exacto por versión; sin él la instalación
-   encima falla con `INSTALL_FAILED_VERSION_DOWNGRADE`), el
-   `CURRENT_PROJECT_VERSION` de iOS (sin él AltStore no ofrece la
-   actualización) y el texto de la fuente de AltStore, que está a fuego en
-   `.github/workflows/release.yml`. La versión en curso se lee con
-   `git describe --tags`, nunca de memoria ni de un plan viejo.
-2. Guarda las notas para usuarios en `docs/releases/vX.Y.Z.md`, sube los cambios a `main` y comprueba que los cuatro workflows de pruebas pasan. Después crea y sube únicamente el tag de esta versión:
+   Comprueba también el `versionCode` de Android y el
+   `CURRENT_PROJECT_VERSION` de iOS: ambos deben subir respecto a la
+   versión publicada. Consulta el tag estable actual en GitHub, no un
+   plan antiguo. La fuente de AltStore toma las novedades del JSON de
+   cada versión.
+2. Guarda las notas completas en `docs/releases/vX.Y.Z.md` y las novedades breves en `docs/releases/vX.Y.Z.json` (listas `es` y `en`, 1–8 frases de hasta 280 caracteres; ver [UPDATES.md](UPDATES.md)). El borrador de la próxima entrega está en `docs/releases/unreleased.json`: revisa y copia su contenido con el número definitivo. Sube los cambios a `main` y comprueba que los workflows de las plataformas y `update-contract` pasan. Después crea y sube únicamente el tag de esta versión:
    ```
    git tag v1.0.0
    git push origin v1.0.0
@@ -76,7 +74,9 @@ usuarios de Mac tengan que volver a dar los permisos.
    (`pepomote-mobile_<versión>_arm64.deb` para Mobian,
    `PepoMote-Mobile-aarch64.AppImage` para glibc y
    `PepoMote-Mobile-aarch64-musl.tar.gz` para postmarketOS, en runners ARM),
-   genera `SHA256SUMS.txt` (incluida la fuente de AltStore) y prepara el Release
+   genera los ejecutables de actualización de Linux, `PepoMote-macOS.zip`,
+   `update.json` con notas, tamaños y huellas reales, y `SHA256SUMS.txt`
+   (incluidos el manifiesto y la fuente de AltStore) y prepara el Release
    como **borrador** con las notas guardadas. Todas las plataformas son
    obligatorias: si falta un paquete o falla un job, no se prepara la entrega.
    Antes de compilar, el flujo comprueba que Android, iOS, los paquetes Rust
@@ -92,9 +92,14 @@ usuarios de Mac tengan que volver a dar los permisos.
    Las notas explican qué cambia y qué archivo corresponde a cada plataforma.
    El receptor de macOS va como **beta** mientras no se pruebe en un Mac
    real: decirlo en las notas y en la tabla de descargas.
-5. El aviso de versión nueva de todas las apps se basa en la redirección de
-   `releases/latest`: una release marcada como pre-release o borrador no se
-   anuncia; la release definitiva, sí, en cuanto se publica.
+5. El actualizador consulta `releases/latest/download/update.json`, por lo que
+   el manifiesto y todos sus paquetes deben estar en la misma release antes de
+   publicarla como última versión estable. Los clientes antiguos continúan
+   consultando la redirección de `releases/latest` y necesitan instalar una vez
+   la versión que incorpora el nuevo sistema. No sustituyas archivos de una
+   release publicada. Prueba la actualización desde la versión anterior en
+   cada plataforma: el borrador y las compilaciones no validan por sí solos la
+   instalación en los dispositivos.
 
 ## El keystore
 

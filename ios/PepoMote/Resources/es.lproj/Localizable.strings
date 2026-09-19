@@ -98,10 +98,28 @@
 "ios_note" = "En iPhone y iPad el mando funciona con la app en pantalla (en segundo plano iOS corta la conexión) y los botones físicos de volumen no se pueden usar como A/B.";
 "about" = "PepoMote %1$@ · GPL-3.0 · hecho por PepoTech";
 "update_title" = "Avisar de versiones nuevas";
-"update_sub" = "Consulta GitHub una vez al día (solo la página de la última versión) y no envía nada tuyo";
+"update_sub" = "Busca novedades en GitHub cada hora mientras usas la app, sin enviar tus datos";
 "update_available" = "PepoMote %1$@ disponible";
-"update_download" = "Descargar en GitHub";
-"update_dismiss" = "Ocultar";
+"update_download" = "Ver versión en GitHub";
+"update_dismiss" = "Ahora no";
+"update_notes_version" = "Novedades de PepoMote %1$@";
+"update_check_now" = "Buscar actualizaciones";
+"update_checking" = "Buscando actualizaciones…";
+"update_current" = "Tienes la última versión publicada.";
+"update_ready" = "Hay una actualización disponible. Estas son sus novedades.";
+"update_failed" = "No se ha podido comprobar la última versión. Inténtalo de nuevo; las novedades guardadas pueden estar desactualizadas.";
+"update_changed" = "Hay una versión más reciente. Revisa sus novedades y vuelve a abrir la tienda.";
+"update_cached" = "Novedades guardadas. Se comprobarán de nuevo antes de abrir la tienda.";
+"update_ios_handoff" = "La actualización se instala y se firma desde SideStore o AltStore Classic. PepoMote no puede instalar el IPA por sí sola.";
+"update_open_store" = "Abrir %1$@";
+"update_store_opened" = "%1$@ se ha abierto. Confirma allí la actualización; abrir la tienda no significa que ya esté instalada.";
+"update_store_missing" = "No se ha podido abrir %1$@. Copia la fuente y añádela en tu tienda, o sigue la guía de instalación.";
+"update_copy_source" = "Copiar fuente de PepoMote";
+"update_source_copied" = "Fuente copiada";
+"update_store_steps" = "En la tienda, añade la fuente si hace falta y actualiza PepoMote desde Mis apps. Usa la misma cuenta con la que la instalaste. Sigue los requisitos de firma de tu tienda; AltStore puede pedir conexión con AltServer.";
+"update_install_guide" = "Guía de SideStore, AltStore y Sideloadly";
+"update_open_altstore_legacy" = "Abrir AltStore 2.1 o anterior";
+"update_altstore_legacy_help" = "Las versiones antiguas usan otro enlace. Si abre AltStore PAL, copia la fuente y añádela manualmente en AltStore Classic; este IPA necesita firma con tu cuenta.";
 
 /* primer arranque */
 "onboarding_sub" = "Tu móvil, mando de tu PC en 3 pasos";

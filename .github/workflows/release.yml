@@ -12,6 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Pruebas del manifiesto de actualización
+        run: python3 -m unittest discover -s packaging/updates -p 'test_*.py'
+      - name: Validar novedades breves en español e inglés
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python3 packaging/updates/manifest.py --tag "$TAG" --notes "docs/releases/$TAG.json" --validate-notes
       - name: Comprobar versiones y notas antes de compilar
         env:
           TAG: ${{ github.ref_name }}
@@ -59,6 +65,9 @@ jobs:
           cargo test --release --locked --manifest-path pmp/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --release --locked --manifest-path desktop/Cargo.toml
+      - name: Actualización y recuperación con el instalador real (archivos aislados)
+        shell: pwsh
+        run: ./desktop/tests/update-handoff.ps1 -Receiver desktop/target/release/PepoMote.exe
       - name: Mandos de extremo a extremo (RetroArch, Eden, Cemu y Dolphin)
         env:
           PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir
@@ -125,6 +134,7 @@ jobs:
           path: |
             dist/PepoMote-x86_64.AppImage
             dist/PepoMote-linux-x86_64.tar.gz
+            dist/PepoMote-linux-x86_64
 
   # Receptor para macOS (Apple Silicon): .app firmado con la identidad del
   # secret (o ad hoc) y DMG. Todas las plataformas deben terminar correctamente.
@@ -174,10 +184,14 @@ jobs:
           xcrun notarytool submit dist/PepoMote-macOS.dmg --key "$RUNNER_TEMP/AuthKey.p8" \
             --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait
           xcrun stapler staple dist/PepoMote-macOS.dmg
+          xcrun stapler staple dist/PepoMote.app
+          ditto -c -k --keepParent --norsrc dist/PepoMote.app dist/PepoMote-macOS.zip
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: dist/PepoMote-macOS.dmg
+          path: |
+            dist/PepoMote-macOS.dmg
+            dist/PepoMote-macOS.zip
 
   mobile:
     needs: version
@@ -201,11 +215,14 @@ jobs:
         run: bash packaging/linux-mobile/appimage.sh aarch64
       - name: Debian package (Mobian)
         run: bash packaging/linux-mobile/deb.sh arm64
+      - name: Ejecutable para actualizaciones del usuario
+        run: install -m 0755 mobile-linux/target/release/PepoMote-Mobile dist/PepoMote-Mobile-aarch64
       - uses: actions/upload-artifact@v4
         with:
           name: mobile
           path: |
             dist/PepoMote-Mobile-aarch64.AppImage
+            dist/PepoMote-Mobile-aarch64
             dist/pepomote-mobile*arm64.deb
 
   mobile_musl:
@@ -233,7 +250,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: mobile_musl
-          path: dist/PepoMote-Mobile-aarch64-musl.tar.gz
+          path: |
+            dist/PepoMote-Mobile-aarch64-musl.tar.gz
+            dist/PepoMote-Mobile-aarch64-musl
 
   android:
     needs: version
@@ -331,7 +350,10 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           python3 - <<'EOF'
-          import datetime, json, os
+          import datetime, json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path("packaging/updates")))
+          from manifest import file_metadata, validate_notes
           ipa = "PepoMote.ipa"
           if not os.path.exists(ipa):
               print("sin IPA: sin fuente de AltStore"); raise SystemExit(0)
@@ -340,7 +362,10 @@ jobs:
           raw = f"https://raw.githubusercontent.com/{repo}/main"
           version = tag.lstrip("v")
           today = datetime.date.today().isoformat()
-          notes = f"PepoMote {version} para iPhone y iPad: el Mando Wii de RetroArch gira entre vertical y horizontal y mueve el puntero del PC. El teclado congela el apuntado mientras escribes. Incluye RetroArch con el mando de cada consola, puntero, Wii para Dolphin, Wii U para Cemu con doble pantalla, Nunchuk y Pro Controller para Eden. Botones y sticks también sin giroscopio. Notas completas: {base}/releases/tag/{tag}"
+          brief = validate_notes(json.loads(Path("docs/releases", f"{tag}.json").read_text(encoding="utf-8")))
+          notes = "\n\n".join("\n".join(f"• {line}" for line in brief[lang]) for lang in ("es", "en"))
+          notes += f"\n\n{base}/releases/tag/{tag}"
+          ipa_metadata = file_metadata(Path("."), ipa)
           src = {
               "name": "PepoTech",
               "identifier": "dev.pepotech.altstore",
@@ -366,7 +391,8 @@ jobs:
                       "date": today,
                       "localizedDescription": notes,
                       "downloadURL": f"{base}/releases/download/{tag}/PepoMote.ipa",
-                      "size": os.path.getsize(ipa),
+                      "size": ipa_metadata["size"],
+                      "sha256": ipa_metadata["sha256"],
                       "minOSVersion": "15.0",
                   }],
                   "appPermissions": {
@@ -382,41 +408,28 @@ jobs:
           json.dump(src, open("altstore.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2)
           print(open("altstore.json", encoding="utf-8").read())
           EOF
-      - name: Comprobar todos los paquetes y generar SHA256SUMS
+      - name: Comprobar todos los paquetes y generar update.json y SHA256SUMS
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          python3 - <<'EOF'
-          import hashlib, os
-          from pathlib import Path
-          version = os.environ["TAG"].removeprefix("v")
-          files = [
-              "PepoMote.exe", "PepoMote-x86_64.AppImage", "PepoMote-linux-x86_64.tar.gz",
-              "PepoMote-macOS.dmg", "PepoMote.apk", "PepoMote.ipa", "altstore.json",
-              "PepoMote-Mobile-aarch64.AppImage", "PepoMote-Mobile-aarch64-musl.tar.gz",
-              f"pepomote-mobile_{version}_arm64.deb", "pepomote-mobile_arm64.deb",
-          ]
-          sums = []
-          for name in sorted(files):
-              path = Path(name)
-              if not path.is_file() or path.stat().st_size == 0:
-                  raise SystemExit(f"Falta el paquete de la versión: {name}")
-              sums.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {name}\n")
-          Path("SHA256SUMS.txt").write_text("".join(sums), encoding="utf-8")
-          EOF
+        run: python3 packaging/updates/manifest.py --tag "$TAG" --notes "docs/releases/$TAG.json"
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             PepoMote.exe
             PepoMote-x86_64.AppImage
             PepoMote-linux-x86_64.tar.gz
+            PepoMote-linux-x86_64
             PepoMote-macOS.dmg
+            PepoMote-macOS.zip
             PepoMote.apk
             PepoMote-Mobile-aarch64.AppImage
+            PepoMote-Mobile-aarch64
             pepomote-mobile*arm64.deb
             PepoMote-Mobile-aarch64-musl.tar.gz
+            PepoMote-Mobile-aarch64-musl
             PepoMote.ipa
             altstore.json
+            update.json
             SHA256SUMS.txt
           body_path: docs/releases/${{ github.ref_name }}.md
           name: PepoMote ${{ github.ref_name }}

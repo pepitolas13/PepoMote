@@ -98,10 +98,28 @@
 "ios_note" = "On iPhone and iPad the controller works while the app is on screen (in the background iOS cuts the connection) and the physical volume buttons cannot be used as A/B.";
 "about" = "PepoMote %1$@ · GPL-3.0 · made by PepoTech";
 "update_title" = "Notify about new versions";
-"update_sub" = "Checks GitHub once a day (only the latest-release page) and sends nothing of yours";
+"update_sub" = "Checks GitHub for updates hourly while you use the app, without sending your data";
 "update_available" = "PepoMote %1$@ available";
-"update_download" = "Download on GitHub";
-"update_dismiss" = "Hide";
+"update_download" = "View release on GitHub";
+"update_dismiss" = "Not now";
+"update_notes_version" = "What's new in PepoMote %1$@";
+"update_check_now" = "Check for updates";
+"update_checking" = "Checking for updates…";
+"update_current" = "You have the latest published version.";
+"update_ready" = "An update is available. Here's what's new.";
+"update_failed" = "Could not check the latest release. Try again; saved release notes may be out of date.";
+"update_changed" = "A newer version is available. Review its notes and open the store again.";
+"update_cached" = "Saved release notes. We'll check again before opening the store.";
+"update_ios_handoff" = "SideStore or AltStore Classic signs and installs the update. PepoMote cannot install the IPA itself.";
+"update_open_store" = "Open %1$@";
+"update_store_opened" = "%1$@ opened. Confirm the update there; opening the store does not mean it is installed.";
+"update_store_missing" = "Could not open %1$@. Copy the source and add it to your store, or follow the installation guide.";
+"update_copy_source" = "Copy PepoMote source";
+"update_source_copied" = "Source copied";
+"update_store_steps" = "In the store, add the source if needed and update PepoMote from My Apps. Use the same account you installed it with. Follow your store's signing requirements; AltStore may ask for a connection to AltServer.";
+"update_install_guide" = "SideStore, AltStore and Sideloadly guide";
+"update_open_altstore_legacy" = "Open AltStore 2.1 or earlier";
+"update_altstore_legacy_help" = "Older versions use a different link. If it opens AltStore PAL, copy the source and add it manually in AltStore Classic; this IPA needs signing with your account.";
 
 /* first run */
 "onboarding_sub" = "Your phone, your PC's controller in 3 steps";

@@ -9,6 +9,7 @@ use crate::state::CfgStatus;
 use crate::tr;
 
 pub struct PepoMoteApp {
+    updater: crate::update::UpdateUi,
     shared: SharedState,
     pairing: PairingInfo,
     qr_modules: Vec<bool>,
@@ -63,6 +64,7 @@ impl PepoMoteApp {
         }
         let (qr_modules, qr_width) = build_qr(&pairing.pair_url());
         Self {
+            updater: crate::update::UpdateUi::default(),
             shared,
             pairing,
             qr_modules,
@@ -274,7 +276,6 @@ impl eframe::App for PepoMoteApp {
                             }
 
                             ui.add_space(10.0);
-                            self.ui_update(ui);
                             self.ui_settings(ui);
 
                             self.ui_repair(ui, &snap);
@@ -304,45 +305,24 @@ impl eframe::App for PepoMoteApp {
                     });
             });
 
+        let (enabled, dismissed) = {
+            let s = self.shared.lock_tolerant();
+            (s.config.update_check, s.config.update_dismissed)
+        };
+        if let Some(version) = self.updater.frame(ctx, enabled, dismissed) {
+            let mut s = self.shared.lock_tolerant();
+            s.config.update_dismissed = Some(version);
+            s.config.save();
+        }
+        if let Some(plan) = crate::update::take_prepared() {
+            self.shared.lock_tolerant().config.save();
+            let _ = crate::update::finish_install(&plan);
+        }
         let _ = snap.status;
     }
 }
 
 impl PepoMoteApp {
-    /// Aviso de versión nueva: una tarjeta con el enlace a la release de
-    /// GitHub si la última publicada es mayor que esta y no se ocultó.
-    fn ui_update(&mut self, ui: &mut egui::Ui) {
-        let (latest, dismissed) = {
-            let s = self.shared.lock_tolerant();
-            (s.config.update_latest, s.config.update_dismissed)
-        };
-        let Some(v) = crate::update::pending(&crate::update::Version::current(), latest, dismissed) else {
-            return;
-        };
-        egui::Frame::none()
-            .fill(theme::card())
-            .stroke(Stroke::new(1.5_f32, theme::blue()))
-            .rounding(theme::RADIUS)
-            .inner_margin(12.0)
-            .show(ui, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.label(RichText::new(tr!("upd.available", v)).size(14.0).strong().color(theme::text()));
-                    ui.add_space(4.0);
-                    ui.hyperlink_to(
-                        RichText::new(tr!("upd.download")).size(13.0).color(theme::blue()),
-                        crate::update::release_url(&v),
-                    );
-                    ui.add_space(4.0);
-                    if ui.button(RichText::new(tr!("upd.dismiss")).size(12.0)).clicked() {
-                        let mut s = self.shared.lock_tolerant();
-                        s.config.update_dismissed = Some(v);
-                        s.config.save();
-                    }
-                });
-            });
-        ui.add_space(10.0);
-    }
-
     /// macOS: los permisos que hacen falta (Accesibilidad para mover el
     /// cursor y pulsar teclas; Grabación de pantalla solo para la doble
     /// pantalla de Cemu), con el botón que abre el panel de Ajustes. La
@@ -852,6 +832,7 @@ impl PepoMoteApp {
                 );
                 info_icon(ui, tr!("cfg.update_check_help"));
             });
+            self.updater.settings(ui);
         });
 
         if config != before {

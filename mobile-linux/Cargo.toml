@@ -1,6 +1,6 @@
 [package]
 name = "pepomote-mobile"
-version = "1.10.6"
+version = "1.11.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "PepoMote sender for Linux phones (Mobian, postmarketOS…) — your phone as a Wii-style pointer and controller for your PC"
@@ -14,15 +14,19 @@ path = "src/main.rs"
 pmp = { path = "../pmp" }
 eframe = "0.29"
 egui = "0.29"
+winit = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+url = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 directories = "5"
 if-addrs = "0.13"
 mdns-sd = "0.11"
 # Decodificador JPEG en Rust puro (sin compilador C: vale para el tarball musl)
 zune-jpeg = "0.4"
-# Aviso de versión nueva (desktop/src/update.rs por #[path]): un HEAD a GitHub
-# una vez al día, con rustls (ring compila en Alpine con build-base)
+# Aviso de versión nueva (desktop/src/update.rs por #[path]): manifiesto verificado de GitHub
+# cada hora, con rustls (ring compila en Alpine con build-base)
 ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
