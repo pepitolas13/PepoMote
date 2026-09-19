@@ -1,6 +1,6 @@
 [package]
 name = "pepomote"
-version = "1.10.6"
+version = "1.11.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "PepoMote receiver — turns your Android phone into a Wii-style pointer/controller for your PC"
@@ -31,12 +31,15 @@ rand = "0.8"
 directories = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+url = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 mdns-sd = "0.11"
 crc32fast = "1"
 rodio = { version = "0.19", default-features = false }
 jpeg-encoder = "0.6"
 fast_image_resize = "5"
-# Aviso de versión nueva: un HEAD a GitHub una vez al día (rustls, sin
+# Aviso de versión nueva: manifiesto verificado de GitHub cada hora (rustls, sin
 # depender del TLS del sistema; nada de aws-lc, que necesita cmake)
 ureq = { version = "2", default-features = false, features = ["tls"] }
 # Abrir la página de la release desde el menú de la bandeja (hilo sin egui)
@@ -68,6 +71,7 @@ windows-capture = "2.0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 evdev = "0.12"
+libc = "0.2"
 # Disposición de monitores en Wayland (xdg-output): el ratón absoluto de
 # uinput cubre TODO el escritorio y hay que mapearlo a la pantalla de juego
 wayland-client = "0.31"

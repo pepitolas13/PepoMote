@@ -23,8 +23,8 @@ import dev.pepotech.pepomote.control.UpdateCheck
 import dev.pepotech.pepomote.ui.theme.PepoColors
 
 /**
- * Aviso de versión nueva en el inicio: «PepoMote X disponible», el enlace a
- * la release de GitHub y «Ocultar» (esa versión no se vuelve a anunciar).
+ * Aviso persistente del inicio: abre las novedades y el instalador, o permite
+ * ocultar esta versión. Ajustes conserva siempre el acceso a la actualización.
  */
 @Composable
 fun UpdateCard(

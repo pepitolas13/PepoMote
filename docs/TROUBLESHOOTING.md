@@ -637,16 +637,16 @@ igual. Informe: `/Applications/PepoMote.app/Contents/MacOS/PepoMote --diag`.
 
 ## Aviso de versión nueva
 
-Desde 1.5.5 el receptor y las apps consultan una vez al día si hay una versión
-publicada más reciente y, si la hay, enseñan una tarjeta con el enlace a la
-release de GitHub (en el receptor, también en el menú de la bandeja). La
-consulta es una sola petición a la página de la última release de GitHub
-(`releases/latest`), sin cuerpo ni identificadores: GitHub solo ve una
-petición más, como si abrieras la página. Se apaga en Ajustes («Avisar de
-versiones nuevas»). Si no sale la tarjeta: hace menos de 24 h de la última
-consulta, la ocultaste con «Ocultar» (una versión posterior sí se anuncia)
-o no hay salida a Internet (se reintenta en una hora). En iPhone/iPad,
-SideStore y AltStore avisan además por su cuenta con la fuente de PepoMote.
+El nuevo actualizador consulta las versiones publicadas, muestra las novedades
+y ofrece instalar desde la app. Desde Ajustes puedes comprobar otra vez o
+recuperar un aviso pospuesto. Si no hay conexión o el paquete está incompleto,
+puedes reintentar; no se sustituye la app con una descarga sin verificar.
+
+Android requiere confirmar en el instalador del sistema. iPhone/iPad continúa
+en SideStore o AltStore; Sideloadly requiere el ordenador. Consulta
+[Actualizaciones y recuperación](UPDATES.md) para los pasos por plataforma.
+Las versiones antiguas solo muestran un enlace a GitHub y requieren una primera
+instalación de la versión que incorpora el actualizador.
 
 ## Switch / Eden
 

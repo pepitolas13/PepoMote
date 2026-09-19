@@ -86,14 +86,11 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("home.theme_dark", "Oscuro", "Dark"),
     ("home.version", "v{0} · pv1 · Linux móvil", "v{0} · pv1 · Linux phone"),
     // --- aviso de versión nueva
-    ("upd.available", "PepoMote {0} disponible", "PepoMote {0} available"),
-    ("upd.download", "Descargar en GitHub", "Download on GitHub"),
-    ("upd.dismiss", "Ocultar", "Hide"),
     ("upd.toggle", "Avisar de versiones nuevas", "Notify about new versions"),
     (
         "upd.toggle_help",
-        "Consulta GitHub una vez al día (solo la página de la última versión) y no envía nada tuyo.",
-        "Checks GitHub once a day (only the latest-release page) and sends nothing of yours.",
+        "Busca nuevas versiones al arrancar y cada hora en GitHub. La descarga solo empieza cuando pulsas Instalar.",
+        "Checks GitHub at startup and hourly. Downloading starts only when you press Install.",
     ),
     // --- emparejar
     ("pair.title", "Conectar", "Connect"),

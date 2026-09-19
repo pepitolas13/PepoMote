@@ -237,7 +237,7 @@ object AppPrefs {
 
     // --- aviso de versión nueva (UpdateCheck / UpdateNotice)
 
-    /** Consultar GitHub una vez al día si hay versión nueva (Ajustes). */
+    /** Consultar versiones y novedades en GitHub al inicio y cada hora de uso (Ajustes). */
     fun updateCheckEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean("updateCheck", true)

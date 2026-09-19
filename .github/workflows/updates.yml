@@ -1,0 +1,26 @@
+name: update-contract
+
+on:
+  push:
+    branches: [main, next]
+    paths: ["packaging/updates/**", "docs/releases/**", ".github/workflows/release.yml", ".github/workflows/updates.yml"]
+  pull_request:
+    paths: ["packaging/updates/**", "docs/releases/**", ".github/workflows/release.yml", ".github/workflows/updates.yml"]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Release contract and incomplete/corrupt package cases
+        run: python -m unittest discover -s packaging/updates -p "test_*.py"

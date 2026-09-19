@@ -259,6 +259,7 @@ struct Calib {
 }
 
 pub struct MobileApp {
+    updater: crate::update::UpdateUi,
     screen: Screen,
     pairing: Option<Pairing>,
     link: Option<Link>,
@@ -339,6 +340,12 @@ fn describe_sensors(fake: bool) -> String {
 
 impl MobileApp {
     pub fn new(cc: &eframe::CreationContext<'_>, fake: bool, autoconnect: Option<String>) -> Self {
+        let update_context=cc.egui_ctx.clone();
+        crate::update::set_wake(move||{
+            update_context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            update_context.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            update_context.request_repaint();
+        });
         theme::apply(&cc.egui_ctx);
         let mut app = Self::build(fake);
         theme::set_preference(&cc.egui_ctx, app.settings.theme);
@@ -360,6 +367,7 @@ impl MobileApp {
         let buttons = Arc::new(Buttons::new());
         buttons.set_rotation(settings.rotation.as_u8());
         Self {
+            updater: crate::update::UpdateUi::default(),
             screen: Screen::Home,
             pairing: store::load(),
             link: None,
@@ -993,35 +1001,6 @@ impl MobileApp {
         });
         ui.add_space(18.0);
 
-        // Aviso de versión nueva: tarjeta con el enlace a la release de GitHub
-        if let Some(v) = crate::update::pending(
-            &crate::update::Version::current(),
-            self.settings.update_latest,
-            self.settings.update_dismissed,
-        ) {
-            egui::Frame::none()
-                .fill(theme::card())
-                .stroke(egui::Stroke::new(1.5_f32, theme::blue()))
-                .rounding(theme::RADIUS)
-                .inner_margin(12.0)
-                .show(ui, |ui| {
-                    ui.label(RichText::new(tr!("upd.available", v)).size(15.0).strong().color(theme::text()));
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        ui.hyperlink_to(
-                            RichText::new(tr!("upd.download")).size(14.0).color(theme::blue()),
-                            crate::update::release_url(&v),
-                        );
-                        ui.add_space(8.0);
-                        if ui.button(RichText::new(tr!("upd.dismiss")).size(13.0)).clicked() {
-                            self.settings.update_dismissed = Some(v);
-                            store::save_settings(&self.settings);
-                        }
-                    });
-                });
-            ui.add_space(12.0);
-        }
-
         let w = ui.available_width();
         let half = Vec2::new((w - 12.0) / 2.0, 96.0);
         let card = |ui: &mut egui::Ui, size: Vec2, title: &str, sub: &str, accent: egui::Color32| -> bool {
@@ -1129,6 +1108,7 @@ impl MobileApp {
         {
             store::save_settings(&self.settings);
         }
+        self.updater.settings(ui);
         // Avisos del receptor sobre el mando al cambiar de modo
         if ui
             .checkbox(&mut self.settings.receiver_notices, RichText::new(tr!("home.notices")).size(12.0))
@@ -1738,6 +1718,15 @@ impl eframe::App for MobileApp {
             self.settings.update_last_check = t;
             self.settings.update_latest = Some(v);
             store::save_settings(&self.settings);
+        }
+
+        if let Some(version) = self.updater.frame(ctx, self.settings.update_check, self.settings.update_dismissed) {
+            self.settings.update_dismissed = Some(version);
+            store::save_settings(&self.settings);
+        }
+        if let Some(plan) = crate::update::take_prepared() {
+            store::save_settings(&self.settings);
+            let _ = crate::update::finish_install(&plan);
         }
 
         // El hilo de paquetes manda 80 bytes (y remapea los sensores) solo

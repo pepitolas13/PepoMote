@@ -258,8 +258,8 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("cfg.update_check", "Avisar de versiones nuevas", "Notify about new versions"),
     (
         "cfg.update_check_help",
-        "Consulta GitHub una vez al día (solo la página de la última versión) y no envía nada tuyo.",
-        "Checks GitHub once a day (only the latest-release page) and sends nothing of yours.",
+        "Busca nuevas versiones al arrancar y cada hora en GitHub. La descarga solo empieza cuando pulsas Instalar.",
+        "Checks GitHub at startup and hourly. Downloading starts only when you press Install.",
     ),
     // --- canal de control
     ("err.bad_code", "Código incorrecto o caducado: mira el nuevo bajo el QR del PC", "Wrong or expired code: check the new one under the PC's QR"),
@@ -447,9 +447,6 @@ pub const TABLE: &[(&str, &str, &str)] = &[
         "If macOS asks about “Local Network”, allow it: that is how the phone finds the PC.",
     ),
     // --- aviso de versión nueva
-    ("upd.available", "PepoMote {0} disponible", "PepoMote {0} available"),
-    ("upd.download", "Descargar en GitHub", "Download on GitHub"),
-    ("upd.dismiss", "Ocultar", "Hide"),
     // --- bandeja (Windows) / barra de menús (macOS)
     ("tray.waiting", "PepoMote · esperando al móvil", "PepoMote · waiting for the phone"),
     ("tray.line", "PepoMote · {0} {1} · {2}", "PepoMote · {0} {1} · {2}"),

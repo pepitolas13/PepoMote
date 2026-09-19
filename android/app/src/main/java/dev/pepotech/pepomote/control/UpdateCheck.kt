@@ -1,18 +1,13 @@
 package dev.pepotech.pepomote.control
 
-/**
- * Aviso de versión nueva: la lógica pura (sin Android). Privacidad: la única
- * petición que sale de la red local es un HEAD a `releases/latest` de GitHub,
- * que responde con una redirección a la etiqueta de la última versión
- * publicada. Sin cuerpo, sin identificadores, una vez al día, y se apaga en
- * Ajustes. Mismos casos que el receptor (desktop/src/update.rs) y que iOS.
- */
+/** Stable version comparison and foreground update scheduling, without identifiers. */
 object UpdateCheck {
     const val REPO = "pepitolas13/PepoMote"
     const val LATEST_URL = "https://github.com/$REPO/releases/latest"
+    const val MANIFEST_URL = "$LATEST_URL/download/update.json"
     /** Fijo y sin versión: GitHub solo ve «un PepoMote», nada más. */
     const val USER_AGENT = "PepoMote-update-check"
-    const val CHECK_EVERY_MS = 24L * 3600 * 1000
+    const val CHECK_EVERY_MS = 3600L * 1000
     /** La primera consulta espera a que el inicio esté en pantalla. */
     const val FIRST_DELAY_MS = 3000L
     const val TIMEOUT_MS = 5000
@@ -63,10 +58,7 @@ object UpdateCheck {
         return latest
     }
 
-    /**
-     * ¿Toca consultar? Activado y, o nunca se consultó (`lastMs == 0`), o han
-     * pasado 24 h desde la última vez (un reloj hacia atrás no dispara nada).
-     */
+    /** A clock rollback must not silence checks indefinitely. */
     fun due(enabled: Boolean, lastMs: Long, nowMs: Long): Boolean =
-        enabled && (lastMs == 0L || (nowMs - lastMs) >= CHECK_EVERY_MS)
+        enabled && (lastMs == 0L || nowMs < lastMs || (nowMs - lastMs) >= CHECK_EVERY_MS)
 }

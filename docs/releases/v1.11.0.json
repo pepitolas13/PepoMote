@@ -1,0 +1,12 @@
+{
+  "es": [
+    "PepoMote detecta nuevas versiones y te muestra sus novedades dentro de la app.",
+    "Actualiza con progreso de descarga, comprobación del paquete y opción de reintentar.",
+    "En iPhone y iPad, continúa la actualización en SideStore o AltStore."
+  ],
+  "en": [
+    "PepoMote detects new versions and shows what's new inside the app.",
+    "Update with download progress, package verification and a retry option.",
+    "On iPhone and iPad, continue the update in SideStore or AltStore."
+  ]
+}

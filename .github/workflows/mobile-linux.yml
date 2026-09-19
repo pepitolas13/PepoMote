@@ -8,10 +8,11 @@ on:
       - "pmp/**"
       - "desktop/src/theme.rs"
       - "desktop/src/icon.rs"
+      - "desktop/src/update*.rs"
       - "packaging/linux-mobile/**"
       - ".github/workflows/mobile-linux.yml"
   pull_request:
-    paths: ["mobile-linux/**", "pmp/**", "packaging/linux-mobile/**"]
+    paths: ["mobile-linux/**", "pmp/**", "desktop/src/update*.rs", "packaging/linux-mobile/**"]
   workflow_call:
 
 jobs:

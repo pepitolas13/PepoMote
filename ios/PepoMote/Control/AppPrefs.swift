@@ -156,7 +156,7 @@ enum AppPrefs {
 
     // MARK: aviso de versión nueva (UpdateCheck)
 
-    /// Consultar GitHub una vez al día si hay versión nueva (Ajustes).
+    /// Consultar el manifiesto de GitHub cada hora en primer plano (Ajustes).
     static var updateCheckEnabled: Bool {
         get { d.object(forKey: "updateCheck") as? Bool ?? true }
         set { d.set(newValue, forKey: "updateCheck") }

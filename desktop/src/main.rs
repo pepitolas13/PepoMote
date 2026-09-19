@@ -44,6 +44,8 @@ mod win_power;
 use crate::state::LockTolerant;
 
 fn main() {
+    if update::install::run_from_args() { return; }
+    update::set_wake(singleton::request_show);
     // Lo primero de todo: que ningún pánico se pierda ni cierre el receptor
     // (el perfil release desenrolla; el hook lo deja en receptor.log)
     log::install_panic_hook();
@@ -111,7 +113,7 @@ fn main() {
     screen::start_minder(shared.clone());
     auto_mode::start_watcher(shared.clone());
 
-    // Aviso de versión nueva: un HEAD diario a GitHub (se apaga en Ajustes);
+    // Aviso de versión nueva: el manifiesto de GitHub al arrancar y cada hora (se apaga en Ajustes);
     // el resultado se guarda en settings.json y la ventana lo enseña
     {
         let (s1, s2, s3) = (shared.clone(), shared.clone(), shared.clone());
@@ -122,7 +124,10 @@ fn main() {
                 let mut s = s3.lock_tolerant();
                 s.config.update_last_check = now;
                 s.config.update_latest = Some(latest);
+                let offer = latest > update::Version::current() && s.config.update_dismissed != Some(latest) && s.config.update_check;
                 s.config.save();
+                drop(s);
+                if offer { singleton::request_show(); }
             },
             |m| log_line!("{m}"),
         );

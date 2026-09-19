@@ -47,6 +47,10 @@ else
 fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 
+# Updater replaces the complete signed bundle, keeping its permissions and
+# resources. On notarized releases the workflow recreates this ZIP after staple.
+ditto -c -k --keepParent --norsrc "$APP" "$OUT/PepoMote-macOS.zip"
+
 # DMG: la app y un enlace a Aplicaciones para arrastrar
 cp -R "$APP" "$OUT/dmg-root/"
 ln -s /Applications "$OUT/dmg-root/Applications"

@@ -5,10 +5,12 @@ enum HomeTone {
     case off, busy, on
 }
 
+@MainActor
 struct HomeScreen: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var l10n: L10n
     @ObservedObject var link = LinkState.shared
+    @ObservedObject private var updates = UpdateManager.shared
 
     private var status: (HomeTone, String) {
         switch link.link {
@@ -56,9 +58,9 @@ struct HomeScreen: View {
                     Text(text).pepoBody().lineLimit(1)
                 }
                 Spacer().frame(height: 24)
-                // Aviso de versión nueva (enlace a la release de GitHub)
-                if let v = model.updateAvailable {
-                    UpdateCard(version: v) { model.dismissUpdate(v) }
+                // A persistent path to the notes after the once-per-version sheet.
+                if updates.enabled, let release = updates.available {
+                    UpdateCard(release: release)
                         .frame(maxWidth: 620)
                     Spacer().frame(height: 16)
                 }

@@ -1,7 +1,9 @@
 import SwiftUI
 
+@MainActor
 struct SettingsScreen: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var updates = UpdateManager.shared
     @State private var kbClick = AppPrefs.keyboardClickFirst
     @State private var sounds = AppPrefs.soundsEnabled
     @State private var slidePress = AppPrefs.slidePress
@@ -72,7 +74,20 @@ struct SettingsScreen: View {
                         .onChange(of: notices) { AppPrefs.receiverNotices = $0 }
                     // Aviso de versión nueva: la única consulta fuera de la red local
                     SettingRow(title: tr("update_title"), subtitle: tr("update_sub"), on: $updateCheck)
-                        .onChange(of: updateCheck) { AppPrefs.updateCheckEnabled = $0 }
+                        .onChange(of: updateCheck) { updates.setEnabled($0) }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button(tr(updates.checking ? "update_checking" : "update_check_now")) {
+                            Task { await updates.check(force: true) }
+                        }
+                        .disabled(updates.checking)
+                        .font(PepoFont.labelLarge())
+                        .foregroundColor(Pepo.blue)
+                        if let status = updates.statusKey { Text(tr(status)).pepoBody() }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if let release = updates.release {
+                        UpdateCard(release: release)
+                    }
                     Button(action: {
                         model.linkRole = LinkState.roleWiimote // QR desde Ajustes: mando
                         LinkState.shared.pendingMode = nil

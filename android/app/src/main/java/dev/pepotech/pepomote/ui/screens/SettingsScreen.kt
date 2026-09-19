@@ -45,6 +45,8 @@ import dev.pepotech.pepomote.sensor.MotionSource
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
+import dev.pepotech.pepomote.service.UpdateNotice
+import dev.pepotech.pepomote.ui.components.UpdateSettingsCard
 
 /** Tarjeta del lado de un mando apaisado fijo: Izquierda / Derecha / Según el sensor. */
 @Composable
@@ -535,11 +537,15 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         updateCheck = it
                         AppPrefs.setUpdateCheckEnabled(context, it)
+                        UpdateNotice.settingsChanged(context)
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )
             }
         }
+
+        Spacer(Modifier.height(14.dp))
+        UpdateSettingsCard()
 
         Spacer(Modifier.height(14.dp))
         Card(

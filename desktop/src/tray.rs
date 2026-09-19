@@ -39,7 +39,7 @@ impl TraySnapshot {
             .flatten()
             .map(|p| if p.model.is_empty() { p.name.clone() } else { p.model.clone() })
             .collect();
-        let update = crate::update::pending(&Version::current(), s.config.update_latest, s.config.update_dismissed);
+        let update = crate::update::pending(&Version::current(), s.config.update_latest, None);
         Self { players: s.player_count(), mode: s.mode, names, update }
     }
 }
@@ -171,7 +171,7 @@ fn menu_handler(
     show_id: MenuId,
     quit_id: MenuId,
     update_id: MenuId,
-    url: Arc<Mutex<Option<String>>>,
+    _url: Arc<Mutex<Option<String>>>,
     show: impl Fn() + Send + Sync + 'static,
 ) -> impl Fn(MenuEvent) + Send + Sync + 'static {
     move |ev: MenuEvent| {
@@ -180,9 +180,8 @@ fn menu_handler(
         } else if *ev.id() == quit_id {
             std::process::exit(0);
         } else if *ev.id() == update_id {
-            if let Some(u) = url.lock().unwrap_or_else(|e| e.into_inner()).clone() {
-                let _ = webbrowser::open(&u);
-            }
+            crate::update::request_open();
+            show();
         }
     }
 }

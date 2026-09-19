@@ -16,6 +16,8 @@ PKG="$ROOT/packaging/linux"
 rm -rf "$STAGE"
 mkdir -p "$STAGE" "$OUT"
 install -m 0755 "$BIN" "$STAGE/PepoMote"
+# Exact executable for verified in-place updates of user-owned tar installs.
+install -m 0755 "$BIN" "$OUT/PepoMote-linux-x86_64"
 install -m 0644 "$PKG/PepoMote.desktop" "$STAGE/PepoMote.desktop"
 install -m 0644 "$PKG/pepomote.png" "$STAGE/pepomote.png"
 install -m 0644 "$PKG/99-pepomote.rules" "$STAGE/99-pepomote.rules"

@@ -32,6 +32,7 @@ mod update;
 mod strings;
 
 fn main() -> eframe::Result {
+    if update::install::run_from_args() { return Ok(()); }
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // --pair HOST[:PUERTO] CODIGO → empareja sin UI (scripts y pruebas)
@@ -79,7 +80,7 @@ fn main() -> eframe::Result {
         .map(|i| args.get(i + 1).cloned().unwrap_or_else(|| "pointer".into()));
     let fullscreen = args.iter().any(|a| a == "--fullscreen");
     app::log_line(&format!("arranque v{} args={:?}", env!("CARGO_PKG_VERSION"), args));
-    // Aviso de versión nueva: un HEAD diario a GitHub (se apaga en Inicio);
+    // Aviso de versión nueva: el manifiesto de GitHub al arrancar y cada hora (se apaga en Inicio);
     // el resultado lo guarda la UI en settings.json
     update::spawn(
         || store::load_settings().update_check,

@@ -23,6 +23,9 @@ jobs:
       - name: Test
         working-directory: desktop
         run: cargo test --release
+      - name: Actualización y recuperación con el instalador real (archivos aislados)
+        shell: pwsh
+        run: ./desktop/tests/update-handoff.ps1 -Receiver desktop/target/release/PepoMote.exe
       # Receptor real aislado + RetroArch falso por sockets (desktop/e2e/README.md):
       # retroarch.cfg, un datagrama por fotograma, teclas rápidas, resincronización
       - name: e2e de todos los mandos (receptor aislado)
