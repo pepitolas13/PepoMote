@@ -58,7 +58,9 @@ enum Route {
     /// en otra ventana).
     static func holdsPointerForKeyboard(_ link: UiLink) -> Bool {
         guard let c = link.connected else { return false }
-        return c.mode == LinkState.modePointer && pointsAtPc(c)
+        return pointsAtPc(c) && (c.mode == LinkState.modePointer ||
+            (isRetroArch(link) && c.receiver.supportsPointer &&
+                [LinkState.padNes, LinkState.padGun].contains(c.pad)))
     }
 
     /// Este móvil es el que mueve el cursor del PC: Jugador 1 y mando.
@@ -82,7 +84,7 @@ enum Route {
         isRetroArch(link) && link.connected?.pad == LinkState.padRetroPad
     }
 
-    /// RetroArch como mando de NES: el Mando Wii de lado, fijo en apaisado.
+    /// Mando Wii de RetroArch: vertical o apaisado según el teléfono.
     static func retroNes(_ link: UiLink) -> Bool {
         isRetroArch(link) && link.connected?.pad == LinkState.padNes
     }
@@ -130,7 +132,7 @@ enum Route {
     /// el móvil.
     static func forcesLandscape(_ link: UiLink, _ intent: PadIntent) -> Bool {
         let screen = route(link, intent)
-        return screen == .gamePad || wiiLandscapeNunchuk(link) || retroNes(link)
+        return screen == .gamePad || wiiLandscapeNunchuk(link)
     }
 
     /// Con el mando de lado (NES) el móvil ES un Mando de Wii girado: en

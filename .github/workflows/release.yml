@@ -340,7 +340,7 @@ jobs:
           raw = f"https://raw.githubusercontent.com/{repo}/main"
           version = tag.lstrip("v")
           today = datetime.date.today().isoformat()
-          notes = f"PepoMote {version} para iPhone y iPad: en modo puntero, el botón Teclado hace clic donde apuntas y escribe en el PC lo que teclees. Incluye RetroArch con el mando de cada consola, puntero, Wii para Dolphin, Wii U para Cemu con doble pantalla, Nunchuk y Pro Controller para Eden. Botones y sticks también sin giroscopio. Notas completas: {base}/releases/tag/{tag}"
+          notes = f"PepoMote {version} para iPhone y iPad: el Mando Wii de RetroArch gira entre vertical y horizontal y mueve el puntero del PC. El teclado congela el apuntado mientras escribes. Incluye RetroArch con el mando de cada consola, puntero, Wii para Dolphin, Wii U para Cemu con doble pantalla, Nunchuk y Pro Controller para Eden. Botones y sticks también sin giroscopio. Notas completas: {base}/releases/tag/{tag}"
           src = {
               "name": "PepoTech",
               "identifier": "dev.pepotech.altstore",
@@ -356,7 +356,7 @@ jobs:
                   "bundleIdentifier": "dev.pepotech.pepomote",
                   "developerName": "PepoTech",
                   "subtitle": "Tu iPhone o iPad, mando de tu PC",
-                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual, a Cemu con un GamePad de Wii U con doble pantalla, a Eden con un Pro Controller y a RetroArch con el mando de cada consola. Los botones y sticks funcionan aunque el dispositivo no tenga giroscopio. Necesita el receptor PepoMote en Windows, Linux o macOS, o el servidor Android para Dolphin, Eden y RetroArch. La pistola y el teclado de RetroArch necesitan un receptor en PC.",
+                  "localizedDescription": "Mueve el cursor del PC como con un mando de Wii, juega a Dolphin con un Wiimote virtual, a Cemu con un GamePad de Wii U con doble pantalla, a Eden con un Pro Controller y a RetroArch con el mando de cada consola. Los botones y sticks funcionan aunque el dispositivo no tenga giroscopio. Necesita el receptor PepoMote en Windows, Linux o macOS, o el servidor Android para Dolphin, Eden y RetroArch. El puntero, la pistola y el teclado de RetroArch necesitan un receptor en PC.",
                   "iconURL": f"{raw}/assets/brand/logo.png",
                   "tintColor": "3FA9F5",
                   "category": "utilities",

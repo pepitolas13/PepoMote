@@ -99,7 +99,11 @@ object Route {
      * en otra ventana).
      */
     fun holdsPointerForKeyboard(link: UiLink): Boolean =
-        link is UiLink.Connected && link.mode == LinkState.MODE_POINTER && pointsAtPc(link)
+        link is UiLink.Connected && pointsAtPc(link) && (
+            link.mode == LinkState.MODE_POINTER ||
+                (isRetroArch(link) && link.platform != ReceiverCapabilities.ANDROID &&
+                    link.pad in setOf(LinkState.PAD_NES, LinkState.PAD_GUN))
+            )
 
     /** Este móvil es el que mueve el cursor del PC: Jugador 1 y mando (no Nunchuk). */
     private fun pointsAtPc(link: UiLink.Connected): Boolean =
@@ -140,7 +144,7 @@ object Route {
         link is UiLink.Connected && link.mode == LinkState.MODE_RETROARCH &&
             link.supportsRetroArch && link.role == LinkState.ROLE_WIIMOTE
 
-    /** RetroArch como mando de NES: el Mando Wii de lado, fijo en apaisado. */
+    /** Mando Wii de RetroArch: vertical o apaisado según el teléfono. */
     fun retroNes(link: UiLink): Boolean =
         isRetroArch(link) && (link as UiLink.Connected).pad == LinkState.PAD_NES
 
@@ -151,11 +155,11 @@ object Route {
     /**
      * Pantallas del mando que van fijas en apaisado (el sensor solo decide
      * entre los dos apaisados): el GamePad de Wii U y el mando + Nunchuk de
-     * Dolphin, y el mando de NES de RetroArch. El mando se gira solo: no
+     * Dolphin. El mando se gira solo: no
      * hace falta girar el móvil.
      */
     fun forcesLandscape(link: UiLink, intent: PadIntent): Boolean =
-        route(link, intent) == PadScreen.GamePad || wiiLandscapeNunchuk(link) || retroNes(link)
+        route(link, intent) == PadScreen.GamePad || wiiLandscapeNunchuk(link)
 
     /**
      * Con el mando de lado (NES) el móvil ES un Mando de Wii girado: en

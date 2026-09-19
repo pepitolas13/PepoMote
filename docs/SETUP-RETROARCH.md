@@ -3,7 +3,7 @@
 El modo **RetroArch** convierte el móvil en un mando para RetroArch: **el
 mando de la consola del juego que RetroArch tiene cargado** (NES, Game Boy,
 SNES, Mega Drive, N64, PlayStation… o el **RetroPad** completo de dos sticks
-si no se conoce), el **Mando de Wii de lado** para los juegos de dos botones,
+si no se conoce), el **Mando Wii vertical u horizontal** con puntero,
 o una **pistola de luz** (el Mando de Wii apuntando) para Duck Hunt y compañía. Usa dos cosas que
 RetroArch trae de serie: el **mando en red** (Network Gamepad / Remote
 RetroPad, UDP 55400 + jugador) para los botones y los sticks, y la **interfaz
@@ -20,7 +20,7 @@ DSU; funciona igual en Windows, Linux y macOS.
 PepoMote escribe en `retroarch.cfg` las claves que activan el mando en red
 (`network_remote_enable`, `network_remote_enable_user_p1`…`p4`,
 `network_remote_base_port`) y la interfaz de comandos (`network_cmd_enable`,
-`network_cmd_port`), con una copia de seguridad en `retroarch.cfg.pepomote.bak`.
+`network_cmd_port`) y el ratón del menú (`menu_mouse_enable`), con una copia de seguridad en `retroarch.cfg.pepomote.bak`.
 Si RetroArch está abierto, espera a que lo cierres: RetroArch reescribe su
 configuración al salir y pisaría el cambio. Solo hace falta una vez: si las
 claves ya están, PepoMote no toca nada aunque RetroArch esté abierto.
@@ -42,13 +42,34 @@ En el móvil, **En RetroArch soy:** elige el mando; se recuerda entre sesiones.
 | Mando | Cómo se sostiene | Qué manda |
 |---|---|---|
 | **Consola** (el primer segmento, con el nombre de la que toca) | apaisado | el mando de la consola del juego cargado (ver «El mando de cada consola»); si no se conoce, el **RetroPad** completo: A/B/X/Y en las posiciones de la SNES, L/R, L2/R2, L3/R3, cruceta, dos sticks, Select/Start, **Menú** (abre el menú de RetroArch) y **Rápido** (avance rápido mientras se mantiene) |
-| **Wii de lado** | de lado | cruceta, **B** y **A** (los botones grandes), X (la A grande del Mando de Wii), Select/Start y Menú |
+| **Mando Wii** | vertical u horizontal, giro automático | puntero del PC para el Jugador 1, cruceta, **B/A** (1/2), **X/Y** (A/gatillo B del mando Wii), Select/Start y Menú; mismas etiquetas y botones en ambas orientaciones |
 | **Pistola** | derecho, apuntando a la pantalla | el puntero mueve el ratón del PC (es la pistola de luz de RetroArch), **B dispara** (clic izquierdo) y **A recarga** fuera de pantalla (clic derecho); 1 y 2 son B y A del RetroPad, y la cruceta, − / + y Menú como en el mando de NES |
 
 La cabecera plegable del móvil trae además las **teclas rápidas**: Guardar y
 Cargar estado, Ranura − / +, Rebobinar (se mantiene pulsado), Pausa, Captura
 y Reiniciar. Van por la interfaz de comandos de RetroArch, así que no
 dependen de qué teclas tengas asignadas.
+
+## Apuntar con el Mando Wii
+
+El Jugador 1 apunta moviendo el móvil, tanto en vertical como en horizontal.
+Al girar la pantalla, el receptor vuelve a centrar el puntero y adapta los
+ejes en ese mismo paquete. La diana recentra manualmente y la zona de
+precisión permite movimientos más finos. Abrir el teclado congela la pose
+hasta terminar de escribir. Actualiza tanto la app móvil como el receptor.
+
+El Mando Wii conserva sus botones de juego: no genera clics duplicados.
+En el menú, apunta a una opción y confirma con **A** (el botón 2 del mando
+Wii). Para disparar/clicar con el gatillo, elige **Pistola**. El menú debe
+admitir ratón; PepoMote habilita su ajuste al cerrar RetroArch.
+
+Dentro de un juego, el núcleo debe admitir ratón o pistola y tener ese
+dispositivo seleccionado en **Menú rápido → Controles → Puerto 1**. En el
+núcleo Dolphin, elige **Wiimote IR Mode → Mouse controls pointer** en sus
+opciones ([documentación de Libretro](https://docs.libretro.com/library/dolphin/)).
+El puntero de RetroArch usa el ratón; la integración Dolphin independiente
+conserva su propio puntero IR y sensores por DSU. El servidor Android ofrece
+los botones en ambas orientaciones, pero no puede mover el cursor de otra app.
 
 ## El mando de cada consola
 
@@ -100,7 +121,7 @@ Cada móvil es un jugador: el Jugador 1 usa el puerto 55400, el 2 el 55401, y
 así hasta cuatro (PepoMote habilita los cuatro usuarios en `retroarch.cfg`).
 En RetroArch, Ajustes → Entrada → Mando en red debe quedar activado (lo hace
 PepoMote) y el mando de cada jugador aparece en su puerto sin configurar nada
-más. Solo el Jugador 1 cambia el modo; el rol Nunchuk no tiene papel en
+más. Solo el Jugador 1 apunta con el cursor del PC y cambia el modo; el rol Nunchuk no tiene papel en
 RetroArch.
 
 ## Cómo llega cada pulsación

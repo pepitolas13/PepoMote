@@ -201,7 +201,7 @@ impl Status {
     /// van al mando emulado y el clic no llegaría al escritorio, y en
     /// RetroArch con pistola A es el clic DERECHO (recargar).
     pub fn clicks_before_keyboard(&self, setting: bool) -> bool {
-        setting && self.holds_pointer()
+        setting && matches!(self, Self::Connected { mode, .. } if mode == "pointer") && self.points_at_pc()
     }
 
     /// ¿Se congela la pose mientras el teclado está abierto? Solo cuando este
@@ -209,7 +209,8 @@ impl Status {
     /// iría solo (y donde el foco sigue al ratón, el texto acabaría en otra
     /// ventana).
     pub fn holds_pointer(&self) -> bool {
-        matches!(self, Self::Connected { mode, .. } if mode == "pointer") && self.points_at_pc()
+        self.points_at_pc() && matches!(self, Self::Connected { mode, pad, receiver, .. }
+            if mode == "pointer" || (mode == "retroarch" && receiver.supports_pointer() && matches!(pad.as_str(), "nes" | "gun")))
     }
 
     /// Este móvil es el que mueve el cursor del PC: Jugador 1 y mando.
@@ -1360,6 +1361,28 @@ mod tests {
         assert!(!con("pointer", 1, Role::Wiimote, true).holds_pointer());
         assert!(!con("cemu", 0, Role::Wiimote, true).holds_pointer());
         assert!(!Status::Disconnected.holds_pointer());
+    }
+
+    #[test]
+    fn el_teclado_congela_wii_y_pistola_sin_enviar_un_clic() {
+        for pad in ["nes", "gun", "retropad"] {
+            let mut st = connected();
+            if let Status::Connected { mode, pad: p, slot, role, .. } = &mut st {
+                *mode = "retroarch".into();
+                *p = pad.into();
+                *slot = 0;
+                *role = Role::Wiimote;
+            }
+            assert_eq!(st.holds_pointer(), pad != "retropad");
+            assert!(!st.clicks_before_keyboard(true));
+            if let Status::Connected { slot, .. } = &mut st { *slot = 1; }
+            assert!(!st.holds_pointer());
+            if let Status::Connected { slot, receiver, .. } = &mut st {
+                *slot = 0;
+                *receiver = ReceiverCapabilities::from_ok(&json!({"platform":"android"}));
+            }
+            assert!(!st.holds_pointer());
+        }
     }
 
     /// Exercise the real packet worker/socket with either a silent, dead or

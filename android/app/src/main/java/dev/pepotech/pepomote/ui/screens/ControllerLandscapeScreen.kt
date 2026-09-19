@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -150,7 +151,7 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Spacer(Modifier.size(40.dp * s))
-                        RoundButton(if (retro) "X" else "A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
+                        RoundButton(if (Route.retroNes(link)) "X" else "A", 62.dp * s, ButtonState.A, textSize = (22 * s).roundToInt())
                         RoundButton(stringResource(if (retro) R.string.retro_menu else R.string.home_btn), 40.dp * s, ButtonState.HOME, textSize = ((if (retro) 10 else 11) * s).roundToInt())
                     }
                 } else {
@@ -182,7 +183,12 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 )
             }
 
-            Text(
+            if (retro) {
+                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp).width(112.dp * s)) {
+                    dev.pepotech.pepomote.ui.components.TriggerZone(
+                        label = if (Route.retroNes(link)) "Y" else "B", height = 44.dp * s)
+                }
+            } else Text(
                 stringResource(R.string.rotate_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier
@@ -214,7 +220,8 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 KeyboardDialog(
                     onSend = { LinkState.sendText?.invoke(it) },
                     onClose = { keyboardOpen = false },
-                    pointer = dev.pepotech.pepomote.service.Route.holdsPointerForKeyboard(link)
+                    retroPad = Route.isRetroArch(link),
+                    pointer = (link as? UiLink.Connected)?.mode == LinkState.MODE_POINTER
                 )
             }
 

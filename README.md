@@ -5,7 +5,7 @@
 
 **[Español](README.es.md)**
 
-**PepoMote 1.10.5: type on your PC from your phone.** In pointer mode the **Keyboard** button clicks where you are aiming, opens your phone's keyboard and, when you send, the whole text lands on the PC: searches, addresses, anything. And it arrives exactly as typed on Windows, macOS and Linux — accents, ñ and emoji included. [What's new in 1.10.5](docs/releases/v1.10.5.md) · [What 1.10 brought](docs/releases/v1.10.0.md) · [Published downloads](https://github.com/pepitolas13/PepoMote/releases).
+**PepoMote 1.10.6: portrait and landscape Wii Remote with a pointer in RetroArch.** Rotate your phone and keep aiming, with the same controls in both orientations, automatic recentering and a steady pointer while typing. Includes the integrated keyboard from 1.10.5. [What is new in 1.10.6](docs/releases/v1.10.6.md) · [RetroArch guide](docs/SETUP-RETROARCH.md) · [Published downloads](https://github.com/pepitolas13/PepoMote/releases).
 
 **Enjoying the project? Give it a star at the top of GitHub ⭐.** It helps more people discover PepoMote and encourages me to keep improving it. I want it to become the best virtual controller for playing your favourite consoles, and every star helps the project reach more people.
 

@@ -2,6 +2,11 @@ import XCTest
 @testable import PepoMote
 
 final class ReceiverCapabilitiesTests: XCTestCase {
+    func testFrameRotationRequiresExplicitCapability() {
+        XCTAssertFalse(ReceiverCapabilities().frameRotation)
+        XCTAssertFalse(ReceiverCapabilities(ok: ["platform": "android"]).frameRotation)
+        XCTAssertTrue(ReceiverCapabilities(ok: ["frame_rotation": true]).frameRotation)
+    }
     func testElPcAntiguoConservaPistolaYTeclado() {
         let cases: [[String: Any]] = [[:], ["platform": "desktop"], ["platform": "otro", "text_input": "false"]]
         for ok in cases {

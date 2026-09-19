@@ -82,6 +82,8 @@ struct ControllerScreen: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var link = LinkState.shared
     @State private var keyboardOpen = false
+    @State private var rotation = OrientationLock.frameRotation(OrientationLock.current)
+    private var retro: Bool { Route.isRetroArch(link.link) }
     /// Dónde está cada botón, para «Pulsar deslizando».
     @StateObject private var press = PressRegistry()
 
@@ -138,8 +140,18 @@ struct ControllerScreen: View {
         .onChange(of: link.link) { current in
             if keyboardOpen && !Route.showsKeyboard(current) { keyboardOpen = false }
             LinkState.shared.motion?.pointerHold = keyboardOpen && Route.holdsPointerForKeyboard(current)
+            link.motion?.rotation = rotation
         }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onChange(of: rotation) { link.motion?.rotation = $0 }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            rotation = OrientationLock.frameRotation(OrientationLock.current)
+        }
+        .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = true
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            rotation = OrientationLock.frameRotation(OrientationLock.current)
+            link.motion?.rotation = rotation
+        }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             press.releaseAll() // nada queda pulsado al salir
@@ -193,7 +205,7 @@ struct ControllerScreen: View {
             }
             Gap(m.gap(16), flexible: m.flexible)
             RoundButton(
-                label: "A", size: m.big, bit: Btn.a,
+                label: Route.retroNes(link.link) ? "X" : "A", size: m.big, bit: Btn.a,
                 background: Pepo.blue, pressedColor: Pepo.blueHover, textColor: Pepo.onAccent,
                 textSize: m.text(44), pop: true
             )
@@ -203,9 +215,9 @@ struct ControllerScreen: View {
             // y en Cemu, además, Mario Party 10 lo pide para dar por emparejado
             // cada Mando de Wii emulado
             HStack(spacing: m.spacing) {
-                RoundButton(label: "1", size: m.one, bit: Btn.one, textSize: m.text(18))
+                RoundButton(label: retro ? "B" : "1", size: m.one, bit: Btn.one, textSize: m.text(18))
                 if showHome {
-                    RoundButton(label: tr("home_btn"), size: m.one, bit: Btn.home, textSize: m.text(12))
+                    RoundButton(label: tr(retro ? "retro_menu" : "home_btn"), size: m.one, bit: Btn.home, textSize: m.text(12))
                 } else if Route.showsKeyboard(link.link) {
                     // Modo puntero: Home no hace nada y su hueco queda libre,
                     // centrado bajo la A y lejos de la cruceta y de B. No es un
@@ -217,12 +229,12 @@ struct ControllerScreen: View {
                     }
                     .fixedSize()
                 }
-                RoundButton(label: "2", size: m.one, bit: Btn.two, textSize: m.text(18))
+                RoundButton(label: retro ? "A" : "2", size: m.one, bit: Btn.two, textSize: m.text(18))
             }
             Gap(m.gap(10), flexible: m.flexible)
             MediaRow(buttonSize: m.media, textSize: m.text(16))
             Spacer(minLength: 4)
-            TriggerZone(height: m.trigger)
+            TriggerZone(label: Route.retroNes(link.link) ? "Y" : "B", height: m.trigger)
             Spacer().frame(height: 12)
         }
     }

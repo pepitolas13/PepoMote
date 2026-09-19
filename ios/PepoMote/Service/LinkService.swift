@@ -160,6 +160,7 @@ final class LinkService {
             sender.send(packet)
         }
         motion = engine
+        engine.reportFrameRotation = ok.receiver.frameRotation
         // Antes de publicar Connected: la pantalla GamePad lo busca al entrar
         link.motion = engine
         engine.start()

@@ -126,3 +126,19 @@ de entorno en vez de leer `%APPDATA%` desde Python.
 `python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/switch-preview/validation/e2e` ejecuta secuencialmente Switch, Wii U y Nunchuk contra un binario ya compilado. Crea directorios y puertos propios, desactiva actualizaciones y bandeja, y termina únicamente sus procesos de prueba. Los overrides `PEPOMOTE_CEMU_DIR` y `PEPOMOTE_EDEN_DIR` impiden buscar instalaciones personales o portátiles. Deja `checks.log` y el log del receptor por suite.
 
 `e2e_eden.py` comprueba negociación, Pro Controller por jugador, migración de preferencias antiguas, cambios de modo, botones/sticks/gyro DSU y pulsación/liberación sin sensores en las tres consolas, ausencia de táctil y escritura de `qt-config.ini` con respaldo y secciones ajenas conservadas. La fixture incluye otro servidor DSU para comprobar los índices globales de Eden. Estas pruebas simulan móviles y el cliente DSU; no sustituyen una prueba con Eden, juegos y sensores físicos.
+
+
+## Puntero con RetroArch real (Windows)
+
+`real_retroarch_pointer.py` usa `fixtures/pointer_core.rs`, un núcleo de
+prueba sin ROM que registra las llamadas reales Mouse, Lightgun y RetroPad.
+Compílalo con `rustc --edition 2021 --crate-type cdylib
+ desktop/e2e/fixtures/pointer_core.rs -o pointer_libretro.dll` y ejecuta
+`py -3 desktop/e2e/real_retroarch_pointer.py <PepoMote.exe>
+ <retroarch.exe> <pointer_libretro.dll>`.
+
+La prueba crea ajustes y registros temporales, abre su propia ventana de
+RetroArch y la activa para que DirectInput reciba el ratón. Comprueba las
+orientaciones 0/90/270/0, movimiento absoluto y relativo, cuatro botones sin
+clics duplicados, gatillo de J1 con J2 activo, recarga y liberación al cambiar
+de mando. No modifica la configuración del RetroArch proporcionado.

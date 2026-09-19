@@ -5,7 +5,7 @@
 
 **[English](README.md)**
 
-**PepoMote 1.10.5: escribe en el PC desde el móvil.** En modo puntero, el botón **Teclado** hace clic donde estás apuntando, abre el teclado del móvil y, al enviar, el texto aparece entero en el PC: buscadores, direcciones, lo que sea. Y llega exacto en Windows, macOS y Linux, con tildes, ñ y emoji incluidos. [Novedades de la 1.10.5](docs/releases/v1.10.5.md) · [Lo que trajo la 1.10](docs/releases/v1.10.0.md) · [Descargas publicadas](https://github.com/pepitolas13/PepoMote/releases).
+**PepoMote 1.10.6: Mando Wii vertical y horizontal con puntero en RetroArch.** Gira el móvil y sigue apuntando, con los mismos botones en ambas orientaciones, recentrado automático y teclado estable. Incluye el teclado integrado de la 1.10.5. [Novedades de la 1.10.6](docs/releases/v1.10.6.md) · [Guía de RetroArch](docs/SETUP-RETROARCH.md) · [Descargas publicadas](https://github.com/pepitolas13/PepoMote/releases).
 
 **¿Te gusta el proyecto? Dale una estrellita arriba en GitHub ⭐.** Me ayudas a que más gente descubra PepoMote y a seguir mejorándolo. Quiero que llegue a ser el mejor mando virtual para jugar a tus consolas favoritas, y cada estrella ayuda a que este proyecto llegue más lejos.
 

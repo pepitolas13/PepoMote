@@ -665,7 +665,7 @@ struct KeyboardSheet: View {
                     KeyboardDialog(
                         onSend: { LinkState.shared.sendText?($0) },
                         onClose: onClose,
-                        pointer: Route.holdsPointerForKeyboard(state.link)
+                        pointer: state.link.connected?.mode == LinkState.modePointer
                     )
                 }
                 Spacer()

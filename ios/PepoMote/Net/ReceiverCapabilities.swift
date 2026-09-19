@@ -4,10 +4,12 @@ import Foundation
 struct ReceiverCapabilities: Equatable {
     let platform: String
     let textInput: Bool
+    let frameRotation: Bool
 
     init(ok: [String: Any] = [:]) {
         platform = (ok["platform"] as? String)?.lowercased() == "android" ? "android" : "desktop"
         textInput = platform != "android" && (ok["text_input"] as? Bool ?? true)
+        frameRotation = ok["frame_rotation"] as? Bool ?? false
     }
 
     var retroPads: [String] {

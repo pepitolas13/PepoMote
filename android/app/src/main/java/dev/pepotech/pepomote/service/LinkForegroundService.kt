@@ -268,6 +268,7 @@ class LinkForegroundService : Service() {
                     // Inclinación (acelerómetro) solo si el receptor la entiende:
                     // un receptor anterior o el servidor Android descartarían el bit
                     engine.tilt = ok.supportsTilt && MotionSource.refresh(this@LinkForegroundService)
+                    engine.reportFrameRotation = ok.supportsFrameRotation
                     LinkState.setTilt = { on -> engine.tilt = ok.supportsTilt && on }
                     // Antes de publicar Connected: la pantalla GamePad lo busca al entrar
                     LinkState.motion = engine

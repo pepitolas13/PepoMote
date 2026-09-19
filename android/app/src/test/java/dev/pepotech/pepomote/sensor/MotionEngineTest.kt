@@ -87,6 +87,42 @@ class MotionEngineTest {
         ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN).getFloat(offset + it * 4)
     }
 
+    @Test fun elTecladoCongelaTambienElMarcoDeLosSensores() {
+        val packets = mutableListOf<ByteArray>()
+        val engine = engine(SenderKind.WIIMOTE, packets)
+        val accel = sensor(Sensor.TYPE_ACCELEROMETER)
+        engine.rotation = Frame.ROTATION_90
+        engine.start()
+        repeat(4) { advance(10); emit(accel, 1f, 2f, 9.8f) }
+        engine.pointerHold = true
+        advance(25)
+        val held = packets.last().floats(52, 3)
+        engine.rotation = Frame.ROTATION_270
+        advance(50)
+        assertArrayEquals(held, packets.last().floats(52, 3), 0f)
+        engine.pointerHold = false
+        advance(500)
+        emit(accel, 1f, 2f, 9.8f)
+        advance(25)
+        assertArrayEquals(floatArrayOf(2f, -1f, 9.8f), packets.last().floats(52, 3), 0.001f)
+        stop(engine)
+    }
+
+    @Test fun elMarcoSoloSeAnunciaSiElReceptorLoEntiende() {
+        for (kind in listOf(SenderKind.WIIMOTE, SenderKind.NUNCHUK)) {
+            val packets = mutableListOf<ByteArray>()
+            val engine = engine(kind, packets)
+            engine.rotation = Frame.ROTATION_90
+            engine.start()
+            advance(40)
+            assertEquals("compatible con receptores Android y PC anteriores", 0, packets.last()[5].toInt() and 0x60)
+            engine.reportFrameRotation = true
+            advance(40)
+            assertEquals(if (kind == SenderKind.WIIMOTE) 0x20 else 0, packets.last()[5].toInt() and 0x60)
+            stop(engine)
+        }
+    }
+
     @Test fun elTecladoCongelaLaPoseYAunAsiEntregaElClicEntero() {
         val packets = mutableListOf<ByteArray>()
         val sentAt = mutableListOf<Long>()

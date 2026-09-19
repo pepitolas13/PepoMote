@@ -300,7 +300,7 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         "screen_only":screen_only,
                         // Este receptor entiende el apuntado por inclinación
                         // (INPUT flags bit4): el móvil solo lo pide si lo ve aquí
-                        "tilt":true});
+                        "tilt":true, "frame_rotation":true});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }

@@ -354,6 +354,7 @@ pub struct PointerEngine {
     /// (yaw, pitch) del mundo capturados en el recentrado.
     ref_angles: Option<(f32, f32)>,
     last_recenter: Option<u8>,
+    last_frame: Option<u8>,
     filter: Filter2D,
     frozen: bool,
     last_emitted: Option<(f32, f32)>, // grados (yaw, pitch) relativos
@@ -462,6 +463,7 @@ impl PointerEngine {
         Self {
             ref_angles: None,
             last_recenter: None,
+            last_frame: None,
             // Filtro casi transparente. Con el gyro mandando, la señal ya
             // llega limpia (jitter en reposo < 1 px con y sin filtro, medido
             // en grabaciones reales); lo que sí cuesta es el retardo: con el
@@ -745,6 +747,11 @@ impl PointerEngine {
         self.cursor_hint = hint;
     }
 
+    /// El sesgo está expresado en este marco: no heredarlo al reconectar girado.
+    pub fn same_frame(&self, p: &InputPacket) -> bool {
+        self.last_frame == Some(p.flags & crate::net::codec::FLAG_FRAME_MASK)
+    }
+
     /// `sens_deg`: grados de giro para cruzar el ancho de pantalla.
     /// `aspect_w_over_h`: relación de aspecto de la pantalla destino.
     /// `abs_mode`: false = forzar salida relativa (juegos).
@@ -763,6 +770,17 @@ impl PointerEngine {
         // camino no valen para el otro: se recentra, y el otro camino vuelve
         // a sembrar su estado como en la primera muestra (dt = None). Con un
         // móvil que nunca manda el bit esto queda en Some(false) para siempre.
+        let frame = p.flags & crate::net::codec::FLAG_FRAME_MASK;
+        if self.last_frame.is_some_and(|previous| previous != frame) {
+            // Un cambio de base no es movimiento físico. Recalibrar desde
+            // este paquete, conservando el monitor y el cursor del sistema.
+            let bounds = self.cursor_bounds;
+            let hint = self.cursor_hint;
+            *self = Self::new();
+            self.cursor_bounds = bounds;
+            self.cursor_hint = hint;
+        }
+        self.last_frame = Some(frame);
         let tilt = p.flags & FLAG_TILT != 0;
         let switched = self.last_tilt.replace(tilt).is_some_and(|t| t != tilt);
         if switched {
@@ -1122,6 +1140,40 @@ mod tests {
     fn qrot_z(deg: f32) -> Quat {
         let h = deg.to_radians() / 2.0;
         Quat { w: h.cos(), x: 0.0, y: 0.0, z: h.sin() }
+    }
+
+    #[test]
+    fn girar_el_marco_resiembra_sin_mezclar_ejes_ni_sesgo() {
+        let mut engine = PointerEngine::new();
+        let mut t = 5_000_000;
+        for (index, frame) in [0u8, 1, 3, 2, 0].into_iter().enumerate() {
+            let q = qrot_z(frame as f32 * 90.0);
+            let flags = FLAG_QUAT_VALID | (frame << 5);
+            let mut first = packet(arr(q), 0, t, flags);
+            if index > 0 { engine.bias = [0.02, -0.01, 0.01]; }
+            engine.set_cursor_bounds(Some((-0.25, 0.0, 1.5, 1.0)));
+            let out = engine.apply(&first, 60.0, 1.0, true, 1920.0, false);
+            assert!(matches!(out, PointerOutput::Abs { nx: 0.5, ny: 0.5 }));
+            assert_eq!(engine.cursor_bounds, (-0.25, 0.0, 1.5, 1.0));
+            // La misma pose tras el giro debe sentirse como un mando recién conectado.
+            let mut reference = PointerEngine::new();
+            reference.set_cursor_bounds(Some((-0.25, 0.0, 1.5, 1.0)));
+            reference.apply(&first, 60.0, 1.0, true, 1920.0, false);
+            let mut previous = q;
+            for step in 1..=40 {
+                t += DT_US;
+                let current = q.mul(qrot_x(step as f32 * 0.2));
+                let (axis, angle) = delta_axis_angle(previous, current);
+                first.quat = arr(current);
+                first.gyro = axis.map(|v| v * angle / 0.005);
+                first.t_sensor_us = t;
+                let actual = engine.apply(&first, 60.0, 1.0, true, 1920.0, false);
+                let expected = reference.apply(&first, 60.0, 1.0, true, 1920.0, false);
+                assert_eq!(format!("{actual:?}"), format!("{expected:?}"), "marco {frame}, paso {step}");
+                previous = current;
+            }
+            t += DT_US;
+        }
     }
 
     fn qrot_x(deg: f32) -> Quat {

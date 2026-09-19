@@ -71,6 +71,10 @@ class MotionEngine(
      */
     @Volatile
     var rotation: Int = Surface.ROTATION_0
+    @Volatile
+    var reportFrameRotation: Boolean = false
+    private var holdRotation: Int = Surface.ROTATION_0
+    private var packetRotation: Int = Surface.ROTATION_0
 
     /**
      * Apuntado por inclinación (INPUT flags bit4): el receptor saca el cursor
@@ -343,15 +347,21 @@ class MotionEngine(
     private fun sendPacket(tSensorNs: Long) {
         acceptButtonChanges()
         val buttons = buttonDelivery.buttonsForPacket(tSensorNs)
+        val requestedRotation = rotation
+        val wasHolding = holding
         holdPose()
+        if (holding && !wasHolding) holdRotation = requestedRotation
+        packetRotation = if (holding) holdRotation else requestedRotation
         seq++
         // Los sensores van siempre igual; la inclinación solo añade su bit
+        val senderKind = kind
         val quatFlag = (if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0) or
-            (if (tilt) PmpCodec.FLAG_TILT else 0)
-        val packet = when (val senderKind = kind) {
+            (if (tilt) PmpCodec.FLAG_TILT else 0) or
+            (if (reportFrameRotation && senderKind != SenderKind.NUNCHUK) ((packetRotation and 3) shl 5) else 0)
+        val packet = when (senderKind) {
             SenderKind.GAMEPAD, SenderKind.SWITCH -> {
                 // Marco del mando apaisado (contrato §4) ANTES de escribir el paquete
-                val rot = rotation
+                val rot = packetRotation
                 Frame.remapQuat(quat, if (hasRotationVector) rot else Surface.ROTATION_0, quatOut)
                 Frame.remapGyro(gyro, rot, gyroOut)
                 Frame.remapAccel(accel, rot, accelOut)
@@ -398,7 +408,7 @@ class MotionEngine(
             SenderKind.WII_NUNCHUK -> {
                 // Como el Nunchuk (stick en la trama) pero con el móvil de lado:
                 // sensores al marco apaisado (contrato §4), igual que el GamePad
-                val rot = rotation
+                val rot = packetRotation
                 Frame.remapQuat(quat, if (hasRotationVector) rot else Surface.ROTATION_0, quatOut)
                 Frame.remapGyro(gyro, rot, gyroOut)
                 Frame.remapAccel(accel, rot, accelOut)
@@ -422,7 +432,7 @@ class MotionEngine(
             SenderKind.WIIMOTE -> {
                 // Móvil de lado (NES): sensores girados según diga la pantalla
                 // (Route.sidewaysRotation); en vertical (ROTATION_0), tal cual
-                val rot = rotation
+                val rot = packetRotation
                 Frame.remapQuat(quat, if (hasRotationVector) rot else Surface.ROTATION_0, quatOut)
                 Frame.remapGyro(gyro, rot, gyroOut)
                 Frame.remapAccel(accel, rot, accelOut)

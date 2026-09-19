@@ -164,15 +164,15 @@
 
 /* RetroArch */
 "channel_retroarch" = "RetroArch";
-"channel_retroarch_sub" = "Each console's pad, sideways Wii or light gun";
+"channel_retroarch_sub" = "Each console's pad, Wii Remote or light gun";
 "mode_retroarch" = "RetroArch";
 "activating_retroarch" = "Activating RetroArch…";
 "warn_needs_retroarch" = "The PC needs a newer PepoMote for RetroArch";
 "in_retroarch" = "In RetroArch I am:";
 "retropad" = "RetroPad";
-"nes_pad" = "Sideways Wii";
+"nes_pad" = "Wii Remote";
 "light_gun" = "Light gun";
-"retro_pad_help" = "Console: the pad of the game RetroArch loads (tap it to pick another) · Sideways Wii: the phone sideways, B and A · Light gun: aim with the phone, B fires and A reloads";
+"retro_pad_help" = "Console: the pad of the game RetroArch loads (tap it to pick another) · Wii Remote: portrait or landscape, aim on PC; B and A · Light gun: aim with the phone, B fires and A reloads";
 "retro_menu" = "Menu";
 "retro_ff" = "Fast";
 "retro_coin" = "Coin";

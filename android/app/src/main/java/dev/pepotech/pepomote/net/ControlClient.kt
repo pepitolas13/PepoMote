@@ -60,7 +60,8 @@ class ControlClient(
          */
         val supportsTilt: Boolean = false,
         /** `ok.modes` contiene "retroarch": el receptor del PC entiende RetroArch. */
-        val supportsRetroArch: Boolean = false
+        val supportsRetroArch: Boolean = false,
+        val supportsFrameRotation: Boolean = false
     )
 
     interface Callbacks {
@@ -173,6 +174,7 @@ class ControlClient(
                                 pairToken = sequenceOf(msg.optString("pair_token"), msg.optString("token"))
                                     .firstOrNull { it.isNotBlank() && it.length <= 512 },
                                 supportsTilt = msg.optBoolean("tilt", false),
+                                supportsFrameRotation = msg.optBoolean("frame_rotation", false),
                                 supportsRetroArch = supportsMode(msg, "retroarch")
                             )
                         )

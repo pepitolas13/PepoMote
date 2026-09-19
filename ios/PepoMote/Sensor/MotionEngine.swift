@@ -31,6 +31,9 @@ final class MotionEngine {
     private let lock = NSLock()
     private var kindV: SenderKind
     private var rotationV: Int = Frame.rotation0
+    // Set once before start(), from the receiver's negotiated capability.
+    var reportFrameRotation = false
+    private var holdRotation = Frame.rotation0
 
     /// Qué se emula. El servicio lo fija al conectar; la pantalla GamePad lo
     /// pone en `.gamepad` al entrar y lo restaura al salir.
@@ -242,16 +245,21 @@ final class MotionEngine {
     }
 
     private func sendPacket(tSensorNs: Int64) {
+        let requestedRotation = rotation
+        let wasHolding = holding
         holdPose(tSensorNs)
+        if holding && !wasHolding { holdRotation = requestedRotation }
+        let packetRotation = holding ? holdRotation : requestedRotation
         seq &+= 1
-        let quatFlag: UInt8 = hasRotationVector ? PmpCodec.flagQuatValid : 0
+        let senderKind = kind
+        let frameFlag = reportFrameRotation && senderKind != .nunchuk ? UInt8((packetRotation & 3) << 5) : 0
+        let quatFlag: UInt8 = (hasRotationVector ? PmpCodec.flagQuatValid : 0) | frameFlag
         let bs = ButtonState.shared
         let tUs = UInt64(max(0, tSensorNs / 1000))
         let packet: Data
-        let senderKind = kind
         switch senderKind {
         case .gamepad, .switchPad:
-            let rot = rotation
+            let rot = packetRotation
             let touch = senderKind == .gamepad ? bs.touch() : ButtonState.Touch(x: 0, y: 0, down: false)
             packet = PmpCodec.encodeInput(
                 sessionId: sessionId, seq: seq, tSensorUs: tUs,
@@ -274,7 +282,7 @@ final class MotionEngine {
         case .wiiNunchuk:
             // Como el Nunchuk (stick en la trama) pero con el móvil de lado:
             // sensores al marco apaisado (contrato §4), igual que el GamePad
-            let rot = rotation
+            let rot = packetRotation
             packet = PmpCodec.encodeInput(
                 sessionId: sessionId, seq: seq, tSensorUs: tUs,
                 quat: Frame.remapQuat(quat, rot), gyro: Frame.remapGyro(gyro, rot), accel: Frame.remapAccel(accel, rot),
@@ -286,7 +294,7 @@ final class MotionEngine {
         case .wiimote:
             // Móvil de lado (NES): sensores girados según diga la pantalla
             // (Route.sidewaysRotation); en vertical (rotation0), tal cual
-            let rot = rotation
+            let rot = packetRotation
             packet = PmpCodec.encodeInput(
                 sessionId: sessionId, seq: seq, tSensorUs: tUs,
                 quat: Frame.remapQuat(quat, rot), gyro: Frame.remapGyro(gyro, rot), accel: Frame.remapAccel(accel, rot),

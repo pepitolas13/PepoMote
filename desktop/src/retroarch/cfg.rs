@@ -14,6 +14,7 @@ pub fn managed_values(ports: Ports) -> Vec<(String, String)> {
         ("network_remote_base_port".to_owned(), ports.base.to_string()),
         ("network_cmd_enable".to_owned(), "true".to_owned()),
         ("network_cmd_port".to_owned(), ports.cmd.to_string()),
+        ("menu_mouse_enable".to_owned(), "true".to_owned()),
     ];
     for u in 1..=USERS {
         v.push((format!("network_remote_enable_user_p{u}"), "true".to_owned()));
@@ -139,13 +140,22 @@ mod tests {
     #[test]
     fn claves_gestionadas() {
         let v = vals();
-        assert_eq!(v.len(), 4 + USERS as usize);
+        assert_eq!(v.len(), 5 + USERS as usize);
         assert!(v.contains(&("network_remote_enable".into(), "true".into())));
         assert!(v.contains(&("network_remote_base_port".into(), "55400".into())));
         assert!(v.contains(&("network_cmd_port".into(), "55355".into())));
         assert!(v.contains(&("network_remote_enable_user_p1".into(), "true".into())));
         assert!(v.contains(&("network_remote_enable_user_p4".into(), "true".into())));
         assert!(!managed_keys(PORTS).iter().any(|k| k == "network_remote_enable_user_p5"));
+    }
+
+    #[test]
+    fn el_raton_del_menu_se_activa_y_se_restaura() {
+        for original in ["", "menu_mouse_enable = \"false\"\n"] {
+            let configured = apply(original, &vals());
+            assert_eq!(get(&configured, "menu_mouse_enable").as_deref(), Some("true"));
+            assert_eq!(restore(&configured, original, &managed_keys(PORTS)), original);
+        }
     }
 
     #[test]

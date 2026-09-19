@@ -40,6 +40,9 @@ pub const FLAG_TOUCH: u8 = 1 << 3;
 /// cuando el `ok` del receptor trae `"tilt":true` (un receptor que no lo
 /// conoce puede descartar flags desconocidos).
 pub const FLAG_TILT: u8 = 1 << 4;
+/// Marco de sensores aplicado: Surface rotation 0/90/180/270 en bits 5–6.
+/// Solo se envía si el receptor anuncia `frame_rotation: true`.
+pub const FLAG_FRAME_MASK: u8 = 0x60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct InputPacket {

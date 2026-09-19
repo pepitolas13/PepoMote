@@ -409,9 +409,9 @@ pub fn run(
                 };
 
                 // RetroArch: botones y sticks al mando en red (el enlace los
-                // dosifica a un datagrama por fotograma). La pistola del
+                // dosifica a un datagrama por fotograma). Wii y pistola del
                 // Jugador 1 además apunta con el ratón del SO, más abajo.
-                let gun = mode == Mode::RetroArch && retro_pad.points() && role == Role::Wiimote;
+                let retro_pointer = mode == Mode::RetroArch && retro_pad.points() && role == Role::Wiimote;
                 if mode == Mode::RetroArch {
                     if let Some(link) = crate::retroarch::link() {
                         if role == Role::Wiimote {
@@ -420,10 +420,14 @@ pub fn run(
                     }
                 }
 
-                if mode.feeds_dsu() || (mode == Mode::RetroArch && !(gun && slot == 0)) {
+                if mode.feeds_dsu() || (mode == Mode::RetroArch && !(retro_pointer && slot == 0)) {
                     // Cambio a Dolphin/Cemu/RetroArch con algo sostenido: soltarlo en el SO
-                    if let Some(inj) = injector.as_deref_mut() {
-                        release_all(inj, &mut held);
+                    // Otro jugador/Nunchuk nunca suelta el ratón del Jugador 1.
+                    if mode.feeds_dsu() || (slot == 0 && role == Role::Wiimote) {
+                        if let Some(inj) = injector.as_deref_mut() {
+                            release_all(inj, &mut held);
+                        }
+                        engine_session = None;
                     }
                     if mode == Mode::RetroArch {
                         continue;
@@ -480,7 +484,7 @@ pub fn run(
                         );
                     }
                 } else if slot == 0 && role == Role::Wiimote {
-                    // Modo puntero (o pistola de RetroArch): el SO tiene UN
+                    // Modo puntero (o Wii/pistola de RetroArch): el SO tiene UN
                     // cursor y es del Jugador 1 (un Nunchuk nunca mueve el cursor)
                     let Some(inj) = injector.as_deref_mut() else {
                         continue; // sin inyector aún: se está reintentando
@@ -488,7 +492,7 @@ pub fn run(
                     if engine_session != Some(p.session_id) {
                         engine_session = Some(p.session_id);
                         let device = sessions.lock_tolerant().get(&p.session_id).map(|s| s.device.clone());
-                        let same_phone = device.is_some() && device == engine_device;
+                        let same_phone = device.is_some() && device == engine_device && engine.same_frame(&p);
                         engine = if same_phone { PointerEngine::with_bias(engine.bias()) } else { PointerEngine::new() };
                         engine_device = device;
                         engine.set_cursor_bounds(inj.cursor_bounds());
@@ -509,8 +513,12 @@ pub fn run(
                     // Pistola de luz: B es el gatillo (clic izquierdo) y A la
                     // recarga fuera de pantalla (clic derecho); el resto va al
                     // RetroPad por el enlace, no al SO
-                    if gun {
-                        apply_buttons_map(inj, &mut held, p.buttons & crate::retroarch::GUN_MOUSE_BITS, &GUN_MAP);
+                    if retro_pointer {
+                        let map = if retro_pad == crate::retroarch::RetroPadKind::Gun { &GUN_MAP[..] } else { &[] };
+                        // Wii conserva X/Y por red; no duplica clics ni atajos.
+                        // El mapa vacío también suelta un gatillo anterior.
+                        let bits = if map.is_empty() { 0 } else { p.buttons & crate::retroarch::GUN_MOUSE_BITS };
+                        apply_buttons_map(inj, &mut held, bits, map);
                     } else {
                         apply_buttons(inj, &mut held, p.buttons);
                     }

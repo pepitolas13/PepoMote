@@ -81,11 +81,11 @@ struct ControllerLandscapeScreen: View {
                     if showHome {
                         HStack(spacing: m.gap(14)) {
                             Color.clear.frame(width: m.home, height: m.home)
-                            RoundButton(label: retro ? "X" : "A", size: m.a, bit: Btn.a, textSize: m.text(22))
+                            RoundButton(label: Route.retroNes(link.link) ? "X" : "A", size: m.a, bit: Btn.a, textSize: m.text(22))
                             RoundButton(label: tr(retro ? "retro_menu" : "home_btn"), size: m.home, bit: Btn.home, textSize: m.text(retro ? 10 : 11))
                         }
                     } else {
-                        RoundButton(label: retro ? "X" : "A", size: m.a, bit: Btn.a, textSize: m.text(22))
+                        RoundButton(label: Route.retroNes(link.link) ? "X" : "A", size: m.a, bit: Btn.a, textSize: m.text(22))
                     }
                 }
 
@@ -99,7 +99,12 @@ struct ControllerLandscapeScreen: View {
 
                 VStack {
                     Spacer()
-                    Text(tr("rotate_hint")).pepoBody().lineLimit(1).padding(.bottom, 8)
+                    if retro {
+                        TriggerZone(label: Route.retroNes(link.link) ? "Y" : "B", height: 44 * m.s)
+                            .frame(width: 112 * m.s).padding(.bottom, 8)
+                    } else {
+                        Text(tr("rotate_hint")).pepoBody().lineLimit(1).padding(.bottom, 8)
+                    }
                 }
 
                 VStack {

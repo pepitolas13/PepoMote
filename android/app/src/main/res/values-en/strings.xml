@@ -214,8 +214,8 @@
 
     <!-- RetroArch -->
     <string name="channel_retroarch">RetroArch</string>
-    <string name="channel_retroarch_sub">Each console\'s pad, sideways Wii or light gun</string>
-    <string name="channel_retroarch_android_sub">Each console\'s pad or the sideways Wii Remote</string>
+    <string name="channel_retroarch_sub">Each console\'s pad, Wii Remote or light gun</string>
+    <string name="channel_retroarch_android_sub">Each console\'s pad or the Wii Remote Remote</string>
     <string name="mode_retroarch">RetroArch</string>
     <string name="activating_retroarch">Activating RetroArch…</string>
     <string name="warn_needs_retroarch">Update PepoMote on the receiver (PC or server phone) to use RetroArch.</string>
@@ -223,9 +223,9 @@
     <string name="shortcut_retroarch_long">Controller for RetroArch</string>
     <string name="in_retroarch">In RetroArch I am:</string>
     <string name="retropad">RetroPad</string>
-    <string name="nes_pad">Sideways Wii</string>
+    <string name="nes_pad">Wii Remote</string>
     <string name="light_gun">Light gun</string>
-    <string name="retro_pad_help">Console: the pad of the game RetroArch loads (tap it to pick another) · Sideways Wii: the phone sideways, B and A · Light gun: aim with the phone, B fires and A reloads</string>
+    <string name="retro_pad_help">Console: the pad of the game RetroArch loads (tap it to pick another) · Wii Remote: portrait or landscape, aim on PC; B and A · Light gun: aim with the phone, B fires and A reloads</string>
     <string name="retro_menu">Menu</string>
     <string name="retro_ff">Fast</string>
     <string name="retro_coin">Coin</string>
@@ -392,7 +392,7 @@
     <string name="server_notification_retroarch">RetroArch is answering · connection checked</string>
     <string name="server_retroarch_connection_ready">RetroArch connection checked</string>
     <string name="server_retroarch_check_pad">If buttons do not work, check that “Network RetroPad” and each controller\'s user are enabled in RetroArch.</string>
-    <string name="server_retroarch_details">RetroArch · Each console\'s pad (NES, SNES, Mega Drive, N64, PlayStation…), the sideways Wii Remote and hotkeys. No light gun on Android.</string>
+    <string name="server_retroarch_details">RetroArch · Each console\'s pad (NES, SNES, Mega Drive, N64, PlayStation…), the Wii Remote Remote and hotkeys. No light gun on Android.</string>
     <string name="server_retroarch_install_first">Install RetroArch (retroarch.com or Google Play) and open it once.</string>
     <string name="server_retroarch_missing">RetroArch was not found. Install it and open it once before continuing.</string>
     <string name="server_retroarch_setup_title">Enable the network gamepad in RetroArch (once)</string>

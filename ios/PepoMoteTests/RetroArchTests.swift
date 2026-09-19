@@ -69,7 +69,7 @@ final class RetroArchTests: XCTestCase {
         // mando de NES y pistola: los layouts de Wii de siempre
         XCTAssertEqual(Route.route(connected(pad: "nes"), .none), .wii)
         XCTAssertTrue(Route.retroNes(connected(pad: "nes")))
-        XCTAssertTrue(Route.forcesLandscape(connected(pad: "nes"), .none), "el mando de NES va fijo en apaisado")
+        XCTAssertFalse(Route.forcesLandscape(connected(pad: "nes"), .none), "el mando Wii permite vertical y ambos apaisados")
         XCTAssertFalse(Route.extendedOperative(connected(pad: "nes"), .none))
         XCTAssertEqual(Route.route(connected(pad: "gun"), .none), .wii)
         XCTAssertTrue(Route.retroGun(connected(pad: "gun")))
@@ -81,6 +81,23 @@ final class RetroArchTests: XCTestCase {
         XCTAssertFalse(Route.isRetroArch(connected(supportsRetroArch: false)))
         XCTAssertFalse(Route.isRetroArch(connected(role: "nunchuk")))
         XCTAssertEqual(Route.route(connected(role: "nunchuk"), .none), .nunchuk)
+    }
+
+    func testPointerKeyboardAndSensorRotation() {
+        for pad in ["nes", "gun"] {
+            let link = connected(pad: pad)
+            for rotation in [Frame.rotation0, Frame.rotation90, Frame.rotation180, Frame.rotation270] {
+                XCTAssertEqual(Route.sidewaysRotation(link, displayRotation: rotation), rotation)
+            }
+            XCTAssertTrue(Route.holdsPointerForKeyboard(link))
+            XCTAssertFalse(Route.clicksBeforeKeyboard(link, true))
+            XCTAssertFalse(Route.holdsPointerForKeyboard(connected(pad: pad, slot: 1)))
+            XCTAssertFalse(Route.holdsPointerForKeyboard(connected(role: "nunchuk", pad: pad)))
+            var android = link.connected!
+            android.receiver = ReceiverCapabilities(ok: ["platform": "android"])
+            XCTAssertFalse(Route.holdsPointerForKeyboard(.connected(android)))
+        }
+        XCTAssertFalse(Route.holdsPointerForKeyboard(connected()))
     }
 
     func testPendingIntentOpensTheRetroPadOptimistically() {

@@ -214,8 +214,8 @@
 
     <!-- RetroArch -->
     <string name="channel_retroarch">RetroArch</string>
-    <string name="channel_retroarch_sub">El mando de cada consola, Wii de lado o pistola</string>
-    <string name="channel_retroarch_android_sub">El mando de cada consola o el Mando de Wii de lado</string>
+    <string name="channel_retroarch_sub">El mando de cada consola, Mando Wii o pistola</string>
+    <string name="channel_retroarch_android_sub">El mando de cada consola o el Mando Wii</string>
     <string name="mode_retroarch">RetroArch</string>
     <string name="activating_retroarch">Activando RetroArch…</string>
     <string name="warn_needs_retroarch">Actualiza PepoMote en el receptor (PC o móvil servidor) para usar RetroArch.</string>
@@ -223,9 +223,9 @@
     <string name="shortcut_retroarch_long">Mando para RetroArch</string>
     <string name="in_retroarch">En RetroArch soy:</string>
     <string name="retropad">RetroPad</string>
-    <string name="nes_pad">Wii de lado</string>
+    <string name="nes_pad">Mando Wii</string>
     <string name="light_gun">Pistola</string>
-    <string name="retro_pad_help">Consola: el mando del juego que carga RetroArch (tócalo para elegir otro) · Wii de lado: el móvil de lado, B y A · Pistola: apunta con el móvil, B dispara y A recarga</string>
+    <string name="retro_pad_help">Consola: el mando del juego que carga RetroArch (tócalo para elegir otro) · Mando Wii: vertical u horizontal, apunta en PC; B y A · Pistola: apunta con el móvil, B dispara y A recarga</string>
     <string name="retro_menu">Menú</string>
     <string name="retro_ff">Rápido</string>
     <string name="retro_coin">Moneda</string>
@@ -392,7 +392,7 @@
     <string name="server_notification_retroarch">RetroArch responde · conexión comprobada</string>
     <string name="server_retroarch_connection_ready">Conexión con RetroArch comprobada</string>
     <string name="server_retroarch_check_pad">Si no llegan los botones, comprueba que «RetroPad de red» y el usuario de cada mando estén activados en RetroArch.</string>
-    <string name="server_retroarch_details">RetroArch · El mando de cada consola (NES, SNES, Mega Drive, N64, PlayStation…), el Mando de Wii de lado y las teclas rápidas. Sin pistola de luz en Android.</string>
+    <string name="server_retroarch_details">RetroArch · El mando de cada consola (NES, SNES, Mega Drive, N64, PlayStation…), el Mando Wii y las teclas rápidas. Sin pistola de luz en Android.</string>
     <string name="server_retroarch_install_first">Instala RetroArch (retroarch.com o Google Play) y ábrelo una vez.</string>
     <string name="server_retroarch_missing">No se encuentra RetroArch. Instálalo y ábrelo una vez antes de continuar.</string>
     <string name="server_retroarch_setup_title">Activa el mando en red en RetroArch (solo una vez)</string>

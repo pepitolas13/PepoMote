@@ -5,7 +5,7 @@
 //!   etiquetas de RetroPad. Mismas posiciones físicas que la SNES: A a la
 //!   derecha, B abajo, X arriba, Y a la izquierda; ZL/ZR → L2/R2; − / + →
 //!   Select / Start; Home → menú de RetroArch; Capturar → avance rápido.
-//! - `nes`: el Mando Wii de lado. 1 → B y 2 → A (Consola Virtual), la A y B
+//! - `nes`: el Mando Wii vertical o de lado, con puntero. 1 → B y 2 → A (Consola Virtual), la A y B
 //!   grandes → X e Y (tercer y cuarto botón), cruceta visual tal cual.
 //! - `gun`: el Mando Wii derecho apuntando. B (gatillo) y A van al ratón del
 //!   SO (telemetría: pistola de luz de RetroArch); 1 → B, 2 → A, cruceta,
@@ -41,9 +41,9 @@ impl RetroPadKind {
         }
     }
 
-    /// El puntero del móvil mueve el ratón del SO (pistola de luz).
+    /// Wii y pistola mueven el cursor; sus botones conservan mapas distintos.
     pub fn points(self) -> bool {
-        self == RetroPadKind::Gun
+        matches!(self, RetroPadKind::Nes | RetroPadKind::Gun)
     }
 }
 
@@ -199,7 +199,8 @@ mod tests {
         let s = pad_state(RetroPadKind::Gun, &packet(codec::BTN_A | codec::BTN_B | codec::BTN_ONE | codec::BTN_TWO, 0));
         assert_eq!(s.buttons, bit(RetroPad::B) | bit(RetroPad::A));
         assert!(RetroPadKind::Gun.points());
-        assert!(!RetroPadKind::Nes.points());
+        assert!(RetroPadKind::Nes.points());
+        assert!(!RetroPadKind::RetroPad.points());
     }
 
     #[test]

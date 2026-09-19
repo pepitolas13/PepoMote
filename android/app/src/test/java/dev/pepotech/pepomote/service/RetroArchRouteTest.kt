@@ -28,7 +28,7 @@ class RetroArchRouteTest {
         // mando de NES y pistola: los layouts de Wii de siempre
         assertFalse(Route.isGamePad(link("nes")))
         assertEquals(PadScreen.Wii, Route.route(link("nes"), PadIntent.None))
-        assertTrue("el mando de NES va fijo en apaisado", Route.forcesLandscape(link("nes"), PadIntent.None))
+        assertFalse("el mando Wii permite vertical y ambos apaisados", Route.forcesLandscape(link("nes"), PadIntent.None))
         assertTrue(Route.retroNes(link("nes")))
         assertFalse(Route.isGamePad(link("gun")))
         assertEquals(PadScreen.Wii, Route.route(link("gun"), PadIntent.None))
@@ -46,6 +46,20 @@ class RetroArchRouteTest {
         assertFalse(Route.sidewaysDpad(link("nes")))
         assertFalse(Route.sidewaysDpad(link("gun")))
         assertTrue(Route.sidewaysDpad(link(mode = "dolphin")))
+    }
+
+    @Test fun apuntadoYTecladoEnAmbasOrientaciones() {
+        for (pad in listOf("nes", "gun")) {
+            for (rotation in 0..3) {
+                assertEquals(rotation, Route.sidewaysRotation(link(pad), rotation))
+            }
+            assertTrue(Route.holdsPointerForKeyboard(link(pad)))
+            assertFalse(Route.clicksBeforeKeyboard(link(pad), true))
+            assertFalse(Route.holdsPointerForKeyboard(link(pad).copy(slot = 1)))
+            assertFalse(Route.holdsPointerForKeyboard(link(pad).copy(role = "nunchuk")))
+            assertFalse(Route.holdsPointerForKeyboard(link(pad).copy(platform = ReceiverCapabilities.ANDROID)))
+        }
+        assertFalse(Route.holdsPointerForKeyboard(link()))
     }
 
     @Test fun pendingIntentOpensTheRetroPadOptimistically() {

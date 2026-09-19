@@ -91,6 +91,10 @@ import dev.pepotech.pepomote.R
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
+    val retro = dev.pepotech.pepomote.service.Route.isRetroArch(link)
+    val rotation = rememberDisplayRotation()
+    val engine = LinkState.motion
+    androidx.compose.runtime.LaunchedEffect(engine, rotation) { engine?.rotation = rotation }
     val view = LocalView.current
     val context = androidx.compose.ui.platform.LocalContext.current
     var keyboardOpen by remember { mutableStateOf(false) }
@@ -267,7 +271,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
 
                 Gap(16.dp * grow, flexible)
                 RoundButton(
-                    "A", 148.dp * grow, ButtonState.A,
+                    if (dev.pepotech.pepomote.service.Route.retroNes(link)) "X" else "A", 148.dp * grow, ButtonState.A,
                     background = PepoColors.Blue,
                     pressedColor = PepoColors.BlueHover,
                     textColor = PepoColors.OnAccent,
@@ -284,9 +288,9 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                     horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RoundButton("1", 52.dp * grow, ButtonState.ONE, textSize = (18 * grow).roundToInt())
+                    RoundButton(if (retro) "B" else "1", 52.dp * grow, ButtonState.ONE, textSize = (18 * grow).roundToInt())
                     if (showHomeButton(link)) {
-                        RoundButton(stringResource(R.string.home_btn), 52.dp * grow, ButtonState.HOME, textSize = (12 * grow).roundToInt())
+                        RoundButton(stringResource(if (retro) R.string.retro_menu else R.string.home_btn), 52.dp * grow, ButtonState.HOME, textSize = (12 * grow).roundToInt())
                     } else if (dev.pepotech.pepomote.service.Route.showsKeyboard(link)) {
                         // Modo puntero: Home no hace nada y su hueco queda libre,
                         // centrado bajo la A y lejos de la cruceta y de B. No es un
@@ -297,14 +301,14 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                             keyboardOpen = true
                         }
                     }
-                    RoundButton("2", 52.dp * grow, ButtonState.TWO, textSize = (18 * grow).roundToInt())
+                    RoundButton(if (retro) "A" else "2", 52.dp * grow, ButtonState.TWO, textSize = (18 * grow).roundToInt())
                 }
 
                 Gap(10.dp * grow, flexible)
                 MediaRow(buttonSize = 46.dp * grow, textSize = (16 * grow).roundToInt())
 
                 Spacer(Modifier.weight(1f))
-                TriggerZone(height = 88.dp * grow)
+                TriggerZone(label = if (dev.pepotech.pepomote.service.Route.retroNes(link)) "Y" else "B", height = 88.dp * grow)
                 Spacer(Modifier.height(12.dp))
             }
 
@@ -349,7 +353,8 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 KeyboardDialog(
                     onSend = { LinkState.sendText?.invoke(it) },
                     onClose = { keyboardOpen = false },
-                    pointer = dev.pepotech.pepomote.service.Route.holdsPointerForKeyboard(link)
+                    retroPad = retro,
+                    pointer = (link as? UiLink.Connected)?.mode == LinkState.MODE_POINTER
                 )
             }
         }

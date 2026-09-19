@@ -66,6 +66,33 @@ final class MotionEngineTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(recorder.packets.last)[64] & UInt8(Btn.a), 0)
     }
 
+    func testFrameNegotiationAndKeyboardHold() throws {
+        let source = ManualMotionSource()
+        let recorder = PacketRecorder()
+        let engine = MotionEngine(sessionId: 4, source: source, onPacket: recorder.append)
+        defer { engine.stop() }
+        engine.rotation = Frame.rotation90
+        engine.start()
+        source.emit(gyro: [0, 0, 0], accel: [1, 2, 9.8], quaternion: [1, 0, 0, 0])
+        runFor(0.05)
+        XCTAssertEqual(try XCTUnwrap(recorder.packets.last)[5] & 0x60, 0, "receptor anterior")
+        engine.reportFrameRotation = true
+        engine.pointerHold = true
+        runFor(0.05)
+        let held = try XCTUnwrap(recorder.packets.last)
+        XCTAssertEqual(held[5] & 0x60, 0x20)
+        engine.rotation = Frame.rotation270
+        runFor(0.05)
+        let rotated = try XCTUnwrap(recorder.packets.last)
+        XCTAssertEqual(rotated[5] & 0x60, 0x20, "marco congelado junto con la pose")
+        for offset in stride(from: 24, through: 60, by: 4) {
+            XCTAssertEqual(float(rotated, offset), float(held, offset))
+        }
+        engine.pointerHold = false
+        runFor(0.5)
+        XCTAssertEqual(try XCTUnwrap(recorder.packets.last)[5] & 0x60, 0x60)
+    }
+
     func testAvailableAccelerometerSendsRealValuesWithoutAngularVelocity() throws {
         let source = ManualMotionSource()
         let recorder = PacketRecorder()
