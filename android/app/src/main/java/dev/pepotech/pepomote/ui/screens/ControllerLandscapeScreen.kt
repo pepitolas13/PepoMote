@@ -61,11 +61,20 @@ import kotlin.math.roundToInt
 @Composable
 fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
     val view = LocalView.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     var keyboardOpen by remember { mutableStateOf(false) }
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
     }
+    // Como en vertical: el teclado y la pose congelada van juntos y se sueltan
+    // solos (al cerrar, al cambiar de modo, al reconectar o al salir)
+    androidx.compose.runtime.LaunchedEffect(keyboardOpen, link) {
+        if (keyboardOpen && !dev.pepotech.pepomote.service.Route.showsKeyboard(link)) keyboardOpen = false
+        LinkState.motion?.pointerHold =
+            keyboardOpen && dev.pepotech.pepomote.service.Route.holdsPointerForKeyboard(link)
+    }
+    DisposableEffect(Unit) { onDispose { LinkState.motion?.pointerHold = false } }
     // Móvil de lado: los sensores giran con el mando (Route.sidewaysRotation:
     // mando girado con el IR a la izquierda en un juego, o apuntando con el
     // borde largo en modo puntero); al salir, el mando vertical de siempre
@@ -204,7 +213,8 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
             if (keyboardOpen) {
                 KeyboardDialog(
                     onSend = { LinkState.sendText?.invoke(it) },
-                    onClose = { keyboardOpen = false }
+                    onClose = { keyboardOpen = false },
+                    pointer = dev.pepotech.pepomote.service.Route.holdsPointerForKeyboard(link)
                 )
             }
 
@@ -216,7 +226,10 @@ fun ControllerLandscapeScreen(link: UiLink, showChips: Boolean, onDisconnect: ()
                 link = link,
                 showChips = showChips,
                 modifier = Modifier.align(Alignment.TopCenter),
-                onKeyboard = { keyboardOpen = true },
+                onKeyboard = {
+                    dev.pepotech.pepomote.ui.components.openKeyboard(context, link, press)
+                    keyboardOpen = true
+                },
                 onDisconnect = onDisconnect
             )
         }

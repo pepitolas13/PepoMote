@@ -1,7 +1,8 @@
 import Foundation
 
-/// «Teclado» del modo Wii U: el teclado en pantalla de Cemu no acepta toques,
-/// solo teclas del PC, así que el móvil manda texto por el canal de control
+/// «Teclado» del móvil: en modo Wii U, el teclado en pantalla de Cemu no
+/// acepta toques, solo teclas del PC; en modo puntero, el campo donde acabas
+/// de hacer clic. En los dos casos el móvil manda texto por el canal de control
 /// (`{"m":"text","text":"…"}`, PROTOCOL.md §3) y el receptor lo teclea. Aquí va
 /// la lógica pura del diálogo (qué se manda, qué queda en el campo y si se
 /// cierra) y la codificación del mensaje.
@@ -30,6 +31,13 @@ enum TextInput {
 
     /// «Aceptar»: manda el campo + Intro (solo Intro con el campo vacío: confirma) y cierra.
     static func accept(_ field: String) -> Action { Action(send: field + enter, field: "", close: true) }
+
+    /// «Enviar» del modo puntero: manda el campo TAL CUAL y cierra.
+    ///
+    /// Sin Intro a propósito: en el PC, un Intro de más envía la búsqueda,
+    /// manda el mensaje del chat a medias o envía el formulario antes de
+    /// tiempo. Quien lo quiera tiene el botón «⏎» al lado, que es `accept`.
+    static func send(_ field: String) -> Action { Action(send: field.isEmpty ? nil : field, field: "", close: true) }
 
     /// «Cerrar»: no se manda nada.
     static func close(_ field: String) -> Action { Action(send: nil, field: field, close: true) }

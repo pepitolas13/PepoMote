@@ -5,7 +5,7 @@
 
 **[English](README.md)**
 
-**PepoMote 1.10: llega RetroArch.** Tu móvil adopta el mando de la consola del juego: NES, SNES, Mega Drive, N64, PlayStation y más, con sus botones y etiquetas. Puedes jugar en el PC o usar **otro Android como servidor**, con hasta cuatro jugadores y accesos para guardar partida, rebobinar o abrir el menú. Es una gran actualización y el comienzo de todo lo que quiero hacer con PepoMote. [Novedades de la 1.10](docs/releases/v1.10.0.md) · [Descargas publicadas](https://github.com/pepitolas13/PepoMote/releases).
+**PepoMote 1.10.5: escribe en el PC desde el móvil.** En modo puntero, el botón **Teclado** hace clic donde estás apuntando, abre el teclado del móvil y, al enviar, el texto aparece entero en el PC: buscadores, direcciones, lo que sea. Y llega exacto en Windows, macOS y Linux, con tildes, ñ y emoji incluidos. [Novedades de la 1.10.5](docs/releases/v1.10.5.md) · [Lo que trajo la 1.10](docs/releases/v1.10.0.md) · [Descargas publicadas](https://github.com/pepitolas13/PepoMote/releases).
 
 **¿Te gusta el proyecto? Dale una estrellita arriba en GitHub ⭐.** Me ayudas a que más gente descubra PepoMote y a seguir mejorándolo. Quiero que llegue a ser el mejor mando virtual para jugar a tus consolas favoritas, y cada estrella ayuda a que este proyecto llegue más lejos.
 

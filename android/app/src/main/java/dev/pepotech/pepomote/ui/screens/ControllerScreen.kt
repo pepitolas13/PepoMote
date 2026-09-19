@@ -56,6 +56,7 @@ import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.KeyboardButton
 import dev.pepotech.pepomote.ui.components.KeyboardDialog
 import dev.pepotech.pepomote.ui.components.LocalPressRegistry
+import dev.pepotech.pepomote.ui.components.openKeyboard
 import dev.pepotech.pepomote.ui.components.NoticeBanner
 import dev.pepotech.pepomote.ui.components.PadCross
 import dev.pepotech.pepomote.ui.components.rememberPressRegistry
@@ -91,7 +92,19 @@ import dev.pepotech.pepomote.R
 @Composable
 fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit) {
     val view = LocalView.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     var keyboardOpen by remember { mutableStateOf(false) }
+
+    // El teclado y la pose congelada van juntos, y se sueltan SOLOS: al
+    // cerrarlo, al cambiar de modo (el PC lo cambia por su cuenta al abrir un
+    // emulador), al reconectar con un motor nuevo y al salir de la pantalla.
+    // Una pose congelada que se olvide dejaría el puntero muerto.
+    androidx.compose.runtime.LaunchedEffect(keyboardOpen, link) {
+        if (keyboardOpen && !dev.pepotech.pepomote.service.Route.showsKeyboard(link)) keyboardOpen = false
+        LinkState.motion?.pointerHold =
+            keyboardOpen && dev.pepotech.pepomote.service.Route.holdsPointerForKeyboard(link)
+    }
+    DisposableEffect(Unit) { onDispose { LinkState.motion?.pointerHold = false } }
 
     DisposableEffect(Unit) {
         view.keepScreenOn = true
@@ -189,9 +202,13 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                         }
                     }
                     // Modo Wii U: texto para el teclado en pantalla de Cemu; en
-                    // RetroArch, para su ventana
-                    if (link is UiLink.Connected && (link.mode == LinkState.MODE_CEMU || link.mode == LinkState.MODE_RETROARCH)) {
-                        KeyboardButton(compact = true) { keyboardOpen = true }
+                    // RetroArch, para su ventana. En modo puntero el botón NO va
+                    // aquí arriba sino en el hueco de Home, al alcance del pulgar
+                    if (dev.pepotech.pepomote.service.Route.showsKeyboard(link) && showHomeButton(link)) {
+                        KeyboardButton(compact = true) {
+                            openKeyboard(context, link, press)
+                            keyboardOpen = true
+                        }
                         Spacer(Modifier.width(4.dp))
                     }
                     TextButton(onClick = onDisconnect) {
@@ -270,6 +287,15 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                     RoundButton("1", 52.dp * grow, ButtonState.ONE, textSize = (18 * grow).roundToInt())
                     if (showHomeButton(link)) {
                         RoundButton(stringResource(R.string.home_btn), 52.dp * grow, ButtonState.HOME, textSize = (12 * grow).roundToInt())
+                    } else if (dev.pepotech.pepomote.service.Route.showsKeyboard(link)) {
+                        // Modo puntero: Home no hace nada y su hueco queda libre,
+                        // centrado bajo la A y lejos de la cruceta y de B. No es un
+                        // botón del mando (no entra en el registro de pulsación):
+                        // con «pulsar deslizando» un dedo de paso lo abriría
+                        KeyboardButton(compact = true) {
+                            openKeyboard(context, link, press)
+                            keyboardOpen = true
+                        }
                     }
                     RoundButton("2", 52.dp * grow, ButtonState.TWO, textSize = (18 * grow).roundToInt())
                 }
@@ -322,7 +348,8 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
             if (keyboardOpen) {
                 KeyboardDialog(
                     onSend = { LinkState.sendText?.invoke(it) },
-                    onClose = { keyboardOpen = false }
+                    onClose = { keyboardOpen = false },
+                    pointer = dev.pepotech.pepomote.service.Route.holdsPointerForKeyboard(link)
                 )
             }
         }

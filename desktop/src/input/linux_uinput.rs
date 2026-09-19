@@ -1,5 +1,7 @@
 use super::linux_common::{all_keys, evdev_key, map_abs, WheelAcc, ABS_MAX};
-use super::{InjectError, Injector, KeyCode, MouseButton};
+use super::linux_x11_text::X11Text;
+use super::text_plan::{self, TextOp};
+use super::{InjectError, Injector, KeyCode, MouseButton, TypeReport};
 use evdev::uinput::{VirtualDevice, VirtualDeviceBuilder};
 use evdev::{
     AbsInfo, AbsoluteAxisType, AttributeSet, EventType, InputEvent, Key, RelativeAxisType,
@@ -24,6 +26,11 @@ pub struct UinputInjector {
     wheel: WheelAcc,
     /// Pantalla de apuntado dentro del escritorio completo ([x0,y0,w,h] 0..1).
     target: [f32; 4],
+    /// Camino X11 para el texto (Unicode completo por XTEST). Se abre a la
+    /// primera que hay que teclear, no al crear el inyector: el puntero
+    /// funciona igual sin servidor X.
+    x11: Option<X11Text>,
+    x11_tried: bool,
 }
 
 impl UinputInjector {
@@ -80,6 +87,8 @@ impl UinputInjector {
             keys,
             wheel: WheelAcc::default(),
             target: [0.0, 0.0, 1.0, 1.0],
+            x11: None,
+            x11_tried: false,
         })
     }
 }
@@ -103,6 +112,20 @@ fn explain(e: std::io::Error) -> InjectError {
         uinput_denied: kind == std::io::ErrorKind::PermissionDenied,
         uinput_missing: kind == std::io::ErrorKind::NotFound,
         ax_denied: false,
+    }
+}
+
+impl UinputInjector {
+    /// Pulsa y suelta una tecla, con Shift alrededor si hace falta.
+    fn tap(&mut self, key: KeyCode, shift: bool) {
+        if shift {
+            self.key(KeyCode::Shift, true);
+        }
+        self.key(key, true);
+        self.key(key, false);
+        if shift {
+            self.key(KeyCode::Shift, false);
+        }
     }
 }
 
@@ -157,6 +180,47 @@ impl Injector for UinputInjector {
             k.code(),
             if down { 1 } else { 0 },
         )]);
+    }
+
+    /// Texto con todos los caracteres que se puedan.
+    ///
+    /// En X11 va entero por XTEST (cualquier Unicode). En GNOME o KDE con
+    /// Wayland no hay forma: uinput manda keycodes y el keymap lo pone el
+    /// compositor, así que se escribe lo que tiene tecla, se pliega a ASCII
+    /// lo que tiene sustituto honrado (`ñ`→`n`) y se AVISA de todo ello.
+    fn type_text(&mut self, text: &str) -> TypeReport {
+        if !self.x11_tried {
+            self.x11_tried = true;
+            if super::linux_x11_text::available() {
+                self.x11 = X11Text::open();
+            }
+        }
+        if let Some(x11) = self.x11.as_mut() {
+            match x11.type_text(text) {
+                Ok(report) => return report,
+                // La conexión X se ha caído: se sigue sin ella
+                Err(_) => self.x11 = None,
+            }
+        }
+        let plegar = text_plan::folding_enabled(std::env::var("PEPOMOTE_TEXT_FALLBACK").ok().as_deref());
+        let mut report = TypeReport::default();
+        for op in text_plan::text_ops(text) {
+            match op {
+                TextOp::Key(key, shift) => self.tap(key, shift),
+                TextOp::Unicode(c) => match plegar.then(|| text_plan::ascii_fold(c)).flatten() {
+                    Some(ascii) => {
+                        report.fold_char(c, ascii);
+                        for op in text_plan::text_ops(&ascii.to_string()) {
+                            if let TextOp::Key(key, shift) = op {
+                                self.tap(key, shift);
+                            }
+                        }
+                    }
+                    None => report.drop_char(c),
+                },
+            }
+        }
+        report
     }
 
     fn wheel(&mut self, delta: i32) {

@@ -130,6 +130,15 @@ struct ControllerLandscapeScreen: View {
         .sheet(isPresented: $keyboardOpen) {
             KeyboardSheet { keyboardOpen = false }
         }
+        // Como en vertical: el teclado y la pose congelada van juntos y se
+        // sueltan solos (al cerrar, al cambiar de modo, al reconectar o al salir)
+        .onChange(of: keyboardOpen) { open in
+            LinkState.shared.motion?.pointerHold = open && Route.holdsPointerForKeyboard(link.link)
+        }
+        .onChange(of: link.link) { current in
+            if keyboardOpen && !Route.showsKeyboard(current) { keyboardOpen = false }
+            LinkState.shared.motion?.pointerHold = keyboardOpen && Route.holdsPointerForKeyboard(current)
+        }
         // Móvil de lado: los sensores giran con el mando (Route.sidewaysRotation:
         // mando girado con el IR a la izquierda en un juego, o apuntando con el
         // borde largo en modo puntero); al salir, el mando vertical de siempre
@@ -147,6 +156,7 @@ struct ControllerLandscapeScreen: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             link.motion?.rotation = Frame.rotation0
+            link.motion?.pointerHold = false
             press.releaseAll() // nada queda pulsado al salir
             ButtonState.shared.reset()
         }
@@ -161,8 +171,11 @@ struct ControllerLandscapeScreen: View {
                 HStack(spacing: 20) {
                     if let c = link.link.connected {
                         Text(c.pcName).pepoBody().lineLimit(1).frame(maxWidth: 160)
-                        if c.hasKeyboard && (c.mode == LinkState.modeCemu || c.mode == LinkState.modeRetroArch) {
-                            HeaderKeyboardButton { keyboardOpen = true }
+                        if c.hasKeyboard {
+                            HeaderKeyboardButton {
+                                openKeyboard(link.link, press)
+                                keyboardOpen = true
+                            }
                         }
                     }
                     // Reconectando, el punto latiendo: es la única señal de que

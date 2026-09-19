@@ -646,13 +646,30 @@ impl MobileApp {
             .is_some_and(|l| l.status().has_keyboard())
     }
 
-    /// Abre el teclado para Cemu tapando la pantalla de juego: los dedos que
-    /// hubiera se sueltan (sus toques ya no llegarán al mando), pero la
-    /// pantalla no cambia, así los INPUT siguen saliendo igual.
+    /// Abre el teclado tapando la pantalla de juego. Los dedos que hubiera se
+    /// sueltan (sus toques ya no llegarán al mando), pero la pantalla no
+    /// cambia, así los INPUT siguen saliendo igual.
+    ///
+    /// En modo puntero, además y en este orden: se congela la pose ANTES del
+    /// clic (si el móvil se mueve entre los dos flancos, 70 ms, el PC ve un
+    /// ARRASTRE y en un campo de texto eso selecciona en vez de dejar el
+    /// cursor) y se hace el clic izquierdo con el bit A de siempre, que va
+    /// coordinado con la posición porque viaja en el mismo paquete.
     fn open_text_dialog(&mut self) {
         if !self.mode_has_keyboard() { self.text_dialog = None; return; }
         self.gamepad.release(&self.buttons);
         self.controller.release(&self.buttons);
+        let status = self.link.as_ref().map(|l| l.status());
+        if status.as_ref().is_some_and(|s| s.holds_pointer()) {
+            self.buttons.set_pointer_hold(true);
+        }
+        if status
+            .as_ref()
+            .is_some_and(|s| s.clicks_before_keyboard(self.settings.keyboard_click_first))
+        {
+            self.buttons.set(pmp::BTN_A, true);
+            self.buttons.set(pmp::BTN_A, false);
+        }
         self.text_dialog = Some(TextDialog::new());
     }
 
@@ -1159,6 +1176,14 @@ impl MobileApp {
                 store::save_settings(&self.settings);
             }
         });
+        // Modo puntero: el botón «Teclado» hace antes clic donde apuntas
+        if ui
+            .checkbox(&mut self.settings.keyboard_click_first, RichText::new(tr!("home.kb_click")).size(12.0))
+            .on_hover_text(tr!("home.kb_click_help"))
+            .changed()
+        {
+            store::save_settings(&self.settings);
+        }
         // Cómo se pulsan los botones: deslizando (manda sobre el siguiente) o
         // pegajoso (lo de siempre). La subopción solo se elige con el primero
         // apagado; el valor guardado no se toca
@@ -1701,6 +1726,13 @@ impl eframe::App for MobileApp {
         theme::sync(ctx);
         ctx.request_repaint_after(Duration::from_millis(if self.screen == Screen::Calibrate { 30 } else { 100 }));
         self.poll_link();
+        // La pose congelada se suelta SOLA: al cerrar el teclado, al cambiar
+        // de modo (el PC lo cambia por su cuenta al abrir un emulador), al
+        // reconectar o al salir. Una congelada olvidada dejaría el puntero
+        // muerto.
+        let hold = self.text_dialog.is_some()
+            && self.link.as_ref().is_some_and(|l| l.status().holds_pointer());
+        self.buttons.set_pointer_hold(hold);
         self.update_diag(ctx);
         if let Some((t, v)) = UPDATE_RESULT.lock().unwrap_or_else(|e| e.into_inner()).take() {
             self.settings.update_last_check = t;

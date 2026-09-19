@@ -33,6 +33,19 @@ object AppPrefs {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString("retroLayouts", choice.encode()) }
     }
 
+    /**
+     * El botón «Teclado» del modo puntero hace antes un clic izquierdo donde
+     * apunta el usuario, para dejar el cursor dentro del campo. Apagado, el
+     * clic lo da el usuario con A antes de escribir. De serie, encendido.
+     */
+    fun keyboardClickFirst(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("kbClickFirst", true)
+
+    fun setKeyboardClickFirst(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("kbClickFirst", value).apply()
+    }
+
     fun volDownIsB(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean("volDownB", true)

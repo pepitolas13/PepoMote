@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsScreen: View {
     @EnvironmentObject var model: AppModel
+    @State private var kbClick = AppPrefs.keyboardClickFirst
     @State private var sounds = AppPrefs.soundsEnabled
     @State private var slidePress = AppPrefs.slidePress
     @State private var stickyPress = AppPrefs.stickyPress
@@ -20,6 +21,9 @@ struct SettingsScreen: View {
             Spacer().frame(height: 20)
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
+                    // Modo puntero: el botón «Teclado» hace antes clic donde apuntas
+                    SettingRow(title: tr("kb_click_title"), subtitle: tr("kb_click_sub"), on: $kbClick)
+                        .onChange(of: kbClick) { AppPrefs.keyboardClickFirst = $0 }
                     SettingRow(title: tr("sounds_title"), subtitle: tr("sounds_sub"), on: $sounds)
                         .onChange(of: sounds) { AppPrefs.soundsEnabled = $0 }
                     // Los dos modos de pulsación: deslizar manda, y con él

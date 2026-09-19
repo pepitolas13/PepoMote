@@ -532,7 +532,33 @@ struct ModeChip: View {
     }
 }
 
-/// Botón pequeño «Teclado» de las cabeceras en modo Wii U: abre `KeyboardDialog`.
+/// Lo que pasa al tocar «Teclado», en este orden y por estos motivos. La
+/// pantalla solo tiene que abrir la hoja después.
+///
+/// 1. **Nada puede quedar pulsado.** La hoja se traga el final del gesto del
+///    dedo que estuviera sobre un botón, y con «pulsación pegajosa» ese botón
+///    se quedaría pegado.
+/// 2. **La pose se congela ANTES del clic.** Si el móvil se mueve entre el
+///    flanco de bajada y el de subida (70 ms), el PC ve un ARRASTRE: en un
+///    campo de texto eso selecciona en vez de dejar el cursor.
+/// 3. **El clic es el bit A de siempre**, con sus 70 ms garantizados por
+///    `PressLatch`. No hace falta ningún mensaje nuevo, va coordinado con la
+///    posición porque viaja en el mismo paquete, y funciona con cualquier
+///    receptor publicado.
+func openKeyboard(_ link: UiLink, _ press: PressRegistry?) {
+    press?.releaseAll()
+    ButtonState.shared.reset()
+    if Route.holdsPointerForKeyboard(link) {
+        LinkState.shared.motion?.pointerHold = true
+    }
+    if Route.clicksBeforeKeyboard(link, AppPrefs.keyboardClickFirst) {
+        ButtonState.shared.set(Btn.a, true)
+        ButtonState.shared.set(Btn.a, false)
+    }
+}
+
+/// Botón pequeño «Teclado» de las cabeceras en modo Wii U y del hueco de Home
+/// en modo puntero: abre `KeyboardDialog`.
 struct KeyboardButton: View {
     var compact = false
     let action: () -> Void
@@ -553,11 +579,17 @@ struct KeyboardButton: View {
     }
 }
 
-/// Diálogo «Teclado» del modo Wii U: el texto se escribe aquí y se manda por
-/// el canal de control. Qué se manda en cada caso lo decide `TextInput`.
+/// Diálogo «Teclado»: el texto se escribe aquí y se manda por el canal de
+/// control. Qué se manda en cada caso lo decide `TextInput`.
+///
+/// En modo puntero (`pointer`) el botón grande es **Enviar**, que manda el
+/// texto TAL CUAL: un Intro de más en el PC envía la búsqueda, manda el
+/// mensaje del chat a medias o envía el formulario antes de tiempo. Quien lo
+/// quiera tiene «⏎» al lado. En Wii U, Switch y RetroArch nada cambia.
 struct KeyboardDialog: View {
     let onSend: (String) -> Void
     let onClose: () -> Void
+    var pointer = false
     @State private var field = ""
     @FocusState private var focused: Bool
 
@@ -567,17 +599,25 @@ struct KeyboardDialog: View {
         if a.close { onClose() }
     }
 
+    /// Lo que hace el botón grande (y la tecla de enviar del teclado).
+    private func primary(_ text: String) -> TextInput.Action {
+        pointer ? TextInput.send(text) : TextInput.accept(text)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             let mode = LinkState.shared.link.connected?.mode
-            Text(tr(mode == LinkState.modeRetroArch ? "kb_title_retroarch" : "kb_title")).font(PepoFont.titleMedium()).foregroundColor(Pepo.text)
-            Text(tr(mode == LinkState.modeRetroArch ? "kb_help_retroarch" : mode == LinkState.modeSwitch ? "kb_help_switch" : "kb_help")).pepoBody()
+            Text(tr(pointer ? "kb_pointer_title" : mode == LinkState.modeRetroArch ? "kb_title_retroarch" : "kb_title"))
+                .font(PepoFont.titleMedium()).foregroundColor(Pepo.text)
+            Text(tr(pointer ? "kb_pointer_help"
+                : mode == LinkState.modeRetroArch ? "kb_help_retroarch"
+                : mode == LinkState.modeSwitch ? "kb_help_switch" : "kb_help")).pepoBody()
             TextField(tr("kb_placeholder"), text: $field)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .submitLabel(.send)
                 .disableAutocorrection(true)
-                .onSubmit { apply(TextInput.accept(field)) }
+                .onSubmit { apply(primary(field)) }
             HStack(spacing: 4) {
                 TextLink(title: tr("kb_delete"), color: Pepo.text) { apply(TextInput.delete(field)) }
                 TextLink(title: tr("kb_write"), color: Pepo.text) { apply(TextInput.write(field)) }
@@ -586,8 +626,12 @@ struct KeyboardDialog: View {
             HStack(spacing: 8) {
                 Spacer()
                 TextLink(title: tr("kb_close")) { apply(TextInput.close(field)) }
-                Button(action: { apply(TextInput.accept(field)) }) {
-                    Text(tr("kb_accept"))
+                if pointer {
+                    // El Intro aparte: buscar, ir a una dirección, mandar el chat
+                    TextLink(title: tr("kb_enter"), color: Pepo.text) { apply(TextInput.accept(field)) }
+                }
+                Button(action: { apply(primary(field)) }) {
+                    Text(tr(pointer ? "kb_send" : "kb_accept"))
                         .font(PepoFont.labelLarge())
                         .foregroundColor(Pepo.onAccent)
                         .padding(.horizontal, 20)
@@ -618,7 +662,11 @@ struct KeyboardSheet: View {
             Pepo.background.ignoresSafeArea()
             VStack {
                 if state.link.connected?.hasKeyboard == true {
-                    KeyboardDialog(onSend: { LinkState.shared.sendText?($0) }, onClose: onClose)
+                    KeyboardDialog(
+                        onSend: { LinkState.shared.sendText?($0) },
+                        onClose: onClose,
+                        pointer: Route.holdsPointerForKeyboard(state.link)
+                    )
                 }
                 Spacer()
             }

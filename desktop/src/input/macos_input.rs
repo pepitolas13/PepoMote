@@ -6,7 +6,7 @@
 
 use super::common::{map_norm, norm_in, WheelAcc};
 use super::macos_keys::{ascii_keycode, fixed_chord, media_key_type, ClickCounter, KVK_DELETE, KVK_RETURN};
-use super::{InjectError, Injector, KeyCode, MouseButton};
+use super::{InjectError, Injector, KeyCode, MouseButton, TypeReport};
 use core_graphics::display::CGDisplay;
 use core_graphics::event::{
     CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton, EventField, ScrollEventUnit,
@@ -152,9 +152,14 @@ impl MacInjector {
 
     fn post_key(&self, code: u16, down: bool, command: bool, text: Option<&str>) {
         if let Ok(ev) = CGEvent::new_keyboard_event(self.source.clone(), code, down) {
-            if command {
-                ev.set_flags(CGEventFlags::CGEventFlagCommand);
-            }
+            // Los modificadores se ponen SIEMPRE: sin esto, un evento
+            // inyectado hereda los que el usuario tenga pulsados de verdad y
+            // «n» con Cmd apretado deja de ser texto y pasa a ser un atajo
+            ev.set_flags(if command {
+                CGEventFlags::CGEventFlagCommand
+            } else {
+                CGEventFlags::CGEventFlagNull
+            });
             if let Some(t) = text {
                 ev.set_string(t);
             }
@@ -252,8 +257,9 @@ impl Injector for MacInjector {
     }
 
     /// Texto tal cual (cualquier carácter, como texto del evento) a la app
-    /// con el foco.
-    fn type_text(&mut self, text: &str) {
+    /// con el foco. `set_string` manda el par suplente de un emoji como las
+    /// dos unidades UTF-16 de UN evento: no hay nada que se quede fuera.
+    fn type_text(&mut self, text: &str) -> TypeReport {
         for c in text.chars() {
             match c {
                 '\n' => {
@@ -273,6 +279,7 @@ impl Injector for MacInjector {
                 }
             }
         }
+        TypeReport::default()
     }
 
     fn wheel(&mut self, delta: i32) {

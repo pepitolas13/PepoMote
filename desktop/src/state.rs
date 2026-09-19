@@ -595,6 +595,21 @@ impl CfgStatus {
 }
 
 /// Estado compartido entre los hilos de red y la UI.
+/// Texto que un móvil quiere teclear en el PC y que el inyector aún no ha
+/// escrito. Lleva el slot para que el aviso de lo que no se pudo teclear
+/// vuelva SOLO al móvil que lo escribió.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingText {
+    pub mode: Mode,
+    pub text: String,
+    pub slot: u8,
+}
+
+/// Mensajes de texto en cola como mucho. El hilo de telemetría la vacía en
+/// la misma vuelta en la que mueve el puntero: sin tope, un móvil podría
+/// dejarlo tecleando indefinidamente.
+pub const MAX_TEXT_QUEUE: usize = 16;
+
 pub struct Shared {
     pub status: LinkStatus,
     pub mode: Mode,
@@ -636,9 +651,10 @@ pub struct Shared {
     /// Último juego cargado en RetroArch según su historial (se anuncia a
     /// los móviles con `game`; se conserva con RetroArch cerrado).
     pub retroarch_game: Option<crate::retroarch::GameInfo>,
-    /// Texto que un móvil quiere teclear en el PC (teclado en pantalla de
-    /// Cemu) y que el inyector del SO aún no ha escrito.
-    pub text_queue: Vec<(Mode, String)>,
+    /// Texto que un móvil quiere teclear en el PC (teclado del móvil: en
+    /// pantalla de Cemu, o la ventana con el foco en los demás modos) y que
+    /// el inyector del SO aún no ha escrito.
+    pub text_queue: Vec<PendingText>,
     pub last_error: Option<String>,
     /// `last_error` es un error de inyección (lo limpia el inyector al
     /// recuperarse, no una conexión nueva).

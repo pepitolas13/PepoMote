@@ -145,12 +145,17 @@ jobs:
           if-no-files-found: warn
       # Compositor wlroots de verdad, sin GPU: el receptor tiene que elegir el
       # puntero virtual de Wayland y mover el cursor, hacer clic, ir atrás y
-      # adelante con la cruceta, girar la rueda y teclear en wev
-      # (desktop/e2e/README.md)
+      # adelante con la cruceta, girar la rueda y teclear en wev —incluidos ñ,
+      # un emoji y el euro, que van por teclas de repuesto— (desktop/e2e/README.md)
       - name: e2e Wayland (sway sin cabeza + wev)
         run: |
           sudo apt-get install -y --no-install-recommends sway wev xkb-data
           bash desktop/e2e/e2e_wayland.sh
+      # El analizador de la salida de wev, contra las dos grabaciones guardadas
+      - name: e2e Wayland (solo el analizador)
+        run: |
+          python3 desktop/e2e/e2e_wayland.py --parse-only desktop/e2e/fixtures/wev_ok.log
+          python3 desktop/e2e/e2e_wayland.py --parse-only desktop/e2e/fixtures/wev_unicode.log --expect-text "abñ😀€ab"
       # Receptor real aislado + RetroArch falso por sockets (desktop/e2e/README.md)
       - name: e2e RetroArch (receptor aislado)
         env:

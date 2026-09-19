@@ -2,6 +2,8 @@ package dev.pepotech.pepomote.control
 
 import android.content.Context
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -11,6 +13,15 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class AppPrefsTest {
+    @Test fun elClicAntesDeEscribirVieneEncendido() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        assertTrue(AppPrefs.keyboardClickFirst(context))
+        AppPrefs.setKeyboardClickFirst(context, false)
+        assertFalse(AppPrefs.keyboardClickFirst(context))
+        AppPrefs.setKeyboardClickFirst(context, true)
+        assertTrue(AppPrefs.keyboardClickFirst(context))
+    }
+
     @Test fun savedJoyConChoicesMigrateToProWithoutChangingWiiUPreferences() {
         val context: Context = RuntimeEnvironment.getApplication()
         val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)

@@ -225,7 +225,7 @@ fun CollapsibleHeader(
  *
  * [alwaysNunchukChip]: el chip «Nunchuk» siempre (el mando + Nunchuk, donde
  * es la forma de volver al mando de siempre); si no, con las reglas de
- * [showNunchukChip]. [onKeyboard]: abre el teclado de Cemu (y pliega); solo
+ * [showNunchukChip]. [onKeyboard]: abre el teclado del móvil (y pliega); solo
  * sale en modo Wii U. [onExpandedChange] avisa a la pantalla (el mando +
  * Nunchuk esconde su tarjeta de «¿está bien así?» mientras está desplegada).
  */
@@ -390,8 +390,9 @@ private fun HeaderCard(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        // Modo Wii U: texto para el teclado en pantalla de Cemu; en RetroArch, para su ventana
-        if (onKeyboard != null && link is UiLink.Connected && (link.mode == LinkState.MODE_CEMU || link.mode == LinkState.MODE_RETROARCH)) {
+        // Modo Wii U: texto para el teclado en pantalla de Cemu; en RetroArch,
+        // para su ventana; en modo puntero, para el campo donde apuntas
+        if (onKeyboard != null && dev.pepotech.pepomote.service.Route.showsKeyboard(link)) {
             KeyboardButton(compact = true, onClick = onKeyboard)
         }
         TextButton(onClick = onDisconnect) {

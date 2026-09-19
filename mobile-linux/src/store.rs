@@ -56,6 +56,10 @@ pub struct Settings {
     /// hacía esta app desde siempre); solo se puede elegir con el anterior
     /// apagado, que manda sobre él.
     pub sticky_press: bool,
+    /// El botón «Teclado» del modo puntero hace antes un clic izquierdo donde
+    /// apunta el usuario, para dejar el cursor dentro del campo. Apagado, el
+    /// clic lo da el usuario con A. Encendido de serie.
+    pub keyboard_click_first: bool,
 }
 
 impl Default for Settings {
@@ -75,6 +79,7 @@ impl Default for Settings {
             receiver_notices: true,
             slide_press: false,
             sticky_press: true,
+            keyboard_click_first: true,
         }
     }
 }
@@ -363,6 +368,7 @@ mod tests {
             receiver_notices: false,
             slide_press: true,
             sticky_press: false,
+            keyboard_click_first: false,
         };
         let back: Settings = serde_json::from_str(&serde_json::to_string(&mine).unwrap()).unwrap();
         assert_eq!(back, mine);
@@ -373,6 +379,11 @@ mod tests {
         assert!(!d.own_nunchuk, "sin trazado propio, el Nunchuk en el mismo móvil va apagado");
         assert!(d.receiver_notices, "los avisos del receptor vienen encendidos");
         assert!(!d.slide_press, "pulsar deslizando viene apagado");
+        assert!(d.keyboard_click_first, "el clic antes de escribir viene encendido");
+        assert!(
+            serde_json::from_str::<Settings>(r#"{"rotation":"left"}"#).unwrap().keyboard_click_first,
+            "un settings.json de una versión anterior sigue valiendo"
+        );
         assert!(d.sticky_press, "un botón pulsado sigue pulsado al salirse el dedo, como siempre");
         assert_eq!(d.update_latest, None);
         let s: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();

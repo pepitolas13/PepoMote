@@ -216,6 +216,25 @@ pub const TABLE: &[(&str, &str, &str)] = &[
         "Delete removes a letter in the game · Type types it · Accept types it and confirms",
     ),
     ("kb.close", "Cerrar", "Close"),
+    // teclado del modo puntero: se escribe donde esté el cursor del PC
+    ("kb.title_pointer", "Escribir en el PC", "Type on the PC"),
+    ("kb.send", "Enviar", "Send"),
+    ("kb.enter", "⏎ Intro", "⏎ Enter"),
+    (
+        "kb.help_pointer",
+        "Borrar quita una letra · Enviar pega el texto tal cual · ⏎ añade el Intro (buscar, ir a una dirección)",
+        "Delete removes a letter · Send pastes the text as is · ⏎ adds Enter (search, go to an address)",
+    ),
+    (
+        "home.kb_click",
+        "Clic antes de escribir",
+        "Click before typing",
+    ),
+    (
+        "home.kb_click_help",
+        "El botón Teclado hace primero un clic izquierdo donde apuntas, para dejar el cursor en el campo. Apagado, haz tú el clic con A antes de escribir.",
+        "The Keyboard button first left-clicks where you are pointing, to put the caret in the field. When off, click with A yourself before typing.",
+    ),
     // --- calibración
     ("cal.title", "Calibrar sensores", "Calibrate sensors"),
     (

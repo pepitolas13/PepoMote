@@ -40,6 +40,10 @@ pub fn reconnect_delay(attempt: u32) -> Duration {
 const MIN_PACKET_GAP: Duration = Duration::from_micros(3_900);
 const CONTROL_PACKET_GAP: Duration = Duration::from_millis(10);
 const STALE_MOTION: Duration = Duration::from_millis(50);
+/// Gracia tras cerrar el teclado antes de volver a los sensores reales: el
+/// receptor drena el texto pendiente una vez por vuelta (con 100 ms de espera
+/// de lectura), así que el PC teclea ANTES de que el cursor se pueda mover.
+const HOLD_GRACE: Duration = Duration::from_millis(300);
 /// Cuánto se muestra un aviso (`notice`) en pantalla.
 pub const NOTICE_SECS: u64 = 6;
 
@@ -176,9 +180,41 @@ impl ReceiverCapabilities {
 }
 
 impl Status {
+    /// ¿Se enseña el botón «Teclado»? El receptor teclea en todos estos modos
+    /// (PROTOCOL.md §3: en Wii U a la ventana de Cemu, en los demás a la que
+    /// tenga el foco), pero solo si dijo que sabe (`ok.text_input`: el
+    /// servidor de Android no). En modo puntero, además, solo el Jugador 1
+    /// con papel de mando: los demás no mueven el cursor.
     pub fn has_keyboard(&self) -> bool {
-        matches!(self, Self::Connected { mode, receiver, .. }
-            if receiver.text_input && matches!(mode.as_str(), "cemu" | "switch" | "retroarch"))
+        match self {
+            Self::Connected { mode, receiver, .. } if receiver.text_input => match mode.as_str() {
+                "pointer" => self.points_at_pc(),
+                "cemu" | "switch" | "retroarch" => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// ¿El botón «Teclado» hace antes un clic izquierdo donde apunta el
+    /// usuario? Solo en modo puntero: en Dolphin, Wii U y Switch los botones
+    /// van al mando emulado y el clic no llegaría al escritorio, y en
+    /// RetroArch con pistola A es el clic DERECHO (recargar).
+    pub fn clicks_before_keyboard(&self, setting: bool) -> bool {
+        setting && self.holds_pointer()
+    }
+
+    /// ¿Se congela la pose mientras el teclado está abierto? Solo cuando este
+    /// móvil mueve el cursor: escribiendo se mueve en la mano y el puntero se
+    /// iría solo (y donde el foco sigue al ratón, el texto acabaría en otra
+    /// ventana).
+    pub fn holds_pointer(&self) -> bool {
+        matches!(self, Self::Connected { mode, .. } if mode == "pointer") && self.points_at_pc()
+    }
+
+    /// Este móvil es el que mueve el cursor del PC: Jugador 1 y mando.
+    fn points_at_pc(&self) -> bool {
+        matches!(self, Self::Connected { slot: 0, role: Role::Wiimote, .. })
     }
 
     pub fn accepts_pad(&self, pad: &str) -> bool {
@@ -1017,6 +1053,10 @@ fn packet_loop(
     let mut hz_count: u32 = 0;
     let mut bias_logged = false;
     let mut delay_logged: u64 = 0;
+    // Teclado abierto: pose congelada y, al cerrar, un momento de gracia para
+    // que el PC teclee antes de que el cursor se pueda mover
+    let mut hold_pose: Option<([f32; 4], [f32; 3])> = None;
+    let mut hold_until: Option<Instant> = None;
 
     while !stop.load(Ordering::Relaxed) {
         // 1) Muestras: se procesan todas las que lleguen hasta que toque enviar
@@ -1110,6 +1150,24 @@ fn packet_loop(
             st.gyro = [0.0; 3];
             st.quat = fusion.quat();
         }
+        // Teclado abierto en modo puntero: se sigue emitiendo al mismo ritmo
+        // (los flancos de botón tienen que salir, o el clic se quedaría
+        // pulsado en el PC; y un hueco largo haría que el motor del receptor
+        // resiembre y el cursor pegue un salto), pero con la pose congelada:
+        // el receptor lo ve parado, congela por su cuenta y deja libre el
+        // ratón de verdad
+        if buttons.pointer_hold() {
+            hold_until = Some(now + HOLD_GRACE);
+        }
+        if hold_until.is_some_and(|until| now < until) {
+            let (quat, accel) = *hold_pose.get_or_insert((st.quat, st.accel));
+            st.quat = quat;
+            st.accel = accel;
+            st.gyro = [0.0; 3];
+        } else {
+            hold_pose = None;
+            hold_until = None;
+        }
         // Controls have their own clock even when the last sensor timestamp
         // freezes. Preserve the source time domain across stall/resume.
         let clock_us = last_t_us.zip(last_sample_at)
@@ -1175,6 +1233,134 @@ impl Battery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Con el teclado abierto en modo puntero la pose se congela, pero los
+    /// paquetes SIGUEN saliendo: si se cortaran entre los dos flancos del
+    /// clic, el PC se quedaría con el botón izquierdo pulsado.
+    #[test]
+    fn el_teclado_congela_la_pose_y_aun_asi_entrega_el_clic() {
+        let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
+        receiver.set_read_timeout(Some(Duration::from_millis(500))).unwrap();
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender.connect(receiver.local_addr().unwrap()).unwrap();
+        let target = Arc::new(Mutex::new(Some(Target { udp: Arc::new(sender), session_id: 3, supports_tilt: false })));
+        let buttons = Arc::new(Buttons::new());
+        let stop = Arc::new(AtomicBool::new(false));
+        let hz = Arc::new(AtomicU32::new(0));
+        let (tx, rx) = mpsc::channel();
+        let worker = {
+            let (target, buttons, stop, hz) = (target.clone(), buttons.clone(), stop.clone(), hz.clone());
+            std::thread::spawn(move || packet_loop(target, rx, buttons, stop, hz, Role::Wiimote))
+        };
+        let receive = || {
+            let mut bytes = [0; 128];
+            loop {
+                let size = receiver.recv(&mut bytes).expect("los paquetes no pueden parar con el teclado abierto");
+                if let Some(pmp::Packet::Input(packet)) = pmp::parse(&bytes[..size]) { break packet; }
+            }
+        };
+        // El móvil se mueve de verdad mientras se escribe
+        let girar = Arc::new(AtomicBool::new(true));
+        let girando = std::thread::spawn({
+            let tx = tx.clone();
+            let girar = girar.clone();
+            move || {
+                while girar.load(Ordering::Relaxed) {
+                    let _ = tx.send(Sample {
+                        t_us: sensor::now_us(),
+                        gyro_valid: true,
+                        gyro: [1.0, 2.0, 3.0],
+                        accel: [0.0, 0.0, 9.8],
+                    });
+                    std::thread::sleep(Duration::from_millis(4));
+                }
+            }
+        });
+        let result = std::panic::catch_unwind(|| {
+            receive();
+            buttons.set_pointer_hold(true);
+            buttons.set(pmp::BTN_A, true);
+            buttons.set(pmp::BTN_A, false);
+            // Se deja asentar la congelación y se recoge una tanda
+            std::thread::sleep(Duration::from_millis(60));
+            let mut tanda = Vec::new();
+            for _ in 0..25 { tanda.push(receive()); }
+            let quat = tanda[0].quat;
+            for p in &tanda {
+                assert_eq!(p.gyro, [0.0; 3], "el giro va a cero con el teclado abierto");
+                assert_eq!(p.quat, quat, "el cuaternión no cambia");
+            }
+            // El clic entero: pulsado y soltado, sin cortar el flujo
+            let mut pulsado = false;
+            let mut soltado_tras_pulsar = false;
+            for p in &tanda {
+                if p.buttons & pmp::BTN_A != 0 { pulsado = true; }
+                else if pulsado { soltado_tras_pulsar = true; }
+            }
+            assert!(pulsado, "el clic llega");
+            assert!(soltado_tras_pulsar, "y se suelta");
+            // Al cerrar vuelven los sensores (tras la gracia). Hay que vaciar
+            // los paquetes congelados que quedaron en el socket: a 250 Hz, la
+            // espera deja varios cientos esperando
+            buttons.set_pointer_hold(false);
+            let hasta = Instant::now() + Duration::from_secs(3);
+            let mut vuelto = false;
+            while Instant::now() < hasta {
+                if receive().gyro != [0.0; 3] { vuelto = true; break; }
+            }
+            assert!(vuelto, "pasada la gracia vuelven los sensores");
+        });
+        girar.store(false, Ordering::Relaxed);
+        girando.join().unwrap();
+        stop.store(true, Ordering::Relaxed);
+        drop(tx);
+        worker.join().unwrap();
+        if let Err(error) = result { std::panic::resume_unwind(error); }
+    }
+
+    #[test]
+    fn el_teclado_se_ensena_donde_el_receptor_sabe_teclear() {
+        let con = |mode: &str, slot: u8, role: Role, text_input: bool| {
+            let mut st = connected();
+            if let Status::Connected { mode: m, slot: s, role: r, receiver, .. } = &mut st {
+                *m = mode.into();
+                *s = slot;
+                *r = role;
+                if !text_input {
+                    *receiver = ReceiverCapabilities::from_ok(&json!({"platform":"android"}));
+                }
+            }
+            st
+        };
+        // Modo puntero: el que apunta (Jugador 1 con papel de mando)
+        assert!(con("pointer", 0, Role::Wiimote, true).has_keyboard());
+        assert!(!con("pointer", 1, Role::Wiimote, true).has_keyboard());
+        assert!(!con("pointer", 0, Role::Nunchuk, true).has_keyboard());
+        // Lo de siempre, igual que antes
+        for mode in ["cemu", "switch", "retroarch"] {
+            assert!(con(mode, 0, Role::Wiimote, true).has_keyboard(), "{mode}");
+        }
+        assert!(!con("dolphin", 0, Role::Wiimote, true).has_keyboard());
+        for mode in ["pointer", "cemu", "switch", "retroarch"] {
+            assert!(!con(mode, 0, Role::Wiimote, false).has_keyboard(), "{mode}");
+        }
+        assert!(!Status::Disconnected.has_keyboard());
+
+        // El clic previo solo en modo puntero y con el ajuste encendido
+        assert!(con("pointer", 0, Role::Wiimote, true).clicks_before_keyboard(true));
+        assert!(!con("pointer", 0, Role::Wiimote, true).clicks_before_keyboard(false));
+        for mode in ["cemu", "switch", "retroarch", "dolphin"] {
+            assert!(!con(mode, 0, Role::Wiimote, true).clicks_before_keyboard(true), "{mode}");
+        }
+        assert!(!con("pointer", 2, Role::Wiimote, true).clicks_before_keyboard(true));
+        assert!(!con("pointer", 0, Role::Nunchuk, true).clicks_before_keyboard(true));
+
+        // Y la pose solo se congela si este móvil mueve el cursor
+        assert!(con("pointer", 0, Role::Wiimote, true).holds_pointer());
+        assert!(!con("pointer", 1, Role::Wiimote, true).holds_pointer());
+        assert!(!con("cemu", 0, Role::Wiimote, true).holds_pointer());
+        assert!(!Status::Disconnected.holds_pointer());
+    }
 
     /// Exercise the real packet worker/socket with either a silent, dead or
     /// stopped sensor channel. No sensor callbacks are needed for controls.

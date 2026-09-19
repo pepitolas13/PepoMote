@@ -223,17 +223,23 @@ pub fn run(
         let pending = std::mem::take(&mut shared.lock_tolerant().text_queue);
         if !pending.is_empty() {
             if let Some(inj) = injector.as_deref_mut() {
-                for (target, t) in &pending {
+                for p in &pending {
                     // Eden y RetroArch: a su ventana, activada antes (donde
                     // el SO lo permite); si no está, se avisa y no se teclea
                     // en otra aplicación
-                    let (focused, unavailable) = match *target {
+                    let (focused, unavailable) = match p.mode {
                         Mode::Switch => (crate::eden::focus_keyboard(), tr!("eden.keyboard_unavailable")),
                         Mode::RetroArch => (crate::retroarch::focus_keyboard(), tr!("retroarch.keyboard_unavailable")),
                         _ => (true, ""),
                     };
                     if focused {
-                        inj.type_text(t);
+                        // Lo que el backend no pudo teclear (Unicode donde no
+                        // hay forma, o una ventana que el SO protege) vuelve
+                        // al móvil que lo escribió: nunca se pierde en silencio
+                        let report = inj.type_text(&p.text);
+                        if let Some(aviso) = input::text_plan::type_notice(&report) {
+                            super::notify_slot(p.slot, &aviso);
+                        }
                     } else {
                         super::notify_all(unavailable);
                     }

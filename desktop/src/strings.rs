@@ -316,6 +316,12 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("inj.wayland_connect", "no se pudo conectar al compositor Wayland ({0})", "could not connect to the Wayland compositor ({0})"),
     ("inj.wayland_globals", "fallo leyendo los globales Wayland ({0})", "failed reading the Wayland globals ({0})"),
     ("inj.wayland_rejected", "el compositor rechazó la inyección ({0})", "the compositor rejected the injection ({0})"),
+    // --- teclado del móvil: lo que no se pudo teclear vuelve al que escribió
+    ("text.truncated", "El texto era muy largo: escribí los primeros {0} caracteres", "The text was too long: I typed the first {0} characters"),
+    ("text.queue_full", "Demasiado texto seguido: descarté el último mensaje", "Too much text at once: I dropped the last message"),
+    ("text.os_refused", "El sistema no dejó escribir en la ventana de delante (¿va como administrador?)", "The system refused to type into the window in front (is it running as administrator?)"),
+    ("text.folded", "Aquí no se pueden teclear tildes ni signos: {0}", "Accents and symbols cannot be typed here: {0}"),
+    ("text.dropped", "No pude escribir: {0}", "I could not type: {0}"),
     // --- pantalla del GamePad
     ("screen.status", "Pantalla del GamePad: {0} fps · {1}×{2} · {3} móvil(es)", "GamePad screen: {0} fps · {1}×{2} · {3} phone(s)"),
     ("screen.no_phone", "Pantalla del GamePad: sin móvil suscrito", "GamePad screen: no phone subscribed"),
@@ -468,6 +474,7 @@ pub const SOURCES: &[&str] = &[
     include_str!("fixes.rs"),
     include_str!("launch.rs"),
     include_str!("input/mod.rs"),
+    include_str!("input/text_plan.rs"),
     include_str!("input/linux_wayland.rs"),
     include_str!("screen/mod.rs"),
     include_str!("screen/capture_none.rs"),

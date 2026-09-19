@@ -13,6 +13,9 @@ mod common;
 mod linux_common;
 #[cfg(target_os = "linux")]
 mod linux_uinput;
+// Unicode por XTEST en sesiones X11 (el respaldo uinput solo manda keycodes)
+#[cfg(target_os = "linux")]
+mod linux_x11_text;
 #[cfg(target_os = "linux")]
 pub mod linux_wayland;
 // Tablas puras del inyector de macOS: se prueban en cualquier SO
@@ -23,6 +26,13 @@ mod macos_keys;
 mod macos_input;
 #[cfg(windows)]
 pub(crate) mod windows_input;
+// Plan de tecleo: puro y compartido, se prueba en los tres SO. Cada
+// plataforma usa una parte (los lotes de Windows, el keymap de Wayland, el
+// plegado de uinput): lo que no usa un SO no es codigo muerto.
+#[allow(dead_code)]
+pub mod text_plan;
+
+pub use text_plan::{TextOp, TypeReport};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MouseButton {
@@ -60,29 +70,17 @@ pub enum KeyCode {
     Char(char),
 }
 
-/// Texto → pulsaciones (tecla, con Shift). Lo que no tiene tecla ASCII se
-/// salta (Windows teclea cualquier carácter por otro camino).
+/// Texto → pulsaciones (tecla, con Shift) de nuestro teclado virtual. Lo que
+/// no tiene tecla ASCII se queda fuera: `text_ops` lo marca como `Unicode` y
+/// cada backend decide si sabe producirlo (y si no, lo dice).
 pub fn text_keys(text: &str) -> Vec<(KeyCode, bool)> {
-    let mut out = Vec::new();
-    for c in text.chars() {
-        match c {
-            '\n' => out.push((KeyCode::Enter, false)),
-            '\r' => {}
-            '\u{8}' | '\u{7f}' => out.push((KeyCode::Backspace, false)),
-            ' ' => out.push((KeyCode::Space, false)),
-            'a'..='z' | '0'..='9' => out.push((KeyCode::Char(c), false)),
-            'A'..='Z' => out.push((KeyCode::Char(c.to_ascii_lowercase()), true)),
-            '-' | '=' | '.' | ',' | '\'' | ';' | '/' | '[' | ']' | '`' | '\\' => out.push((KeyCode::Char(c), false)),
-            '_' => out.push((KeyCode::Char('-'), true)),
-            '+' => out.push((KeyCode::Char('='), true)),
-            '!' => out.push((KeyCode::Char('1'), true)),
-            '?' => out.push((KeyCode::Char('/'), true)),
-            ':' => out.push((KeyCode::Char(';'), true)),
-            '"' => out.push((KeyCode::Char('\''), true)),
-            _ => {}
-        }
-    }
-    out
+    text_plan::text_ops(text)
+        .into_iter()
+        .filter_map(|op| match op {
+            TextOp::Key(key, shift) => Some((key, shift)),
+            TextOp::Unicode(_) => None,
+        })
+        .collect()
 }
 
 pub trait Injector: Send {
@@ -93,18 +91,28 @@ pub trait Injector: Send {
     fn key(&mut self, key: KeyCode, down: bool);
     /// Rueda en 1/120 de muesca; positivo = rueda hacia delante (scroll arriba).
     fn wheel(&mut self, delta: i32);
-    /// Teclea un texto en la ventana con el foco (Intro = `\n`, borrar = `\u{8}`).
-    fn type_text(&mut self, text: &str) {
-        for (key, shift) in text_keys(text) {
-            if shift {
-                self.key(KeyCode::Shift, true);
-            }
-            self.key(key, true);
-            self.key(key, false);
-            if shift {
-                self.key(KeyCode::Shift, false);
+    /// Teclea un texto en la ventana con el foco (Intro = `\n`, borrar =
+    /// `\u{8}`). Devuelve lo que NO se pudo teclear, para que el móvil que
+    /// escribió se entere: nada se pierde en silencio. Vacío = entero y exacto.
+    fn type_text(&mut self, text: &str) -> TypeReport {
+        let mut report = TypeReport::default();
+        for op in text_plan::text_ops(text) {
+            match op {
+                TextOp::Key(key, shift) => {
+                    if shift {
+                        self.key(KeyCode::Shift, true);
+                    }
+                    self.key(key, true);
+                    self.key(key, false);
+                    if shift {
+                        self.key(KeyCode::Shift, false);
+                    }
+                }
+                // Backend sin camino para Unicode: se dice, no se tira
+                TextOp::Unicode(c) => report.drop_char(c),
             }
         }
+        report
     }
     /// Posición actual del cursor, normalizada a la pantalla primaria
     /// (puede salirse de 0..1 con varios monitores). None si el SO no

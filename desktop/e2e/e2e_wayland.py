@@ -6,8 +6,14 @@ hacia la izquierda, que llegó el botón izquierdo, las teclas XF86Back y
 XF86Forward (atrás/adelante del navegador), la rueda con el signo de Wayland
 y las teclas a, b e Intro.
 
+Tambien comprueba el texto UNICODE: manda ñ, un emoji y el euro, que el
+receptor teclea dandoles una tecla de repuesto y volviendo a subir el keymap
+(ver input/linux_wayland.rs), y verifica en wev que llegaron con su utf8 y
+que el ASCII sigue funcionando DESPUES de dos cambios de keymap.
+
 Uso: python3 e2e_wayland.py --e2e-dir /tmp/pepomote-e2e --port 26771 --outputs outputs.json
      python3 e2e_wayland.py --parse-only fixtures/wev_ok.log   (solo el parser)
+     python3 e2e_wayland.py --parse-only fixtures/wev_unicode.log --expect-text "abñ😀€ab"
 """
 import argparse, json, math, os, re, socket, struct, sys, threading, time
 
@@ -17,6 +23,9 @@ FLAG_QUAT = 1
 BTN_A = 1 << 0
 BTN_DPAD_LEFT = 1 << 4
 BTN_DPAD_RIGHT = 1 << 5
+
+# Lo que se teclea en el PC a lo largo de la prueba (pasos F..F4)
+EXPECTED_TEXT = "abñ😀€ab"
 
 fails = 0
 def check(cond, msg):
@@ -36,6 +45,12 @@ RE_KEY = re.compile(r"wl_keyboard\]\s+key:.*?key:\s*(\d+);\s*state:\s*(\d)")
 # La línea siguiente a un key: "sym: a (97), utf8: 'a'" — el keysym es lo que
 # cuenta (wev imprime el código en formato xkb, evdev+8)
 RE_SYM = re.compile(r"^\s+sym:\s+(\S+)")
+# El texto que produce la tecla, en la misma línea. Para el Unicode es lo
+# único fiable: el NOMBRE del keysym varía (U00F1 se canoniza a ntilde,
+# U20AC se queda en U20AC), pero el utf8 es siempre el carácter.
+RE_UTF8 = re.compile(r"utf8:\s*'(.*)'\s*$")
+# Cada vez que el compositor manda un keymap nuevo a la ventana
+RE_KEYMAP = re.compile(r"wl_keyboard\]\s+keymap:")
 BTN_LEFT = 272
 # Teclas esperadas: (keysym, código evdev); wev puede dar evdev o evdev+8
 KEY_A, KEY_B, KEY_ENTER = ("a", 30), ("b", 48), ("Return", 28)
@@ -43,12 +58,13 @@ KEY_A, KEY_B, KEY_ENTER = ("a", 30), ("b", 48), ("Return", 28)
 KEY_BACK, KEY_FORWARD = ("XF86Back", 158), ("XF86Forward", 159)
 
 def parse_wev(text):
-    """Eventos de wev en orden: [('motion', x, y)|('enter', x, y)|('button', code, state)|('axis', value)|('key', code, state, sym)]"""
+    """Eventos de wev en orden: [('motion', x, y)|('enter', x, y)|('button', code, state)|('axis', value)|('key', code, state, sym, utf8)]"""
     ev = []
     for line in text.splitlines():
         m = RE_SYM.search(line)
         if m and ev and ev[-1][0] == "key" and ev[-1][3] is None:
-            ev[-1] = ev[-1][:3] + (m.group(1),)
+            u = RE_UTF8.search(line)
+            ev[-1] = ev[-1][:3] + (m.group(1), u.group(1) if u else "")
             continue
         m = RE_MOTION.search(line)
         if m:
@@ -67,8 +83,11 @@ def parse_wev(text):
             ev.append(("axis", float(m.group(1)) * 15.0)); continue
         m = RE_KEY.search(line)
         if m:
-            ev.append(("key", int(m.group(1)), int(m.group(2)), None)); continue
+            ev.append(("key", int(m.group(1)), int(m.group(2)), None, "")); continue
     return ev
+
+def count_keymaps(text):
+    return len(RE_KEYMAP.findall(text))
 
 def key_is(e, want):
     """¿El evento de tecla `e` es la tecla `want` = (keysym, evdev)? Por keysym si wev lo dio; si no, por código evdev o xkb (evdev+8)."""
@@ -111,6 +130,20 @@ def rules(ev, W, H, sens, yaw_deg):
     ordered = all(any(key_is(k, w) and k[2] == s for k in it) for w, s in want)
     seen = [(k[3] or k[1], k[2]) for k in keys]
     out.append((ordered, f"teclas atrás, adelante, a, b, Intro pulsadas y soltadas en orden (llegaron {seen})"))
+    return out
+
+def rules_text(ev, expected, keymaps):
+    """Comprobaciones del texto: cada carácter llegó, en orden, y el keymap
+    se volvió a subir para los que no tienen tecla propia."""
+    out = []
+    typed = [e[4] for e in ev if e[0] == "key" and e[2] == 1 and e[4]]
+    for c in dict.fromkeys(expected):
+        out.append((c in typed, f"llegó «{c}» al PC (texto tecleado: {typed})"))
+    it = iter(typed)
+    out.append((all(any(t == c for t in it) for c in expected),
+                f"el texto llegó entero y en orden, {expected!r} dentro de {typed!r}"))
+    out.append((keymaps >= 2,
+                f"el compositor recibió un keymap nuevo al aparecer caracteres sin tecla ({keymaps})"))
     return out
 
 def outputs_size(path):
@@ -242,18 +275,33 @@ def drive(args):
     # F. texto por TCP (modo puntero → teclado virtual)
     s.sendall(b'{"m":"text","text":"ab\\n"}\n')
     for _ in range(100): phone.send(args.yaw, 0.0)
+    # F2. texto con caracteres SIN tecla: el receptor les da una de repuesto y
+    # vuelve a subir el keymap (antes se perdían en silencio)
+    s.sendall('{"m":"text","text":"ñ😀\\n"}\n'.encode("utf-8"))
+    for _ in range(100): phone.send(args.yaw, 0.0)
+    # F3. otro carácter nuevo: segundo cambio de keymap
+    s.sendall('{"m":"text","text":"€\\n"}\n'.encode("utf-8"))
+    for _ in range(100): phone.send(args.yaw, 0.0)
+    # F4. y el ASCII sigue bien DESPUÉS de los dos cambios
+    s.sendall(b'{"m":"text","text":"ab\\n"}\n')
+    for _ in range(100): phone.send(args.yaw, 0.0)
 
     # G. sondeo de wev hasta que todo pase (los eventos tardan en llegar al archivo)
     end = time.time() + 12
     results = []
     while True:
-        ev = parse_wev(read_from(wev_log, offset))
-        results = rules(ev, W, H, args.sens, args.yaw)
+        text = read_from(wev_log, offset)
+        ev = parse_wev(text)
+        results = rules(ev, W, H, args.sens, args.yaw) + rules_text(ev, EXPECTED_TEXT, count_keymaps(text))
         if all(ok for ok, _ in results) or time.time() > end:
             break
         for _ in range(50): phone.send(args.yaw, 0.0)
     for ok, msg in results:
         check(ok, msg)
+    # El cambio de keymap no puede haberse llevado por delante la conexión
+    rx = read_from(rx_log, 0)
+    muerto = [m for m in ("inyección perdida", "El inyector", "pánico") if m in rx]
+    check(not muerto, f"el inyector sigue vivo tras los cambios de keymap ({muerto})")
     if fails:
         print("\n--- últimas líneas de wev.log:\n" + tail(wev_log, 60))
         print("\n--- últimas líneas de receptor.log:\n" + tail(rx_log, 60))
@@ -270,11 +318,17 @@ def main():
     ap.add_argument("--sens", type=float, default=40.0)
     ap.add_argument("--yaw", type=float, default=10.0)
     ap.add_argument("--parse-only", default="")
+    ap.add_argument("--expect-text", default="", help="solo con --parse-only: comprueba el texto tecleado")
     args = ap.parse_args()
     if args.parse_only:
-        ev = parse_wev(open(args.parse_only, encoding="utf-8", errors="replace", newline="").read())
-        for ok, msg in rules(ev, 1280, 720, args.sens, args.yaw):
-            check(ok, msg)
+        text = open(args.parse_only, encoding="utf-8", errors="replace", newline="").read()
+        ev = parse_wev(text)
+        if args.expect_text:
+            for ok, msg in rules_text(ev, args.expect_text, count_keymaps(text)):
+                check(ok, msg)
+        else:
+            for ok, msg in rules(ev, 1280, 720, args.sens, args.yaw):
+                check(ok, msg)
     else:
         drive(args)
     print("RESULTADO:", "OK" if fails == 0 else f"FALLO ({fails})", flush=True)

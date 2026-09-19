@@ -200,3 +200,9 @@
 "kb_write" = "Type";
 "kb_close" = "Close";
 "kb_accept" = "Accept";
+"kb_pointer_title" = "Type on the PC";
+"kb_pointer_help" = "The text goes wherever the PC caret is. Send pastes it as is; ⏎ adds Enter (search, go to an address); Delete removes one character.";
+"kb_send" = "Send";
+"kb_enter" = "⏎ Enter";
+"kb_click_title" = "Click before typing";
+"kb_click_sub" = "The Keyboard button first left-clicks where you are pointing, to put the caret in the field. When off, click with A yourself before typing.";

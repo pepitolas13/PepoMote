@@ -340,7 +340,7 @@ jobs:
           raw = f"https://raw.githubusercontent.com/{repo}/main"
           version = tag.lstrip("v")
           today = datetime.date.today().isoformat()
-          notes = f"PepoMote {version} para iPhone y iPad: llega RetroArch con el mando de cada consola, también con un Android como receptor. Incluye puntero, Wii para Dolphin, Wii U para Cemu con doble pantalla, Nunchuk y Pro Controller para Eden. Botones y sticks también sin giroscopio. Notas completas: {base}/releases/tag/{tag}"
+          notes = f"PepoMote {version} para iPhone y iPad: en modo puntero, el botón Teclado hace clic donde apuntas y escribe en el PC lo que teclees. Incluye RetroArch con el mando de cada consola, puntero, Wii para Dolphin, Wii U para Cemu con doble pantalla, Nunchuk y Pro Controller para Eden. Botones y sticks también sin giroscopio. Notas completas: {base}/releases/tag/{tag}"
           src = {
               "name": "PepoTech",
               "identifier": "dev.pepotech.altstore",

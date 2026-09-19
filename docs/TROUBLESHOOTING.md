@@ -157,6 +157,30 @@ Para traer el cursor (o el puntero IR en Dolphin y como Mando de Wii en Cemu)
 al centro, mantén la **diana** entre − y +: está en el mando vertical, en el
 mando apaisado (desde 1.8.5) y en el mando + Nunchuk.
 
+## Escribo en el PC con el botón «Teclado» y falta algún carácter (Linux)
+
+En Windows y macOS entra cualquier carácter. En Linux depende del escritorio:
+
+- **Sway, Hyprland, river, niri y demás compositores wlroots**: entra todo,
+  tildes, ñ y emoji incluidos.
+- **X11** (Mint, XFCE, Cinnamon, MATE, i3…): entra todo también.
+- **GNOME o KDE en Wayland**: el sistema solo deja escribir lo que esté en tu
+  disposición de teclado. PepoMote escribe lo que puede, cambia lo que tiene
+  equivalente (`ñ` → `n`) y **te avisa en el móvil** de lo que no pudo
+  escribir. No hay forma de arreglarlo sin pedirte permisos de escritorio
+  remoto en cada sesión.
+
+Si el aviso dice que el sistema rechazó la escritura, la ventana de delante es
+de un programa con permisos de administrador: el receptor no puede escribir
+ahí salvo que se ejecute también como administrador.
+
+## Al abrir el teclado el cursor se queda quieto
+
+Es a propósito. Mientras escribes, el móvil se mueve en la mano: si el cursor
+siguiera al móvil, se saldría del campo donde acabas de hacer clic (y en los
+escritorios donde el foco sigue al ratón, el texto acabaría en otra ventana).
+Al cerrar el teclado el puntero sigue justo donde estaba.
+
 ## Mi móvil no tiene giroscopio: el cursor solo sube y baja (o no se mueve)
 
 El puntero saca la altura de la gravedad y el giro horizontal del giroscopio.

@@ -61,6 +61,50 @@ object Route {
             else -> false
         }
 
+    /**
+     * ¿Se enseña el botón «Teclado»? El receptor teclea en todos estos modos
+     * (PROTOCOL.md §3: en Wii U a la ventana de Cemu, en los demás a la que
+     * tenga el foco), pero solo si dijo que sabe (`ok.text_input`: el
+     * servidor de Android no).
+     *
+     * En modo puntero, además, solo el Jugador 1 con papel de mando: los
+     * demás móviles no mueven el cursor, así que no tienen dónde escribir.
+     */
+    fun showsKeyboard(link: UiLink): Boolean {
+        val c = link as? UiLink.Connected ?: return false
+        if (!c.textInput) return false
+        return when (c.mode) {
+            LinkState.MODE_POINTER -> pointsAtPc(c)
+            LinkState.MODE_CEMU, LinkState.MODE_SWITCH, LinkState.MODE_RETROARCH -> true
+            else -> false
+        }
+    }
+
+    /**
+     * ¿El botón «Teclado» hace antes un clic izquierdo donde apunta el
+     * usuario, para dejar el cursor dentro del campo?
+     *
+     * Solo en modo puntero: en Dolphin, Wii U y Switch los botones van al
+     * mando emulado (DSU) y el clic no llegaría al escritorio —pulsaría A
+     * dentro del juego—, y en RetroArch con pistola A es el clic DERECHO
+     * (recargar), que abriría un menú contextual sobre la partida.
+     */
+    fun clicksBeforeKeyboard(link: UiLink, setting: Boolean): Boolean =
+        setting && link is UiLink.Connected && link.mode == LinkState.MODE_POINTER && pointsAtPc(link)
+
+    /**
+     * ¿Se congela la pose mientras el teclado está abierto? Solo cuando este
+     * móvil mueve el cursor: escribiendo, el móvil se mueve en la mano y el
+     * puntero se iría solo (y donde el foco sigue al ratón, el texto acabaría
+     * en otra ventana).
+     */
+    fun holdsPointerForKeyboard(link: UiLink): Boolean =
+        link is UiLink.Connected && link.mode == LinkState.MODE_POINTER && pointsAtPc(link)
+
+    /** Este móvil es el que mueve el cursor del PC: Jugador 1 y mando (no Nunchuk). */
+    private fun pointsAtPc(link: UiLink.Connected): Boolean =
+        link.slot == 0 && link.role == LinkState.ROLE_WIIMOTE
+
     /** Pending intent wins over the previous receiver mode while the echo is in flight. */
     fun displayMode(link: UiLink, intent: PadIntent): String = when (intent) {
         PadIntent.WiiU -> LinkState.MODE_CEMU

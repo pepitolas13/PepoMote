@@ -8,7 +8,8 @@ use super::{broadcast, free_slot, ghosts_of, send_line, Session, Sessions};
 use crate::pairing::PairingInfo;
 use crate::screen::ScreenHub;
 use crate::retroarch::RetroPadKind;
-use crate::state::{pad_state, PadState, player_number, LinkStatus, Mode, PlayerInfo, Role, SharedState, SwitchPad};
+use crate::input::text_plan;
+use crate::state::{pad_state, PadState, player_number, LinkStatus, Mode, PendingText, PlayerInfo, Role, SharedState, SwitchPad, MAX_TEXT_QUEUE};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -475,6 +476,13 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                 // si no se la encuentra, o en otros modos, al SO (ventana con
                 // el foco) desde el hilo de telemetría
                 if let Some(t) = msg["text"].as_str().filter(|t| !t.is_empty()) {
+                    // Tope de longitud: el tecleo va en el hilo caliente (el
+                    // que mueve el puntero y alimenta el DSU), así que un
+                    // pegado enorme lo dejaría ocupado durante segundos
+                    let (t, cortado) = text_plan::clamp_text(t);
+                    if cortado {
+                        let _ = send(&writer, &json!({"m":"notice","text":tr!("text.truncated", text_plan::MAX_TEXT)}));
+                    }
                     let target = shared.lock_tolerant().mode;
                     // RetroArch: a su ventana (se activa desde telemetría)
                     let wiiu = target == Mode::Cemu;
@@ -486,7 +494,17 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         true
                     };
                     if to_os {
-                        shared.lock_tolerant().text_queue.push((target, t.to_owned()));
+                        let lleno = {
+                            let mut s = shared.lock_tolerant();
+                            let lleno = s.text_queue.len() >= MAX_TEXT_QUEUE;
+                            if !lleno {
+                                s.text_queue.push(PendingText { mode: target, text: t.to_owned(), slot });
+                            }
+                            lleno
+                        };
+                        if lleno {
+                            let _ = send(&writer, &json!({"m":"notice","text":tr!("text.queue_full")}));
+                        }
                     }
                 }
             }

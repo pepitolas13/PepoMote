@@ -128,10 +128,22 @@ struct ControllerScreen: View {
         .sheet(isPresented: $keyboardOpen) {
             KeyboardSheet { keyboardOpen = false }
         }
+        // El teclado y la pose congelada van juntos, y se sueltan SOLOS: al
+        // cerrarlo, al cambiar de modo (el PC lo cambia por su cuenta al abrir
+        // un emulador), al reconectar con un motor nuevo y al salir de la
+        // pantalla. Una pose congelada que se olvide dejaría el puntero muerto
+        .onChange(of: keyboardOpen) { open in
+            LinkState.shared.motion?.pointerHold = open && Route.holdsPointerForKeyboard(link.link)
+        }
+        .onChange(of: link.link) { current in
+            if keyboardOpen && !Route.showsKeyboard(current) { keyboardOpen = false }
+            LinkState.shared.motion?.pointerHold = keyboardOpen && Route.holdsPointerForKeyboard(current)
+        }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             press.releaseAll() // nada queda pulsado al salir
+            LinkState.shared.motion?.pointerHold = false
         }
     }
 
@@ -194,6 +206,16 @@ struct ControllerScreen: View {
                 RoundButton(label: "1", size: m.one, bit: Btn.one, textSize: m.text(18))
                 if showHome {
                     RoundButton(label: tr("home_btn"), size: m.one, bit: Btn.home, textSize: m.text(12))
+                } else if Route.showsKeyboard(link.link) {
+                    // Modo puntero: Home no hace nada y su hueco queda libre,
+                    // centrado bajo la A y lejos de la cruceta y de B. No es un
+                    // botón del mando (no entra en el registro de pulsación):
+                    // con «pulsar deslizando» un dedo de paso lo abriría
+                    KeyboardButton(compact: true) {
+                        openKeyboard(link.link, press)
+                        keyboardOpen = true
+                    }
+                    .fixedSize()
                 }
                 RoundButton(label: "2", size: m.one, bit: Btn.two, textSize: m.text(18))
             }
@@ -238,11 +260,16 @@ struct ControllerScreen: View {
             }
             .layoutPriority(0)
             Spacer(minLength: 4)
-            // Modo Wii U: texto para el teclado en pantalla de Cemu; en RetroArch, para su ventana
-            if let c = link.link.connected, c.hasKeyboard, c.mode == LinkState.modeCemu || c.mode == LinkState.modeRetroArch {
-                KeyboardButton(compact: true) { keyboardOpen = true }
-                    .fixedSize()
-                    .layoutPriority(2)
+            // Modo Wii U: texto para el teclado en pantalla de Cemu; en
+            // RetroArch, para su ventana. En modo puntero el botón NO va aquí
+            // arriba sino en el hueco de Home, al alcance del pulgar
+            if Route.showsKeyboard(link.link), showHome {
+                KeyboardButton(compact: true) {
+                    openKeyboard(link.link, press)
+                    keyboardOpen = true
+                }
+                .fixedSize()
+                .layoutPriority(2)
             }
             TextLink(title: tr("exit"), color: Pepo.error, action: onDisconnect)
                 .fixedSize()

@@ -24,6 +24,48 @@ enum Route {
         return c.mode == LinkState.modeCemu && c.role == LinkState.roleWiimote && c.pad != LinkState.padWiimote
     }
 
+    /// ¿Se enseña el botón «Teclado»? El receptor teclea en todos estos modos
+    /// (PROTOCOL.md §3: en Wii U a la ventana de Cemu, en los demás a la que
+    /// tenga el foco), pero solo si dijo que sabe (`ok.text_input`: el
+    /// servidor de Android no).
+    ///
+    /// En modo puntero, además, solo el Jugador 1 con papel de mando: los
+    /// demás móviles no mueven el cursor, así que no tienen dónde escribir.
+    static func showsKeyboard(_ link: UiLink) -> Bool {
+        guard let c = link.connected, c.receiver.textInput else { return false }
+        switch c.mode {
+        case LinkState.modePointer: return pointsAtPc(c)
+        case LinkState.modeCemu, LinkState.modeSwitch, LinkState.modeRetroArch: return true
+        default: return false
+        }
+    }
+
+    /// ¿El botón «Teclado» hace antes un clic izquierdo donde apunta el
+    /// usuario, para dejar el cursor dentro del campo?
+    ///
+    /// Solo en modo puntero: en Dolphin, Wii U y Switch los botones van al
+    /// mando emulado (DSU) y el clic no llegaría al escritorio —pulsaría A
+    /// dentro del juego—, y en RetroArch con pistola A es el clic DERECHO
+    /// (recargar), que abriría un menú contextual sobre la partida.
+    static func clicksBeforeKeyboard(_ link: UiLink, _ setting: Bool) -> Bool {
+        guard setting, let c = link.connected else { return false }
+        return c.mode == LinkState.modePointer && pointsAtPc(c)
+    }
+
+    /// ¿Se congela la pose mientras el teclado está abierto? Solo cuando este
+    /// móvil mueve el cursor: escribiendo, el móvil se mueve en la mano y el
+    /// puntero se iría solo (y donde el foco sigue al ratón, el texto acabaría
+    /// en otra ventana).
+    static func holdsPointerForKeyboard(_ link: UiLink) -> Bool {
+        guard let c = link.connected else { return false }
+        return c.mode == LinkState.modePointer && pointsAtPc(c)
+    }
+
+    /// Este móvil es el que mueve el cursor del PC: Jugador 1 y mando.
+    private static func pointsAtPc(_ c: ConnectedLink) -> Bool {
+        c.slot == 0 && c.role == LinkState.roleWiimote
+    }
+
     static func isSwitch(_ link: UiLink) -> Bool {
         guard let c = link.connected else { return false }
         return c.mode == LinkState.modeSwitch && c.role == LinkState.roleWiimote

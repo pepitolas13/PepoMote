@@ -32,9 +32,8 @@ struct ConnectedLink: Equatable {
     /// Capacidades confirmadas al conectar; los ecos de modo/pad las conservan.
     var receiver = ReceiverCapabilities()
 
-    var hasKeyboard: Bool {
-        receiver.textInput && [LinkState.modeCemu, LinkState.modeSwitch, LinkState.modeRetroArch].contains(mode)
-    }
+    /// ¿Hay teclado para este enlace? Una sola fuente de verdad: `Route`.
+    var hasKeyboard: Bool { Route.showsKeyboard(.connected(self)) }
 }
 
 enum UiLink: Equatable {

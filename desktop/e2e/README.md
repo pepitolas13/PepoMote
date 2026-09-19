@@ -91,10 +91,16 @@ Wayland (línea `Inyección: Wayland` en `receptor.log`), y
 adelante del navegador), rueda y `text`, comprobando en la salida de `wev` los
 `motion` (centro y recorrido), el `button 272`, las teclas `XF86Back` y
 `XF86Forward`, el `axis` con el signo de Wayland y las teclas `a`, `b`, Intro.
+Después escribe `ñ`, un emoji y `€`, que no tienen tecla propia y salen por
+teclas de repuesto con su keysym Unicode (el receptor vuelve a subir el
+keymap), y otra vez `ab` para comprobar que el ASCII sigue bien tras dos
+cambios de keymap y que el inyector no se ha muerto por el camino.
 Necesita `sway`, `wev` y `python3`; deja `wev.log`, `sway.log`,
 `receptor.out` y `config/receptor.log` en `/tmp/pepomote-e2e`.
 `python3 e2e_wayland.py --parse-only fixtures/wev_ok.log` prueba solo el
-parser (vale en Windows).
+parser (vale en Windows), y
+`python3 e2e_wayland.py --parse-only fixtures/wev_unicode.log --expect-text "abñ😀€ab"`
+prueba el del texto Unicode.
 
 Ventana (Linux): `bash smoke_gui.sh wayland|x11 [fallback]` abre la ventana de
 verdad bajo un sway sin cabeza o un Xvfb, espera el primer fotograma y sale

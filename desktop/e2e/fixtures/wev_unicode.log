@@ -1,0 +1,57 @@
+Interface: wl_keyboard
+[15:    wl_keyboard] keymap: format: 1 (xkb_v1), size: 3000
+[15:    wl_keyboard] enter: serial: 14; surface: 4
+[15:    wl_keyboard] key: serial: 19; time: 2500; key: 38; state: 1 (pressed)
+                      sym: a            (97), utf8: 'a'
+[15:    wl_keyboard] key: serial: 20; time: 2505; key: 38; state: 0 (released)
+                      sym: a            (97), utf8: ''
+[15:    wl_keyboard] key: serial: 21; time: 2510; key: 56; state: 1 (pressed)
+                      sym: b            (98), utf8: 'b'
+[15:    wl_keyboard] key: serial: 22; time: 2515; key: 56; state: 0 (released)
+                      sym: b            (98), utf8: ''
+[15:    wl_keyboard] key: serial: 23; time: 2520; key: 36; state: 1 (pressed)
+                      sym: Return    (65293), utf8: '
+'
+[15:    wl_keyboard] key: serial: 24; time: 2525; key: 36; state: 0 (released)
+                      sym: Return    (65293), utf8: ''
+[15:    wl_keyboard] keymap: format: 1 (xkb_v1), size: 3120
+[15:    wl_keyboard] modifiers: serial: 25; group: 0
+                      depressed: 00000000
+                      latched: 00000000
+                      locked: 00000000
+[15:    wl_keyboard] key: serial: 26; time: 2600; key: 208; state: 1 (pressed)
+                      sym: ntilde      (241), utf8: 'ñ'
+[15:    wl_keyboard] key: serial: 27; time: 2605; key: 208; state: 0 (released)
+                      sym: ntilde      (241), utf8: ''
+[15:    wl_keyboard] key: serial: 28; time: 2610; key: 209; state: 1 (pressed)
+                      sym: U1F600 (16902656), utf8: '😀'
+[15:    wl_keyboard] key: serial: 29; time: 2615; key: 209; state: 0 (released)
+                      sym: U1F600 (16902656), utf8: ''
+[15:    wl_keyboard] key: serial: 30; time: 2620; key: 36; state: 1 (pressed)
+                      sym: Return    (65293), utf8: '
+'
+[15:    wl_keyboard] key: serial: 31; time: 2625; key: 36; state: 0 (released)
+                      sym: Return    (65293), utf8: ''
+[15:    wl_keyboard] keymap: format: 1 (xkb_v1), size: 3140
+[15:    wl_keyboard] key: serial: 32; time: 2700; key: 210; state: 1 (pressed)
+                      sym: U20AC   (16785068), utf8: '€'
+[15:    wl_keyboard] key: serial: 33; time: 2705; key: 210; state: 0 (released)
+                      sym: U20AC   (16785068), utf8: ''
+[15:    wl_keyboard] key: serial: 34; time: 2710; key: 36; state: 1 (pressed)
+                      sym: Return    (65293), utf8: '
+'
+[15:    wl_keyboard] key: serial: 35; time: 2715; key: 36; state: 0 (released)
+                      sym: Return    (65293), utf8: ''
+[15:    wl_keyboard] key: serial: 36; time: 2800; key: 38; state: 1 (pressed)
+                      sym: a            (97), utf8: 'a'
+[15:    wl_keyboard] key: serial: 37; time: 2805; key: 38; state: 0 (released)
+                      sym: a            (97), utf8: ''
+[15:    wl_keyboard] key: serial: 38; time: 2810; key: 56; state: 1 (pressed)
+                      sym: b            (98), utf8: 'b'
+[15:    wl_keyboard] key: serial: 39; time: 2815; key: 56; state: 0 (released)
+                      sym: b            (98), utf8: ''
+[15:    wl_keyboard] key: serial: 40; time: 2820; key: 36; state: 1 (pressed)
+                      sym: Return    (65293), utf8: '
+'
+[15:    wl_keyboard] key: serial: 41; time: 2825; key: 36; state: 0 (released)
+                      sym: Return    (65293), utf8: ''

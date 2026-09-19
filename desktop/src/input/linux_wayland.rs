@@ -5,13 +5,20 @@
 //! contraseña, ni regla udev. GNOME y KDE no los anuncian: ahí se usa
 //! uinput (`linux_uinput`).
 //!
+//! El keymap del teclado virtual es NUESTRO, así que para escribir un
+//! carácter sin tecla (ñ, tildes, €, emoji) basta con darle una tecla de
+//! repuesto y volver a subir el keymap: es lo que hace `wtype`, y llega a
+//! cualquier cliente (nativo, Xwayland, SDL, juegos), a diferencia del
+//! protocolo de método de entrada.
+//!
 //! Conexión propia (como en `screens.rs`), independiente de la de winit y
 //! viva en el hilo de telemetría. Nuestros objetos no reciben eventos:
 //! `alive()` drena el socket de vez en cuando y detecta si el compositor
 //! cerró la conexión, para que la telemetría vuelva a crear el inyector.
 
 use super::linux_common::{all_keys, evdev_key, map_abs, WheelAcc, ABS_MAX};
-use super::{Injector, KeyCode, MouseButton};
+use super::text_plan::{self, render_keymap, unicode_keysym, TextOp};
+use super::{Injector, KeyCode, MouseButton, TypeReport};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Write;
@@ -161,6 +168,10 @@ pub struct WaylandInjector {
     /// Pantalla de apuntado dentro del escritorio completo ([x0,y0,w,h] 0..1).
     target: [f32; 4],
     shift_down: bool,
+    /// Reparto vivo carácter → tecla de repuesto (código xkb) que el
+    /// compositor tiene ahora mismo. Se conserva entre mensajes: el segundo
+    /// «ñ» seguido no vuelve a subir keymap.
+    unicode: BTreeMap<char, u16>,
     dead: bool,
     name: &'static str,
 }
@@ -196,9 +207,8 @@ impl WaylandInjector {
         if with_keyboard {
             if let (Some((kmgr, _)), Some(seat)) = (state.keyboard_mgr.as_ref(), seat.as_ref()) {
                 let kb = kmgr.create_virtual_keyboard(seat, &qh, ());
-                let file = keymap_file().map_err(BuildError::Keyboard)?;
-                let bytes = keymap_bytes();
-                kb.keymap(KEYMAP_XKB_V1, file.as_fd(), bytes.len() as u32);
+                let (file, len) = keymap_file_with(&BTreeMap::new()).map_err(BuildError::Keyboard)?;
+                kb.keymap(KEYMAP_XKB_V1, file.as_fd(), len as u32);
                 keyboard = Some(kb);
                 keymap = Some(file);
             }
@@ -225,6 +235,7 @@ impl WaylandInjector {
             wheel: WheelAcc::default(),
             target: [0.0, 0.0, 1.0, 1.0],
             shift_down: false,
+            unicode: BTreeMap::new(),
             dead: false,
             name,
         })
@@ -232,6 +243,62 @@ impl WaylandInjector {
 
     fn now(&self) -> u32 {
         self.t0.elapsed().as_millis() as u32
+    }
+
+    /// Sube al compositor un reparto nuevo de teclas de repuesto para los
+    /// caracteres sin tecla propia. Devuelve si pudo; si no, el tramo teclea
+    /// lo que ya tenía tecla y el resto se avisa.
+    fn apply_keymap(&mut self, extra: &BTreeMap<char, u16>) -> bool {
+        let Some(kb) = self.keyboard.clone() else {
+            return false;
+        };
+        // Nada latcheado al cambiar de mapa: el Shift de antes ya no vale
+        if self.shift_down {
+            let t = self.now();
+            if let Some(k) = evdev_key(KeyCode::Shift) {
+                kb.key(t, k.code() as u32, 0);
+            }
+            kb.modifiers(0, 0, 0, 0);
+            self.shift_down = false;
+        }
+        let (file, len) = match keymap_file_with(extra) {
+            Ok(v) => v,
+            Err(e) => {
+                if debug() {
+                    eprintln!("[wayland] keymap Unicode: {e}");
+                }
+                return false;
+            }
+        };
+        kb.keymap(KEYMAP_XKB_V1, file.as_fd(), len as u32);
+        // El roundtrip es la garantía de verdad: keymap y teclas van por el
+        // mismo socket y en orden, así que el compositor lo ha compilado
+        // antes de recibir la primera tecla. Un error de protocolo aflora aquí.
+        if self.queue.roundtrip(&mut self.state).is_err() {
+            self.dead = true;
+            return false;
+        }
+        // El fd viejo se cierra DESPUÉS del roundtrip
+        self._keymap = Some(file);
+        // wlroots no reinicia el estado xkb al cambiar de mapa: lo decimos
+        kb.modifiers(0, 0, 0, 0);
+        let settle = settle_ms();
+        if settle > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(settle));
+        }
+        true
+    }
+
+    /// Pulsa y suelta una tecla de repuesto (código xkb = evdev + 8). Va en
+    /// un solo nivel, así que sale igual haya o no Shift.
+    fn press_spare(&mut self, xkb: u16) {
+        let t = self.now();
+        let Some(kb) = self.keyboard.as_ref() else {
+            return;
+        };
+        let code = xkb.saturating_sub(8) as u32;
+        kb.key(t, code, 1);
+        kb.key(t, code, 0);
     }
 
     /// Manda lo encolado. Un WouldBlock es pasajero; otro error = conexión
@@ -324,6 +391,54 @@ impl Injector for WaylandInjector {
             self.shift_down = down;
         }
         self.flush();
+    }
+
+    /// Cualquier carácter: los que tienen tecla, por su tecla; los demás, por
+    /// una tecla de repuesto con su keysym Unicode. Solo se sube keymap
+    /// cuando aparece un carácter que no estaba: el texto ASCII no lo toca.
+    fn type_text(&mut self, text: &str) -> TypeReport {
+        let mut report = TypeReport::default();
+        if self.keyboard.is_none() {
+            // Compositor con puntero virtual pero sin teclado virtual: antes
+            // no tecleaba nada y tampoco lo decía. Intro y retroceso tampoco
+            // tienen keysym Unicode, pero siguen siendo acciones de teclado.
+            report.rejected_by_os = !text_plan::text_ops(text).is_empty();
+            for c in text.chars() {
+                if unicode_keysym(c).is_some() {
+                    report.drop_char(c);
+                }
+            }
+            return report;
+        }
+        let ops = text_plan::text_ops(text);
+        for chunk in text_plan::plan_text(&ops, &self.unicode) {
+            if let Some(map) = chunk.keymap {
+                if self.apply_keymap(&map) {
+                    self.unicode = map;
+                }
+            }
+            for op in chunk.ops {
+                match op {
+                    TextOp::Key(key, shift) => {
+                        if shift {
+                            self.key(KeyCode::Shift, true);
+                        }
+                        self.key(key, true);
+                        self.key(key, false);
+                        if shift {
+                            self.key(KeyCode::Shift, false);
+                        }
+                    }
+                    TextOp::Unicode(c) => match self.unicode.get(&c).copied() {
+                        Some(xkb) => self.press_spare(xkb),
+                        // El keymap no se pudo subir: se dice, no se tira
+                        None => report.drop_char(c),
+                    },
+                }
+            }
+        }
+        self.flush();
+        report
     }
 
     fn wheel(&mut self, delta: i32) {
@@ -457,48 +572,56 @@ fn keysyms(key: KeyCode) -> Option<(&'static str, Option<&'static str>)> {
 /// en el formato que usa wtype: tipos y compatibilidad del sistema
 /// (`include "complete"`), símbolos propios.
 pub(super) fn keymap_text() -> String {
-    let mut keys: BTreeMap<u16, (&'static str, Option<&'static str>)> = BTreeMap::new();
-    for k in all_keys() {
-        if let (Some(code), Some(syms)) = (evdev_key(k), keysyms(k)) {
-            keys.insert(code.code() + 8, syms);
-        }
-    }
-    let max = keys.keys().last().copied().unwrap_or(8);
-    let mut s = String::new();
-    s.push_str("xkb_keymap {\n\txkb_keycodes \"(unnamed)\" {\n\t\tminimum = 8;\n");
-    s.push_str(&format!("\t\tmaximum = {max};\n"));
-    for n in keys.keys() {
-        s.push_str(&format!("\t\t<K{n}> = {n};\n"));
-    }
-    s.push_str("\t};\n");
-    s.push_str("\txkb_types \"(unnamed)\" { include \"complete\" };\n");
-    s.push_str("\txkb_compatibility \"(unnamed)\" { include \"complete\" };\n");
-    s.push_str("\txkb_symbols \"(unnamed)\" {\n");
-    for (n, (base, shifted)) in &keys {
-        match shifted {
-            Some(sh) => s.push_str(&format!("\t\tkey <K{n}> {{ [ {base}, {sh} ] }};\n")),
-            None => s.push_str(&format!("\t\tkey <K{n}> {{ [ {base} ] }};\n")),
-        }
-    }
-    let shift = evdev::Key::KEY_LEFTSHIFT.code() + 8;
-    s.push_str(&format!("\t\tmodifier_map Shift {{ <K{shift}> }};\n"));
-    s.push_str("\t};\n};\n");
-    s
+    keymap_text_with(&BTreeMap::new())
 }
 
-/// El keymap como lo quiere el compositor: texto + NUL final.
-pub(super) fn keymap_bytes() -> Vec<u8> {
+/// Espera tras cambiar el keymap (ms). Es defensiva, no teórica: el orden lo
+/// garantiza el socket, pero Chromium y Electron recompilan el keymap en otro
+/// hilo y se les conoce por comerse la primera tecla. Solo se paga una vez
+/// por mensaje, y únicamente si el mapa cambió. `PEPOMOTE_TYPE_SETTLE_MS=0`
+/// la quita.
+fn settle_ms() -> u64 {
+    std::env::var("PEPOMOTE_TYPE_SETTLE_MS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(20)
+}
+
+/// El keymap de siempre MÁS una tecla de repuesto por carácter de `extra`.
+/// Con `extra` vacío devuelve exactamente el de siempre, byte a byte.
+pub(super) fn keymap_text_with(extra: &BTreeMap<char, u16>) -> String {
+    let mut keys: BTreeMap<u16, (String, Option<String>)> = BTreeMap::new();
+    for k in all_keys() {
+        if let (Some(code), Some((base, shifted))) = (evdev_key(k), keysyms(k)) {
+            keys.insert(code.code() + 8, (base.to_owned(), shifted.map(str::to_owned)));
+        }
+    }
+    // Un solo nivel: con `include "complete"` xkb le da el tipo ONE_LEVEL,
+    // así que el carácter sale igual aunque haya un modificador pulsado
+    for (c, code) in extra {
+        if let Some(sym) = unicode_keysym(*c) {
+            keys.insert(*code, (sym, None));
+        }
+    }
+    render_keymap(&keys, evdev::Key::KEY_LEFTSHIFT.code() + 8)
+}
+
+/// El keymap como lo quiere el compositor: texto + NUL final. Lo real lo
+/// escribe `keymap_file_with`; esto fija el contrato en el test.
+#[cfg(test)]
+fn keymap_bytes() -> Vec<u8> {
     let mut b = keymap_text().into_bytes();
     b.push(0);
     b
 }
 
-/// Archivo temporal con el keymap, ya desenlazado (solo vive por su fd, que
-/// es lo que viaja al compositor). Sin crates nuevas: /dev/shm, $TMPDIR o
-/// $XDG_RUNTIME_DIR.
-fn keymap_file() -> Result<File, String> {
+/// Archivo temporal con el keymap (y su longitud en bytes), ya desenlazado
+/// (solo vive por su fd, que es lo que viaja al compositor). Sin crates
+/// nuevas: /dev/shm, $TMPDIR o $XDG_RUNTIME_DIR.
+fn keymap_file_with(extra: &BTreeMap<char, u16>) -> Result<(File, usize), String> {
     use std::os::unix::fs::OpenOptionsExt;
-    let bytes = keymap_bytes();
+    let mut bytes = keymap_text_with(extra).into_bytes();
+    bytes.push(0);
     let mut dirs: Vec<std::path::PathBuf> = vec!["/dev/shm".into(), std::env::temp_dir()];
     if let Some(d) = std::env::var_os("XDG_RUNTIME_DIR") {
         dirs.push(d.into());
@@ -523,7 +646,7 @@ fn keymap_file() -> Result<File, String> {
                     last = format!("{}: {e}", dir.display());
                     continue;
                 }
-                return Ok(f);
+                return Ok((f, bytes.len()));
             }
             Err(e) => last = format!("{}: {e}", dir.display()),
         }
@@ -602,6 +725,34 @@ mod tests {
         let bytes = keymap_bytes();
         assert_eq!(bytes.len(), text.len() + 1);
         assert_eq!(*bytes.last().unwrap(), 0);
+    }
+
+    #[test]
+    fn el_keymap_sin_unicode_es_exactamente_el_de_siempre() {
+        assert_eq!(keymap_text_with(&BTreeMap::new()), keymap_text());
+    }
+
+    #[test]
+    fn el_keymap_con_unicode_declara_las_teclas_de_repuesto() {
+        use crate::input::text_plan::spare_xkb;
+        let extra = BTreeMap::from([('ñ', spare_xkb(0)), ('😀', spare_xkb(1)), ('€', spare_xkb(2))]);
+        let text = keymap_text_with(&extra);
+        assert!(text.contains("<K208> = 208;"), "{text}");
+        assert!(text.contains("key <K208> { [ U00F1 ] };"), "{text}");
+        assert!(text.contains("key <K209> { [ U1F600 ] };"), "{text}");
+        assert!(text.contains("key <K210> { [ U20AC ] };"), "{text}");
+        assert!(text.contains("maximum = 210;"), "{text}");
+        // y las 64 de siempre siguen enteras
+        assert_eq!(text.matches("\t\tkey <").count(), 64 + 3);
+        assert!(text.contains("[ a, A ]"));
+        assert!(text.contains("[ Return ]"));
+        assert!(text.contains(&format!("modifier_map Shift {{ <K{}> }};", keycode(KeyCode::Shift))));
+    }
+
+    #[test]
+    fn la_espera_tras_cambiar_el_keymap_se_puede_ajustar() {
+        // por defecto hay espera; el valor exacto lo decide el entorno
+        assert!(settle_ms() <= 200);
     }
 
     #[test]

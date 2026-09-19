@@ -10,9 +10,56 @@ final class RouteTests: XCTestCase {
         slot: Int = 0,
         supportsCemu: Bool = true,
         ownNunchuk: Bool = false,
-        supportsSwitch: Bool = true
+        supportsSwitch: Bool = true,
+        textInput: Bool = true
     ) -> UiLink {
-        .connected(ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad, ownNunchuk: ownNunchuk, supportsSwitch: supportsSwitch))
+        var c = ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad, ownNunchuk: ownNunchuk, supportsSwitch: supportsSwitch)
+        if !textInput { c.receiver = ReceiverCapabilities(ok: ["platform": "android"]) }
+        return .connected(c)
+    }
+
+    /// Mismos casos que RouteTest de Android.
+    func testElTecladoSeEnsenaDondeElReceptorSabeTeclear() {
+        // Modo puntero: el que apunta (Jugador 1 con papel de mando)
+        XCTAssertTrue(Route.showsKeyboard(connected(mode: "pointer")))
+        XCTAssertFalse(Route.showsKeyboard(connected(mode: "pointer", slot: 1)))
+        XCTAssertFalse(Route.showsKeyboard(connected(mode: "pointer", role: LinkState.roleNunchuk)))
+        // Lo de siempre, igual que antes
+        for mode in ["cemu", "retroarch", "switch"] {
+            XCTAssertTrue(Route.showsKeyboard(connected(mode: mode)), mode)
+        }
+        // Dolphin no: ahí los botones van al mando emulado y no hay dónde clicar
+        XCTAssertFalse(Route.showsKeyboard(connected(mode: "dolphin")))
+        // Receptor que no sabe teclear (el servidor de Android)
+        for mode in ["pointer", "cemu", "retroarch", "switch"] {
+            XCTAssertFalse(Route.showsKeyboard(connected(mode: mode, textInput: false)), mode)
+        }
+        XCTAssertFalse(Route.showsKeyboard(.connecting))
+        XCTAssertFalse(Route.showsKeyboard(.disconnected))
+    }
+
+    func testSoloSeClicaAntesDeEscribirEnModoPuntero() {
+        XCTAssertTrue(Route.clicksBeforeKeyboard(connected(mode: "pointer"), true))
+        // El ajuste apagado: se abre el teclado y el clic lo da el usuario con A
+        XCTAssertFalse(Route.clicksBeforeKeyboard(connected(mode: "pointer"), false))
+        // Fuera del puntero los botones van al mando emulado (y en la pistola
+        // de RetroArch A es el clic DERECHO): nunca se clica
+        for mode in ["cemu", "switch", "retroarch", "dolphin"] {
+            XCTAssertFalse(Route.clicksBeforeKeyboard(connected(mode: mode), true), mode)
+        }
+        XCTAssertFalse(Route.clicksBeforeKeyboard(connected(mode: "pointer", slot: 2), true))
+        XCTAssertFalse(Route.clicksBeforeKeyboard(connected(mode: "pointer", role: LinkState.roleNunchuk), true))
+        XCTAssertFalse(Route.clicksBeforeKeyboard(.connecting, true))
+    }
+
+    func testLaPoseSoloSeCongelaSiEsteMovilMueveElCursor() {
+        XCTAssertTrue(Route.holdsPointerForKeyboard(connected(mode: "pointer")))
+        XCTAssertFalse(Route.holdsPointerForKeyboard(connected(mode: "pointer", slot: 1)))
+        XCTAssertFalse(Route.holdsPointerForKeyboard(connected(mode: "pointer", role: LinkState.roleNunchuk)))
+        for mode in ["cemu", "switch", "retroarch", "dolphin"] {
+            XCTAssertFalse(Route.holdsPointerForKeyboard(connected(mode: mode)), mode)
+        }
+        XCTAssertFalse(Route.holdsPointerForKeyboard(.disconnected))
     }
 
     func testSwitchAlwaysRoutesToCompleteLandscapeProController() {

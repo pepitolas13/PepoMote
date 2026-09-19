@@ -87,6 +87,64 @@ class MotionEngineTest {
         ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN).getFloat(offset + it * 4)
     }
 
+    @Test fun elTecladoCongelaLaPoseYAunAsiEntregaElClicEntero() {
+        val packets = mutableListOf<ByteArray>()
+        val sentAt = mutableListOf<Long>()
+        val engine = engine(SenderKind.WIIMOTE, packets, sentAt)
+        val gyro = sensor(Sensor.TYPE_GYROSCOPE)
+        engine.start()
+        // Sin congelar, el giro real viaja
+        repeat(10) { advance(5); emit(gyro, 0.5f, 0f, 0f) }
+        advance(10)
+        assertTrue("el giro real viaja", packets.any { it.floats(40, 3)[0] != 0f })
+
+        // Teclado abierto: el móvil se sigue moviendo en la mano, pero el
+        // paquete va quieto — y el clic del botón «Teclado» sale entero
+        engine.pointerHold = true
+        val desde = packets.size
+        ButtonState.set(ButtonState.A, true)
+        ButtonState.set(ButtonState.A, false)
+        repeat(60) { advance(5); emit(gyro, 0.5f, 0f, 0f) }
+        advance(20)
+        val congelados = packets.drop(desde)
+        assertTrue("sigue emitiendo con el teclado abierto (${'$'}{congelados.size})", congelados.size > 20)
+        assertTrue("el giro va a cero", congelados.all { p -> p.floats(40, 3).all { it == 0f } })
+        val quat = congelados.first().floats(24, 4)
+        assertTrue("el cuaternión no cambia", congelados.all { it.floats(24, 4).contentEquals(quat) })
+
+        // El clic: pulsado, soltado, y con sus 70 ms en el cable (si el envío
+        // se cortara entre los dos flancos, el PC se quedaría con el botón
+        // izquierdo pulsado para siempre)
+        val abajo = congelados.indexOfFirst { it.int(64) and ButtonState.A != 0 }
+        val ultimoAbajo = congelados.indexOfLast { it.int(64) and ButtonState.A != 0 }
+        assertTrue("el clic se pulsa", abajo >= 0)
+        assertTrue("y se suelta antes de acabar", ultimoAbajo in abajo until congelados.size - 1)
+        val ms = (sentAt[desde + ultimoAbajo + 1] - sentAt[desde + abajo]) / 1_000_000L
+        assertTrue("el clic dura al menos 70 ms en el cable (${'$'}ms)", ms >= 70)
+        stop(engine)
+    }
+
+    @Test fun alCerrarElTecladoElCursorSigueQuietoUnMomentoYDespuesVuelve() {
+        val packets = mutableListOf<ByteArray>()
+        val engine = engine(SenderKind.WIIMOTE, packets)
+        val gyro = sensor(Sensor.TYPE_GYROSCOPE)
+        engine.start()
+        engine.pointerHold = true
+        repeat(10) { advance(5); emit(gyro, 0.5f, 0f, 0f) }
+        engine.pointerHold = false
+        // Gracia: el PC tiene que teclear ANTES de que el cursor se mueva
+        val desde = packets.size
+        repeat(30) { advance(5); emit(gyro, 0.5f, 0f, 0f) }
+        assertTrue(
+            "durante la gracia el puntero sigue quieto",
+            packets.drop(desde).all { p -> p.floats(40, 3).all { it == 0f } }
+        )
+        // Y pasada la gracia, vuelven los sensores de verdad
+        repeat(40) { advance(5); emit(gyro, 0.5f, 0f, 0f) }
+        assertTrue("después vuelve el sensor", packets.last().floats(40, 3)[0] != 0f)
+        stop(engine)
+    }
+
     @Test fun noSensorsSendRegularInputInEveryControllerFormat() {
         for (kind in SenderKind.entries) {
             val packets = mutableListOf<ByteArray>()

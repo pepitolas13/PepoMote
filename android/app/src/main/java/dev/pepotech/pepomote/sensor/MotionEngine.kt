@@ -89,6 +89,18 @@ class MotionEngine(
     private val thread = HandlerThread("pepomote-sensors").apply { start() }
     private val handler = Handler(thread.looper)
 
+    /**
+     * Teclado abierto en modo puntero: la pose se congela (ver [holdPose]).
+     * Lo pone y lo quita la pantalla del mando.
+     */
+    @Volatile
+    var pointerHold: Boolean = false
+
+    private var holding = false
+    private var releaseAtNs = 0L
+    private val holdQuat = FloatArray(4)
+    private val holdAccel = FloatArray(3)
+
     private val quat = floatArrayOf(1f, 0f, 0f, 0f) // w, x, y, z
     private val gyro = FloatArray(3)
     private val latestGyro = FloatArray(3)
@@ -289,9 +301,49 @@ class MotionEngine(
         handler.postDelayed(buttonUpdate, (remaining + 999_999L) / 1_000_000L)
     }
 
+    /**
+     * Congela la pose mientras el teclado está abierto: el último cuaternión
+     * repetido y el giroscopio a cero.
+     *
+     * NO se deja de emitir. Los flancos de botón solo viajan montados en un
+     * paquete: callarse justo después del clic del botón «Teclado» podría
+     * dejar el botón izquierdo PULSADO en el PC hasta vete a saber cuándo (el
+     * receptor no tiene vigilante de cadencia; solo suelta al morir la sesión
+     * o al cambiar de modo). Y un hueco de más de 0,25 s hace que el motor
+     * del receptor resiembre su estado, con lo que el cursor daría un salto
+     * al volver.
+     *
+     * Emitiendo quieto se consigue lo contrario de los dos problemas: el
+     * motor del receptor lo ve parado, congela por su cuenta y deja libre el
+     * ratón de verdad, y al soltar el puntero sigue donde estaba. Funciona
+     * con cualquier receptor publicado, sin tocar el protocolo.
+     *
+     * Al soltar quedan [HOLD_GRACE_NS] de gracia: el receptor drena el texto
+     * pendiente una vez por vuelta (con 100 ms de espera de lectura), así que
+     * la gracia garantiza que el PC teclea ANTES de que el cursor se mueva.
+     */
+    private fun holdPose() {
+        val now = SystemClock.elapsedRealtimeNanos()
+        if (pointerHold) {
+            releaseAtNs = now + HOLD_GRACE_NS
+        } else if (!holding || now - releaseAtNs >= 0) {
+            holding = false
+            return
+        }
+        if (!holding) {
+            holding = true
+            System.arraycopy(quat, 0, holdQuat, 0, holdQuat.size)
+            System.arraycopy(accel, 0, holdAccel, 0, holdAccel.size)
+        }
+        System.arraycopy(holdQuat, 0, quat, 0, holdQuat.size)
+        System.arraycopy(holdAccel, 0, accel, 0, holdAccel.size)
+        gyro.fill(0f)
+    }
+
     private fun sendPacket(tSensorNs: Long) {
         acceptButtonChanges()
         val buttons = buttonDelivery.buttonsForPacket(tSensorNs)
+        holdPose()
         seq++
         // Los sensores van siempre igual; la inclinación solo añade su bit
         val quatFlag = (if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0) or
@@ -422,6 +474,9 @@ class MotionEngine(
 
     private companion object {
         const val GYRO_INTERVAL_NS = 4_000_000L
+
+        /** Gracia tras cerrar el teclado antes de volver a los sensores reales. */
+        const val HOLD_GRACE_NS = 300_000_000L
         const val GYRO_STALE_NS = 50_000_000L
         const val FALLBACK_INTERVAL_MS = 10L
         const val FALLBACK_INTERVAL_NS = FALLBACK_INTERVAL_MS * 1_000_000L

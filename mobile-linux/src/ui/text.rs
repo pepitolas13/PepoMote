@@ -17,6 +17,8 @@ use crate::tr;
 pub enum Button {
     /// Borra un carácter en Cemu.
     Delete,
+    /// «Enviar» del modo puntero: teclea el campo TAL CUAL y cierra.
+    Send,
     /// Teclea el campo en Cemu y lo vacía; el diálogo sigue.
     Write,
     /// Teclea el campo más Intro y cierra.
@@ -40,6 +42,14 @@ pub struct Effect {
 /// cierra; Cerrar cierra sin mandar.
 pub fn effect(button: Button, field: &str) -> Effect {
     match button {
+        // Sin Intro a propósito: en el PC, un Intro de más envía la búsqueda,
+        // manda el mensaje del chat a medias o envía el formulario antes de
+        // tiempo. Quien lo quiera tiene «⏎» al lado, que es Accept.
+        Button::Send => Effect {
+            send: (!field.is_empty()).then(|| field.to_owned()),
+            clear_field: true,
+            close: true,
+        },
         Button::Delete => Effect {
             send: Some("\u{8}".to_owned()),
             clear_field: false,
@@ -101,7 +111,14 @@ impl TextDialog {
         let key_h = ((ui.available_height() - 250.0) / 5.0 - 4.0).clamp(34.0, 48.0);
         egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
             ui.add_space(4.0);
-            let title = match mode { "switch" => tr!("kb.title_switch"), "retroarch" => tr!("kb.title_retroarch"), _ => tr!("kb.title") };
+            // En modo puntero se escribe donde esté el cursor del PC
+            let pointer = mode == "pointer";
+            let title = match mode {
+                "pointer" => tr!("kb.title_pointer"),
+                "switch" => tr!("kb.title_switch"),
+                "retroarch" => tr!("kb.title_retroarch"),
+                _ => tr!("kb.title"),
+            };
             ui.label(RichText::new(title).size(22.0).strong().color(theme::text()));
             ui.label(
                 RichText::new(tr!("kb.subtitle"))
@@ -149,15 +166,15 @@ impl TextDialog {
                 if btn(ui, tr!("kb.delete"), theme::card(), theme::text()) {
                     out = Some(Button::Delete);
                 }
-                if btn(ui, tr!("kb.write"), theme::card(), theme::text()) {
-                    out = Some(Button::Write);
+                if btn(ui, if pointer { tr!("kb.enter") } else { tr!("kb.write") }, theme::card(), theme::text()) {
+                    out = Some(if pointer { Button::Accept } else { Button::Write });
                 }
-                if btn(ui, tr!("kb.accept"), theme::blue(), theme::ON_ACCENT) {
-                    out = Some(Button::Accept);
+                if btn(ui, if pointer { tr!("kb.send") } else { tr!("kb.accept") }, theme::blue(), theme::ON_ACCENT) {
+                    out = Some(if pointer { Button::Send } else { Button::Accept });
                 }
             });
             ui.label(
-                RichText::new(tr!("kb.help"))
+                RichText::new(if pointer { tr!("kb.help_pointer") } else { tr!("kb.help") })
                     .size(11.0)
                     .color(theme::text_dim()),
             );
@@ -173,6 +190,24 @@ impl TextDialog {
             }
         });
         out
+    }
+}
+
+#[cfg(test)]
+mod tests_pointer {
+    use super::*;
+
+    /// «Enviar» del modo puntero NO añade Intro: en el PC, un Intro de más
+    /// envía la búsqueda o manda el mensaje del chat a medias.
+    #[test]
+    fn enviar_no_anade_intro() {
+        let e = effect(Button::Send, "hola");
+        assert_eq!(e.send.as_deref(), Some("hola"));
+        assert!(e.clear_field);
+        assert!(e.close);
+        assert_eq!(effect(Button::Send, "").send, None, "campo vacío: no se manda nada");
+        // Y «Aceptar» sigue llevando su Intro
+        assert_eq!(effect(Button::Accept, "hola").send.as_deref(), Some("hola\n"));
     }
 }
 

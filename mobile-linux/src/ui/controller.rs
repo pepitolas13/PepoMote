@@ -312,8 +312,9 @@ impl ControllerUi {
                     action = Action::Exit;
                 }
                 // Mando de Wii dentro de Wii U: el teclado para el teclado en
-                // pantalla de Cemu, como en el GamePad
-                if status.has_keyboard() && matches!(status, Status::Connected { mode, .. } if mode == "cemu")
+                // pantalla de Cemu, como en el GamePad; en modo puntero, para
+                // el campo del PC donde apuntas
+                if status.has_keyboard()
                     && ui.button(RichText::new(tr!("common.keyboard")).size(14.0).color(theme::text())).clicked()
                 {
                     action = Action::Keyboard;

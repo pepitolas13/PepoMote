@@ -1,4 +1,5 @@
-use super::{Injector, KeyCode, MouseButton};
+use super::text_plan::{win_text_plan, WinKey};
+use super::{Injector, KeyCode, MouseButton, TypeReport};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
     MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE,
@@ -170,6 +171,28 @@ impl WinInjector {
     }
 }
 
+/// Evento de teclado para `SendInput`: unidad UTF-16 (texto) o tecla
+/// virtual (Intro y retroceso, que no son texto).
+fn key_input(key: WinKey, up: bool) -> INPUT {
+    let (vk, scan, unicode) = match key {
+        WinKey::Vk(v) => (VIRTUAL_KEY(v), 0u16, false),
+        WinKey::Unicode(u) => (VIRTUAL_KEY(0), u, true),
+    };
+    let base = if up { KEYEVENTF_KEYUP } else { Default::default() };
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: scan,
+                dwFlags: if unicode { base | KEYEVENTF_UNICODE } else { base },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
 impl Injector for WinInjector {
     fn name(&self) -> &'static str {
         "SendInput"
@@ -255,47 +278,23 @@ impl Injector for WinInjector {
     }
 
     /// Texto tal cual (cualquier carácter, vía KEYEVENTF_UNICODE) a la
-    /// ventana con el foco.
-    fn type_text(&mut self, text: &str) {
-        for c in text.chars() {
-            match c {
-                '\n' => {
-                    self.send_key(VK_RETURN, true);
-                    self.send_key(VK_RETURN, false);
-                }
-                '\r' => {}
-                '\u{8}' | '\u{7f}' => {
-                    self.send_key(VK_BACK, true);
-                    self.send_key(VK_BACK, false);
-                }
-                _ => {
-                    let mut units = [0u16; 2];
-                    for u in c.encode_utf16(&mut units) {
-                        for up in [false, true] {
-                            let input = INPUT {
-                                r#type: INPUT_KEYBOARD,
-                                Anonymous: INPUT_0 {
-                                    ki: KEYBDINPUT {
-                                        wVk: VIRTUAL_KEY(0),
-                                        wScan: *u,
-                                        dwFlags: if up {
-                                            KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
-                                        } else {
-                                            KEYEVENTF_UNICODE
-                                        },
-                                        time: 0,
-                                        dwExtraInfo: 0,
-                                    },
-                                },
-                            };
-                            unsafe {
-                                SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-                            }
-                        }
-                    }
-                }
+    /// ventana con el foco, en LOTES: Windows garantiza que los eventos de
+    /// una misma llamada no se intercalan con las teclas reales del usuario,
+    /// y las dos unidades del par suplente de un emoji llegan juntas (sueltas,
+    /// algunas aplicaciones las parten).
+    fn type_text(&mut self, text: &str) -> TypeReport {
+        let mut report = TypeReport::default();
+        for batch in win_text_plan(text) {
+            let inputs: Vec<INPUT> = batch.iter().map(|(key, up)| key_input(*key, *up)).collect();
+            let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+            if sent as usize != inputs.len() {
+                // El SO rechazó la inyección (ventana de un proceso elevado,
+                // sesión bloqueada): antes el texto se evaporaba sin rastro
+                report.rejected_by_os = true;
+                break;
             }
         }
+        report
     }
 
     fn wheel(&mut self, delta: i32) {
@@ -340,6 +339,29 @@ impl Injector for WinInjector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn las_teclas_virtuales_del_plan_son_las_de_windows() {
+        use super::super::text_plan::{WIN_VK_BACK, WIN_VK_RETURN};
+        assert_eq!(WIN_VK_RETURN, VK_RETURN.0);
+        assert_eq!(WIN_VK_BACK, VK_BACK.0);
+    }
+
+    #[test]
+    fn un_emoji_va_entero_en_un_solo_sendinput() {
+        let lotes = win_text_plan("😀");
+        assert_eq!(lotes.len(), 1);
+        let inputs: Vec<INPUT> = lotes[0].iter().map(|(k, up)| key_input(*k, *up)).collect();
+        assert_eq!(inputs.len(), 4, "par suplente: 2 unidades × 2 flancos");
+        for (i, input) in inputs.iter().enumerate() {
+            let ki = unsafe { input.Anonymous.ki };
+            assert_eq!(input.r#type, INPUT_KEYBOARD);
+            assert_eq!(ki.wVk, VIRTUAL_KEY(0), "texto: sin tecla virtual");
+            assert!(ki.dwFlags & KEYEVENTF_UNICODE == KEYEVENTF_UNICODE);
+            let soltar = i % 2 == 1;
+            assert_eq!(ki.dwFlags & KEYEVENTF_KEYUP == KEYEVENTF_KEYUP, soltar);
+        }
+    }
 
     #[test]
     fn el_modo_de_activacion_se_lee_del_entorno() {

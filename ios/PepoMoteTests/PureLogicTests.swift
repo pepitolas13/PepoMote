@@ -52,6 +52,19 @@ final class StickMapTests: XCTestCase {
 
 /// «Teclado» del modo Wii U: codificación del mensaje `text` y semántica de sus botones.
 final class TextInputTests: XCTestCase {
+    /// «Enviar» del modo puntero NO añade Intro: es la regresión que importa.
+    func testEnviarDelModoPunteroNoAnadeIntro() {
+        let enviado = TextInput.send("hola")
+        XCTAssertEqual(enviado.send, "hola")
+        XCTAssertEqual(enviado.field, "")
+        XCTAssertTrue(enviado.close)
+        let vacio = TextInput.send("")
+        XCTAssertNil(vacio.send)
+        XCTAssertTrue(vacio.close)
+        // Y «Aceptar» sigue llevando su Intro (Cemu, buscadores)
+        XCTAssertEqual(TextInput.accept("hola").send, "hola\n")
+    }
+
     func testMensajeText() {
         XCTAssertEqual(TextInput.encode("Link"), "{\"m\":\"text\",\"text\":\"Link\"}")
         XCTAssertEqual(TextInput.encode(""), "{\"m\":\"text\",\"text\":\"\"}")

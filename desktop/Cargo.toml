@@ -1,6 +1,6 @@
 [package]
 name = "pepomote"
-version = "1.10.0"
+version = "1.10.5"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "PepoMote receiver — turns your Android phone into a Wii-style pointer/controller for your PC"
@@ -77,7 +77,9 @@ wayland-protocols = { version = "0.32", features = ["client"] }
 # virtual (virtual-keyboard-unstable-v1). GNOME/KDE no los ofrecen: uinput.
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
-x11rb = { version = "0.13", features = ["composite"] }
+# `xtest` (Rust puro, sin bibliotecas nuevas): texto con cualquier carácter
+# en X11, remapeando un keycode libre. Ver input/linux_x11_text.rs
+x11rb = { version = "0.13", features = ["composite", "xtest"] }
 
 # macOS (Apple Silicon): CGEvent para inyectar ratón y teclado, CGDisplay
 # para los monitores, CGWindowList para capturar la GamePad View de Cemu;

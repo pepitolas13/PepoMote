@@ -107,6 +107,14 @@ enum AppPrefs {
         set { d.set(newValue, forKey: gamePadSideKey) }
     }
 
+    /// El botón «Teclado» del modo puntero hace antes un clic izquierdo donde
+    /// apunta el usuario, para dejar el cursor dentro del campo. Apagado, el
+    /// clic lo da el usuario con A antes de escribir. De serie, encendido.
+    static var keyboardClickFirst: Bool {
+        get { d.object(forKey: "kbClickFirst") as? Bool ?? true }
+        set { d.set(newValue, forKey: "kbClickFirst") }
+    }
+
     /// Avisos del receptor en pantalla («Dolphin configurado…»): unos
     /// segundos sobre el mando al cambiar de modo. Apagados, no se enseñan.
     static var receiverNotices: Bool {

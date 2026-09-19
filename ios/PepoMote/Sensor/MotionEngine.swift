@@ -47,10 +47,25 @@ final class MotionEngine {
         set { lock.lock(); rotationV = newValue; lock.unlock() }
     }
 
+    /// Teclado abierto en modo puntero: la pose se congela (ver `holdPose`).
+    /// Lo pone y lo quita la pantalla del mando.
+    var pointerHold: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return pointerHoldV }
+        set { lock.lock(); pointerHoldV = newValue; lock.unlock() }
+    }
+
+    private var pointerHoldV = false
+    private var holding = false
+    private var releaseAtNs: Int64 = 0
+    private var holdQuat: [Float] = [1, 0, 0, 0]
+    private var holdAccel: [Float] = [0, 0, 0]
+
     private let sessionId: UInt32
     private let onPacket: (Data) -> Void
     private let source: MotionSource
     static let staleMotionNs: Int64 = 50_000_000
+    /// Gracia tras cerrar el teclado antes de volver a los sensores reales.
+    static let holdGraceNs: Int64 = 300_000_000
     private var running = false
     private var generation = 0
     private let sync = DispatchQueue(label: "pepomote.sensors", qos: .userInteractive)
@@ -194,7 +209,40 @@ final class MotionEngine {
         sendPacket(tSensorNs: now)
     }
 
+    /// Congela la pose mientras el teclado está abierto: el último cuaternión
+    /// repetido y el giroscopio a cero.
+    ///
+    /// NO se deja de emitir. Los flancos de botón solo viajan montados en un
+    /// paquete: callarse justo después del clic del botón «Teclado» podría
+    /// dejar el botón izquierdo PULSADO en el PC (el receptor no tiene
+    /// vigilante de cadencia). Y un hueco de más de 0,25 s hace que el motor
+    /// del receptor resiembre su estado, con lo que el cursor daría un salto
+    /// al volver.
+    ///
+    /// Emitiendo quieto pasa lo contrario: el motor del receptor lo ve
+    /// parado, congela por su cuenta y deja libre el ratón de verdad, y al
+    /// soltar el puntero sigue donde estaba. Funciona con cualquier receptor
+    /// publicado, sin tocar el protocolo. Al soltar quedan `holdGraceNs` de
+    /// gracia para que el PC teclee ANTES de que el cursor se mueva.
+    private func holdPose(_ nowNs: Int64) {
+        if pointerHold {
+            releaseAtNs = nowNs + MotionEngine.holdGraceNs
+        } else if !holding || nowNs >= releaseAtNs {
+            holding = false
+            return
+        }
+        if !holding {
+            holding = true
+            holdQuat = quat
+            holdAccel = accel
+        }
+        quat = holdQuat
+        accel = holdAccel
+        gyro = [0, 0, 0]
+    }
+
     private func sendPacket(tSensorNs: Int64) {
+        holdPose(tSensorNs)
         seq &+= 1
         let quatFlag: UInt8 = hasRotationVector ? PmpCodec.flagQuatValid : 0
         let bs = ButtonState.shared

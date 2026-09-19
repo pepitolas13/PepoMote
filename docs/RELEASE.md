@@ -57,6 +57,13 @@ usuarios de Mac tengan que volver a dar los permisos.
    Las versiones del receptor y de todas las apps deben coincidir con el tag.
    La versión del `.deb` también tiene que ser estrictamente mayor que la
    del último publicado para que apt y «Software» ofrezcan la actualización.
+   **Ojo con lo que el guardián de la CI NO comprueba** (y muerde después):
+   el `versionCode` de Android (+1 exacto por versión; sin él la instalación
+   encima falla con `INSTALL_FAILED_VERSION_DOWNGRADE`), el
+   `CURRENT_PROJECT_VERSION` de iOS (sin él AltStore no ofrece la
+   actualización) y el texto de la fuente de AltStore, que está a fuego en
+   `.github/workflows/release.yml`. La versión en curso se lee con
+   `git describe --tags`, nunca de memoria ni de un plan viejo.
 2. Guarda las notas para usuarios en `docs/releases/vX.Y.Z.md`, sube los cambios a `main` y comprueba que los cuatro workflows de pruebas pasan. Después crea y sube únicamente el tag de esta versión:
    ```
    git tag v1.0.0

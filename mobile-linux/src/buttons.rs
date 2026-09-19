@@ -50,6 +50,9 @@ pub struct Buttons {
     /// Giro del móvil apaisado (`frame::Rotation`): 0 = borde superior a la
     /// izquierda, 1 = a la derecha.
     rotation: AtomicU8,
+    /// Teclado abierto en modo puntero: el hilo de paquetes congela la pose
+    /// (ver `link::packet_loop`).
+    pointer_hold: AtomicBool,
 }
 
 impl Default for Buttons {
@@ -74,7 +77,20 @@ impl Buttons {
             gamepad: AtomicBool::new(false),
             switch: AtomicBool::new(false),
             rotation: AtomicU8::new(0),
+            pointer_hold: AtomicBool::new(false),
         }
+    }
+
+    /// Congela la pose mientras el teclado está abierto: el hilo de paquetes
+    /// repite el último cuaternión y manda el giro a cero, pero SIGUE
+    /// emitiendo (los flancos de botón solo viajan montados en un paquete:
+    /// callarse tras el clic podría dejar el botón izquierdo pulsado en el PC).
+    pub fn set_pointer_hold(&self, on: bool) {
+        self.pointer_hold.store(on, Ordering::Relaxed);
+    }
+
+    pub fn pointer_hold(&self) -> bool {
+        self.pointer_hold.load(Ordering::Relaxed)
     }
 
     /// Pulsación física (dedo): el flanco de bajada sale ya.

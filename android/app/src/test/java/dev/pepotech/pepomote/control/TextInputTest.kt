@@ -10,6 +10,23 @@ import org.junit.Test
 class TextInputTest {
 
     @Test
+    fun enviarDelModoPunteroNoAnadeIntro() {
+        // LA regresión que importa: un Intro de más en el PC envía la
+        // búsqueda, manda el chat a medias o envía el formulario
+        val enviado = TextInput.send("hola")
+        assertEquals("hola", enviado.send)
+        assertFalse(enviado.send!!.contains("\n"))
+        assertEquals("", enviado.field)
+        assertTrue(enviado.close)
+        // Campo vacío: no se manda nada, pero se cierra
+        val vacio = TextInput.send("")
+        assertNull(vacio.send)
+        assertTrue(vacio.close)
+        // Y «Aceptar» sigue llevando su Intro (Cemu, buscadores)
+        assertEquals("hola\n", TextInput.accept("hola").send)
+    }
+
+    @Test
     fun mensajeText() {
         assertEquals("{\"m\":\"text\",\"text\":\"Link\"}", TextInput.encode("Link"))
         assertEquals("{\"m\":\"text\",\"text\":\"\"}", TextInput.encode(""))

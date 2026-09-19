@@ -19,11 +19,63 @@ class RouteTest {
         pad: String = LinkState.PAD_GAMEPAD,
         slot: Int = 0,
         supportsCemu: Boolean = true,
-        ownNunchuk: Boolean = false
+        ownNunchuk: Boolean = false,
+        textInput: Boolean = true
     ) = UiLink.Connected(
         pcName = "PC", mode = mode, rttMs = null, sensorHz = 0f,
-        slot = slot, role = role, supportsCemu = supportsCemu, pad = pad, ownNunchuk = ownNunchuk
+        slot = slot, role = role, supportsCemu = supportsCemu, pad = pad, ownNunchuk = ownNunchuk,
+        textInput = textInput
     )
+
+    @Test
+    fun elTecladoSeEnsenaDondeElReceptorSabeTeclear() {
+        // Modo puntero: el que apunta (Jugador 1 con papel de mando)
+        assertEquals(true, Route.showsKeyboard(connected(mode = "pointer")))
+        assertEquals(false, Route.showsKeyboard(connected(mode = "pointer", slot = 1)))
+        assertEquals(false, Route.showsKeyboard(connected(mode = "pointer", role = LinkState.ROLE_NUNCHUK)))
+        // Lo de siempre, igual que antes
+        assertEquals(true, Route.showsKeyboard(connected(mode = "cemu")))
+        assertEquals(true, Route.showsKeyboard(connected(mode = "retroarch")))
+        assertEquals(true, Route.showsKeyboard(connected(mode = "switch")))
+        // Dolphin no: el receptor manda el texto a la ventana con el foco,
+        // pero ahí los botones van al mando emulado y no hay dónde clicar
+        assertEquals(false, Route.showsKeyboard(connected(mode = "dolphin")))
+        // Receptor que no sabe teclear (el servidor de Android)
+        for (mode in listOf("pointer", "cemu", "retroarch", "switch")) {
+            assertEquals(false, Route.showsKeyboard(connected(mode = mode, textInput = false)))
+        }
+        // Sin enlace confirmado, nada
+        assertEquals(false, Route.showsKeyboard(UiLink.Connecting))
+        assertEquals(false, Route.showsKeyboard(UiLink.Disconnected))
+    }
+
+    @Test
+    fun soloSeClicaAntesDeEscribirEnModoPuntero() {
+        assertEquals(true, Route.clicksBeforeKeyboard(connected(mode = "pointer"), true))
+        // El ajuste apagado: se abre el teclado y el clic lo da el usuario con A
+        assertEquals(false, Route.clicksBeforeKeyboard(connected(mode = "pointer"), false))
+        // Fuera del puntero los botones van al mando emulado (y en la pistola
+        // de RetroArch A es el clic DERECHO): nunca se clica
+        for (mode in listOf("cemu", "switch", "retroarch", "dolphin")) {
+            assertEquals(false, Route.clicksBeforeKeyboard(connected(mode = mode), true))
+        }
+        // Solo el Jugador 1 con papel de mando mueve el cursor
+        assertEquals(false, Route.clicksBeforeKeyboard(connected(mode = "pointer", slot = 2), true))
+        assertEquals(false, Route.clicksBeforeKeyboard(connected(mode = "pointer", role = LinkState.ROLE_NUNCHUK), true))
+        assertEquals(false, Route.clicksBeforeKeyboard(UiLink.Connecting, true))
+    }
+
+    @Test
+    fun laPoseSoloSeCongelaSiEsteMovilMueveElCursor() {
+        assertEquals(true, Route.holdsPointerForKeyboard(connected(mode = "pointer")))
+        assertEquals(false, Route.holdsPointerForKeyboard(connected(mode = "pointer", slot = 1)))
+        assertEquals(false, Route.holdsPointerForKeyboard(connected(mode = "pointer", role = LinkState.ROLE_NUNCHUK)))
+        for (mode in listOf("cemu", "switch", "retroarch", "dolphin")) {
+            assertEquals(false, Route.holdsPointerForKeyboard(connected(mode = mode)))
+        }
+        assertEquals(false, Route.holdsPointerForKeyboard(UiLink.Disconnected))
+    }
+
 
     @Test
     fun mandoDeLadoGiraLaCrucetaYLosSensores() {
