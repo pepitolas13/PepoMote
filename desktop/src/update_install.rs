@@ -1014,7 +1014,9 @@ mod tests {
                 .as_nanos()
         ));
         fs::create_dir(&p).unwrap();
-        p
+        // macOS's temporary directory may pass through /var -> /private/var.
+        // The real installer canonicalizes its destination before staging.
+        p.canonicalize().unwrap()
     }
     fn test_plan(root: &Path, content: &[u8]) -> Plan {
         let work = root.join(".pepomote-update-test");
