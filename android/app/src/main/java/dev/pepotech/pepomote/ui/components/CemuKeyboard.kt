@@ -1,11 +1,14 @@
 package dev.pepotech.pepomote.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -116,23 +120,31 @@ fun KeyboardButton(compact: Boolean = false, modifier: Modifier = Modifier, onCl
  *   cierra; con el campo vacío manda solo Intro (confirmar);
  * - Cerrar / atrás / tocar fuera: cierra sin mandar nada.
  *
- * En modo puntero ([pointer]) el botón principal es **Enviar**, que manda el
- * texto TAL CUAL: un Intro de más en el PC envía la búsqueda, manda el
- * mensaje del chat a medias o envía el formulario antes de tiempo. Quien lo
- * quiera tiene «⏎» al lado. En Wii U, Switch y RetroArch todo sigue igual.
+ * Cuando el texto acaba en una ventana del PC (modo puntero y mando
+ * universal: [pointer] o [universalPad]) el botón principal es **Enviar**, que
+ * manda el texto TAL CUAL —un Intro de más envía la búsqueda, manda el
+ * mensaje del chat a medias o envía el formulario antes de tiempo— y el Intro
+ * tiene su propio botón al lado, **Enviar + ⏎**, que es lo que hace falta para
+ * buscar. En Wii U, Switch y RetroArch todo sigue igual: el azul es
+ * «Aceptar» y manda texto + Intro, que confirma el teclado del juego.
  *
  * Qué se manda en cada caso lo decide [TextInput]. No gira la pantalla y los
  * paquetes INPUT siguen saliendo mientras está abierto (con la pose
  * congelada en modo puntero, para que el cursor no se vaya al escribir).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun KeyboardDialog(
     onSend: (String) -> Unit,
     onClose: () -> Unit,
     switchPad: Boolean = false,
     retroPad: Boolean = false,
-    pointer: Boolean = false
+    pointer: Boolean = false,
+    universalPad: Boolean = false
 ) {
+    // El texto va a una ventana del PC, no al teclado en pantalla de un
+    // emulador ([Route.keyboardOnPc])
+    val toPc = pointer || universalPad
     var field by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -145,7 +157,7 @@ fun KeyboardDialog(
     }
 
     /** Lo que hace el botón grande (y la tecla de enviar del teclado). */
-    fun primary(text: String) = if (pointer) TextInput.send(text) else TextInput.accept(text)
+    fun primary(text: String) = if (toPc) TextInput.send(text) else TextInput.accept(text)
 
     // Foco y teclado al abrir: la ventana del diálogo tarda un instante en tenerlo
     LaunchedEffect(Unit) {
@@ -166,7 +178,7 @@ fun KeyboardDialog(
         ) {
             Text(
                 stringResource(
-                    if (pointer) R.string.kb_pointer_title
+                    if (toPc) R.string.kb_pointer_title
                     else if (retroPad) R.string.kb_retroarch_title
                     else if (switchPad) R.string.kb_switch_title
                     else R.string.kb_title
@@ -175,7 +187,8 @@ fun KeyboardDialog(
             )
             Text(
                 stringResource(
-                    if (pointer) R.string.kb_pointer_help
+                    if (universalPad) R.string.kb_pc_help
+                    else if (pointer) R.string.kb_pointer_help
                     else if (retroPad) R.string.kb_retroarch_help
                     else if (switchPad) R.string.kb_switch_help
                     else R.string.kb_help
@@ -213,19 +226,27 @@ fun KeyboardDialog(
                 }
                 Spacer(Modifier.weight(1f))
             }
-            Row(
+            // Con la letra del sistema muy grande los tres botones no caben
+            // en una línea: bajan de línea en vez de recortarse
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Spacer(Modifier.weight(1f))
                 TextButton(onClick = { apply(TextInput.close(field)) }) {
                     Text(stringResource(R.string.kb_close), color = PepoColors.TextDim)
                 }
-                if (pointer) {
-                    // El Intro aparte: buscar, ir a una dirección, mandar el chat
-                    TextButton(onClick = { apply(TextInput.accept(field)) }) {
-                        Text(stringResource(R.string.kb_enter), color = PepoColors.Text)
+                if (toPc) {
+                    // El Intro aparte, y con forma de botón: buscar, ir a una
+                    // dirección, mandar el chat. De texto gris no se veía que
+                    // se podía pulsar. Estrecho para que quepan los tres
+                    OutlinedButton(
+                        onClick = { apply(TextInput.accept(field)) },
+                        border = BorderStroke(1.5.dp, PepoColors.Blue),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PepoColors.Blue),
+                        contentPadding = ButtonDefaults.TextButtonContentPadding
+                    ) {
+                        Text(stringResource(R.string.kb_enter), color = PepoColors.Blue, maxLines = 1)
                     }
                 }
                 Button(
@@ -236,7 +257,7 @@ fun KeyboardDialog(
                     )
                 ) {
                     Text(
-                        stringResource(if (pointer) R.string.kb_send else R.string.kb_accept),
+                        stringResource(if (toPc) R.string.kb_send else R.string.kb_accept),
                         color = PepoColors.OnAccent
                     )
                 }

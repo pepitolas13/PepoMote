@@ -71,9 +71,9 @@ object Route {
 
     /**
      * ¿Se enseña el botón «Teclado»? El receptor teclea en todos estos modos
-     * (PROTOCOL.md §3: en Wii U a la ventana de Cemu, en los demás a la que
-     * tenga el foco), pero solo si dijo que sabe (`ok.text_input`: el
-     * servidor de Android no).
+     * (PROTOCOL.md §3: en Wii U a la ventana de Cemu, en los demás —mando
+     * universal incluido— a la que tenga el foco), pero solo si dijo que sabe
+     * (`ok.text_input`: el servidor de Android no).
      *
      * En modo puntero, además, solo el Jugador 1 con papel de mando: los
      * demás móviles no mueven el cursor, así que no tienen dónde escribir.
@@ -83,9 +83,26 @@ object Route {
         if (!c.textInput) return false
         return when (c.mode) {
             LinkState.MODE_POINTER -> pointsAtPc(c)
-            LinkState.MODE_CEMU, LinkState.MODE_SWITCH, LinkState.MODE_RETROARCH -> true
+            LinkState.MODE_CEMU, LinkState.MODE_SWITCH, LinkState.MODE_RETROARCH,
+            LinkState.MODE_GAMEPAD -> true
             else -> false
         }
+    }
+
+    /**
+     * ¿El texto acaba en una ventana del PC —la que tenga el foco: el juego,
+     * el navegador— en vez de en el teclado en pantalla de un emulador?
+     *
+     * Eso decide la cara del diálogo. Con el teclado del PC el botón azul
+     * manda el texto TAL CUAL y el Intro va en su propio botón («Enviar + ⏎»),
+     * porque un Intro de más envía la búsqueda, manda el chat a medias o envía
+     * el formulario antes de tiempo. Con el teclado en pantalla de un emulador
+     * (Cemu, Switch, RetroArch) el azul es «Aceptar» y manda texto + Intro,
+     * que es justo lo que lo confirma.
+     */
+    fun keyboardOnPc(link: UiLink): Boolean {
+        val mode = (link as? UiLink.Connected)?.mode ?: return false
+        return mode == LinkState.MODE_POINTER || mode == LinkState.MODE_GAMEPAD
     }
 
     /**

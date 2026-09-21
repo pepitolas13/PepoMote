@@ -609,17 +609,23 @@ struct KeyboardDialog: View {
         if a.close { onClose() }
     }
 
+    /// ¿El texto acaba en una ventana del PC (puntero o mando universal) y no
+    /// en el teclado en pantalla de un emulador? Entonces el azul manda el
+    /// texto tal cual y el Intro va en su propio botón.
+    private var toPc: Bool { pointer || Route.keyboardOnPc(LinkState.shared.link) }
+
     /// Lo que hace el botón grande (y la tecla de enviar del teclado).
     private func primary(_ text: String) -> TextInput.Action {
-        pointer ? TextInput.send(text) : TextInput.accept(text)
+        toPc ? TextInput.send(text) : TextInput.accept(text)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             let mode = LinkState.shared.link.connected?.mode
-            Text(tr(pointer ? "kb_pointer_title" : mode == LinkState.modeRetroArch ? "kb_title_retroarch" : "kb_title"))
+            Text(tr(toPc ? "kb_pointer_title" : mode == LinkState.modeRetroArch ? "kb_title_retroarch" : "kb_title"))
                 .font(PepoFont.titleMedium()).foregroundColor(Pepo.text)
             Text(tr(pointer ? "kb_pointer_help"
+                : toPc ? "kb_pc_help"
                 : mode == LinkState.modeRetroArch ? "kb_help_retroarch"
                 : mode == LinkState.modeSwitch ? "kb_help_switch" : "kb_help")).pepoBody()
             TextField(tr("kb_placeholder"), text: $field)
@@ -636,12 +642,24 @@ struct KeyboardDialog: View {
             HStack(spacing: 8) {
                 Spacer()
                 TextLink(title: tr("kb_close")) { apply(TextInput.close(field)) }
-                if pointer {
-                    // El Intro aparte: buscar, ir a una dirección, mandar el chat
-                    TextLink(title: tr("kb_enter"), color: Pepo.text) { apply(TextInput.accept(field)) }
+                if toPc {
+                    // El Intro aparte, y con forma de botón: buscar, ir a una
+                    // dirección, mandar el chat. De texto gris no se veía que
+                    // se podía pulsar
+                    Button(action: { apply(TextInput.accept(field)) }) {
+                        Text(tr("kb_enter"))
+                            .font(PepoFont.labelLarge())
+                            .foregroundColor(Pepo.blue)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .overlay(Capsule().stroke(Pepo.blue, lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
                 }
                 Button(action: { apply(primary(field)) }) {
-                    Text(tr(pointer ? "kb_send" : "kb_accept"))
+                    Text(tr(toPc ? "kb_send" : "kb_accept"))
                         .font(PepoFont.labelLarge())
                         .foregroundColor(Pepo.onAccent)
                         .padding(.horizontal, 20)

@@ -40,16 +40,35 @@ class RouteTest {
         assertEquals(true, Route.showsKeyboard(connected(mode = "cemu")))
         assertEquals(true, Route.showsKeyboard(connected(mode = "retroarch")))
         assertEquals(true, Route.showsKeyboard(connected(mode = "switch")))
+        // Mando universal: el receptor teclea en la ventana con el foco (el
+        // juego, el navegador), así que ahí también hay teclado
+        assertEquals(true, Route.showsKeyboard(connected(mode = "gamepad")))
         // Dolphin no: el receptor manda el texto a la ventana con el foco,
         // pero ahí los botones van al mando emulado y no hay dónde clicar
         assertEquals(false, Route.showsKeyboard(connected(mode = "dolphin")))
         // Receptor que no sabe teclear (el servidor de Android)
-        for (mode in listOf("pointer", "cemu", "retroarch", "switch")) {
+        for (mode in listOf("pointer", "cemu", "retroarch", "switch", "gamepad")) {
             assertEquals(false, Route.showsKeyboard(connected(mode = mode, textInput = false)))
         }
         // Sin enlace confirmado, nada
         assertEquals(false, Route.showsKeyboard(UiLink.Connecting))
         assertEquals(false, Route.showsKeyboard(UiLink.Disconnected))
+    }
+
+    /**
+     * La cara del diálogo: con el teclado del PC el azul manda el texto tal
+     * cual y el Intro va aparte; con el teclado en pantalla de un emulador,
+     * «Aceptar» manda texto + Intro (es lo que lo confirma).
+     */
+    @Test
+    fun elTecladoDelPcEsElDelPunteroYElDelMandoUniversal() {
+        assertEquals(true, Route.keyboardOnPc(connected(mode = "pointer")))
+        assertEquals(true, Route.keyboardOnPc(connected(mode = "gamepad")))
+        for (mode in listOf("cemu", "switch", "retroarch", "dolphin")) {
+            assertEquals("teclado en pantalla del emulador en ${'$'}mode", false, Route.keyboardOnPc(connected(mode = mode)))
+        }
+        assertEquals(false, Route.keyboardOnPc(UiLink.Connecting))
+        assertEquals(false, Route.keyboardOnPc(UiLink.Disconnected))
     }
 
     @Test

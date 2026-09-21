@@ -4,13 +4,17 @@ import Foundation
 /// probarlas. Las mismas que en Android.
 enum PadAim {
     /// ¿El móvil manda el giro a cero? Solo con el mando universal
-    /// confirmado y sin haber dicho que sí. Las dos condiciones importan: sin
-    /// el eco del modo los paquetes todavía alimentan lo de antes (el
-    /// puntero, por ejemplo) y el giro a cero le congelaría el cursor, y
-    /// Switch y RetroArch comparten pantalla y formato con el mando universal
-    /// pero apuntan con el giro igual que siempre.
-    static func motionOff(universalPad: Bool, operative: Bool, pref: String) -> Bool {
-        universalPad && operative && pref != AppPrefs.padAimOn
+    /// confirmado, y si el giro está apagado o hay un teclado abierto. Las dos
+    /// primeras condiciones importan: sin el eco del modo los paquetes todavía
+    /// alimentan lo de antes (el puntero, por ejemplo) y el giro a cero le
+    /// congelaría el cursor, y Switch y RetroArch comparten pantalla y formato
+    /// con el mando universal pero apuntan con el giro igual que siempre.
+    ///
+    /// `keyboardOpen`: escribiendo, el móvil se menea en la mano y la cámara
+    /// del juego se iría sola mientras se busca. Es el mismo remedio que la
+    /// pose congelada del modo puntero.
+    static func motionOff(universalPad: Bool, operative: Bool, pref: String, keyboardOpen: Bool = false) -> Bool {
+        universalPad && operative && (keyboardOpen || pref != AppPrefs.padAimOn)
     }
 
     /// ¿Sale la pregunta de la primera vez? Con el mando universal

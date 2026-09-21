@@ -216,11 +216,11 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     // teclado del modo puntero: se escribe donde esté el cursor del PC
     ("kb.title_pointer", "Escribir en el PC", "Type on the PC"),
     ("kb.send", "Enviar", "Send"),
-    ("kb.enter", "⏎ Intro", "⏎ Enter"),
+    ("kb.enter", "Enviar + ⏎", "Send + ⏎"),
     (
         "kb.help_pointer",
-        "Borrar quita una letra · Enviar pega el texto tal cual · ⏎ añade el Intro (buscar, ir a una dirección)",
-        "Delete removes a letter · Send pastes the text as is · ⏎ adds Enter (search, go to an address)",
+        "Borrar quita una letra · Enviar pega el texto tal cual · Enviar + ⏎ lo manda y pulsa Intro (buscar, ir a una dirección)",
+        "Delete removes a letter · Send pastes the text as is · Send + ⏎ types it and presses Enter (search, go to an address)",
     ),
     (
         "home.kb_click",

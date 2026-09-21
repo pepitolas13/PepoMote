@@ -25,18 +25,33 @@ final class RouteTests: XCTestCase {
         XCTAssertTrue(Route.showsKeyboard(connected(mode: "pointer")))
         XCTAssertFalse(Route.showsKeyboard(connected(mode: "pointer", slot: 1)))
         XCTAssertFalse(Route.showsKeyboard(connected(mode: "pointer", role: LinkState.roleNunchuk)))
-        // Lo de siempre, igual que antes
-        for mode in ["cemu", "retroarch", "switch"] {
+        // Lo de siempre, igual que antes, y el mando universal: ahí el
+        // receptor teclea en la ventana con el foco (el juego, el navegador)
+        for mode in ["cemu", "retroarch", "switch", "gamepad"] {
             XCTAssertTrue(Route.showsKeyboard(connected(mode: mode)), mode)
         }
         // Dolphin no: ahí los botones van al mando emulado y no hay dónde clicar
         XCTAssertFalse(Route.showsKeyboard(connected(mode: "dolphin")))
         // Receptor que no sabe teclear (el servidor de Android)
-        for mode in ["pointer", "cemu", "retroarch", "switch"] {
+        for mode in ["pointer", "cemu", "retroarch", "switch", "gamepad"] {
             XCTAssertFalse(Route.showsKeyboard(connected(mode: mode, textInput: false)), mode)
         }
         XCTAssertFalse(Route.showsKeyboard(.connecting))
         XCTAssertFalse(Route.showsKeyboard(.disconnected))
+    }
+
+    /// La cara del diálogo: con el teclado del PC el azul manda el texto tal
+    /// cual y el Intro va aparte; con el teclado en pantalla de un emulador,
+    /// «Aceptar» manda texto + Intro (es lo que lo confirma). Mismos casos
+    /// que en Android (`RouteTest`).
+    func testElTecladoDelPcEsElDelPunteroYElDelMandoUniversal() {
+        XCTAssertTrue(Route.keyboardOnPc(connected(mode: "pointer")))
+        XCTAssertTrue(Route.keyboardOnPc(connected(mode: "gamepad")))
+        for mode in ["cemu", "switch", "retroarch", "dolphin"] {
+            XCTAssertFalse(Route.keyboardOnPc(connected(mode: mode)), mode)
+        }
+        XCTAssertFalse(Route.keyboardOnPc(.connecting))
+        XCTAssertFalse(Route.keyboardOnPc(.disconnected))
     }
 
     func testSoloSeClicaAntesDeEscribirEnModoPuntero() {

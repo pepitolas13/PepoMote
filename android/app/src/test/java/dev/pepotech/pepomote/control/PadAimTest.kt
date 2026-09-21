@@ -20,6 +20,19 @@ class PadAimTest {
         }
     }
 
+    /**
+     * Escribiendo, el móvil se menea en la mano: con el teclado abierto el
+     * giro se para aunque esté encendido, y al cerrarlo vuelve. Fuera del
+     * mando universal, y sin el modo confirmado, el teclado no toca nada.
+     */
+    @Test fun elTecladoAbiertoParaElGiroYAlCerrarloVuelve() {
+        val on = AppPrefs.PAD_AIM_ON
+        assertTrue(PadAim.motionOff(universalPad = true, operative = true, pref = on, keyboardOpen = true))
+        assertFalse(PadAim.motionOff(universalPad = true, operative = true, pref = on, keyboardOpen = false))
+        assertFalse(PadAim.motionOff(universalPad = false, operative = true, pref = on, keyboardOpen = true))
+        assertFalse(PadAim.motionOff(universalPad = true, operative = false, pref = on, keyboardOpen = true))
+    }
+
     private fun ask(
         pref: String = AppPrefs.PAD_AIM_ASK,
         universalPad: Boolean = true,

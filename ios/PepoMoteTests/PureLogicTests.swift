@@ -29,6 +29,16 @@ final class PadAimTests: XCTestCase {
         )
     }
 
+    /// Escribiendo, el móvil se menea en la mano: con el teclado abierto el
+    /// giro se para aunque esté encendido, y al cerrarlo vuelve.
+    func testElTecladoAbiertoParaElGiroYAlCerrarloVuelve() {
+        let on = AppPrefs.padAimOn
+        XCTAssertTrue(PadAim.motionOff(universalPad: true, operative: true, pref: on, keyboardOpen: true))
+        XCTAssertFalse(PadAim.motionOff(universalPad: true, operative: true, pref: on, keyboardOpen: false))
+        XCTAssertFalse(PadAim.motionOff(universalPad: false, operative: true, pref: on, keyboardOpen: true))
+        XCTAssertFalse(PadAim.motionOff(universalPad: true, operative: false, pref: on, keyboardOpen: true))
+    }
+
     func testLaPreguntaSaleUnaVezYDetrasDeLaDelLado() {
         XCTAssertTrue(ask())
         XCTAssertFalse(ask(pref: AppPrefs.padAimOn))

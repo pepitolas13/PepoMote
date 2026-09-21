@@ -237,9 +237,10 @@
 "kb_close" = "Cerrar";
 "kb_accept" = "Aceptar";
 "kb_pointer_title" = "Escribir en el PC";
-"kb_pointer_help" = "El texto va donde esté el cursor del PC. Enviar lo pega tal cual; ⏎ añade el Intro (buscar, ir a una dirección); Borrar quita un carácter.";
+"kb_pointer_help" = "El texto va donde esté el cursor del PC. Enviar lo pega tal cual; Enviar + ⏎ lo manda y pulsa Intro (buscar, ir a una dirección); Borrar quita un carácter.";
+"kb_pc_help" = "El texto va a la ventana que tenga el foco en el PC: el juego, el navegador… Enviar lo pega tal cual; Enviar + ⏎ lo manda y pulsa Intro (buscar); Borrar quita un carácter.";
 "kb_send" = "Enviar";
-"kb_enter" = "⏎ Intro";
+"kb_enter" = "Enviar + ⏎";
 "kb_click_title" = "Clic antes de escribir";
 "kb_click_sub" = "El botón Teclado hace primero un clic izquierdo donde apuntas, para dejar el cursor en el campo. Apagado, haz tú el clic con A antes de escribir.";
 "pad_aim_ask_title" = "¿Quieres apuntar moviendo el móvil?";

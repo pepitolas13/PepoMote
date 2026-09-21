@@ -254,6 +254,9 @@ struct GamePadScreen: View {
         // va (Mando de Wii) o se sale, vuelve lo de antes
         .onChange(of: operative) { _ in applyEngine() }
         .onChange(of: padAimPref) { _ in applyEngine() }
+        // Escribiendo, el móvil se menea en la mano: el giro se para mientras
+        // el teclado está abierto
+        .onChange(of: keyboardOpen) { _ in applyEngine() }
         .onChange(of: layoutIdentity) { _ in ButtonState.shared.reset(); applyEngine() }
         .onChange(of: rotation) { _ in ButtonState.shared.reset(); applyEngine() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
@@ -458,7 +461,9 @@ struct GamePadScreen: View {
     private func applyEngine() {
         guard let engine = link.motion else { return }
         // El giro solo se apaga con el mando universal confirmado (ver PadAim)
-        engine.padAim = !PadAim.motionOff(universalPad: universalPad, operative: operative, pref: padAimPref)
+        engine.padAim = !PadAim.motionOff(
+            universalPad: universalPad, operative: operative, pref: padAimPref, keyboardOpen: keyboardOpen
+        )
         if operative {
             engine.rotation = rotation
             engine.kind = switchPad ? .switchPad : .gamepad

@@ -216,7 +216,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     // Solo con el mando universal confirmado: sin el eco del modo los paquetes
     // todavía alimentan lo de antes (el puntero, por ejemplo) y el giro a cero
     // le congelaría el cursor
-    val aimOff = PadAim.motionOff(xboxPad, operative, padAim)
+    val aimOff = PadAim.motionOff(xboxPad, operative, padAim, keyboardOpen)
     SideEffect { engine?.padAim = !aimOff }
     // Al salir vuelve encendido, que es lo que esperan los demás modos
     DisposableEffect(engine) { onDispose { engine?.padAim = true } }
@@ -614,12 +614,13 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                     .padding(top = if (fullScreen) 8.dp else headerH + selectorH + gap * 2)
             )
 
-            if (keyboardOpen && (link as? UiLink.Connected)?.textInput != false) {
+            if (keyboardOpen && Route.showsKeyboard(link)) {
                 KeyboardDialog(
                     onSend = { LinkState.sendText?.invoke(it) },
                     onClose = { keyboardOpen = false },
                     switchPad = switchPad,
-                    retroPad = retroPad
+                    retroPad = retroPad,
+                    universalPad = xboxPad
                 )
             }
 
@@ -632,7 +633,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                     operative = operative,
                     wantedMode = wantedMode,
                     screen = screen,
-                    onKeyboard = if (operative && (link as? UiLink.Connected)?.textInput != false) {
+                    onKeyboard = if (operative && Route.showsKeyboard(link)) {
                         { keyboardOpen = true }
                     } else null,
                     onExpandedChange = { headerExpanded = it },
