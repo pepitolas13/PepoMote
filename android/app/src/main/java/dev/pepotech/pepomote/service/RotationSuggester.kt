@@ -18,10 +18,12 @@ import kotlinx.coroutines.flow.StateFlow
  * cuando lleva un momento mirando hacia otro lado que la pantalla, publica
  * [proposal] para que el mando enseñe el botón «Girar la pantalla». Aceptarla
  * ([accept]) pide esa orientación a la actividad ([accepted]) hasta la
- * siguiente propuesta o hasta salir del mando; nunca gira sola. Con el giro
- * automático activo no propone nada: ya gira el sistema. Solo se escucha
- * con [active] (el mando en pantalla y orientación libre: el GamePad y el
- * mando + Nunchuk van fijos en apaisado).
+ * siguiente propuesta, hasta salir del mando o hasta que se active el giro
+ * automático del sistema (entonces vuelve a mandar él: si no, el mando se
+ * quedaría clavado en la orientación aceptada aunque el móvil ya girase
+ * solo); nunca gira sola. Con el giro automático activo no propone nada: ya
+ * gira el sistema. Solo se escucha con [active] (el mando en pantalla y
+ * orientación libre: el GamePad y el mando + Nunchuk van fijos en apaisado).
  */
 object RotationSuggester {
     private val machine = RotationProposalMachine()
@@ -97,7 +99,11 @@ object RotationSuggester {
 
     private fun onDegrees(degrees: Int) {
         val a = activity ?: return
-        val enabled = active && !systemAutoRotate(a)
+        val autoRotate = systemAutoRotate(a)
+        // Giro automático activado después de aceptar una propuesta: la
+        // orientación aceptada deja de mandar y decide el sistema
+        if (autoRotate && _accepted.value != null) _accepted.value = null
+        val enabled = active && !autoRotate
         val rotation = displayRotation(a)
         val p = machine.onDegrees(degrees, rotation, naturalPortrait(a, rotation), SystemClock.elapsedRealtime(), enabled)
         if (_proposal.value != p) _proposal.value = p
