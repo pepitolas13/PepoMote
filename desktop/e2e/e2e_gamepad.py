@@ -252,6 +252,16 @@ check(g is not None and (g.sThumbRX < 0) != (giro_x < 0), f"girar al otro lado l
 g = hold(sess, 0, 0.3, stick2=(127, 0), gyro=(0.0, 0.0, -4.0))
 check(g is not None and g.sThumbRX > 32000, f"el dedo en el stick derecho gana al giro ({g.sThumbRX})")
 
+# 6b) Con el giro apagado en el móvil (la pregunta de la primera vez, o
+# Ajustes → «Mover el móvil apunta»), el paquete sale con el giroscopio a
+# cero: exactamente esto. El stick derecho se queda quieto y no cambia nada
+# más — botones y stick izquierdo siguen llegando.
+g = hold(sess, BTN["A"], 0.3, stick=(127, 0), gyro=(0.0, 0.0, 0.0))
+check(g is not None and g.sThumbRX == 0 and g.sThumbRY == 0,
+      f"con el giro apagado el móvil no mueve la cámara ({g.sThumbRX}, {g.sThumbRY})")
+check(g is not None and g.wButtons == XB["A"] and g.sThumbLX > 32000,
+      f"y con el giro apagado el resto del mando sigue igual ({g.wButtons:#06x}, {g.sThumbLX})")
+
 # 7) Un móvil sin giroscopio real (apuntado por inclinación) no apunta
 g = hold(sess, 0, 0.3, gyro=(0.0, 0.0, 4.0), flags=FLAG_QUAT | FLAG_STICK | FLAG_EXT | FLAG_TILT)
 check(g is not None and g.sThumbRX == 0, f"sin giroscopio de verdad el stick no se mueve solo ({g.sThumbRX})")
