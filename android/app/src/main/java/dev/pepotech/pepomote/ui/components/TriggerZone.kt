@@ -33,12 +33,13 @@ fun TriggerZone(
     height: Dp = 88.dp,
     background: Color = PepoColors.Blue,
     pressedColor: Color = PepoColors.BlueHover,
-    textColor: Color = PepoColors.OnAccent
+    textColor: Color = PepoColors.OnAccent,
+    modifier: Modifier = Modifier
 ) {
     var down by remember { mutableStateOf(false) }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(height)
             .background(

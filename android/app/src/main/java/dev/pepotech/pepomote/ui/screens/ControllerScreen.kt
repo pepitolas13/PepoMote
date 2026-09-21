@@ -42,8 +42,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -98,6 +100,9 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
     val view = LocalView.current
     val context = androidx.compose.ui.platform.LocalContext.current
     var keyboardOpen by remember { mutableStateOf(false) }
+    // La fila multimedia, abierta o plegada: la pantalla lo sabe porque, en un
+    // móvil bajo, abrirla encoge un poco el resto en vez de echar la B fuera
+    var mediaOpen by remember { mutableStateOf(false) }
 
     // El teclado y la pose congelada van juntos, y se sueltan SOLOS: al
     // cerrarlo, al cambiar de modo (el PC lo cambia por su cuenta al abrir un
@@ -144,11 +149,11 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
             // En una tablet todo crece a la vez (UiScale; en cualquier móvil, 1),
             // la columna del mando se limita a 520·grow y las tiras la abrazan (en
             // vez de irse a los bordes de la pantalla); los huecos entre grupos se
-            // vuelven flexibles para repartir la holgura vertical
+            // vuelven flexibles para repartir la holgura vertical. En un móvil
+            // bajo el cuerpo encoge a la vez para que quepa (WiiRemoteMetrics)
             val grow = UiScale.remote(maxWidth.value, maxHeight.value)
             val colW = minOf(maxWidth, 520.dp * grow)
             val gutter = (maxWidth - colW) / 2
-            val flexible = grow > 1f
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -255,61 +260,81 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                     }
                 }
 
-                // Hueco de sobra entre los chips y la cruceta: que ir a por ↑ no toque un chip
-                Gap(18.dp * grow, flexible)
-                PadCross(sizeDp = 168.dp * grow)
+                // Cuerpo bajo la cabecera. Column mide antes lo que no tiene peso
+                // (cabecera, chips, selector) y da a este hueco justo lo que queda,
+                // así que las medidas saben cuánto alto hay de verdad: en un móvil
+                // bajo todo encoge a la vez para que quepa y, si ni así cabe
+                // (pantalla dividida), se recorta el cuerpo por abajo; la B queda
+                // fuera del recorte y siempre entera. En tablet, igual que antes
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val m = WiiRemoteMetrics(grow, maxHeight.value, mediaOpen)
+                    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(
+                            modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            // Hueco de sobra entre los chips y la cruceta: que ir a por ↑ no toque un chip
+                            Gap(m.gap(18f).dp, m.flexible)
+                            PadCross(sizeDp = m.cross.dp)
 
-                Gap(16.dp * grow, flexible)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RoundButton("−", 54.dp * grow, ButtonState.MINUS, textSize = (20 * grow).roundToInt())
-                    RecenterButton(size = 64.dp * grow)
-                    RoundButton("+", 54.dp * grow, ButtonState.PLUS, textSize = (20 * grow).roundToInt())
-                }
+                            Gap(m.gap(16f).dp, m.flexible)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(m.spacing.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RoundButton("−", m.small.dp, ButtonState.MINUS, textSize = m.text(20))
+                                RecenterButton(size = m.recenter.dp)
+                                RoundButton("+", m.small.dp, ButtonState.PLUS, textSize = m.text(20))
+                            }
 
-                Gap(16.dp * grow, flexible)
-                RoundButton(
-                    if (dev.pepotech.pepomote.service.Route.retroNes(link)) "X" else "A", 148.dp * grow, ButtonState.A,
-                    background = PepoColors.Blue,
-                    pressedColor = PepoColors.BlueHover,
-                    textColor = PepoColors.OnAccent,
-                    textSize = (44 * grow).roundToInt(),
-                    pop = true
-                )
+                            Gap(m.gap(16f).dp, m.flexible)
+                            RoundButton(
+                                if (dev.pepotech.pepomote.service.Route.retroNes(link)) "X" else "A", m.big.dp, ButtonState.A,
+                                background = PepoColors.Blue,
+                                pressedColor = PepoColors.BlueHover,
+                                textColor = PepoColors.OnAccent,
+                                textSize = m.text(44),
+                                pop = true
+                            )
 
-                Gap(14.dp * grow, flexible)
-                // 1 · Home · 2, como en el mando + Nunchuk. Home solo fuera del modo
-                // puntero (el PC no le da uso): en Dolphin es el menú HOME de la Wii
-                // y en Cemu, además, Mario Party 10 lo pide para dar por emparejado
-                // cada Mando de Wii emulado
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(20.dp * grow),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RoundButton(if (retro) "B" else "1", 52.dp * grow, ButtonState.ONE, textSize = (18 * grow).roundToInt())
-                    if (showHomeButton(link)) {
-                        RoundButton(stringResource(if (retro) R.string.retro_menu else R.string.home_btn), 52.dp * grow, ButtonState.HOME, textSize = (12 * grow).roundToInt())
-                    } else if (dev.pepotech.pepomote.service.Route.showsKeyboard(link)) {
-                        // Modo puntero: Home no hace nada y su hueco queda libre,
-                        // centrado bajo la A y lejos de la cruceta y de B. No es un
-                        // botón del mando (no entra en el registro de pulsación):
-                        // con «pulsar deslizando» un dedo de paso lo abriría
-                        KeyboardButton(compact = true) {
-                            openKeyboard(context, link, press)
-                            keyboardOpen = true
+                            Gap(m.gap(14f).dp, m.flexible)
+                            // 1 · Home · 2, como en el mando + Nunchuk. Home solo fuera del modo
+                            // puntero (el PC no le da uso): en Dolphin es el menú HOME de la Wii
+                            // y en Cemu, además, Mario Party 10 lo pide para dar por emparejado
+                            // cada Mando de Wii emulado
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(m.spacing.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RoundButton(if (retro) "B" else "1", m.one.dp, ButtonState.ONE, textSize = m.text(18))
+                                if (showHomeButton(link)) {
+                                    RoundButton(stringResource(if (retro) R.string.retro_menu else R.string.home_btn), m.one.dp, ButtonState.HOME, textSize = m.text(12))
+                                } else if (dev.pepotech.pepomote.service.Route.showsKeyboard(link)) {
+                                    // Modo puntero: Home no hace nada y su hueco queda libre,
+                                    // centrado bajo la A y lejos de la cruceta y de B. No es un
+                                    // botón del mando (no entra en el registro de pulsación):
+                                    // con «pulsar deslizando» un dedo de paso lo abriría
+                                    KeyboardButton(compact = true) {
+                                        openKeyboard(context, link, press)
+                                        keyboardOpen = true
+                                    }
+                                }
+                                RoundButton(if (retro) "A" else "2", m.one.dp, ButtonState.TWO, textSize = m.text(18))
+                            }
+
+                            Gap(m.gap(10f).dp, m.flexible)
+                            MediaRow(expanded = mediaOpen, onToggle = { mediaOpen = !mediaOpen }, buttonSize = m.media.dp, textSize = m.text(16))
+
+                            Spacer(Modifier.weight(1f))
                         }
+                        TriggerZone(
+                            label = if (dev.pepotech.pepomote.service.Route.retroNes(link)) "Y" else "B",
+                            height = m.trigger.dp,
+                            modifier = Modifier.testTag("wii_trigger")
+                        )
+                        Spacer(Modifier.height(12.dp))
                     }
-                    RoundButton(if (retro) "A" else "2", 52.dp * grow, ButtonState.TWO, textSize = (18 * grow).roundToInt())
                 }
-
-                Gap(10.dp * grow, flexible)
-                MediaRow(buttonSize = 46.dp * grow, textSize = (16 * grow).roundToInt())
-
-                Spacer(Modifier.weight(1f))
-                TriggerZone(label = if (dev.pepotech.pepomote.service.Route.retroNes(link)) "Y" else "B", height = 88.dp * grow)
-                Spacer(Modifier.height(12.dp))
             }
 
             ScrollStrip(
@@ -565,13 +590,11 @@ internal fun RecenterButton(size: Dp = 64.dp) {
     }
 }
 
-/** Fila multimedia plegable. */
+/** Fila multimedia plegable; si está abierta lo decide la pantalla (el cuerpo cuenta con su alto). */
 @Composable
-private fun MediaRow(buttonSize: Dp = 46.dp, textSize: Int = 16) {
-    var expanded by remember { mutableStateOf(false) }
-
+private fun MediaRow(expanded: Boolean, onToggle: () -> Unit, buttonSize: Dp = 46.dp, textSize: Int = 16) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        TextButton(onClick = { expanded = !expanded }) {
+        TextButton(onClick = onToggle) {
             Text(
                 if (expanded) stringResource(R.string.media_open) else stringResource(R.string.media_closed),
                 color = PepoColors.TextDim,

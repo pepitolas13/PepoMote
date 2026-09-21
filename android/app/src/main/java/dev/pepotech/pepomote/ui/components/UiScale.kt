@@ -3,7 +3,8 @@ package dev.pepotech.pepomote.ui.components
 /**
  * Escala de la interfaz en pantallas grandes (tablets). El factor SOLO
  * agranda: cualquier móvil queda exactamente como hasta ahora (factor 1) y
- * una tablet crece con la pantalla hasta [MAX]. Cada pantalla pasa su base:
+ * una tablet crece con la pantalla hasta [MAX] (que el mando vertical encoja
+ * en un móvil bajo es cosa aparte: WiiRemoteMetrics). Cada pantalla pasa su base:
  * la anchura del móvil más grande (440 dp) o la anchura natural de su
  * trazado, y la altura de lo que escala descontando lo fijo (cabecera,
  * chips, selector), que no crece. Misma regla y mismos números que en iOS
