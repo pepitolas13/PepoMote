@@ -1,4 +1,4 @@
-//! Vibración de los juegos (1.10.5). El protocolo DSU no transporta
+//! Vibración de los juegos (1.12). El protocolo DSU no transporta
 //! vibración: ni el cliente de Dolphin ni el de Cemu la mandan nunca. Así
 //! que el receptor crea un MANDO VIRTUAL por jugador (Windows: Xbox 360 por
 //! el driver ViGEmBus; Linux: gamepad uinput con force feedback), lo liga en

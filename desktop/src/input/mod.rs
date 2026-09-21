@@ -13,6 +13,14 @@ mod common;
 mod linux_common;
 #[cfg(target_os = "linux")]
 mod linux_uinput;
+
+/// ¿Se puede abrir `/dev/uinput`? Lo necesita también el mando virtual de la
+/// vibración (`rumble::linux`), que vive del mismo dispositivo; el módulo se
+/// queda privado y solo sale esto.
+#[cfg(target_os = "linux")]
+pub(crate) fn uinput_probe() -> std::io::Result<()> {
+    linux_uinput::probe()
+}
 // Unicode por XTEST en sesiones X11 (el respaldo uinput solo manda keycodes)
 #[cfg(target_os = "linux")]
 mod linux_x11_text;

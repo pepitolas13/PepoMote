@@ -102,7 +102,7 @@ fn level(effects: &HashMap<i16, Effect>, gain: u16, now: Instant) -> (u8, u8) {
 
 impl Backend {
     pub fn probe() -> Result<Backend, Status> {
-        match crate::input::linux_uinput::probe() {
+        match crate::input::uinput_probe() {
             Ok(()) => Ok(Backend),
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(Status::UinputDenied),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(Status::UinputMissing),

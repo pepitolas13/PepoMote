@@ -12,7 +12,7 @@ pub const TYPE_INPUT: u8 = 0x01;
 pub const TYPE_PING: u8 = 0x02;
 pub const TYPE_PONG: u8 = 0x03;
 /// Vibración ordenada por el juego (receptor → móvil, PROTOCOL.md §4.5):
-/// estado actual de los motores, reenviado mientras dure. Desde 1.10.5.
+/// estado actual de los motores, reenviado mientras dure. Desde 1.12.
 pub const TYPE_RUMBLE: u8 = 0x04;
 pub const INPUT_LEN: usize = 72;
 /// INPUT con el bloque de extensión Wii U (FLAG_EXT): stick derecho y
