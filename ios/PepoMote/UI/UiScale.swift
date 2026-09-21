@@ -2,7 +2,8 @@ import CoreGraphics
 
 /// Escala de la interfaz en pantallas grandes (iPad). El factor SOLO agranda:
 /// cualquier iPhone queda exactamente como hasta ahora (factor 1) y un iPad
-/// crece con la pantalla hasta `maxFactor`. Cada pantalla pasa su base: la
+/// crece con la pantalla hasta `maxFactor` (que el mando vertical encoja en
+/// un iPhone bajo es cosa aparte: RemoteMetrics). Cada pantalla pasa su base: la
 /// anchura del iPhone más grande (16 Pro Max, 440 pt) o la anchura natural
 /// de su trazado, y la altura de lo que escala descontando lo fijo (cabecera,
 /// chips, selector), que no crece. Misma regla y mismos números que en

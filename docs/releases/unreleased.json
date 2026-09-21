@@ -5,7 +5,7 @@
     "Elige la fuerza de la vibración en Ajustes: alta, normal, baja o apagada.",
     "Cemu: PepoMote ya no sustituye los mandos que tengas configurados para otros jugadores.",
     "Cemu: un móvil que se queda unos segundos sin enviar recupera su mando solo.",
-    "Mando de Wii en vertical: en móviles pequeños los botones encogen a la vez para que la B no se salga de la pantalla; los móviles normales y las tablets se ven igual que antes (Android).",
+    "Mando de Wii en vertical: en móviles pequeños los botones encogen a la vez para que la B no se salga de la pantalla; los móviles normales y las tablets se ven igual que antes (Android y iPhone).",
     "Android: con el idioma elegido a mano (botón ES/EN), el mando ya pasa a apaisado al girar el móvil, con el giro automático o con el botón «Girar la pantalla»; antes la pantalla giraba pero la app seguía en vertical (y el tema oscuro del sistema tampoco cambiaba en caliente). Y si aceptaste «Girar la pantalla» con el bloqueo de giro puesto, al activar después el giro automático vuelve a mandar el sistema."
   ],
   "en": [
@@ -14,7 +14,7 @@
     "Pick how strong the rumble is in Settings: high, normal, low or off.",
     "Cemu: PepoMote no longer replaces the controllers you had set up for other players.",
     "Cemu: a phone that stops sending for a few seconds gets its controller back by itself.",
-    "Wii Remote in portrait: on small phones all buttons shrink together so B never falls off the screen; regular phones and tablets look exactly as before (Android).",
+    "Wii Remote in portrait: on small phones all buttons shrink together so B never falls off the screen; regular phones and tablets look exactly as before (Android and iPhone).",
     "Android: with the language picked by hand (ES/EN button), the controller now switches to landscape when you rotate the phone, with auto-rotate or the «Rotate the screen» button; before, the screen rotated but the app stayed in portrait (and the system dark theme did not switch live either). And if you accepted «Rotate the screen» with rotation locked, turning auto-rotate on afterwards hands control back to the system."
   ]
 }

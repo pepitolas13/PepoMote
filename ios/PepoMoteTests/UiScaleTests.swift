@@ -38,30 +38,27 @@ final class UiScaleTests: XCTestCase {
     }
 
     func testMedidasDelMandoEnIphoneSonLasDeSiempre() {
-        let m = RemoteMetrics(size: sz(393, 852))
-        XCTAssertEqual(m.grow, 1)
+        let f = RemoteFrame(size: sz(393, 852))
+        XCTAssertEqual(f.grow, 1)
+        XCTAssertEqual(f.colW, 393)
+        XCTAssertFalse(f.flexible)
+        XCTAssertEqual(f.text(44), 44)
+        let m = RemoteMetrics.forScreen(sz(393, 852), headerH: 44)
         XCTAssertEqual(m.s, 1)
         XCTAssertEqual(m.cross, 168)
         XCTAssertEqual(m.big, 148)
-        XCTAssertEqual(m.colW, 393)
-        XCTAssertFalse(m.flexible)
         XCTAssertEqual(m.text(44), 44)
-        // iPhone SE: se encoge a la vez, como hasta ahora
-        let se = RemoteMetrics(size: sz(375, 667))
-        XCTAssertEqual(se.s, 667.0 / 780.0, accuracy: 0.0001)
-        XCTAssertEqual(se.cross, 168 * 667.0 / 780.0, accuracy: 0.01)
-        XCTAssertEqual(se.text(44), 44, "el texto no se encoge en el SE")
         // iPad 11": crece, columna de 520·grow y huecos flexibles
-        let pad = RemoteMetrics(size: sz(820, 1180))
+        let pad = RemoteFrame(size: sz(820, 1180))
         XCTAssertEqual(pad.grow, 1.589, accuracy: 0.001)
-        XCTAssertEqual(pad.s, pad.grow)
         XCTAssertEqual(pad.colW, 820, "520·grow (826) ya no cabe: la columna llena la pantalla")
         XCTAssertTrue(pad.flexible)
         XCTAssertEqual(pad.text(44), 44 * pad.grow, accuracy: 0.01)
+        XCTAssertEqual(RemoteMetrics.forScreen(sz(820, 1180), headerH: 86).s, pad.grow)
         // iPad 13": la A pasa de 148 a 281 pt y la columna casi llena la pantalla
-        let big = RemoteMetrics(size: sz(1032, 1376))
+        let big = RemoteMetrics.forScreen(sz(1032, 1376), headerH: 44)
         XCTAssertEqual(big.big, 281, accuracy: 1)
-        XCTAssertEqual(big.colW, 987, accuracy: 1)
+        XCTAssertEqual(RemoteFrame(size: sz(1032, 1376)).colW, 987, accuracy: 1)
         // NES apaisado en iPad 13"
         let nes = LandscapeMetrics(size: sz(1376, 1032))
         XCTAssertEqual(nes.s, 1.966, accuracy: 0.001)

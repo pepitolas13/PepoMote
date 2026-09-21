@@ -1143,12 +1143,13 @@ struct RecenterButton: View {
     }
 }
 
-/// Fila multimedia plegable.
+/// Fila multimedia plegable; si está abierta lo decide la pantalla (el mando
+/// vertical cuenta con su alto en un iPhone bajo).
 struct MediaRow: View {
+    @Binding var expanded: Bool
     var buttonSize: CGFloat = 46
     /// Tamaño de los símbolos (crece con el iPad).
     var textSize: CGFloat = 16
-    @State private var expanded = false
 
     var body: some View {
         VStack(spacing: 4) {
