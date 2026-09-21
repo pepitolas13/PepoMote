@@ -377,7 +377,8 @@ mod tests {
         let mut effects = HashMap::new();
         effects.insert(0, Effect { strong: 0xFFFF, weak: 0x8000, length_ms: 0, playing_until: None, playing: true });
         effects.insert(1, Effect { strong: 0x4000, weak: 0xFFFF, length_ms: 0, playing_until: None, playing: false });
-        assert_eq!(level(&effects, 0xFFFF, now), (255, 128));
+        // 0x8000 de 0xFFFF es la mitad justa: 32768/257 = 127 (0xFFFF/257 = 255)
+        assert_eq!(level(&effects, 0xFFFF, now), (255, 127));
         effects.get_mut(&1).unwrap().playing = true;
         assert_eq!(level(&effects, 0xFFFF, now), (255, 255));
         assert_eq!(level(&effects, 0x8000, now), (127, 127), "ganancia a la mitad");
