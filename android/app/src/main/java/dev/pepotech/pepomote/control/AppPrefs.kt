@@ -102,6 +102,30 @@ object AppPrefs {
             .edit().putString("motionSource", value).apply()
     }
 
+    const val PAD_AIM_ASK = ""
+    const val PAD_AIM_ON = "on"
+    const val PAD_AIM_OFF = "off"
+
+    /**
+     * Mando universal: mover el móvil mueve el stick derecho del mando de
+     * Xbox. "" hasta que se elige (el mando lo pregunta la primera vez que
+     * conecta), "on" u "off"; Ajustes lo cambia cuando se quiera. Sin elegir
+     * va apagado: así ningún juego hace cosas raras mientras se lee el aviso.
+     * Solo vale para ese modo (el puntero, Cemu, Dolphin, Switch y RetroArch
+     * apuntan con el giro igual que siempre).
+     */
+    fun padAim(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("padAim", PAD_AIM_ASK) ?: PAD_AIM_ASK
+
+    fun padAimEnabled(context: Context): Boolean = padAim(context) == PAD_AIM_ON
+
+    /** Guarda la elección, y con ella deja de preguntarse. */
+    fun setPadAim(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString("padAim", if (enabled) PAD_AIM_ON else PAD_AIM_OFF).apply()
+    }
+
     /**
      * «Vibración en los juegos»: cuánto de lo que pide el juego llega al
      * motor ("high", "normal", "low", "off"). La misma cadena que en iOS y en

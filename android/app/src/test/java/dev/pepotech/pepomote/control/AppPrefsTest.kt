@@ -22,6 +22,25 @@ class AppPrefsTest {
         assertTrue(AppPrefs.keyboardClickFirst(context))
     }
 
+    /**
+     * Mando universal: el giro no está elegido hasta que se contesta la
+     * pregunta de la primera vez, y mientras tanto va apagado. Las dos
+     * respuestas se recuerdan (y ninguna deja la pregunta pendiente).
+     */
+    @Test fun elGiroDelMandoUniversalEmpiezaSinElegirYApagado() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        assertEquals(AppPrefs.PAD_AIM_ASK, AppPrefs.padAim(context))
+        assertFalse(AppPrefs.padAimEnabled(context))
+
+        AppPrefs.setPadAim(context, true)
+        assertEquals(AppPrefs.PAD_AIM_ON, AppPrefs.padAim(context))
+        assertTrue(AppPrefs.padAimEnabled(context))
+
+        AppPrefs.setPadAim(context, false)
+        assertEquals(AppPrefs.PAD_AIM_OFF, AppPrefs.padAim(context))
+        assertFalse(AppPrefs.padAimEnabled(context))
+    }
+
     @Test fun savedJoyConChoicesMigrateToProWithoutChangingWiiUPreferences() {
         val context: Context = RuntimeEnvironment.getApplication()
         val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)

@@ -467,4 +467,11 @@
     <string name="rumble_pc_unsupported">Este receptor no puede mandar vibración (macOS o servidor Android).</string>
     <string name="rumble_pc_old">El receptor es anterior a la 1.12: sin vibración de los juegos.</string>
     <string name="rumble_no_motor">Este dispositivo no tiene motor de vibración.</string>
+    <!-- mando universal: apuntar moviendo el móvil -->
+    <string name="pad_aim_ask_title">¿Quieres apuntar moviendo el móvil?</string>
+    <string name="pad_aim_ask_body">Girar el móvil mueve el stick derecho y el juego lo nota: en The Binding of Isaac disparas hacia donde lo muevas y en Until Dawn hay que dejarlo quieto. Se cambia en Ajustes.</string>
+    <string name="pad_aim_no">Sin giro</string>
+    <string name="pad_aim_yes">Con giro</string>
+    <string name="pad_aim_title">Mover el móvil apunta (mando universal)</string>
+    <string name="pad_aim_sub">Solo en el mando universal: girar el móvil mueve el stick derecho. El stick derecho de la pantalla siempre manda sobre el giro.</string>
 </resources>

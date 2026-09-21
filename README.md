@@ -67,7 +67,7 @@ Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden 
 
 ## Play any PC game
 
-Tap **Universal controller** on the phone. Your PC sees a real Xbox 360 controller, so **there is nothing to set up**: Steam, a game from 2019, an emulator nobody has heard of - they all just find it. Move the phone to aim, and the gyro drives the right stick; touch the on-screen right stick and your thumb takes over.
+Tap **Universal controller** on the phone. Your PC sees a real Xbox 360 controller, so **there is nothing to set up**: Steam, a game from 2019, an emulator nobody has heard of - they all just find it. Move the phone to aim, and the gyro drives the right stick; touch the on-screen right stick and your thumb takes over. The first time you connect, the phone asks whether you want that aiming: some games are worse with it (in The Binding of Isaac you shoot wherever you move the controller) and others are half the fun because of it (in Until Dawn you have to hold it still). You can change it any time in Settings.
 
 Windows and Linux. On Windows it needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver, installed once - PepoMote offers the download and picks it up without restarting. On Linux it uses uinput, same as the rumble controller. Not available on macOS: a virtual controller there needs a driver signed by Apple.
 

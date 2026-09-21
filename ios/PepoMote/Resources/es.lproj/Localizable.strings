@@ -242,3 +242,9 @@
 "kb_enter" = "⏎ Intro";
 "kb_click_title" = "Clic antes de escribir";
 "kb_click_sub" = "El botón Teclado hace primero un clic izquierdo donde apuntas, para dejar el cursor en el campo. Apagado, haz tú el clic con A antes de escribir.";
+"pad_aim_ask_title" = "¿Quieres apuntar moviendo el móvil?";
+"pad_aim_ask_body" = "Girar el móvil mueve el stick derecho y el juego lo nota: en The Binding of Isaac disparas hacia donde lo muevas y en Until Dawn hay que dejarlo quieto. Se cambia en Ajustes.";
+"pad_aim_no" = "Sin giro";
+"pad_aim_yes" = "Con giro";
+"pad_aim_title" = "Mover el móvil apunta (mando universal)";
+"pad_aim_sub" = "Solo en el mando universal: girar el móvil mueve el stick derecho. El stick derecho de la pantalla siempre manda sobre el giro.";

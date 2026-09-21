@@ -109,6 +109,7 @@ import dev.pepotech.pepomote.ui.components.rememberPressRegistry
 import dev.pepotech.pepomote.ui.components.rememberScreenReader
 import dev.pepotech.pepomote.ui.components.slideCanvas
 import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.control.PadAim
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.stringResource
 import dev.pepotech.pepomote.R
@@ -208,6 +209,17 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val noScreenPref = remember { AppPrefs.gamePadNoScreen(context) }
     val fullScreenPref = remember { AppPrefs.gamePadFullScreen(context) }
     val fullScreenKb = remember { AppPrefs.gamePadFullScreenKeyboard(context) }
+    // Mando universal: ¿mover el móvil mueve el stick derecho? Se pregunta la
+    // primera vez que el modo se confirma y se cambia en Ajustes; sin elegir
+    // va apagado
+    var padAim by remember { mutableStateOf(AppPrefs.padAim(context)) }
+    // Solo con el mando universal confirmado: sin el eco del modo los paquetes
+    // todavía alimentan lo de antes (el puntero, por ejemplo) y el giro a cero
+    // le congelaría el cursor
+    val aimOff = PadAim.motionOff(xboxPad, operative, padAim)
+    SideEffect { engine?.padAim = !aimOff }
+    // Al salir vuelve encendido, que es lo que esperan los demás modos
+    DisposableEffect(engine) { onDispose { engine?.padAim = true } }
     // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene),
     // con el modo confirmado y sin el ajuste «GamePad sin pantalla»
     // El mando universal NO es Cemu: pedir ahí la doble pantalla dejaba el
@@ -571,6 +583,29 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                     onFlip = { GamePadSide.setProvisional(shown.flipped()) },
                     onKeep = { GamePadSide.save(context, shown) }
                 )
+            }
+
+            // El giro del mando universal se pregunta donde el lado y después
+            // de él: una pregunta cada vez. En el mando universal no hay
+            // pantalla completa (esa es la de Cemu), así que aquí solo se
+            // espera a la cabecera
+            if (PadAim.shouldAsk(
+                    universalPad = xboxPad,
+                    operative = operative,
+                    pref = padAim,
+                    sideChosen = sideSaved != LandscapeSide.Unset,
+                    headerExpanded = headerExpanded,
+                    autoCollapse = autoCollapse
+                )
+            ) {
+                PadAimAskCard(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (headerExpanded) headerBox + 4.dp else headerH + gap)
+                ) { on ->
+                    AppPrefs.setPadAim(context, on)
+                    padAim = if (on) AppPrefs.PAD_AIM_ON else AppPrefs.PAD_AIM_OFF
+                }
             }
 
             NoticeBanner(

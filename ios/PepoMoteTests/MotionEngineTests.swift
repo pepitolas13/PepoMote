@@ -123,6 +123,59 @@ final class MotionEngineTests: XCTestCase {
         XCTAssertEqual(engine.lastSensorHz, 0)
     }
 
+    /// Mando universal con el giro apagado: el paquete sale con el giroscopio
+    /// a cero y no cambia nada más — el acelerómetro, los botones y el
+    /// tamaño del paquete viajan igual. Volver a encenderlo devuelve el
+    /// sensor de verdad (Switch y RetroArch comparten `.switchPad` y siguen
+    /// apuntando con el giro). La misma prueba que en Android.
+    func testUniversalPadCanTurnMotionOffWithoutTouchingAnythingElse() throws {
+        let source = ManualMotionSource()
+        let recorder = PacketRecorder()
+        let engine = MotionEngine(sessionId: 7, kind: .switchPad, source: source, onPacket: recorder.append)
+        let buttons = ButtonState.shared
+        buttons.reset()
+        defer { engine.stop(); buttons.reset() }
+        engine.start()
+        for _ in 0..<6 {
+            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8])
+            runFor(0.005)
+        }
+        XCTAssertTrue(
+            recorder.packets.suffix(4).contains { float($0, 40) != 0 },
+            "con el giro encendido viaja el sensor"
+        )
+
+        engine.padAim = false
+        buttons.set(Btn.a, true)
+        runFor(0.02)
+        let desde = recorder.packets.count
+        for _ in 0..<6 {
+            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8])
+            runFor(0.005)
+        }
+        let apagados = Array(recorder.packets.dropFirst(desde))
+        XCTAssertGreaterThan(apagados.count, 2, "sigue emitiendo igual")
+        for packet in apagados {
+            XCTAssertEqual(packet.count, 80, "el paquete sigue siendo el extendido")
+            for offset in stride(from: 40, through: 48, by: 4) {
+                XCTAssertEqual(float(packet, offset), 0, "el giro va a cero")
+            }
+        }
+        let ultimo = try XCTUnwrap(apagados.last)
+        XCTAssertEqual(float(ultimo, 60), 9.8, accuracy: 0.001, "el acelerómetro viaja igual")
+        XCTAssertNotEqual(ultimo[64] & UInt8(Btn.a), 0, "los botones siguen viajando")
+
+        engine.padAim = true
+        for _ in 0..<6 {
+            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8])
+            runFor(0.005)
+        }
+        XCTAssertTrue(
+            recorder.packets.suffix(4).contains { float($0, 40) != 0 },
+            "al encenderlo vuelve el sensor"
+        )
+    }
+
     func testStopAndRestartDiscardOldCallbacksAndDoNotDuplicateTimer() throws {
         let source = ManualMotionSource()
         let recorder = PacketRecorder()

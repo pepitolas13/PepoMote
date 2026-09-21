@@ -200,6 +200,7 @@ private fun rumbleStatus(rumble: String?): Int = when (rumble) {
 fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     var kbClick by remember { mutableStateOf(AppPrefs.keyboardClickFirst(context)) }
+    var padAim by remember { mutableStateOf(AppPrefs.padAimEnabled(context)) }
     var volB by remember { mutableStateOf(AppPrefs.volDownIsB(context)) }
     var sounds by remember { mutableStateOf(AppPrefs.soundsEnabled(context)) }
     var slidePress by remember { mutableStateOf(AppPrefs.slidePress(context)) }
@@ -238,6 +239,39 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
         MotionSourceCard()
 
         GameRumbleCard()
+        Spacer(Modifier.height(14.dp))
+        // Mando universal: mover el móvil mueve el stick derecho (se pregunta
+        // la primera vez que conecta; aquí se cambia)
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.pad_aim_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.pad_aim_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = padAim,
+                    onCheckedChange = {
+                        padAim = it
+                        AppPrefs.setPadAim(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
         Spacer(Modifier.height(14.dp))
         // Modo puntero: el botón «Teclado» hace antes clic donde apuntas
         Card(

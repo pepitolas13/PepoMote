@@ -85,6 +85,19 @@ class MotionEngine(
     @Volatile
     var tilt: Boolean = false
 
+    /**
+     * Mando universal: mover el móvil mueve el stick derecho. Apagado, el
+     * paquete sale con el giroscopio a cero y el juego no se entera de que el
+     * móvil se mueve (el cuaternión y el acelerómetro viajan igual: en ese
+     * modo el receptor ni los mira, así que no hay que tocar el protocolo ni
+     * el PC y funciona con cualquier receptor publicado). Lo apaga SOLO la
+     * pantalla del mando universal con el modo confirmado, y lo devuelve al
+     * salir: Switch y RetroArch comparten [SenderKind.SWITCH] y sí apuntan
+     * con el giro.
+     */
+    @Volatile
+    var padAim: Boolean = true
+
     private val sensorManager =
         context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val batteryManager =
@@ -364,6 +377,10 @@ class MotionEngine(
                 val rot = packetRotation
                 Frame.remapQuat(quat, if (hasRotationVector) rot else Surface.ROTATION_0, quatOut)
                 Frame.remapGyro(gyro, rot, gyroOut)
+                // Mando universal con el giro apagado: a cero solo en el
+                // paquete, que la media ponderada sigue viva y volver a
+                // encender no hereda ni un hueco ni una muestra vieja
+                if (!padAim) gyroOut.fill(0f)
                 Frame.remapAccel(accel, rot, accelOut)
                 val touch = ButtonState.touch()
                 PmpCodec.encodeInput(

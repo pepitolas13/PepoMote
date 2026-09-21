@@ -115,6 +115,24 @@ enum AppPrefs {
         set { d.set(newValue, forKey: "kbClickFirst") }
     }
 
+    static let padAimAsk = ""
+    static let padAimOn = "on"
+    static let padAimOff = "off"
+
+    /// Mando universal: mover el móvil mueve el stick derecho del mando de
+    /// Xbox. "" hasta que se elige (el mando lo pregunta la primera vez que
+    /// conecta), "on" u "off"; Ajustes lo cambia cuando se quiera. Sin elegir
+    /// va apagado: así ningún juego hace cosas raras mientras se lee el
+    /// aviso. Solo vale para ese modo. Clave pública: el mando la mira con
+    /// @AppStorage. Igual que en Android.
+    static let padAimKey = "padAim"
+    static var padAim: String {
+        get { d.string(forKey: padAimKey) ?? padAimAsk }
+        set { d.set(newValue, forKey: padAimKey) }
+    }
+
+    static var padAimEnabled: Bool { padAim == padAimOn }
+
     /// Avisos del receptor en pantalla («Dolphin configurado…»): unos
     /// segundos sobre el mando al cambiar de modo. Apagados, no se enseñan.
     static var receiverNotices: Bool {

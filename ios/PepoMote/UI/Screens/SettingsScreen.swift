@@ -5,6 +5,7 @@ struct SettingsScreen: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject private var updates = UpdateManager.shared
     @State private var kbClick = AppPrefs.keyboardClickFirst
+    @State private var padAim = AppPrefs.padAimEnabled
     @State private var sounds = AppPrefs.soundsEnabled
     @State private var slidePress = AppPrefs.slidePress
     @State private var stickyPress = AppPrefs.stickyPress
@@ -72,6 +73,10 @@ struct SettingsScreen: View {
                     // Avisos del receptor sobre el mando al cambiar de modo
                     SettingRow(title: tr("notices_title"), subtitle: tr("notices_sub"), on: $notices)
                         .onChange(of: notices) { AppPrefs.receiverNotices = $0 }
+                    // Mando universal: mover el móvil mueve el stick derecho
+                    // (se pregunta la primera vez que conecta; aquí se cambia)
+                    SettingRow(title: tr("pad_aim_title"), subtitle: tr("pad_aim_sub"), on: $padAim)
+                        .onChange(of: padAim) { AppPrefs.padAim = $0 ? AppPrefs.padAimOn : AppPrefs.padAimOff }
                     // Vibración que piden los juegos (aparte de la de los botones)
                     RumbleRow()
                     // Aviso de versión nueva: la única consulta fuera de la red local

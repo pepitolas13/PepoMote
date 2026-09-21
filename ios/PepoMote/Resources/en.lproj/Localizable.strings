@@ -242,3 +242,9 @@
 "kb_enter" = "⏎ Enter";
 "kb_click_title" = "Click before typing";
 "kb_click_sub" = "The Keyboard button first left-clicks where you are pointing, to put the caret in the field. When off, click with A yourself before typing.";
+"pad_aim_ask_title" = "Aim by moving the phone?";
+"pad_aim_ask_body" = "Turning the phone moves the right stick and the game reacts: in The Binding of Isaac you shoot wherever you move it, and in Until Dawn you have to hold it still. You can change this in Settings.";
+"pad_aim_no" = "No motion";
+"pad_aim_yes" = "Use motion";
+"pad_aim_title" = "Moving the phone aims (universal controller)";
+"pad_aim_sub" = "Universal controller only: turning the phone moves the right stick. The on-screen right stick always wins over the gyro.";

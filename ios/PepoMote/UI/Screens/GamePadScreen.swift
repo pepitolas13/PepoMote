@@ -167,6 +167,10 @@ struct GamePadScreen: View {
     @AppStorage(AppPrefs.gamePadNoScreenKey) private var noScreenPref = false
     @AppStorage(AppPrefs.gamePadFullScreenKey) private var fullScreenPref = false
     @AppStorage(AppPrefs.gamePadFullScreenKeyboardKey) private var fullScreenKb = true
+    /// Mando universal: ¿mover el móvil mueve el stick derecho? Se pregunta
+    /// la primera vez que el modo se confirma y se cambia en Ajustes; sin
+    /// elegir va apagado.
+    @AppStorage(AppPrefs.padAimKey) private var padAimPref = ""
     @State private var warnedOld = false
     @Environment(\.displayScale) private var displayScale
     @State private var keyboardOpen = false
@@ -249,6 +253,7 @@ struct GamePadScreen: View {
         // Solo con el modo confirmado el motor emite como GamePad; si el modo se
         // va (Mando de Wii) o se sale, vuelve lo de antes
         .onChange(of: operative) { _ in applyEngine() }
+        .onChange(of: padAimPref) { _ in applyEngine() }
         .onChange(of: layoutIdentity) { _ in ButtonState.shared.reset(); applyEngine() }
         .onChange(of: rotation) { _ in ButtonState.shared.reset(); applyEngine() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
@@ -264,6 +269,10 @@ struct GamePadScreen: View {
         .onDisappear {
             model.gamePadSideProvisional = nil // la prueba del lado sin confirmar se olvida
             screenLink.release()
+            // El giro vuelve siempre: solo el mando universal lo apaga, y
+            // dejárselo apagado a la pantalla siguiente le quitaría el
+            // apuntado
+            link.motion?.padAim = true
             // Al cambiar de pantalla, la pantalla nueva ya puede haber
             // configurado el motor. La anterior no debe deshacerlo al irse.
             if model.screen != .controller || Route.route(link.link, link.intent) == .gamePad {
@@ -327,6 +336,18 @@ struct GamePadScreen: View {
                     onKeep: { model.saveGamePadSide(shown) }
                 )
                 .padding(.top, fullScreen ? 8 : (headerExpanded ? headerBox + 4 : m.headerH + m.gap))
+            }
+        }
+        // El giro del mando universal se pregunta donde el lado y después de
+        // él: una pregunta cada vez
+        .overlay(alignment: .top) {
+            if PadAim.shouldAsk(
+                universalPad: universalPad, operative: operative, pref: padAimPref,
+                sideChosen: model.gamePadSide != .unset,
+                headerExpanded: headerExpanded, autoCollapse: autoCollapse
+            ) {
+                PadAimAskCard { on in padAimPref = on ? AppPrefs.padAimOn : AppPrefs.padAimOff }
+                    .padding(.top, headerExpanded ? headerBox + 4 : m.headerH + m.gap)
             }
         }
         // La última: la tarjeta desplegada gana al selector, a los controles y
@@ -436,6 +457,8 @@ struct GamePadScreen: View {
 
     private func applyEngine() {
         guard let engine = link.motion else { return }
+        // El giro solo se apaga con el mando universal confirmado (ver PadAim)
+        engine.padAim = !PadAim.motionOff(universalPad: universalPad, operative: operative, pref: padAimPref)
         if operative {
             engine.rotation = rotation
             engine.kind = switchPad ? .switchPad : .gamepad

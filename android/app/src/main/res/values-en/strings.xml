@@ -467,4 +467,11 @@
     <string name="rumble_pc_unsupported">This receiver cannot send rumble (macOS or Android server).</string>
     <string name="rumble_pc_old">The receiver is older than 1.12: no game rumble.</string>
     <string name="rumble_no_motor">This device has no vibration motor.</string>
+    <!-- universal controller: aiming by moving the phone -->
+    <string name="pad_aim_ask_title">Aim by moving the phone?</string>
+    <string name="pad_aim_ask_body">Turning the phone moves the right stick and the game reacts: in The Binding of Isaac you shoot wherever you move it, and in Until Dawn you have to hold it still. You can change this in Settings.</string>
+    <string name="pad_aim_no">No motion</string>
+    <string name="pad_aim_yes">Use motion</string>
+    <string name="pad_aim_title">Moving the phone aims (universal controller)</string>
+    <string name="pad_aim_sub">Universal controller only: turning the phone moves the right stick. The on-screen right stick always wins over the gyro.</string>
 </resources>

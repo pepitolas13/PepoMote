@@ -2,6 +2,45 @@ import UIKit
 import XCTest
 @testable import PepoMote
 
+/// Las dos decisiones del giro del mando universal (puras). Las mismas que
+/// en Android (`PadAimTest`).
+final class PadAimTests: XCTestCase {
+    func testElGiroSoloSeApagaConElMandoUniversalConfirmado() {
+        XCTAssertTrue(PadAim.motionOff(universalPad: true, operative: true, pref: AppPrefs.padAimAsk))
+        XCTAssertTrue(PadAim.motionOff(universalPad: true, operative: true, pref: AppPrefs.padAimOff))
+        XCTAssertFalse(PadAim.motionOff(universalPad: true, operative: true, pref: AppPrefs.padAimOn), "con giro, lo de siempre")
+        XCTAssertFalse(PadAim.motionOff(universalPad: true, operative: false, pref: AppPrefs.padAimOff), "sin el eco del modo no se toca")
+        for pref in [AppPrefs.padAimAsk, AppPrefs.padAimOff, AppPrefs.padAimOn] {
+            XCTAssertFalse(PadAim.motionOff(universalPad: false, operative: true, pref: pref), "otro modo con \"\(pref)\"")
+        }
+    }
+
+    private func ask(
+        pref: String = AppPrefs.padAimAsk,
+        universalPad: Bool = true,
+        operative: Bool = true,
+        sideChosen: Bool = true,
+        headerExpanded: Bool = false,
+        autoCollapse: Bool = true
+    ) -> Bool {
+        PadAim.shouldAsk(
+            universalPad: universalPad, operative: operative, pref: pref,
+            sideChosen: sideChosen, headerExpanded: headerExpanded, autoCollapse: autoCollapse
+        )
+    }
+
+    func testLaPreguntaSaleUnaVezYDetrasDeLaDelLado() {
+        XCTAssertTrue(ask())
+        XCTAssertFalse(ask(pref: AppPrefs.padAimOn))
+        XCTAssertFalse(ask(pref: AppPrefs.padAimOff))
+        XCTAssertFalse(ask(sideChosen: false), "una pregunta cada vez: el lado va primero")
+        XCTAssertFalse(ask(operative: false))
+        XCTAssertFalse(ask(universalPad: false))
+        XCTAssertFalse(ask(headerExpanded: true), "la cabecera desplegada tapa el sitio")
+        XCTAssertTrue(ask(headerExpanded: true, autoCollapse: false), "si no se pliega sola, no se espera")
+    }
+}
+
 /// El pulgar en pt (y hacia abajo) → stick −127..127 (y hacia arriba).
 final class StickMapTests: XCTestCase {
     private let r: Float = 100

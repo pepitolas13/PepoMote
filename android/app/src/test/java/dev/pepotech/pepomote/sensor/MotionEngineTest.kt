@@ -181,6 +181,44 @@ class MotionEngineTest {
         stop(engine)
     }
 
+    /**
+     * Mando universal con el giro apagado: el paquete sale con el giroscopio
+     * a cero y no cambia nada más — acelerómetro, botones y sticks viajan
+     * igual y la cadencia no se toca. Volver a encenderlo devuelve el sensor
+     * de verdad (Switch y RetroArch comparten [SenderKind.SWITCH] y siguen
+     * apuntando con el giro).
+     */
+    @Test fun elMandoUniversalPuedeApagarElGiroSinTocarNadaMas() {
+        val packets = mutableListOf<ByteArray>()
+        val engine = engine(SenderKind.SWITCH, packets)
+        val gyro = sensor(Sensor.TYPE_GYROSCOPE)
+        val accel = sensor(Sensor.TYPE_ACCELEROMETER)
+        engine.rotation = Frame.ROTATION_90
+        engine.start()
+        repeat(10) { advance(5); emit(gyro, 0.5f, 0f, 0f); emit(accel, 1f, 2f, 9.8f) }
+        advance(10)
+        assertTrue("con el giro encendido viaja el sensor", packets.any { p -> p.floats(40, 3).any { it != 0f } })
+
+        engine.padAim = false
+        ButtonState.set(ButtonState.A, true)
+        val desde = packets.size
+        repeat(20) { advance(5); emit(gyro, 0.5f, 0f, 0f); emit(accel, 1f, 2f, 9.8f) }
+        advance(10)
+        val apagados = packets.drop(desde)
+        assertTrue("sigue emitiendo igual (${apagados.size})", apagados.size > 5)
+        assertTrue("el giro va a cero", apagados.all { p -> p.floats(40, 3).all { it == 0f } })
+        assertTrue("el acelerómetro viaja igual", apagados.all { it.floats(52, 3)[2] != 0f })
+        assertTrue("los botones siguen viajando", apagados.all { it.int(64) and ButtonState.A != 0 })
+        assertEquals("y el paquete sigue siendo el extendido", 80, apagados.last().size)
+
+        engine.padAim = true
+        ButtonState.set(ButtonState.A, false)
+        repeat(20) { advance(5); emit(gyro, 0.5f, 0f, 0f) }
+        advance(10)
+        assertTrue("al encenderlo vuelve el sensor", packets.last().floats(40, 3).any { it != 0f })
+        stop(engine)
+    }
+
     @Test fun noSensorsSendRegularInputInEveryControllerFormat() {
         for (kind in SenderKind.entries) {
             val packets = mutableListOf<ByteArray>()

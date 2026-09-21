@@ -57,6 +57,19 @@ final class MotionEngine {
         set { lock.lock(); pointerHoldV = newValue; lock.unlock() }
     }
 
+    /// Mando universal: mover el móvil mueve el stick derecho. Apagado, el
+    /// paquete sale con el giroscopio a cero y el juego no se entera de que
+    /// el móvil se mueve (el cuaternión y el acelerómetro viajan igual: en
+    /// ese modo el receptor ni los mira, así que no hay que tocar el
+    /// protocolo ni el PC). Lo apaga SOLO la pantalla del mando universal con
+    /// el modo confirmado, y lo devuelve al salir: Switch y RetroArch
+    /// comparten `.switchPad` y sí apuntan con el giro.
+    var padAim: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return padAimV }
+        set { lock.lock(); padAimV = newValue; lock.unlock() }
+    }
+
+    private var padAimV = true
     private var pointerHoldV = false
     private var holding = false
     private var releaseAtNs: Int64 = 0
@@ -252,6 +265,7 @@ final class MotionEngine {
         let packetRotation = holding ? holdRotation : requestedRotation
         seq &+= 1
         let senderKind = kind
+        let aim = padAim
         let frameFlag = reportFrameRotation && senderKind != .nunchuk ? UInt8((packetRotation & 3) << 5) : 0
         let quatFlag: UInt8 = (hasRotationVector ? PmpCodec.flagQuatValid : 0) | frameFlag
         let bs = ButtonState.shared
@@ -261,9 +275,13 @@ final class MotionEngine {
         case .gamepad, .switchPad:
             let rot = packetRotation
             let touch = senderKind == .gamepad ? bs.touch() : ButtonState.Touch(x: 0, y: 0, down: false)
+            // Con el giro apagado, a cero solo en el paquete: la media
+            // ponderada sigue viva y volver a encender no hereda ni un hueco
+            // ni una muestra vieja
+            let gyroOut: [Float] = aim ? Frame.remapGyro(gyro, rot) : [0, 0, 0]
             packet = PmpCodec.encodeInput(
                 sessionId: sessionId, seq: seq, tSensorUs: tUs,
-                quat: Frame.remapQuat(quat, rot), gyro: Frame.remapGyro(gyro, rot), accel: Frame.remapAccel(accel, rot),
+                quat: Frame.remapQuat(quat, rot), gyro: gyroOut, accel: Frame.remapAccel(accel, rot),
                 buttons: bs.current(), recenterCount: bs.recenterCount(), batteryPct: battery(),
                 touchScrollDy: bs.drainScroll(),
                 flags: quatFlag | PmpCodec.flagStickValid | PmpCodec.flagExt | (touch.down ? PmpCodec.flagTouch : 0),
