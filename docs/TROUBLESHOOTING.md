@@ -715,6 +715,8 @@ Guía completa: [SETUP-RETROARCH.md](SETUP-RETROARCH.md).
 - **Vibra demasiado o demasiado poco:** Ajustes → Vibración en los juegos → Alta / Normal / Baja. El botón «Probar» te deja oírlo sin abrir un juego.
 - **No vibra nada y el móvil sí tiene motor:** algunos móviles apagan la vibración con el modo de ahorro de energía o con «No molestar». Compruébalo en los ajustes del sistema.
 - **Un iPad no vibra:** no tiene motor. Ajustes lo dice.
+- **El móvil se queda vibrando cuando el juego ya ha parado:** actualiza la app del móvil. Desde la 1.13 ninguna orden al motor es infinita: cada una caduca sola a los 3 s aunque el sistema del teléfono pierda la parada, y Apagada en Ajustes, irse a otra app o desconectar paran en el acto. Si con la app al día sigue vibrando, es el propio teléfono: reinícialo y, si vuelve a pasar, ábrelo como incidencia con el modelo y la versión de Android.
+- **Sigue vibrando con el juego cerrado:** si cierras el emulador o el juego mientras pide vibración, el mando virtual del PC se queda con la última orden (igual que un mando de Xbox de verdad tras un cierre brusco) y el receptor la sigue mandando. Cambia de modo o desconecta el móvil; al volver a abrir el juego se pone a cero solo.
 
 ## Mando universal
 

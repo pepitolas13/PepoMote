@@ -21,6 +21,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalView
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.Haptics
 import dev.pepotech.pepomote.control.PressEvent
 import dev.pepotech.pepomote.control.PressHit
 import dev.pepotech.pepomote.control.PressMode
@@ -71,7 +72,7 @@ class PressRegistry(private val view: View? = null) {
         if (!down.add(bit)) return
         entry.onDown(true)
         ButtonState.set(bit, true)
-        view?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        Haptics.tap(view, HapticFeedbackConstants.KEYBOARD_TAP)
         if (entry.pop) UiSounds.pop() else UiSounds.blip()
     }
 
@@ -271,6 +272,6 @@ private class RootOrigin(var x: Float = 0f, var y: Float = 0f)
 
 /** Vibración y sonido de una pulsación (solo en el flanco de bajada). */
 private fun pressFeedback(view: View, pop: Boolean) {
-    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    Haptics.tap(view, HapticFeedbackConstants.KEYBOARD_TAP)
     if (pop) UiSounds.pop() else UiSounds.blip()
 }

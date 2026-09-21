@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import dev.pepotech.pepomote.R
+import dev.pepotech.pepomote.control.Haptics
 import dev.pepotech.pepomote.control.RetroColor
 import dev.pepotech.pepomote.control.RetroLayout
 import dev.pepotech.pepomote.control.RetroLayouts
@@ -171,7 +172,7 @@ fun CButtons(sizeDp: Dp, onStick: (x: Int, y: Int) -> Unit) {
                         awaitEachGesture {
                             val first = awaitFirstDown()
                             first.consume()
-                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            Haptics.tap(view, HapticFeedbackConstants.CLOCK_TICK)
                             emit(held or bit)
                             waitForUpOrCancellation()
                             emit(held and bit.inv())

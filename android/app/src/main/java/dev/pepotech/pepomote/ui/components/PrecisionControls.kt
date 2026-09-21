@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.Haptics
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import androidx.compose.ui.res.stringResource
@@ -151,7 +152,7 @@ private fun Modifier.holdBit(view: View, bit: Int, onActive: (Boolean) -> Unit):
             try {
                 onActive(true)
                 ButtonState.set(bit, true)
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                Haptics.tap(view, HapticFeedbackConstants.KEYBOARD_TAP)
                 UiSounds.tick()
                 // hasta levantar el dedo: sin umbral de arrastre ni límites
                 drag(down.id) { it.consume() }

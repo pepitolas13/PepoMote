@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.key
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.Haptics
 import dev.pepotech.pepomote.control.RetroLayouts
 import dev.pepotech.pepomote.control.RightStick
 import dev.pepotech.pepomote.ui.components.CButtons
@@ -715,7 +716,7 @@ private fun FullScreenTouch(screen: ScreenClient<Bitmap>?, modifier: Modifier) {
                         ButtonState.setTouch(fx, fy, isDown)
                     }
                     down.consume()
-                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    Haptics.tap(view, HapticFeedbackConstants.CLOCK_TICK)
                     var last = down.position
                     finger = last
                     report(last, true)
@@ -975,7 +976,7 @@ private fun TouchScreen(width: Dp, height: Dp, screen: ScreenClient<Bitmap>?) {
                     }
                     val down = awaitFirstDown()
                     down.consume()
-                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    Haptics.tap(view, HapticFeedbackConstants.CLOCK_TICK)
                     var last = down.position
                     finger = last
                     report(last, true)

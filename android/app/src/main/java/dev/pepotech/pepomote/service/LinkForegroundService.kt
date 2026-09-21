@@ -18,7 +18,7 @@ import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.GameRumble
 import dev.pepotech.pepomote.control.RumbleCommand
-import dev.pepotech.pepomote.control.RumblePref
+import dev.pepotech.pepomote.control.RumbleMotor
 import dev.pepotech.pepomote.control.RumbleTrack
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.RetroLayouts
@@ -68,6 +68,9 @@ class LinkForegroundService : Service() {
         fun setAppVisible(visible: Boolean) {
             appVisible = visible
             current?.applyVisibility()
+            // Fuera de pantalla no queda vibración (iOS igual); al volver, el
+            // primer refresco del receptor la rearranca solo
+            if (!visible) current?.resetRumble()
         }
         private const val MAX_ATTEMPTS = 3
 
@@ -111,11 +114,16 @@ class LinkForegroundService : Service() {
 
     /**
      * Vibración de los juegos: la máquina (PROTOCOL.md §4.5) y su reloj
-     * (0,1 s en el hilo principal, solo mientras vibra), que para sola si el
-     * receptor deja de refrescar el RUMBLE.
+     * (0,1 s en el hilo principal, solo mientras el motor tenga algo que
+     * hacer), que para sola si el receptor deja de refrescar el RUMBLE. TODO
+     * lo de la vibración corre en el hilo principal: los RUMBLE del socket y
+     * los callbacks del control saltan a él.
      */
     private val rumbleTrack = RumbleTrack()
     private var rumbleClock: Runnable? = null
+
+    /** La comprobación del hueco de silencio tras un Stop ([RumbleMotor.GAP_MS]). */
+    private val rumbleGapCheck = Runnable { rumbleTick() }
     private var attempt = 0
     private var role = LinkState.ROLE_WIIMOTE
 
@@ -163,6 +171,8 @@ class LinkForegroundService : Service() {
         // El servicio puede vivir sin la Activity (arranque en segundo plano):
         // sin esto el motor de la vibración no existiría. Es idempotente.
         GameRumble.attach(this)
+        // Cada orden al motor (también las que nacen en Ajustes) despierta el reloj
+        GameRumble.clock = { ensureRumbleClock() }
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -270,7 +280,10 @@ class LinkForegroundService : Service() {
                     confirmedPairing = pairing.copy(pcName = pcName, platform = ok.platform,
                         token = ok.pairToken ?: pairing.token)
                     if (confirmedPairing != pairing) PairStore.confirm(this@LinkForegroundService, pairing, confirmedPairing)
-                    // Sesión nueva: el receptor numera los RUMBLE desde cero
+                    // Sesión nueva: el receptor numera los RUMBLE desde cero. Va
+                    // ANTES de crear el UdpSender: su hilo nace en el constructor
+                    // y ningún RUMBLE de esta sesión debe adelantar al reinicio
+                    // en la cola del hilo principal.
                     resetRumble()
                     val sender = UdpSender(
                         pairing.host, ok.udpPort, ok.sessionId,
@@ -578,11 +591,14 @@ class LinkForegroundService : Service() {
         control?.sendPad(LinkState.PAD_RETROPAD, eff)
     }
 
-    /** Cierra el enlace actual (si lo hay) e invalida sus callbacks. */
     // --- Vibración de los juegos ---------------------------------------------
 
-    /** Un RUMBLE del receptor (ya en el hilo principal y de esta sesión). */
+    /**
+     * Un RUMBLE del receptor (ya en el hilo principal y de esta sesión). Con
+     * la app fuera de pantalla no vibra nada.
+     */
     private fun onRumble(rumble: PmpCodec.Rumble) {
+        if (!appVisible) return
         runRumble(
             rumbleTrack.apply(
                 seq = rumble.seq, strong = rumble.strong, weak = rumble.weak,
@@ -592,39 +608,60 @@ class LinkForegroundService : Service() {
     }
 
     /**
-     * La orden al motor, con la escala del ajuste leída en CADA una (así
-     * cambiar el ajuste vale al instante). El reloj solo corre mientras vibra.
+     * La orden de la máquina al motor. Un Stop no cancela en el acto: el motor
+     * espera un hueco de silencio ([RumbleMotor.GAP_MS]) para fundir los
+     * pulsos de los juegos de Wii, y la comprobación va programada a esa
+     * distancia. Cada orden despierta el reloj por [GameRumble.clock].
      */
     private fun runRumble(command: RumbleCommand?) {
-        if (command == null) return
-        GameRumble.apply(command, RumblePref.scale(AppPrefs.gameRumble(this)))
-        if (command is RumbleCommand.Stop) stopRumbleClock() else startRumbleClock()
+        when (command) {
+            null -> return
+            is RumbleCommand.Start -> GameRumble.set(command.level)
+            is RumbleCommand.Change -> GameRumble.set(command.level)
+            RumbleCommand.Stop -> {
+                GameRumble.stop()
+                mainHandler.removeCallbacks(rumbleGapCheck)
+                mainHandler.postDelayed(rumbleGapCheck, RumbleMotor.GAP_MS)
+            }
+        }
     }
 
-    private fun startRumbleClock() {
-        if (rumbleClock != null) return
+    /** Un tic: el TTL de la máquina (para sola sin refresco) y la política del motor (renovar, cancelar, reintentar). */
+    private fun rumbleTick() {
+        runRumble(rumbleTrack.tick(GameRumble.nowMs()))
+        GameRumble.tick()
+        ensureRumbleClock()
+    }
+
+    /** El reloj de 0,1 s, solo mientras el motor tenga algo que hacer. */
+    private fun ensureRumbleClock() {
+        if (rumbleClock != null || !GameRumble.busy) return
         val r = object : Runnable {
             override fun run() {
-                runRumble(rumbleTrack.tick(GameRumble.nowMs()))
-                if (rumbleClock != null) mainHandler.postDelayed(this, 100)
+                rumbleClock = null
+                rumbleTick()
             }
         }
         rumbleClock = r
         mainHandler.postDelayed(r, 100)
     }
 
-    private fun stopRumbleClock() {
-        rumbleClock?.let { mainHandler.removeCallbacks(it) }
-        rumbleClock = null
-    }
-
-    /** Sesión nueva, modo puntero o enlace caído: el motor se para y se olvida todo. */
+    /**
+     * Sesión nueva, modo puntero, app fuera de pantalla o enlace caído: el
+     * motor cancela ya (y reintenta) y la máquina olvida todo. Desde otro
+     * hilo se encola en el principal, el único que toca la vibración.
+     */
     private fun resetRumble() {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            mainHandler.post { resetRumble() }
+            return
+        }
         rumbleTrack.reset()
-        stopRumbleClock()
-        GameRumble.stop()
+        mainHandler.removeCallbacks(rumbleGapCheck)
+        GameRumble.reset()
     }
 
+    /** Cierra el enlace actual (si lo hay) e invalida sus callbacks. */
     private fun teardownLink() {
         generation++
         LinkState.sendLayout = null
@@ -654,6 +691,7 @@ class LinkForegroundService : Service() {
         }
         cancelReconnect()
         teardownLink()
+        GameRumble.clock = null
         wakeLock?.release()
         wifiLock?.release()
         if (LinkState.flow.value.alive) {

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.DpadModel
+import dev.pepotech.pepomote.control.Haptics
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlin.math.max
@@ -91,7 +92,7 @@ fun PadCross(sizeDp: Dp, sideways: Boolean = false) {
                             }
                             // Algo nuevo pulsado (no solo soltado): clic
                             if (bits and held.inv() != 0) {
-                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                Haptics.tap(view, HapticFeedbackConstants.KEYBOARD_TAP)
                                 UiSounds.blip()
                             }
                             held = bits

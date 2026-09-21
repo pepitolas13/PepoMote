@@ -53,6 +53,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.Haptics
 import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.components.KeyboardButton
@@ -563,7 +564,7 @@ internal fun RecenterButton(size: Dp = 64.dp) {
                         val job = launch {
                             delay(150)
                             ButtonState.bumpRecenter()
-                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            Haptics.tap(view, HapticFeedbackConstants.LONG_PRESS)
                             dev.pepotech.pepomote.control.UiSounds.tick()
                         }
                         tryAwaitRelease()

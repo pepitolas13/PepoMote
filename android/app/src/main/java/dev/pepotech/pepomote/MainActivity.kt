@@ -45,6 +45,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
+import dev.pepotech.pepomote.control.Haptics
 import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.PressMode
 import dev.pepotech.pepomote.control.GameRumble
@@ -454,7 +455,7 @@ class MainActivity : ComponentActivity() {
                     volumeHeld = volumeHeld or bit
                     ButtonState.set(bit, true)
                     if (bit == ButtonState.A) UiSounds.pop() else UiSounds.blip()
-                    window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    Haptics.tap(window.decorView, HapticFeedbackConstants.KEYBOARD_TAP)
                 }
                 return true
             }

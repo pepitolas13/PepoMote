@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import dev.pepotech.pepomote.control.Haptics
 import dev.pepotech.pepomote.control.StickMap
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import kotlin.math.roundToInt
@@ -70,7 +71,7 @@ fun AnalogStick(sizeDp: Dp, onStick: (x: Int, y: Int) -> Unit) {
                         val (x, y) = StickMap.map(d.x, d.y, travel)
                         val atCenter = x == 0 && y == 0
                         if (centered && !atCenter) {
-                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            Haptics.tap(view, HapticFeedbackConstants.CLOCK_TICK)
                         }
                         centered = atCenter
                         onStick(x, y)

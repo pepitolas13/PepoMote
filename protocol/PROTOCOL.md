@@ -168,6 +168,8 @@ Es **estado, no evento**: mientras el juego vibra, el receptor repite el paquete
 - para solo si pasa `ttl_ms` sin otro `RUMBLE` (400 ms si `ttl_ms` es 0): así una Wi-Fi caída o un receptor cerrado no dejan el móvil vibrando;
 - olvida el `seq` al empezar otra sesión, al pasar a modo puntero y al perder el enlace.
 
+Al motor del móvil no le llega nunca una orden sin fin: cada orden caduca sola (3 s en Android) y el reloj del móvil la renueva mientras sigan llegando refrescos, así que ni un `cancel()` que el sistema pierda deja el móvil vibrando. Y un cero no para en el acto, sino tras un hueco corto de silencio (80 ms): los juegos de Wii fingen intensidad pulsando el motor cada pocos fotogramas, y el receptor manda cada cambio; sin el hueco, el móvil arrancaría y pararía el motor decenas de veces por segundo.
+
 La máquina de estados es la misma en los tres sitios (`rumble::Track` en Rust, `RumbleTrack.kt`, `RumbleTrack.swift`) y sus tests recorren los mismos casos: si divergen, un móvil vibra distinto de otro con el mismo receptor.
 
 El receptor saca la vibración del **mando de Xbox 360 virtual** que crea por jugador (ViGEmBus en Windows, uinput en Linux): el emulador le manda a sus motores y el receptor reenvía. `ok.rumble` dice qué puede hacer este receptor: `ready`, `driver` (falta ViGEmBus), `denied` (sin permiso en `/dev/uinput`), `unsupported` (macOS o servidor Android). Ausente = receptor anterior a 1.12.

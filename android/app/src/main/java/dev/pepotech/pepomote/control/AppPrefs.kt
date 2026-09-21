@@ -136,9 +136,11 @@ object AppPrefs {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("gameRumble", null)
         )
 
+    /** Guarda el ajuste y se lo pasa en vivo al motor: Apagada para al instante ([GameRumble.scale]). */
     fun setGameRumble(context: Context, value: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString("gameRumble", RumblePref.normalize(value)).apply()
+        GameRumble.scale = RumblePref.scale(value)
     }
 
     /** El aviso de «sin giroscopio real» del modo puntero ya se enseñó (una vez por instalación). */
