@@ -90,6 +90,18 @@ object Route {
     }
 
     /**
+     * ¿Se enseña la fila multimedia (⏯, volumen…) del mando vertical? Siempre
+     * en modo puntero, el único en el que el PC atiende esas teclas (en
+     * Dolphin, Wii U y Switch los paquetes van al DSU y en RetroArch solo se
+     * aplican los bits de la pistola); en los demás modos nunca, salvo con el
+     * ajuste «Multimedia en todos los modos». Sin enlace confirmado
+     * (conectando, reconectando) se ve: el trazado sin modo es el de puntero,
+     * como con el botón Home, y así al conectar no hay dos saltos.
+     */
+    fun showsMedia(link: UiLink, everywhere: Boolean): Boolean =
+        everywhere || (link as? UiLink.Connected)?.let { it.mode == LinkState.MODE_POINTER } ?: true
+
+    /**
      * ¿El texto acaba en una ventana del PC —la que tenga el foco: el juego,
      * el navegador— en vez de en el teclado en pantalla de un emulador?
      *

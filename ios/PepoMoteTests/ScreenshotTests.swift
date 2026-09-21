@@ -50,6 +50,7 @@ final class ScreenshotTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadNoScreenKey)
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKey)
         UserDefaults.standard.removeObject(forKey: AppPrefs.gamePadFullScreenKeyboardKey)
+        UserDefaults.standard.removeObject(forKey: AppPrefs.mediaEverywhereKey)
     }
 
     private func connected(mode: String, pad: String = LinkState.padGamepad, role: String = LinkState.roleWiimote, slot: Int = 0) -> UiLink {

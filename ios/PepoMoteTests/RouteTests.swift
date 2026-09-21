@@ -40,6 +40,29 @@ final class RouteTests: XCTestCase {
         XCTAssertFalse(Route.showsKeyboard(.disconnected))
     }
 
+    /// La fila multimedia: siempre en modo puntero (el único en el que el PC
+    /// atiende esas teclas), nunca en los demás salvo con el ajuste; sin enlace
+    /// confirmado se ve, como el trazado de puntero (igual que Home). Mismos
+    /// casos que en Android.
+    func testLaFilaMultimediaSoloEnPunteroSalvoAjuste() {
+        XCTAssertTrue(Route.showsMedia(connected(mode: "pointer"), false))
+        XCTAssertTrue(Route.showsMedia(connected(mode: "pointer", slot: 1), false))
+        let others: [(String, UiLink)] = [
+            ("dolphin", connected(mode: "dolphin")),
+            ("cemu wiimote", connected(mode: "cemu", pad: LinkState.padWiimote)),
+            ("retroarch nes", connected(mode: "retroarch", pad: LinkState.padNes)),
+            ("retroarch gun", connected(mode: "retroarch", pad: LinkState.padGun)),
+        ]
+        for (name, link) in others {
+            XCTAssertFalse(Route.showsMedia(link, false), name)
+            XCTAssertTrue(Route.showsMedia(link, true), name)
+        }
+        // Sin enlace confirmado: trazado de puntero
+        XCTAssertTrue(Route.showsMedia(.connecting, false))
+        XCTAssertTrue(Route.showsMedia(.disconnected, false))
+        XCTAssertTrue(Route.showsMedia(.reconnecting(pcName: "PC", attempt: 1), false))
+    }
+
     /// La cara del diálogo: con el teclado del PC el azul manda el texto tal
     /// cual y el Intro va aparte; con el teclado en pantalla de un emulador,
     /// «Aceptar» manda texto + Intro (es lo que lo confirma). Mismos casos

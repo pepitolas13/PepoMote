@@ -21,6 +21,9 @@ object UiScale {
      * Mando vertical y Nunchuk: 632 dp escalan (huecos mínimos 10+16+16+14+10,
      * cruceta 168, fila 64, A 148, 1/2 52, multimedia 46, B 88) y 176 dp son
      * fijos (10 + cabecera 44 + chips 42 + selector «En Cemu soy» 64 + 4 + 12).
+     * La fila multimedia solo sale en modo puntero (o en todos, con el ajuste):
+     * el presupuesto es el del trazado completo y, sin ella, el hueco que sobra
+     * se lo reparten los huecos flexibles.
      */
     const val REMOTE_BASE_W = 440f
     const val REMOTE_BASE_H = 632f

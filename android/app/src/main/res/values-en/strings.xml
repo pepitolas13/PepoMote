@@ -85,6 +85,8 @@
     <string name="sticky_press_sub">A pressed button stays pressed until you lift your finger, even if it drifts off</string>
     <string name="chips_title">Dolphin mode on the controller</string>
     <string name="chips_sub">Shows the Pointer/Dolphin selector when entering via Connect. Turn it off for a pointer-only controller, no selector</string>
+    <string name="media_everywhere_title">Media in every mode</string>
+    <string name="media_everywhere_sub">The Media row (⏯, volume…) always shows in Pointer mode, the only one where the PC obeys those keys. Turn it on to see it in Dolphin, Wii U and RetroArch too</string>
     <string name="nunchuk_own_title">Nunchuk on this phone</string>
     <string name="nunchuk_own_sub">For games that ask for a Nunchuk (Mario Galaxy, Zelda…): your Wii Remote carries one and the controller turns sideways by itself, with the stick, C and Z under your left hand. Off, sideways is the NES pad. Dolphin must be reopened after changing it. Remembered</string>
     <string name="notices_title">PC notices on screen</string>

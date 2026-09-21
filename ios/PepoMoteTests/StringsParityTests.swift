@@ -69,6 +69,7 @@ final class StringsParityTests: XCTestCase {
                     "capture", "activating_switch", "warn_needs_switch", "kb_help_switch",
                     "kb_pointer_title", "kb_pointer_help", "kb_send", "kb_enter",
                     "kb_click_title", "kb_click_sub",
+                    "media_everywhere_title", "media_everywhere_sub",
                     "channel_gamepad", "channel_gamepad_sub", "warn_needs_gamepad",
                     "mode_gamepad", "activating_gamepad"] {
             XCTAssertNotNil(es[key], "falta \(key)")

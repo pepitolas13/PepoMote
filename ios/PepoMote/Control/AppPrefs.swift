@@ -44,6 +44,16 @@ enum AppPrefs {
         set { d.set(newValue, forKey: "showDolphinChips") }
     }
 
+    /// «Multimedia en todos los modos»: la fila multimedia del mando vertical
+    /// sale siempre en modo puntero (el único en el que el PC atiende esas
+    /// teclas); con esto encendido sale también en Dolphin, Wii U y RetroArch.
+    /// Apagado de serie.
+    static let mediaEverywhereKey = "mediaEverywhere"
+    static var mediaEverywhere: Bool {
+        get { d.bool(forKey: mediaEverywhereKey) }
+        set { d.set(newValue, forKey: mediaEverywhereKey) }
+    }
+
     static var soundsEnabled: Bool {
         get { d.object(forKey: "sounds") as? Bool ?? true }
         set {

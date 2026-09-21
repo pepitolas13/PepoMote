@@ -53,9 +53,10 @@ Desde el repo también vale `packaging/linux-mobile/install.sh <paquete>`.
   recentrar (mantener 150 ms). A = clic izquierdo, B = derecho, tira derecha =
   scroll, tira izquierda (mirilla) = precisión, cruceta ↑/↓ = flechas y ←/→ =
   atrás/adelante del navegador, 1/2 = Enter/Esc, ± = volumen (mantener
-  repite), multimedia plegable. La cruceta es de una pieza, como la del Mando
-  de Wii (1.6): deslizar el pulgar cambia de dirección sin levantarlo y las
-  esquinas entre dos brazos son diagonales.
+  repite), multimedia plegable (solo en modo puntero, o en todos con el ajuste
+  «Multimedia en todos los modos»). La cruceta es de una pieza, como la del
+  Mando de Wii (1.6): deslizar el pulgar cambia de dirección sin levantarlo y
+  las esquinas entre dos brazos son diagonales.
 - **Dolphin**: Wiimote virtual (el receptor alimenta el servidor DSU). Con
   varios móviles, cada uno entra como Jugador N; el modo lo manda el Jugador 1.
 - **Mando**: solo botones, sin cambiar el modo.

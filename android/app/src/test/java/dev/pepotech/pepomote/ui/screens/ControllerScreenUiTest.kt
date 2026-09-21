@@ -19,12 +19,14 @@ import dev.pepotech.pepomote.service.LinkState
 import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.ui.theme.PepoMoteTheme
 import org.junit.Assert.assertEquals
+import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -44,7 +46,9 @@ class ControllerScreenUiTest {
     // Sin sensores saldría la tarjeta del giroscopio encima del mando
     @Before fun quietGyroCard() { AppPrefs.setGyroWarnShown(compose.activity) }
 
-    private fun show() {
+    @After fun mediaEverywhereOff() { AppPrefs.setMediaEverywhere(RuntimeEnvironment.getApplication(), false) }
+
+    private fun show(link: UiLink = this.link) {
         compose.setContent { PepoMoteTheme { ControllerScreen(link, showChips = true) {} } }
     }
 
@@ -79,6 +83,22 @@ class ControllerScreenUiTest {
         val play = compose.onNodeWithContentDescription("⏯").getBoundsInRoot()
         assertTrue("la fila multimedia (${play.bottom}) pisa la B (${b.top})", play.bottom <= b.top + 0.5.dp)
         capture("wii-remote-360x640-media-ui-test.png")
+    }
+
+    /** Fuera del modo puntero no hay fila multimedia (el PC no atiende esas teclas) y la B sigue entera. */
+    @Test fun enDolphinNoHayMultimedia() {
+        show(link.copy(mode = LinkState.MODE_DOLPHIN))
+        compose.onNodeWithText("Multimedia ▼").assertDoesNotExist()
+        compose.onNodeWithContentDescription("A").assertIsDisplayed()
+        assertTriggerOnScreen()
+    }
+
+    /** Con «Multimedia en todos los modos», la fila vuelve en Dolphin. */
+    @Test fun conElAjusteLaMultimediaSaleEnDolphin() {
+        AppPrefs.setMediaEverywhere(RuntimeEnvironment.getApplication(), true)
+        show(link.copy(mode = LinkState.MODE_DOLPHIN))
+        compose.onNodeWithText("Multimedia ▼").assertIsDisplayed()
+        assertTriggerOnScreen()
     }
 
     @Test

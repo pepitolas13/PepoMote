@@ -232,6 +232,16 @@ pub const TABLE: &[(&str, &str, &str)] = &[
         "El botón Teclado hace primero un clic izquierdo donde apuntas, para dejar el cursor en el campo. Apagado, haz tú el clic con A antes de escribir.",
         "The Keyboard button first left-clicks where you are pointing, to put the caret in the field. When off, click with A yourself before typing.",
     ),
+    (
+        "home.media_everywhere",
+        "Multimedia en todos los modos",
+        "Media in every mode",
+    ),
+    (
+        "home.media_everywhere_help",
+        "La fila Multimedia (⏯, volumen…) sale siempre en modo Puntero, el único en el que el PC atiende esas teclas. Enciéndelo para verla también en Dolphin, Wii U y RetroArch.",
+        "The Media row (⏯, volume…) always shows in Pointer mode, the only one where the PC obeys those keys. Turn it on to see it in Dolphin, Wii U and RetroArch too.",
+    ),
     // --- calibración
     ("cal.title", "Calibrar sensores", "Calibrate sensors"),
     (

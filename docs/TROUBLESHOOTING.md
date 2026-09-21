@@ -596,7 +596,11 @@ Cruceta ← y → = atrás y adelante en el navegador (en Windows también en el
 Explorador); ↑ y ↓ siguen siendo las flechas del teclado. Mantener − / + o
 🔉 / 🔊 sigue bajando o subiendo el volumen: el receptor repite la tecla cada
 100 ms a partir de los 350 ms (el sistema no repite las teclas inyectadas).
-En Dolphin y Wii U la cruceta va al emulador como siempre.
+En Dolphin y Wii U la cruceta va al emulador como siempre. La fila
+**Multimedia** del mando vertical solo sale en modo puntero, porque en los
+demás modos el PC no atiende esas teclas (los paquetes van al emulador); si
+la quieres siempre, Ajustes → «Multimedia en todos los modos» (Android, iOS
+y móvil Linux; solo cambia lo que se ve, no lo que el PC hace).
 
 ## Varios PCs
 

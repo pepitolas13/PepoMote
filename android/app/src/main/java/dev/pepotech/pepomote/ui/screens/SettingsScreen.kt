@@ -206,6 +206,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     var slidePress by remember { mutableStateOf(AppPrefs.slidePress(context)) }
     var stickyPress by remember { mutableStateOf(AppPrefs.stickyPress(context)) }
     var dolphinChips by remember { mutableStateOf(AppPrefs.showDolphinChips(context)) }
+    var mediaEverywhere by remember { mutableStateOf(AppPrefs.mediaEverywhere(context)) }
     var noScreen by remember { mutableStateOf(AppPrefs.gamePadNoScreen(context)) }
     var fullScreen by remember { mutableStateOf(AppPrefs.gamePadFullScreen(context)) }
     var fullScreenKb by remember { mutableStateOf(AppPrefs.gamePadFullScreenKeyboard(context)) }
@@ -449,6 +450,39 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
                     onCheckedChange = {
                         dolphinChips = it
                         AppPrefs.setShowDolphinChips(context, it)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
+                )
+            }
+        }
+
+        // Fila multimedia del mando vertical: solo en modo puntero (el PC no
+        // atiende esas teclas en los demás) o, con esto, en todos los modos
+        Spacer(Modifier.height(14.dp))
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+            border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.media_everywhere_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.media_everywhere_sub),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Switch(
+                    checked = mediaEverywhere,
+                    onCheckedChange = {
+                        mediaEverywhere = it
+                        AppPrefs.setMediaEverywhere(context, it)
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = PepoColors.Blue)
                 )

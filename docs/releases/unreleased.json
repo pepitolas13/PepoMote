@@ -5,7 +5,8 @@
     "Elige la fuerza de la vibración en Ajustes: alta, normal, baja o apagada.",
     "Cemu: PepoMote ya no sustituye los mandos que tengas configurados para otros jugadores.",
     "Cemu: un móvil que se queda unos segundos sin enviar recupera su mando solo.",
-    "Mando de Wii en vertical: en móviles pequeños los botones encogen a la vez para que la B no se salga de la pantalla; los móviles normales y las tablets se ven igual que antes (Android)."
+    "Mando de Wii en vertical: en móviles pequeños los botones encogen a la vez para que la B no se salga de la pantalla; los móviles normales y las tablets se ven igual que antes (Android).",
+    "La fila Multimedia del mando solo sale en modo puntero, el único en el que el PC atiende esas teclas; en Ajustes, «Multimedia en todos los modos» la enseña también en Dolphin, Wii U y RetroArch."
   ],
   "en": [
     "Universal controller: your phone becomes an Xbox pad for any PC game, with nothing to set up.",
@@ -13,6 +14,7 @@
     "Pick how strong the rumble is in Settings: high, normal, low or off.",
     "Cemu: PepoMote no longer replaces the controllers you had set up for other players.",
     "Cemu: a phone that stops sending for a few seconds gets its controller back by itself.",
-    "Wii Remote in portrait: on small phones all buttons shrink together so B never falls off the screen; regular phones and tablets look exactly as before (Android)."
+    "Wii Remote in portrait: on small phones all buttons shrink together so B never falls off the screen; regular phones and tablets look exactly as before (Android).",
+    "The controller's Media row only shows in pointer mode, the only one where the PC obeys those keys; in Settings, \"Media in every mode\" shows it in Dolphin, Wii U and RetroArch too."
   ]
 }

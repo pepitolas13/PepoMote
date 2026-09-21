@@ -89,6 +89,9 @@ struct ControllerScreen: View {
 
     /// Home del Mando de Wii: conectado y fuera del modo puntero.
     private var showHome: Bool { link.link.connected.map(showHomeButton) ?? false }
+    /// Multimedia solo en modo puntero (el PC no atiende esas teclas en los
+    /// demás), o en todos con el ajuste.
+    private var showsMedia: Bool { Route.showsMedia(link.link, AppPrefs.mediaEverywhere) }
 
     var body: some View {
         GeometryReader { geo in
@@ -231,8 +234,11 @@ struct ControllerScreen: View {
                 }
                 RoundButton(label: retro ? "A" : "2", size: m.one, bit: Btn.two, textSize: m.text(18))
             }
-            Gap(m.gap(10), flexible: m.flexible)
-            MediaRow(buttonSize: m.media, textSize: m.text(16))
+            // Sin la fila multimedia, el hueco se lo queda el Spacer de debajo
+            if showsMedia {
+                Gap(m.gap(10), flexible: m.flexible)
+                MediaRow(buttonSize: m.media, textSize: m.text(16))
+            }
             Spacer(minLength: 4)
             TriggerZone(label: Route.retroNes(link.link) ? "Y" : "B", height: m.trigger)
             Spacer().frame(height: 12)

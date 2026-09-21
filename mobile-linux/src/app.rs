@@ -1164,6 +1164,15 @@ impl MobileApp {
         {
             store::save_settings(&self.settings);
         }
+        // Fila multimedia del mando vertical: solo en modo puntero (el PC no
+        // atiende esas teclas en los demás) o, con esto, en todos los modos
+        if ui
+            .checkbox(&mut self.settings.media_everywhere, RichText::new(tr!("home.media_everywhere")).size(12.0))
+            .on_hover_text(tr!("home.media_everywhere_help"))
+            .changed()
+        {
+            store::save_settings(&self.settings);
+        }
         // Cómo se pulsan los botones: deslizando (manda sobre el siguiente) o
         // pegajoso (lo de siempre). La subopción solo se elige con el primero
         // apagado; el valor guardado no se toca
@@ -1422,7 +1431,17 @@ impl MobileApp {
         let pending = self.pad_pending.map(|p| p.pad);
         let press = self.press();
         let layout_name = pmp::retro::layout(self.effective_retro_layout()).map_or("RetroPad", |l| l.name);
-        match self.controller.show(ui, &self.buttons, &status, !self.dolphin_only && slot0, pending, hz, press, layout_name) {
+        match self.controller.show(
+            ui,
+            &self.buttons,
+            &status,
+            !self.dolphin_only && slot0,
+            pending,
+            hz,
+            press,
+            layout_name,
+            self.settings.media_everywhere,
+        ) {
             Action::Exit => {
                 self.close_link();
                 self.screen = Screen::Home;
