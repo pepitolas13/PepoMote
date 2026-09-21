@@ -1,14 +1,14 @@
 {
   "es": [
     "Mando universal: el móvil hace de mando de Xbox en cualquier juego del PC, sin configurar nada.",
-    "El móvil vibra cuando el juego lo pide, en Dolphin, Cemu, RetroArch y el mando universal.",
+    "El móvil vibra cuando el juego lo pide, en Dolphin, Cemu, RetroArch y el mando universal (Android y iPhone).",
     "Elige la fuerza de la vibración en Ajustes: alta, normal, baja o apagada.",
     "Cemu: PepoMote ya no sustituye los mandos que tengas configurados para otros jugadores.",
     "Cemu: un móvil que se queda unos segundos sin enviar recupera su mando solo."
   ],
   "en": [
     "Universal controller: your phone becomes an Xbox pad for any PC game, with nothing to set up.",
-    "Your phone rumbles when the game asks for it, in Dolphin, Cemu, RetroArch and the universal controller.",
+    "Your phone rumbles when the game asks for it, in Dolphin, Cemu, RetroArch and the universal controller (Android and iPhone).",
     "Pick how strong the rumble is in Settings: high, normal, low or off.",
     "Cemu: PepoMote no longer replaces the controllers you had set up for other players.",
     "Cemu: a phone that stops sending for a few seconds gets its controller back by itself."

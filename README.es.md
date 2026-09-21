@@ -75,7 +75,7 @@ Windows y Linux. En Windows hace falta el driver [ViGEmBus](https://github.com/n
 
 Cuando el juego pide vibración —el dado de Mario Party, un golpe en Wii Sports, un choque en Mario Kart— el móvil vibra. Va sola en Dolphin, Cemu, RetroArch y el mando universal: el PC crea un mando virtual, recoge lo que el juego le manda a los motores y se lo pasa al móvil por la misma conexión que ya usa.
 
-En Ajustes del móvil eliges cuánto: **Alta**, **Normal**, **Baja** o **Apagada**, con un botón para probarla. Es otra cosa que la vibración al tocar los botones, que no cambia. En Windows hace falta el driver [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) (el mismo del mando universal); en Linux va por uinput. En macOS no hay.
+En Ajustes del móvil eliges cuánto: **Alta**, **Normal**, **Baja** o **Apagada**, con un botón para probarla. Está en Android y en iPhone; los móviles con Linux todavía no la reciben. Es otra cosa que la vibración al tocar los botones, que no cambia. En Windows hace falta el driver [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) (el mismo del mando universal); en Linux va por uinput. En macOS no hay.
 
 ## Detalles finos
 

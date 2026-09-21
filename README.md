@@ -75,7 +75,7 @@ Windows and Linux. On Windows it needs the free [ViGEmBus](https://github.com/ne
 
 When the game asks for rumble — the Mario Party dice, a hit in Wii Sports, a crash in Mario Kart — your phone rumbles. It works by itself in Dolphin, Cemu, RetroArch and the universal controller: the PC creates a virtual controller, picks up whatever the game sends to its motors and forwards it to the phone over the connection it already has.
 
-In the phone's Settings you choose how much: **High**, **Normal**, **Low** or **Off**, with a button to try it. This is separate from the tap feedback on the buttons, which is unchanged. On Windows it needs the [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver (the same one as the universal controller); on Linux it goes through uinput. There is none on macOS.
+In the phone's Settings you choose how much: **High**, **Normal**, **Low** or **Off**, with a button to try it. It is on Android and iPhone; Linux phones do not get it yet. This is separate from the tap feedback on the buttons, which is unchanged. On Windows it needs the [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver (the same one as the universal controller); on Linux it goes through uinput. There is none on macOS.
 
 ## Nice touches
 
