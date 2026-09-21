@@ -11,6 +11,18 @@ final class PmpCodecTests: XCTestCase {
         return text.filter { !$0.isWhitespace }
     }
 
+    /// Hex (sin espacios) → bytes, para los vectores que se decodifican.
+    private func bytes(_ hex: String) -> Data {
+        let chars = Array(hex)
+        var d = Data(capacity: chars.count / 2)
+        var i = 0
+        while i + 1 < chars.count {
+            d.append(UInt8(String(chars[i]) + String(chars[i + 1]), radix: 16) ?? 0)
+            i += 2
+        }
+        return d
+    }
+
     private let session: UInt32 = 0xAABB_CCDD
 
     func testInputNeutral() throws {
@@ -108,6 +120,31 @@ final class PmpCodecTests: XCTestCase {
         padded.append(ping)
         XCTAssertEqual(PmpCodec.packetType(padded.subdata(in: 2..<padded.count)), PmpCodec.typePing)
         XCTAssertEqual(PmpCodec.pingT(padded[2...]), 123_456_789)
+    }
+
+    /// RUMBLE del receptor (§4.5): los dos vectores dorados se decodifican a
+    /// sus valores, y ni 19 ni 21 bytes, ni otro magic, ni un PING (que mide
+    /// lo mismo) pasan por RUMBLE.
+    func testRumbleVectors() throws {
+        let on = bytes(try vector("rumble_on"))
+        XCTAssertEqual(on.count, PmpCodec.rumbleLen)
+        XCTAssertEqual(PmpCodec.packetType(on), PmpCodec.typeRumble)
+        let r = try XCTUnwrap(PmpCodec.decodeRumble(on))
+        XCTAssertEqual(r, PmpCodec.Rumble(sessionId: session, seq: 42, strong: 255, weak: 128, ttlMs: 400))
+        let off = try XCTUnwrap(PmpCodec.decodeRumble(bytes(try vector("rumble_off"))))
+        XCTAssertEqual(off, PmpCodec.Rumble(sessionId: session, seq: 43, strong: 0, weak: 0, ttlMs: 0))
+        XCTAssertNil(PmpCodec.decodeRumble(on.subdata(in: 0..<19)), "19 bytes")
+        var long = on
+        long.append(0)
+        XCTAssertNil(PmpCodec.decodeRumble(long), "21 bytes")
+        var badMagic = on
+        badMagic[0] = 0x00
+        XCTAssertNil(PmpCodec.decodeRumble(badMagic), "otro magic")
+        XCTAssertNil(PmpCodec.decodeRumble(PmpCodec.encodePing(sessionId: session, tUs: 1)), "un PING no es RUMBLE")
+        // Un trozo de Data con startIndex ≠ 0 se lee igual
+        var padded = Data([0xAA, 0xBB])
+        padded.append(on)
+        XCTAssertEqual(PmpCodec.decodeRumble(padded[2...]), r)
     }
 
     func testRecorteDeCampos() {

@@ -435,6 +435,7 @@ func modeLabel(_ mode: String) -> String {
     case LinkState.modeCemu: return tr("mode_wiiu")
     case LinkState.modeSwitch: return tr("mode_switch")
     case LinkState.modeRetroArch: return tr("mode_retroarch")
+    case LinkState.modeGamepad: return tr("mode_gamepad")
     default: return tr("mode_pointer")
     }
 }
@@ -446,7 +447,8 @@ func isWiiUAsWiimote(_ c: ConnectedLink) -> Bool {
 
 /// Chips de modo: solo el Jugador 1; con el ajuste activo o, siempre, dentro de Wii U.
 func showModeChips(_ c: ConnectedLink, _ showChips: Bool) -> Bool {
-    c.slot == 0 && (showChips || c.mode == LinkState.modeCemu || c.mode == LinkState.modeSwitch || c.mode == LinkState.modeRetroArch)
+    c.slot == 0 && (showChips || c.mode == LinkState.modeCemu || c.mode == LinkState.modeSwitch
+        || c.mode == LinkState.modeRetroArch || c.mode == LinkState.modeGamepad)
 }
 
 /// Botón Home del Mando de Wii (vertical y apaisado): fuera del modo puntero,
@@ -466,6 +468,7 @@ struct ModeChips: View {
     let supportsCemu: Bool
     var supportsSwitch = false
     var supportsRetroArch = false
+    var supportsGamepad = false
     var supportsPointer = true
     var compact = false
     /// Chips estrechos (iPhone): caben cuatro en una fila.
@@ -494,6 +497,13 @@ struct ModeChips: View {
             if supportsRetroArch {
                 ModeChip(label: tr("mode_retroarch"), selected: current == LinkState.modeRetroArch, compact: compact, dense: dense) {
                     LinkState.shared.requestMode(LinkState.modeRetroArch)
+                }
+            }
+            // Sin este chip, en el mando universal no había ninguno marcado y
+            // al tocar otro no se podía volver sin salir al inicio.
+            if supportsGamepad {
+                ModeChip(label: tr("mode_gamepad"), selected: current == LinkState.modeGamepad, compact: compact, dense: dense) {
+                    LinkState.shared.requestMode(LinkState.modeGamepad)
                 }
             }
         }

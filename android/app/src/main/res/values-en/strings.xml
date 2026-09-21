@@ -13,6 +13,8 @@
     <string name="channel_dolphin_sub">Play real Wii games</string>
     <string name="channel_wiiu">Wii U</string>
     <string name="channel_wiiu_sub">GamePad for Cemu</string>
+    <string name="channel_gamepad">Universal controller</string>
+    <string name="channel_gamepad_sub">Any PC game</string>
     <string name="channel_nunchuk">Nunchuk</string>
     <string name="channel_nunchuk_sub">The other hand</string>
     <string name="channel_settings">Settings</string>
@@ -246,8 +248,11 @@
     <string name="channel_retroarch_sub">Each console\'s pad, Wii Remote or light gun</string>
     <string name="channel_retroarch_android_sub">Each console\'s pad or the Wii Remote Remote</string>
     <string name="mode_retroarch">RetroArch</string>
+    <string name="mode_gamepad">Universal controller</string>
     <string name="activating_retroarch">Activating RetroArch…</string>
+    <string name="activating_gamepad">Turning on the universal controller…</string>
     <string name="warn_needs_retroarch">Update PepoMote on the receiver (PC or server phone) to use RetroArch.</string>
+    <string name="warn_needs_gamepad">Update PepoMote on the PC to use the universal controller.</string>
     <string name="shortcut_retroarch">RetroArch</string>
     <string name="shortcut_retroarch_long">Controller for RetroArch</string>
     <string name="in_retroarch">In RetroArch I am:</string>
@@ -449,4 +454,17 @@
     <string name="server_retroarch_folder_dialog_steps">1. Tap “Use this folder”.\n2. Tap “Allow”.\n3. Return here: the phone will show each console\'s pad.</string>
     <string name="server_retroarch_folder_dialog_fallback">If Android shows another location, open the side menu, tap this phone and enter RetroArch.</string>
     <string name="pair_link_invalid">This link is invalid. Copy the complete link from the server.</string>
+    <string name="rumble_title">Rumble in games</string>
+    <string name="rumble_sub">When the game asks for it (Mario Party, Wii Sports…), your phone rumbles. The tap feedback on buttons is separate and unchanged.</string>
+    <string name="rumble_high">High</string>
+    <string name="rumble_normal">Normal</string>
+    <string name="rumble_low">Low</string>
+    <string name="rumble_off">Off</string>
+    <string name="rumble_try">Try it</string>
+    <string name="rumble_pc_ready">The connected PC can rumble your phone.</string>
+    <string name="rumble_pc_driver">The PC needs the ViGEmBus driver for rumble (see the receiver window).</string>
+    <string name="rumble_pc_denied">The receiver has no /dev/uinput permission: no rumble (see its window).</string>
+    <string name="rumble_pc_unsupported">This receiver cannot send rumble (macOS or Android server).</string>
+    <string name="rumble_pc_old">The receiver is older than 1.12: no game rumble.</string>
+    <string name="rumble_no_motor">This device has no vibration motor.</string>
 </resources>

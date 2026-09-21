@@ -107,6 +107,7 @@ pub fn report() -> String {
         ));
     }
     out.push(format!("Audio: {}", audio_probe()));
+    out.extend(crate::rumble::diag_lines());
     #[cfg(target_os = "linux")]
     out.push(format!(
         "Firewall: {}",

@@ -28,6 +28,11 @@ final class LinkService {
     private var control: ControlClient?
     private var udp: UdpSender?
     private var motion: MotionEngine?
+    /// Vibración de los juegos: la máquina (contrato §2) y su reloj (0,1 s en
+    /// la cola principal, solo mientras vibra), que para sola si el receptor
+    /// deja de refrescar el RUMBLE.
+    private let rumbleTrack = RumbleTrack()
+    private var rumbleTimer: Timer?
 
     /// `role`: wiimote (mando) o nunchuk (móvil de la otra mano). Un start()
     /// con el enlace ya vivo reemplaza el enlace entero.
@@ -89,6 +94,8 @@ final class LinkService {
                         ButtonState.shared.reset()
                         self.motion?.kind = self.role == LinkState.roleNunchuk ? .nunchuk : .wiimote
                         if mode != LinkState.modeCemu { ScreenLink.shared.release() }
+                        // En modo puntero no hay juego que vibre
+                        if mode == LinkState.modePointer { self.resetRumble() }
                     }
                     self.link.updateConnected {
                         $0.mode = mode
@@ -140,6 +147,7 @@ final class LinkService {
         guard gen == generation else { return }
         phase = .live
         reconnectAttempt = 0
+        resetRumble() // sesión nueva: el receptor numera los RUMBLE desde cero
         let nunchuk = ok.role == LinkState.roleNunchuk
         // El PC se ha renombrado: el emparejamiento se actualiza solo
         var pcName = pairing.pcName
@@ -151,6 +159,9 @@ final class LinkService {
         }
         guard let sender = UdpSender(host: pairing.host, port: ok.udpPort, sessionId: ok.sessionId, onRtt: { rtt in
             DispatchQueue.main.async { LinkState.shared.updateConnected { $0.rttMs = rtt } }
+        }, onRumble: { [weak self] rumble in
+            // Del hilo del socket a la cola principal: el motor solo vive ahí
+            DispatchQueue.main.async { self?.onRumble(rumble, gen) }
         }) else {
             onError("io", "UDP", gen, pairing)
             return
@@ -208,6 +219,7 @@ final class LinkService {
             screenOnly: ok.screenOnly,
             supportsSwitch: ok.supportsSwitch,
             supportsRetroArch: ok.supportsRetroArch,
+            supportsGamepad: ok.supportsGamepad,
             receiver: ok.receiver
         )))
         if let m = link.pendingMode {
@@ -364,9 +376,69 @@ final class LinkService {
         return moved
     }
 
+    // MARK: - Vibración de los juegos
+
+    private static func rumbleNowMs() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1_000_000 }
+
+    /// Un RUMBLE del receptor (ya en la cola principal y de esta sesión).
+    private func onRumble(_ rumble: PmpCodec.Rumble, _ gen: Int) {
+        guard gen == generation else { return }
+        runRumble(rumbleTrack.apply(
+            seq: rumble.seq, strong: rumble.strong, weak: rumble.weak, ttlMs: rumble.ttlMs,
+            nowMs: LinkService.rumbleNowMs()
+        ))
+    }
+
+    /// La orden al motor, con la escala del ajuste leída en cada una (cambiar
+    /// el ajuste vale al instante). El reloj solo corre mientras vibra.
+    private func runRumble(_ command: RumbleCommand?) {
+        guard let command = command else { return }
+        let scale = RumblePref.scale(AppPrefs.rumble)
+        switch command {
+        case .start(let level):
+            GameRumble.shared.start(level: level * scale)
+            startRumbleClock()
+        case .change(let level):
+            GameRumble.shared.change(level: level * scale)
+        case .stop:
+            GameRumble.shared.stop()
+            stopRumbleClock()
+        }
+    }
+
+    private func startRumbleClock() {
+        guard rumbleTimer == nil else { return }
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.runRumble(self.rumbleTrack.tick(nowMs: LinkService.rumbleNowMs()))
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        rumbleTimer = timer
+    }
+
+    private func stopRumbleClock() {
+        rumbleTimer?.invalidate()
+        rumbleTimer = nil
+    }
+
+    /// Sin enlace, en segundo plano o en modo puntero no queda vibración, y
+    /// la máquina olvida la sesión (el siguiente RUMBLE empieza de cero).
+    private func resetRumble() {
+        _ = rumbleTrack.reset()
+        stopRumbleClock()
+        GameRumble.shared.stop()
+    }
+
+    /// La app deja de verse (o vuelve): sin ella a la vista no queda
+    /// vibración (iOS para el motor de todas formas).
+    func setForeground(_ foreground: Bool) {
+        if !foreground { resetRumble() }
+    }
+
     /// Cierra el enlace actual (si lo hay) e invalida sus callbacks.
     private func teardownLink() {
         generation += 1
+        resetRumble()
         link.sendMode = nil
         link.sendPad = nil
         link.sendText = nil

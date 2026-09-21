@@ -63,10 +63,14 @@ final class StringsParityTests: XCTestCase {
                     "fullscreen_title", "fullscreen_sub", "fullscreen_kb_title", "fullscreen_kb_sub", "fullscreen_old_receiver",
                     "side_title", "side_sub", "side_left", "side_right", "side_sensor", "side_ask", "side_ask_sub", "side_flip", "side_keep",
                     "side_gamepad_title", "side_gamepad_sub", "side_ask_gamepad",
+                    "rumble_title", "rumble_sub", "rumble_high", "rumble_normal", "rumble_low", "rumble_off", "rumble_try",
+                    "rumble_pc_ready", "rumble_pc_driver", "rumble_pc_denied", "rumble_pc_unsupported", "rumble_pc_old", "rumble_no_motor",
                     "mode_switch", "channel_switch", "channel_switch_sub", "in_switch",
                     "capture", "activating_switch", "warn_needs_switch", "kb_help_switch",
                     "kb_pointer_title", "kb_pointer_help", "kb_send", "kb_enter",
-                    "kb_click_title", "kb_click_sub"] {
+                    "kb_click_title", "kb_click_sub",
+                    "channel_gamepad", "channel_gamepad_sub", "warn_needs_gamepad",
+                    "mode_gamepad", "activating_gamepad"] {
             XCTAssertNotNil(es[key], "falta \(key)")
         }
     }

@@ -12,11 +12,15 @@ object PmpCodec {
     const val TYPE_INPUT: Byte = 0x01
     const val TYPE_PING: Byte = 0x02
     const val TYPE_PONG: Byte = 0x03
+
+    /** RUMBLE (receptor -> movil, PROTOCOL.md 4.5): la vibracion que pide el juego. */
+    const val TYPE_RUMBLE: Byte = 0x04
     const val INPUT_LEN = 72
 
     /** INPUT con el bloque de extensión Wii U / Switch (FLAG_EXT): bytes 72-79. */
     const val INPUT_EXT_LEN = 80
     const val PING_LEN = 20
+    const val RUMBLE_LEN = 20
 
     val DISCOVER = "PMPDISCOVER1".toByteArray(Charsets.US_ASCII)
     const val HERE_PREFIX = "PMPHERE1 "
@@ -128,4 +132,35 @@ object PmpCodec {
     /** Extrae el session_id de un PING/PONG. */
     fun pingSession(data: ByteArray): Int =
         ByteBuffer.wrap(data, 8, 4).order(ByteOrder.LITTLE_ENDIAN).int
+
+    /**
+     * Un RUMBLE decodificado: es ESTADO (el receptor lo repite cada 100 ms
+     * mientras vibra), no un evento; `ttlMs` = 0 en el de parada.
+     */
+    data class Rumble(
+        val sessionId: Int,
+        val seq: Int,
+        /** Motor grande, 0..255. */
+        val strong: Int,
+        /** Motor pequeno, 0..255. */
+        val weak: Int,
+        /** Sin otro RUMBLE en este tiempo el movil para solo. */
+        val ttlMs: Int
+    )
+
+    /**
+     * RUMBLE de 20 bytes; null con otra longitud, otro magic u otro tipo (un
+     * PING mide lo mismo). Quien filtra la sesion es el que lo recibe.
+     */
+    fun decodeRumble(data: ByteArray, len: Int): Rumble? {
+        if (len != RUMBLE_LEN || packetType(data, len) != TYPE_RUMBLE) return null
+        val buf = ByteBuffer.wrap(data, 0, len).order(ByteOrder.LITTLE_ENDIAN)
+        return Rumble(
+            sessionId = buf.getInt(8),
+            seq = buf.getInt(12),
+            strong = data[16].toInt() and 0xFF,
+            weak = data[17].toInt() and 0xFF,
+            ttlMs = ((data[19].toInt() and 0xFF) shl 8) or (data[18].toInt() and 0xFF)
+        )
+    }
 }

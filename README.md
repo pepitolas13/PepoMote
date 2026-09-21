@@ -65,6 +65,18 @@ Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden 
 
 **With an Android server:** open **Server → RetroArch** on the device that will run the games and follow the guide to enable network commands and each player's network RetroPad. Save the configuration and check the connection. You can grant access to the RetroArch folder to detect the console from its history, or choose a pad manually. The check confirms the command connection: try each player's controls inside a game. [Setup and limitations](docs/SETUP-RETROARCH.md).
 
+## Play any PC game
+
+Tap **Universal controller** on the phone. Your PC sees a real Xbox 360 controller, so **there is nothing to set up**: Steam, a game from 2019, an emulator nobody has heard of — they all just find it. Move the phone to aim, and the gyro drives the right stick; touch the on-screen right stick and your thumb takes over.
+
+Windows and Linux. On Windows it needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver, installed once — PepoMote offers the download and picks it up without restarting. On Linux it uses uinput, same as the rumble controller. Not available on macOS: a virtual controller there needs a driver signed by Apple.
+
+## Make your phone rumble with the game
+
+When the game asks for rumble — the Mario Party dice, a hit in Wii Sports, a crash in Mario Kart — your phone rumbles. It works by itself in Dolphin, Cemu, RetroArch and the universal controller: the PC creates a virtual controller, picks up whatever the game sends to its motors and forwards it to the phone over the connection it already has.
+
+In the phone's Settings you choose how much: **High**, **Normal**, **Low** or **Off**, with a button to try it. This is separate from the tap feedback on the buttons, which is unchanged. On Windows it needs the [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver (the same one as the universal controller); on Linux it goes through uinput. There is none on macOS.
+
 ## Nice touches
 
 - **Local multiplayer**: up to 4 phones on one PC — scan the same QR and each phone becomes its own Wiimote in Dolphin, with Dolphin's controller config written for you automatically

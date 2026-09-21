@@ -1,6 +1,6 @@
 [package]
 name = "pepomote"
-version = "1.11.0"
+version = "1.12.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "PepoMote receiver — turns your Android phone into a Wii-style pointer/controller for your PC"
@@ -66,8 +66,15 @@ windows = { version = "0.58", features = [
     "Win32_System_Registry",
     "Win32_NetworkManagement_IpHelper",
     "Win32_System_Console",
+    # Para saber en qué hueco de XInput ha caído cada mando virtual
+    # (rumble/windows.rs): el driver no lo dice bien.
+    "Win32_UI_Input_XboxController",
 ] }
 windows-capture = "2.0.1"
+# Mando virtual Xbox 360 (driver ViGEmBus) por el que Dolphin, Cemu y
+# RetroArch mandan la vibracion que luego viaja al movil (rumble/windows.rs).
+# Rust puro: habla con el driver por IOCTL, sin DLL.
+vigem-client = { version = "0.1", features = ["unstable_xtarget_notification"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 evdev = "0.12"

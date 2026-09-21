@@ -26,6 +26,8 @@ struct ConnectedLink: Equatable {
     var supportsSwitch: Bool = false
     /// El receptor anuncia RetroArch en `ok.modes` (mando en red de PC o Android).
     var supportsRetroArch: Bool = false
+    /// El receptor anuncia el mando universal en `ok.modes` (solo PC).
+    var supportsGamepad: Bool = false
     /// RetroArch: el juego cargado según el receptor (mensaje `game`); con su
     /// consola se elige la plantilla de mando. Se conserva al cambiar de modo.
     var game: RetroGame? = nil
@@ -34,6 +36,10 @@ struct ConnectedLink: Equatable {
 
     /// ¿Hay teclado para este enlace? Una sola fuente de verdad: `Route`.
     var hasKeyboard: Bool { Route.showsKeyboard(.connected(self)) }
+
+    /// `ok.rumble`: si el receptor puede hacer vibrar el móvil (Ajustes lo
+    /// cuenta); nil = receptor sin vibración.
+    var rumble: String? { receiver.rumble }
 }
 
 enum UiLink: Equatable {
@@ -71,6 +77,8 @@ enum PadIntent {
     case wiiU
     case switchMode
     case retroArch
+    /// Mando universal: el móvil como mando de Xbox 360 para cualquier juego.
+    case universalPad
 
     var mode: String? {
         switch self {
@@ -78,6 +86,7 @@ enum PadIntent {
         case .wiiU: return LinkState.modeCemu
         case .switchMode: return LinkState.modeSwitch
         case .retroArch: return LinkState.modeRetroArch
+        case .universalPad: return LinkState.modeGamepad
         }
     }
 }
@@ -93,6 +102,8 @@ final class LinkState: ObservableObject {
     static let modeCemu = "cemu"
     static let modeSwitch = "switch"
     static let modeRetroArch = "retroarch"
+    /// Mando universal: el móvil como mando de Xbox 360 para cualquier juego.
+    static let modeGamepad = "gamepad"
     static let padGamepad = "gamepad"
     static let padPro = "pro"
     static let padWiimote = "wiimote"
@@ -174,9 +185,13 @@ final class LinkState: ObservableObject {
         intent = mode == LinkState.modeCemu ? .wiiU
             : mode == LinkState.modeSwitch ? .switchMode
             : mode == LinkState.modeRetroArch ? .retroArch
+            : mode == LinkState.modeGamepad ? .universalPad
             : .none
         ButtonState.shared.reset()
-        if mode == LinkState.modeSwitch || mode == LinkState.modeRetroArch { ScreenLink.shared.release() }
+        // La doble pantalla es solo de Cemu: los demás modos la sueltan.
+        if mode == LinkState.modeSwitch || mode == LinkState.modeRetroArch || mode == LinkState.modeGamepad {
+            ScreenLink.shared.release()
+        }
         if intent != .none, link.connected?.mode != mode {
             motion?.kind = role == LinkState.roleNunchuk ? .nunchuk : .wiimote
         }

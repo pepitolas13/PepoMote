@@ -1,7 +1,9 @@
 package dev.pepotech.pepomote.service
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import dev.pepotech.pepomote.R
 import org.junit.Test
 
@@ -20,11 +22,12 @@ class RouteTest {
         slot: Int = 0,
         supportsCemu: Boolean = true,
         ownNunchuk: Boolean = false,
+        supportsGamepad: Boolean = false,
         textInput: Boolean = true
     ) = UiLink.Connected(
         pcName = "PC", mode = mode, rttMs = null, sensorHz = 0f,
         slot = slot, role = role, supportsCemu = supportsCemu, pad = pad, ownNunchuk = ownNunchuk,
-        textInput = textInput
+        supportsGamepad = supportsGamepad, textInput = textInput
     )
 
     @Test
@@ -76,6 +79,43 @@ class RouteTest {
         assertEquals(false, Route.holdsPointerForKeyboard(UiLink.Disconnected))
     }
 
+    @Test
+    fun elMandoUniversalEsLaPantallaGamePadApaisada() {
+        val link = connected(mode = LinkState.MODE_GAMEPAD, supportsGamepad = true)
+        assertTrue(Route.isGamePad(link))
+        assertEquals(PadScreen.GamePad, Route.route(link, PadIntent.None))
+        assertTrue(Route.forcesLandscape(link, PadIntent.None))
+        // La cruceta NO se gira: esto no es un Mando de Wii de lado.
+        assertFalse(Route.sidewaysDpad(link))
+    }
+
+    @Test
+    fun sinElModoEnElReceptorElMandoUniversalNoSeActiva() {
+        // Receptor antiguo: anuncia el modo pero no lo soporta.
+        val viejo = connected(mode = LinkState.MODE_GAMEPAD, supportsGamepad = false)
+        assertFalse(Route.isGamePad(viejo))
+        val aviso = Route.afterModeEcho(PadIntent.Gamepad, LinkState.MODE_POINTER, viejo)
+        assertEquals(PadIntent.None, aviso.intent)
+        assertEquals(Route.WARN_NEEDS_GAMEPAD, aviso.warning)
+    }
+
+    @Test
+    fun laIntencionDeMandoUniversalEnsenaElMandoAntesDelEco() {
+        val link = connected(mode = LinkState.MODE_POINTER, supportsGamepad = true)
+        assertEquals(LinkState.MODE_GAMEPAD, Route.displayMode(link, PadIntent.Gamepad))
+        assertEquals(PadScreen.GamePad, Route.route(link, PadIntent.Gamepad))
+        // Y el eco correcto la consume sin aviso.
+        val ok = Route.afterModeEcho(PadIntent.Gamepad, LinkState.MODE_GAMEPAD, link)
+        assertEquals(PadIntent.None, ok.intent)
+        assertNull(ok.warning)
+    }
+
+    @Test
+    fun soloElJugador1CambiaAMandoUniversal() {
+        val j2 = connected(mode = LinkState.MODE_POINTER, slot = 1, supportsGamepad = true)
+        val aviso = Route.afterModeEcho(PadIntent.Gamepad, LinkState.MODE_POINTER, j2)
+        assertEquals(Route.WARN_PLAYER_1, aviso.warning)
+    }
 
     @Test
     fun mandoDeLadoGiraLaCrucetaYLosSensores() {

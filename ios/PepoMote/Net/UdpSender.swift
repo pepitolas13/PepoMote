@@ -2,20 +2,25 @@ import Darwin
 import Foundation
 
 /// Socket UDP caliente (BSD, sin capas): envía INPUT, responde a los PING del
-/// receptor y mide RTT con sus propios PING (1 Hz). DSCP EF para que la Wi-Fi
-/// (WMM) lo meta en la cola de voz; si el sistema lo ignora, no pasa nada.
+/// receptor, mide RTT con sus propios PING (1 Hz) y recibe los RUMBLE de la
+/// vibración de los juegos. DSCP EF para que la Wi-Fi (WMM) lo meta en la
+/// cola de voz; si el sistema lo ignora, no pasa nada.
 final class UdpSender {
     private var fd: Int32 = -1
     private let sessionId: UInt32
     private let onRtt: (Float) -> Void
+    /// RUMBLE del receptor para ESTA sesión (los de otra se ignoran). Llega
+    /// en el hilo del socket: quien lo recibe salta a la cola principal.
+    private let onRumble: ((PmpCodec.Rumble) -> Void)?
     private var running = true
     private var listener: Thread?
     private var pinger: Thread?
 
     /// nil si el host no se puede resolver o el socket no se abre.
-    init?(host: String, port: Int, sessionId: UInt32, onRtt: @escaping (Float) -> Void) {
+    init?(host: String, port: Int, sessionId: UInt32, onRtt: @escaping (Float) -> Void, onRumble: ((PmpCodec.Rumble) -> Void)? = nil) {
         self.sessionId = sessionId
         self.onRtt = onRtt
+        self.onRumble = onRumble
         guard let addr = UdpSender.resolve(host, port: port) else { return nil }
         let s = socket(AF_INET, SOCK_DGRAM, 0)
         if s < 0 { return nil }
@@ -83,6 +88,11 @@ final class UdpSender {
                     if now >= sent, now - sent <= 5_000_000 {
                         onRtt(Float(now - sent) / 1000)
                     }
+                }
+            case PmpCodec.typeRumble:
+                // Vibración que pide el juego: solo la de esta sesión
+                if let rumble = PmpCodec.decodeRumble(data), rumble.sessionId == sessionId {
+                    onRumble?(rumble)
                 }
             default:
                 break

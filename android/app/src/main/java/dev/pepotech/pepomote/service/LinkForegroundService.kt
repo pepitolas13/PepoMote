@@ -16,6 +16,10 @@ import androidx.core.app.ServiceCompat
 import dev.pepotech.pepomote.MainActivity
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.control.GameRumble
+import dev.pepotech.pepomote.control.RumbleCommand
+import dev.pepotech.pepomote.control.RumblePref
+import dev.pepotech.pepomote.control.RumbleTrack
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.RetroLayouts
 import dev.pepotech.pepomote.control.LocaleHelper
@@ -23,6 +27,7 @@ import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.ControlClient
 import dev.pepotech.pepomote.net.Discovery
 import dev.pepotech.pepomote.net.PairStore
+import dev.pepotech.pepomote.net.PmpCodec
 import dev.pepotech.pepomote.net.Pairing
 import dev.pepotech.pepomote.net.UdpSender
 import dev.pepotech.pepomote.sensor.MotionEngine
@@ -103,6 +108,14 @@ class LinkForegroundService : Service() {
     }
 
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /**
+     * Vibración de los juegos: la máquina (PROTOCOL.md §4.5) y su reloj
+     * (0,1 s en el hilo principal, solo mientras vibra), que para sola si el
+     * receptor deja de refrescar el RUMBLE.
+     */
+    private val rumbleTrack = RumbleTrack()
+    private var rumbleClock: Runnable? = null
     private var attempt = 0
     private var role = LinkState.ROLE_WIIMOTE
 
@@ -147,6 +160,9 @@ class LinkForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         current = this
+        // El servicio puede vivir sin la Activity (arranque en segundo plano):
+        // sin esto el motor de la vibración no existiría. Es idempotente.
+        GameRumble.attach(this)
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -254,7 +270,15 @@ class LinkForegroundService : Service() {
                     confirmedPairing = pairing.copy(pcName = pcName, platform = ok.platform,
                         token = ok.pairToken ?: pairing.token)
                     if (confirmedPairing != pairing) PairStore.confirm(this@LinkForegroundService, pairing, confirmedPairing)
-                    val sender = UdpSender(pairing.host, ok.udpPort, ok.sessionId) { rtt ->
+                    // Sesión nueva: el receptor numera los RUMBLE desde cero
+                    resetRumble()
+                    val sender = UdpSender(
+                        pairing.host, ok.udpPort, ok.sessionId,
+                        onRumble = { rumble ->
+                            // Del hilo del socket al principal: el motor solo se toca ahí
+                            mainHandler.post { if (gen == generation) onRumble(rumble) }
+                        }
+                    ) { rtt ->
                         LinkState.updateConnected { it.copy(rttMs = rtt) }
                     }
                     udp = sender
@@ -314,7 +338,9 @@ class LinkForegroundService : Service() {
                             platform = ok.platform,
                             textInput = ok.textInput,
                             supportsTilt = ok.supportsTilt,
-                            supportsRetroArch = ok.supportsRetroArch
+                            supportsRetroArch = ok.supportsRetroArch,
+                            supportsGamepad = ok.supportsGamepad,
+                            rumble = ok.rumble
                         )
                     )
                     val requestedMode = LinkState.pendingMode
@@ -391,6 +417,8 @@ class LinkForegroundService : Service() {
                         it.copy(mode = mode, pad = PadPreference.effective(mode, it.pad))
                     }
                     LinkState.resolveIntent(this@LinkForegroundService, mode, byPc)
+                    // En modo puntero no hay juego que vibre
+                    if (mode == LinkState.MODE_POINTER) resetRumble()
                     if (role == LinkState.ROLE_WIIMOTE) {
                         if (mode == LinkState.MODE_CEMU && before?.supportsCemu == true || mode == LinkState.MODE_SWITCH && before?.supportsSwitch == true || mode == LinkState.MODE_RETROARCH && before?.supportsRetroArch == true) {
                             restorePrefs(mode)
@@ -551,6 +579,52 @@ class LinkForegroundService : Service() {
     }
 
     /** Cierra el enlace actual (si lo hay) e invalida sus callbacks. */
+    // --- Vibración de los juegos ---------------------------------------------
+
+    /** Un RUMBLE del receptor (ya en el hilo principal y de esta sesión). */
+    private fun onRumble(rumble: PmpCodec.Rumble) {
+        runRumble(
+            rumbleTrack.apply(
+                seq = rumble.seq, strong = rumble.strong, weak = rumble.weak,
+                ttlMs = rumble.ttlMs, nowMs = GameRumble.nowMs()
+            )
+        )
+    }
+
+    /**
+     * La orden al motor, con la escala del ajuste leída en CADA una (así
+     * cambiar el ajuste vale al instante). El reloj solo corre mientras vibra.
+     */
+    private fun runRumble(command: RumbleCommand?) {
+        if (command == null) return
+        GameRumble.apply(command, RumblePref.scale(AppPrefs.gameRumble(this)))
+        if (command is RumbleCommand.Stop) stopRumbleClock() else startRumbleClock()
+    }
+
+    private fun startRumbleClock() {
+        if (rumbleClock != null) return
+        val r = object : Runnable {
+            override fun run() {
+                runRumble(rumbleTrack.tick(GameRumble.nowMs()))
+                if (rumbleClock != null) mainHandler.postDelayed(this, 100)
+            }
+        }
+        rumbleClock = r
+        mainHandler.postDelayed(r, 100)
+    }
+
+    private fun stopRumbleClock() {
+        rumbleClock?.let { mainHandler.removeCallbacks(it) }
+        rumbleClock = null
+    }
+
+    /** Sesión nueva, modo puntero o enlace caído: el motor se para y se olvida todo. */
+    private fun resetRumble() {
+        rumbleTrack.reset()
+        stopRumbleClock()
+        GameRumble.stop()
+    }
+
     private fun teardownLink() {
         generation++
         LinkState.sendLayout = null
@@ -564,6 +638,7 @@ class LinkForegroundService : Service() {
         LinkState.setTilt = null
         LinkState.motion = null
         ScreenLink.unbind() // sin enlace no hay pantalla que recibir
+        resetRumble()
         motion?.stop()
         udp?.close()
         control?.close()

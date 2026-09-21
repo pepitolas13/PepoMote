@@ -139,6 +139,8 @@ struct Snapshot {
     fixing: bool,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fix_failed: Option<String>,
+    /// Vibración de los juegos: estado y mandos virtuales que hay.
+    rumble: (crate::rumble::Status, Vec<String>),
 }
 
 impl eframe::App for PepoMoteApp {
@@ -212,6 +214,7 @@ impl eframe::App for PepoMoteApp {
                 ax_denied: s.ax_denied,
                 fixing: s.fixing,
                 fix_failed: s.fix_failed.clone(),
+                rumble: crate::rumble::ui_lines(),
             }
         };
         // Con móviles, 20 fps (el latido respira); en espera, 10 bastan
@@ -268,6 +271,8 @@ impl eframe::App for PepoMoteApp {
                                     self.ui_switch(ui, &snap);
                                 } else if snap.mode == Mode::RetroArch {
                                     self.ui_retroarch(ui, &snap);
+                                } else if snap.mode == Mode::Gamepad {
+                                    self.ui_gamepad(ui, &snap);
                                 }
                                 if snap.player_count < crate::net::MAX_PLAYERS {
                                     ui.add_space(12.0);
@@ -565,10 +570,66 @@ impl PepoMoteApp {
             let color = if st.ok { theme::ok() } else { theme::warn() };
             ui.label(RichText::new(&st.text).size(12.0).color(color));
         }
+        self.ui_rumble(ui, snap);
         ui.label(
             RichText::new(tr!("win.dolphin_help"))
             .size(11.0)
             .color(theme::text_dim()),
+        );
+    }
+
+    /// Vibración de los juegos: estado del mando virtual y cómo arreglarlo
+    /// (en Windows, el driver; en Linux, el permiso de uinput).
+    fn ui_rumble(&self, ui: &mut egui::Ui, snap: &Snapshot) {
+        let (st, pads) = &snap.rumble;
+        let ok = *st == crate::rumble::Status::Ready;
+        let color = if ok { theme::ok() } else { theme::warn() };
+        ui.label(RichText::new(crate::rumble::status_text(*st)).size(12.0).color(color));
+        for l in pads {
+            ui.label(RichText::new(l).size(11.0).color(theme::text_dim()));
+        }
+        if *st == crate::rumble::Status::NeedsDriver
+            && ui.button(RichText::new(tr!("rumble.download")).size(13.0)).clicked()
+        {
+            let _ = webbrowser::open(crate::rumble::VIGEM_URL);
+        }
+    }
+
+    /// Mando universal. Aquí el mando virtual no es un accesorio para la
+    /// vibración: **es** la salida del móvil, así que el estado se cuenta en
+    /// esos términos y no en los de `ui_rumble`. No hay botón de configurar
+    /// nada porque no hay nada que configurar: el mando lo crea el sistema.
+    fn ui_gamepad(&self, ui: &mut egui::Ui, snap: &Snapshot) {
+        ui.add_space(8.0);
+        let (st, pads) = &snap.rumble;
+        match *st {
+            crate::rumble::Status::Ready => {
+                ui.label(RichText::new(tr!("win.gamepad_ready")).size(13.0).color(theme::ok()));
+            }
+            crate::rumble::Status::NeedsDriver => {
+                ui.label(RichText::new(tr!("win.gamepad_driver")).size(13.0).color(theme::warn()));
+            }
+            _ => {
+                ui.label(RichText::new(tr!("win.gamepad_nopad")).size(13.0).color(theme::warn()));
+                ui.label(
+                    RichText::new(crate::rumble::status_text(*st))
+                        .size(11.0)
+                        .color(theme::text_dim()),
+                );
+            }
+        }
+        for l in pads {
+            ui.label(RichText::new(l).size(11.0).color(theme::text_dim()));
+        }
+        if *st == crate::rumble::Status::NeedsDriver
+            && ui.button(RichText::new(tr!("rumble.download")).size(13.0)).clicked()
+        {
+            let _ = webbrowser::open(crate::rumble::VIGEM_URL);
+        }
+        ui.label(
+            RichText::new(tr!("win.gamepad_help"))
+                .size(11.0)
+                .color(theme::text_dim()),
         );
     }
 
@@ -593,6 +654,7 @@ impl PepoMoteApp {
             let color = if st.ok { theme::ok() } else { theme::text_dim() };
             ui.label(RichText::new(&st.text).size(12.0).color(color));
         }
+        self.ui_rumble(ui, snap);
         ui.label(
             RichText::new(tr!("win.cemu_help"))
                 .size(11.0)
@@ -934,6 +996,7 @@ fn ui_players(ui: &mut egui::Ui, snap: &Snapshot) {
         Mode::Cemu => tr!("win.mode_cemu"),
         Mode::Switch => tr!("win.mode_switch"),
         Mode::RetroArch => tr!("win.mode_retroarch"),
+        Mode::Gamepad => tr!("win.mode_gamepad"),
     };
     let cemu = snap.mode == Mode::Cemu;
     let cemu_layout = crate::state::cemu_layout(&snap.players);

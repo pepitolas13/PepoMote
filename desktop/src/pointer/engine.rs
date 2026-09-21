@@ -77,9 +77,10 @@ const FREEZE_ESCAPE_DEG: f32 = 0.08;
 const FREEZE_ESCAPE_QUAT_DEG: f32 = 0.04;
 const FREEZE_LEAK_TAU_S: f32 = 1.0;
 
-/// Signos del fallback relativo (h1). Corrección SOLO aquí.
-const SIGN_X: f32 = -1.0;
-const SIGN_Y: f32 = -1.0;
+/// Signos del fallback relativo (h1) y del apuntado por giro del mando
+/// universal (`pad::aim`). Corrección SOLO aquí.
+pub(crate) const SIGN_X: f32 = -1.0;
+pub(crate) const SIGN_Y: f32 = -1.0;
 
 // --- El gyro manda, el quat ancla (en silencio) ---
 // El GAME_ROTATION_VECTOR del móvil es rocoso en REPOSO (anclado a la
@@ -136,7 +137,7 @@ const RATE_CUTOFF_HZ: f32 = 2.0;
 const POLE_H2: f32 = 0.022;
 /// Zona muerta del gyro en el fallback relativo (rad/s ≈ 1.7°/s): mata el
 /// sesgo típico de los MEMS baratos sin tragarse el giro intencional.
-const GYRO_DEADZONE_RADS: f32 = 0.03;
+pub(crate) const GYRO_DEADZONE_RADS: f32 = 0.03;
 
 // --- Apuntado por INCLINACIÓN (flags bit4: móviles sin giroscopio real) ---
 // El acelerómetro solo ve la gravedad, y el giro sobre la vertical (yaw) no
@@ -169,7 +170,7 @@ const TILT_FREEZE_EXIT_DEG: f32 = 0.6;
 
 /// Zona muerta SUAVE: 0 dentro de ±dz, y fuera resta dz (sin escalón brusco,
 /// así el arranque del movimiento no da un tirón).
-fn soft_deadzone(v: f32, dz: f32) -> f32 {
+pub(crate) fn soft_deadzone(v: f32, dz: f32) -> f32 {
     if v > dz {
         v - dz
     } else if v < -dz {

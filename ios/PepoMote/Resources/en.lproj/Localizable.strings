@@ -12,6 +12,8 @@
 "channel_wiiu_sub" = "GamePad for Cemu";
 "channel_switch" = "Switch";
 "channel_switch_sub" = "Pro Controller";
+"channel_gamepad" = "Universal controller";
+"channel_gamepad_sub" = "Any PC game";
 "channel_nunchuk" = "Nunchuk";
 "channel_nunchuk_sub" = "The other hand";
 "channel_settings" = "Settings";
@@ -120,6 +122,19 @@
 "update_install_guide" = "SideStore, AltStore and Sideloadly guide";
 "update_open_altstore_legacy" = "Open AltStore 2.1 or earlier";
 "update_altstore_legacy_help" = "Older versions use a different link. If it opens AltStore PAL, copy the source and add it manually in AltStore Classic; this IPA needs signing with your account.";
+"rumble_title" = "Rumble in games";
+"rumble_sub" = "When the game asks for it (Mario Party, Wii Sports…), your phone rumbles. The tap feedback on buttons is separate and unchanged.";
+"rumble_high" = "High";
+"rumble_normal" = "Normal";
+"rumble_low" = "Low";
+"rumble_off" = "Off";
+"rumble_try" = "Try it";
+"rumble_pc_ready" = "The connected PC can rumble your phone.";
+"rumble_pc_driver" = "The PC needs the ViGEmBus driver for rumble (see the receiver window).";
+"rumble_pc_denied" = "The receiver has no /dev/uinput permission: no rumble (see its window).";
+"rumble_pc_unsupported" = "This receiver cannot send rumble (macOS or Android server).";
+"rumble_pc_old" = "The receiver is older than 1.12: no game rumble.";
+"rumble_no_motor" = "This device has no vibration motor.";
 
 /* first run */
 "onboarding_sub" = "Your phone, your PC's controller in 3 steps";
@@ -184,8 +199,11 @@
 "channel_retroarch" = "RetroArch";
 "channel_retroarch_sub" = "Each console's pad, Wii Remote or light gun";
 "mode_retroarch" = "RetroArch";
+"mode_gamepad" = "Universal controller";
+"activating_gamepad" = "Turning on the universal controller…";
 "activating_retroarch" = "Activating RetroArch…";
 "warn_needs_retroarch" = "The PC needs a newer PepoMote for RetroArch";
+"warn_needs_gamepad" = "The PC needs a newer PepoMote for the universal controller";
 "in_retroarch" = "In RetroArch I am:";
 "retropad" = "RetroPad";
 "nes_pad" = "Wii Remote";

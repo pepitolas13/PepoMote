@@ -30,7 +30,11 @@ jobs:
       # retroarch.cfg, un datagrama por fotograma, teclas rápidas, resincronización
       - name: e2e de todos los mandos (receptor aislado)
         env:
-          PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir
+          # e2e_gamepad se salta sola aquí: el runner no tiene el driver
+          # ViGEmBus, así que no hay mando virtual que leer. Comprueba el
+          # anuncio del modo y sale con 0; el mapeo lo cubren los tests
+          # unitarios, y la prueba entera se corre en un PC con el driver.
+          PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir,e2e_gamepad
         run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
       - uses: actions/upload-artifact@v4
         if: always()

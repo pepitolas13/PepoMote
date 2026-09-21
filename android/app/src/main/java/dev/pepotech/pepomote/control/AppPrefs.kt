@@ -102,6 +102,21 @@ object AppPrefs {
             .edit().putString("motionSource", value).apply()
     }
 
+    /**
+     * «Vibración en los juegos»: cuánto de lo que pide el juego llega al
+     * motor ("high", "normal", "low", "off"). La misma cadena que en iOS y en
+     * Linux móvil; un valor desconocido se lee como "normal" ([RumblePref]).
+     */
+    fun gameRumble(context: Context): String =
+        RumblePref.normalize(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("gameRumble", null)
+        )
+
+    fun setGameRumble(context: Context, value: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString("gameRumble", RumblePref.normalize(value)).apply()
+    }
+
     /** El aviso de «sin giroscopio real» del modo puntero ya se enseñó (una vez por instalación). */
     fun gyroWarnShown(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

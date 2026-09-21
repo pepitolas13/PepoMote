@@ -13,6 +13,8 @@
     <string name="channel_dolphin_sub">Juega a la Wii de verdad</string>
     <string name="channel_wiiu">Wii U</string>
     <string name="channel_wiiu_sub">GamePad para Cemu</string>
+    <string name="channel_gamepad">Mando universal</string>
+    <string name="channel_gamepad_sub">Cualquier juego del PC</string>
     <string name="channel_nunchuk">Nunchuk</string>
     <string name="channel_nunchuk_sub">La otra mano</string>
     <string name="channel_settings">Ajustes</string>
@@ -246,8 +248,11 @@
     <string name="channel_retroarch_sub">El mando de cada consola, Mando Wii o pistola</string>
     <string name="channel_retroarch_android_sub">El mando de cada consola o el Mando Wii</string>
     <string name="mode_retroarch">RetroArch</string>
+    <string name="mode_gamepad">Mando universal</string>
     <string name="activating_retroarch">Activando RetroArch…</string>
+    <string name="activating_gamepad">Activando el mando universal…</string>
     <string name="warn_needs_retroarch">Actualiza PepoMote en el receptor (PC o móvil servidor) para usar RetroArch.</string>
+    <string name="warn_needs_gamepad">Actualiza PepoMote en el PC para usar el mando universal.</string>
     <string name="shortcut_retroarch">RetroArch</string>
     <string name="shortcut_retroarch_long">Mando para RetroArch</string>
     <string name="in_retroarch">En RetroArch soy:</string>
@@ -449,4 +454,17 @@
     <string name="server_retroarch_folder_dialog_steps">1. Toca «Usar esta carpeta».\n2. Toca «Permitir».\n3. Vuelve aquí: el móvil enseñará el mando de cada consola.</string>
     <string name="server_retroarch_folder_dialog_fallback">Si Android muestra otra ubicación, abre el menú lateral, toca este móvil y entra en RetroArch.</string>
     <string name="pair_link_invalid">Este enlace no es válido. Copia el enlace completo desde el servidor.</string>
+    <string name="rumble_title">Vibración en los juegos</string>
+    <string name="rumble_sub">Cuando el juego lo pide (Mario Party, Wii Sports…), el móvil vibra. La vibración al tocar los botones es otra cosa y no cambia.</string>
+    <string name="rumble_high">Alta</string>
+    <string name="rumble_normal">Normal</string>
+    <string name="rumble_low">Baja</string>
+    <string name="rumble_off">Apagada</string>
+    <string name="rumble_try">Probar</string>
+    <string name="rumble_pc_ready">El PC conectado puede hacer vibrar el móvil.</string>
+    <string name="rumble_pc_driver">El PC necesita el driver ViGEmBus para la vibración (mira la ventana del receptor).</string>
+    <string name="rumble_pc_denied">El receptor no tiene permiso en /dev/uinput: sin vibración (mira su ventana).</string>
+    <string name="rumble_pc_unsupported">Este receptor no puede mandar vibración (macOS o servidor Android).</string>
+    <string name="rumble_pc_old">El receptor es anterior a la 1.12: sin vibración de los juegos.</string>
+    <string name="rumble_no_motor">Este dispositivo no tiene motor de vibración.</string>
 </resources>

@@ -36,6 +36,9 @@ struct PadMetrics {
     /// RetroArch: el mismo trazado que Switch, con etiquetas de RetroPad
     /// (L2/R2, Select/Start, Menú, Rápido).
     let retroPad: Bool
+    /// Mando universal: comparte trazado con el de Switch, pero NO sus
+    /// textos ni su pastilla «Capturar» (el receptor ignora ese bit).
+    let universalPad: Bool
     /// Stick y cruceta (o rombo) uno al lado del otro, L3/R3 junto a los
     /// gatillos y el centro en columna vertical.
     let row: Bool
@@ -63,13 +66,14 @@ struct PadMetrics {
     /// Caja de los botones frontales: `padSize`, o mayor sin stick derecho.
     let faceBox: CGFloat
 
-    init(size: CGSize, noScreen: Bool = false, pro: Bool = false, switchPad: Bool = false, retroPad: Bool = false, needs: PadNeeds = .retroPad) {
+    init(size: CGSize, noScreen: Bool = false, pro: Bool = false, switchPad: Bool = false, retroPad: Bool = false, universalPad: Bool = false, needs: PadNeeds = .retroPad) {
         w = size.width
         h = size.height
         k = UiScale.factor(size, base: UiScale.phoneLandscape)
         self.pro = pro
         self.switchPad = switchPad
         self.retroPad = retroPad
+        self.universalPad = universalPad
         self.noScreen = noScreen || pro || switchPad
         selectorH = switchPad ? 48 : 36
         let gap: CGFloat = 6
@@ -187,13 +191,18 @@ struct GamePadScreen: View {
 
     private var wantedMode: String { Route.wantedMode(link.link, link.intent) }
     /// Switch y RetroArch comparten trazado (un solo pastilla, sin pantalla ni Soplar).
-    private var switchPad: Bool { wantedMode == LinkState.modeSwitch || wantedMode == LinkState.modeRetroArch }
+    private var switchPad: Bool {
+        wantedMode == LinkState.modeSwitch || wantedMode == LinkState.modeRetroArch || wantedMode == LinkState.modeGamepad
+    }
     private var retroPad: Bool { wantedMode == LinkState.modeRetroArch }
+    /// Mando universal: el mismo mando, con las letras de Xbox en su sitio.
+    private var universalPad: Bool { wantedMode == LinkState.modeGamepad }
     private var operative: Bool { Route.extendedOperative(link.link, link.intent) }
     /// RetroArch: la plantilla de la consola del juego cargado (o la elegida a
     /// mano); fuera de RetroArch, el RetroPad de siempre (nada cambia).
     private var layout: RetroLayout {
-        retroPad ? (RetroLayouts.byId(link.effectiveRetroLayout(link.link.connected)) ?? RetroLayouts.retroPad) : RetroLayouts.retroPad
+        if universalPad { return RetroLayouts.xbox }
+        return retroPad ? (RetroLayouts.byId(link.effectiveRetroLayout(link.link.connected)) ?? RetroLayouts.retroPad) : RetroLayouts.retroPad
     }
     private var layoutIdentity: String {
         [wantedMode, link.link.connected?.pad ?? "", String(link.link.connected?.player ?? 0), layout.id].joined(separator: ":")
@@ -273,7 +282,7 @@ struct GamePadScreen: View {
         let connected = link.link.connected
         let operative = self.operative
         let pro = switchPad || connected?.pad == LinkState.padPro
-        let m = PadMetrics(size: size, noScreen: noScreenPref, pro: pro, switchPad: switchPad, retroPad: retroPad, needs: layout.needs)
+        let m = PadMetrics(size: size, noScreen: noScreenPref, pro: pro, switchPad: switchPad, retroPad: retroPad, universalPad: universalPad, needs: layout.needs)
         let wantScreen = self.wantScreen
         let fullScreen = self.fullScreen
         // Tamaño que se pide al PC: en pantalla completa, el área entera en
@@ -284,12 +293,12 @@ struct GamePadScreen: View {
                 containerPxH: Int((size.height * displayScale).rounded())
             )
             : m.screenRequest(scale: displayScale)
-        let onKeyboard: (() -> Void)? = operative && connected?.hasKeyboard == true ? { keyboardOpen = true } : nil
+        let onKeyboard: (() -> Void)? = operative && connected?.hasKeyboard == true ? { openKeyboard() } : nil
         return Group {
             if fullScreen {
                 FullScreenGamePadView(
                     size: size, client: screenLink.client, showKeyboard: fullScreenKb && connected?.hasKeyboard == true,
-                    onKeyboard: { keyboardOpen = true }, onDisconnect: onDisconnect
+                    onKeyboard: { openKeyboard() }, onDisconnect: onDisconnect
                 )
             } else {
                 normalContent(m: m, connected: connected, operative: operative)
@@ -403,13 +412,26 @@ struct GamePadScreen: View {
                 .allowsHitTesting(operative)
                 .overlay {
                     if !operative {
-                        Text(tr(retroPad ? "activating_retroarch" : switchPad ? "activating_switch" : "activating_wiiu"))
+                        Text(tr(universalPad ? "activating_gamepad"
+                            : retroPad ? "activating_retroarch"
+                            : switchPad ? "activating_switch" : "activating_wiiu"))
                             .pepoTitle().padding(14).pepoCard()
                     }
                 }
             }
             NoticeBanner().padding(.top, m.headerH + m.selectorH + m.gap * 2)
         }
+    }
+
+    /// «Teclado»: antes de abrir la hoja se suelta todo lo pulsado (deslizando
+    /// o no) y se limpia el estado de los botones, porque con la hoja encima
+    /// ningún gesto recibe su fin y un botón se quedaría pulsado en el PC. A
+    /// diferencia del mando de Wii, sin clic ni pose que congelar: el GamePad
+    /// no apunta.
+    private func openKeyboard() {
+        press.releaseAll()
+        ButtonState.shared.reset()
+        keyboardOpen = true
     }
 
     private func applyEngine() {
@@ -435,10 +457,10 @@ private struct LeftColumn: View {
     // Hombros y stick según la plantilla: sin stick, la cruceta ocupa su hueco y crece
     private var shoulders: some View {
         VStack(alignment: .leading, spacing: m.gap) {
-            if let l = m.retroPad ? layout.shoulders.l : Optional("L") {
+            if let l = m.retroPad || m.universalPad ? layout.shoulders.l : Optional("L") {
                 ShoulderButton(label: l, bit: Btn.l, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
             }
-            if let l2 = m.retroPad ? layout.shoulders.l2 : Optional("ZL") {
+            if let l2 = m.retroPad || m.universalPad ? layout.shoulders.l2 : Optional("ZL") {
                 ShoulderButton(label: l2, bit: Btn.zl, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
             }
         }
@@ -497,10 +519,10 @@ private struct RightColumn: View {
 
     private var shoulders: some View {
         VStack(alignment: .trailing, spacing: m.gap) {
-            if let r = m.retroPad ? layout.shoulders.r : Optional("R") {
+            if let r = m.retroPad || m.universalPad ? layout.shoulders.r : Optional("R") {
                 ShoulderButton(label: r, bit: Btn.r, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
             }
-            if let r2 = m.retroPad ? layout.shoulders.r2 : Optional("ZR") {
+            if let r2 = m.retroPad || m.universalPad ? layout.shoulders.r2 : Optional("ZR") {
                 ShoulderButton(label: r2, bit: Btn.zr, width: m.shoulderW, height: m.shoulderH, textSize: m.text(16))
             }
         }
@@ -569,7 +591,7 @@ private struct CenterColumn: View {
         RoundButton(label: retroLabel(c.label), size: m.roundBtn, bit: c.bit, textSize: m.text(9))
     }
     @ViewBuilder private var centers: some View {
-        if m.retroPad {
+        if m.retroPad || m.universalPad {
             if layout.center.count >= 2 {
                 centerButton(layout.center[0])
                 home
@@ -594,7 +616,7 @@ private struct CenterColumn: View {
             if m.row {
                 VStack(spacing: m.gap) {
                     centers
-                    if m.switchPad {
+                    if m.switchPad && !m.universalPad {
                         capture
                     } else if !m.pro {
                         tv
@@ -603,7 +625,9 @@ private struct CenterColumn: View {
                 }
             } else {
                 if m.pro {
-                    Text(m.retroPad ? layout.name : tr(m.switchPad ? "mode_switch" : "pro_controller")).pepoBody().multilineTextAlignment(.center)
+                    Text(m.retroPad ? layout.name
+                        : tr(m.universalPad ? "mode_gamepad" : m.switchPad ? "mode_switch" : "pro_controller"))
+                        .pepoBody().multilineTextAlignment(.center)
                     // iPad: la fila pegada al texto (un bloque centrado)
                     if m.k > 1 { Spacer().frame(height: m.gap * 3) } else { Spacer(minLength: 0) }
                 } else if !m.noScreen {
@@ -612,7 +636,7 @@ private struct CenterColumn: View {
                     if m.k > 1 { Spacer().frame(height: m.gap * 3) } else { Spacer(minLength: 0) }
                 }
                 HStack(alignment: .center, spacing: m.rowGap) {
-                    if m.switchPad { capture } else if !m.pro { tv }
+                    if m.switchPad && !m.universalPad { capture } else if !m.pro { tv }
                     centers
                     if !m.pro && !m.switchPad { blow }
                 }
@@ -647,7 +671,8 @@ private struct GamePadHeaderCard: View {
             player: c.player,
             padName: padName,
             rttMs: c.rttMs,
-            activating: tr(wantedMode == LinkState.modeSwitch ? "activating_switch"
+            activating: tr(wantedMode == LinkState.modeGamepad ? "activating_gamepad"
+                : wantedMode == LinkState.modeSwitch ? "activating_switch"
                 : wantedMode == LinkState.modeRetroArch ? "activating_retroarch"
                 : "activating_wiiu")
         )
@@ -691,7 +716,7 @@ private struct GamePadHeaderCard: View {
                 }
                 if c.slot == 0 {
                     // Mientras se espera el eco va marcado el modo pedido (es lo pedido)
-                    ModeChips(current: operative ? c.mode : wantedMode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, supportsPointer: c.receiver.supportsPointer, compact: true)
+                    ModeChips(current: operative ? c.mode : wantedMode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, supportsGamepad: c.supportsGamepad, supportsPointer: c.receiver.supportsPointer, compact: true)
                 }
                 // RetroArch: guardar/cargar estado, ranura, rebobinar, pausa…
                 if operative, Route.isRetroArch(link) {

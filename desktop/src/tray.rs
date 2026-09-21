@@ -55,6 +55,7 @@ pub fn tooltip(snap: &TraySnapshot) -> String {
             Mode::Cemu => tr!("tray.mode_cemu"),
             Mode::Switch => tr!("tray.mode_switch"),
             Mode::RetroArch => tr!("tray.mode_retroarch"),
+            Mode::Gamepad => tr!("tray.mode_gamepad"),
         };
         let plural = if snap.players == 1 { tr!("tray.phone_one") } else { tr!("tray.phone_many") };
         let mut text = tr!("tray.line", snap.players, plural, mode);

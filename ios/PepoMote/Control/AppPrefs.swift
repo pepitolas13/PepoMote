@@ -122,6 +122,16 @@ enum AppPrefs {
         set { d.set(newValue, forKey: "receiverNotices") }
     }
 
+    /// Vibración en los juegos (RUMBLE del receptor): "high" | "normal" |
+    /// "low" | "off", normal de serie; un valor desconocido se lee como
+    /// normal. La escala se lee en cada orden al motor: cambiarla vale al
+    /// instante, sin reconectar.
+    static let rumbleKey = "rumble"
+    static var rumble: String {
+        get { RumblePref.normalize(d.string(forKey: rumbleKey)) }
+        set { d.set(RumblePref.normalize(newValue), forKey: rumbleKey) }
+    }
+
     /// GamePad de Wii U sin pantalla táctil (ni doble pantalla): los botones
     /// crecen (Ajustes). `GamePadScreen` lo observa con @AppStorage.
     static let gamePadNoScreenKey = "gamePadNoScreen"

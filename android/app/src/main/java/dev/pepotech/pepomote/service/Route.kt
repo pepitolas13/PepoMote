@@ -13,7 +13,7 @@ enum class PadScreen { GamePad, Wii, Nunchuk }
  * Wii U y aún no ha llegado ningún eco/difusión de `mode` posterior. Mientras
  * dura, la pantalla GamePad se enseña de forma optimista.
  */
-enum class PadIntent { None, WiiU, Switch, RetroArch }
+enum class PadIntent { None, WiiU, Switch, RetroArch, Gamepad }
 
 /**
  * Routing del mando: función pura de (estado del enlace, intención pendiente),
@@ -23,7 +23,8 @@ object Route {
     /** Modes the owner can select from a compact controller menu. */
     fun availableModes(link: UiLink.Connected): List<String> {
         if (link.slot != 0 || link.role != LinkState.ROLE_WIIMOTE) return emptyList()
-        return ReceiverCapabilities.modes(link.platform, link.supportsCemu, link.supportsSwitch, link.supportsRetroArch)
+        return ReceiverCapabilities.modes(link.platform, link.supportsCemu, link.supportsSwitch, link.supportsRetroArch,
+            link.supportsGamepad)
     }
 
     fun isAndroidReceiver(link: UiLink): Boolean =
@@ -31,7 +32,8 @@ object Route {
 
     fun selectMode(requested: String?, link: UiLink.Connected): String =
         if (link.platform == ReceiverCapabilities.ANDROID)
-            ReceiverCapabilities.select(requested, link.mode, link.platform, link.supportsCemu, link.supportsSwitch, link.supportsRetroArch)
+            ReceiverCapabilities.select(requested, link.mode, link.platform, link.supportsCemu, link.supportsSwitch,
+                link.supportsRetroArch, link.supportsGamepad)
         else requested ?: link.mode
 
     @StringRes
@@ -46,6 +48,9 @@ object Route {
     @StringRes
     val WARN_NEEDS_RETROARCH: Int = R.string.warn_needs_retroarch
 
+    @StringRes
+    val WARN_NEEDS_GAMEPAD: Int = R.string.warn_needs_gamepad
+
     /**
      * Modo Wii U activo como GamePad/Pro: el receptor confirmó `cemu` y este
      * móvil (mando) no ha elegido ser Mando de Wii. Solo entonces se emiten
@@ -58,6 +63,9 @@ object Route {
             // RetroArch: el mando apaisado es el RetroPad; el de NES y la
             // pistola son los layouts de Wii de siempre (72 bytes)
             LinkState.MODE_RETROARCH -> link.supportsRetroArch && link.pad == LinkState.PAD_RETROPAD
+            // Mando universal: el mismo mando apaisado, con los dos sticks y
+            // los gatillos, así que también son paquetes de 80 bytes.
+            LinkState.MODE_GAMEPAD -> link.supportsGamepad
             else -> false
         }
 
@@ -114,6 +122,7 @@ object Route {
         PadIntent.WiiU -> LinkState.MODE_CEMU
         PadIntent.Switch -> LinkState.MODE_SWITCH
         PadIntent.RetroArch -> LinkState.MODE_RETROARCH
+        PadIntent.Gamepad -> LinkState.MODE_GAMEPAD
         PadIntent.None -> (link as? UiLink.Connected)?.mode ?: LinkState.MODE_CEMU
     }
 
@@ -206,6 +215,7 @@ object Route {
         val wanted = when (intent) {
             PadIntent.Switch -> LinkState.MODE_SWITCH
             PadIntent.RetroArch -> LinkState.MODE_RETROARCH
+            PadIntent.Gamepad -> LinkState.MODE_GAMEPAD
             else -> LinkState.MODE_CEMU
         }
         if (mode == wanted || byPc) return Outcome(PadIntent.None, null)
@@ -213,12 +223,14 @@ object Route {
         val supported = when (intent) {
             PadIntent.Switch -> c?.supportsSwitch == true
             PadIntent.RetroArch -> c?.supportsRetroArch == true
+            PadIntent.Gamepad -> c?.supportsGamepad == true
             else -> c?.supportsCemu == true
         }
         val warning = if (supported && c?.slot != 0) WARN_PLAYER_1
             else when (intent) {
                 PadIntent.Switch -> WARN_NEEDS_SWITCH
                 PadIntent.RetroArch -> WARN_NEEDS_RETROARCH
+                PadIntent.Gamepad -> WARN_NEEDS_GAMEPAD
                 else -> WARN_NEEDS_13
             }
         return Outcome(PadIntent.None, warning)

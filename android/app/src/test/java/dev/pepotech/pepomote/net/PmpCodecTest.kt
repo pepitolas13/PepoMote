@@ -1,6 +1,7 @@
 package dev.pepotech.pepomote.net
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -189,5 +190,37 @@ class PmpCodecTest {
             vector("pong.hex"),
             PmpCodec.encodePong(0xAABBCCDD.toInt(), 0x0102030405060708L).toHex()
         )
+    }
+
+    private fun fromHex(hex: String) = ByteArray(hex.length / 2) {
+        ((Character.digit(hex[it * 2], 16) shl 4) or Character.digit(hex[it * 2 + 1], 16)).toByte()
+    }
+
+    /**
+     * RUMBLE del receptor (PROTOCOL.md §4.5): los dos vectores dorados se
+     * decodifican a sus valores, y ni 19 ni 21 bytes, ni otro magic, ni un
+     * PING (que mide lo mismo) pasan por RUMBLE. Los mismos casos que en iOS
+     * y en Rust: si esto diverge, un móvil vibra distinto de otro.
+     */
+    @Test
+    fun rumbleVectors() {
+        val on = fromHex(vector("rumble_on.hex"))
+        assertEquals(PmpCodec.RUMBLE_LEN, on.size)
+        assertEquals(PmpCodec.TYPE_RUMBLE, PmpCodec.packetType(on, on.size))
+        assertEquals(
+            PmpCodec.Rumble(0xAABBCCDD.toInt(), 42, 255, 128, 400),
+            PmpCodec.decodeRumble(on, on.size)
+        )
+        val off = fromHex(vector("rumble_off.hex"))
+        assertEquals(
+            PmpCodec.Rumble(0xAABBCCDD.toInt(), 43, 0, 0, 0),
+            PmpCodec.decodeRumble(off, off.size)
+        )
+        assertNull("19 bytes", PmpCodec.decodeRumble(on, 19))
+        assertNull("21 bytes", PmpCodec.decodeRumble(on.copyOf(21), 21))
+        val badMagic = on.copyOf().also { it[0] = 0 }
+        assertNull("otro magic", PmpCodec.decodeRumble(badMagic, badMagic.size))
+        val ping = PmpCodec.encodePing(0xAABBCCDD.toInt(), 1)
+        assertNull("un PING no es RUMBLE", PmpCodec.decodeRumble(ping, ping.size))
     }
 }

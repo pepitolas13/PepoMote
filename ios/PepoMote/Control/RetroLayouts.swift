@@ -106,6 +106,27 @@ enum RetroLayouts {
         shoulders: RetroShoulders(l: "L", r: "R", l2: "L2", r2: "R2"), center: selectStart
     )
 
+    /// Mando universal: el rombo de Xbox, con cada letra DONDE el jugador
+    /// espera verla (A abajo, B derecha, X izquierda, Y arriba). El receptor
+    /// traduce cada bit a su botón de XInput sin cruzar nada, así que lo que
+    /// se lee en pantalla es lo que recibe el juego.
+    ///
+    /// Fuera de `all` a propósito: no es una consola de RetroArch, solo
+    /// reutiliza el mismo formato de plantilla, y así el test de paridad con
+    /// `protocol/retro-layouts.json` sigue valiendo tal cual.
+    static let xbox = RetroLayout(
+        id: "xbox", name: "Xbox", shape: .diamond, stagger: 0,
+        face: [
+            RetroFace(slot: "top", label: "Y", bit: Btn.y),
+            RetroFace(slot: "left", label: "X", bit: Btn.x),
+            RetroFace(slot: "right", label: "B", bit: Btn.b),
+            RetroFace(slot: "bottom", label: "A", bit: Btn.a, primary: true)
+        ],
+        leftStick: true, rightStick: .analog, stickClicks: true,
+        shoulders: RetroShoulders(l: "LB", r: "RB", l2: "LT", r2: "RT"),
+        center: [RetroCenter(label: "Back", bit: Btn.minus), RetroCenter(label: "Start", bit: Btn.plus)]
+    )
+
     /// Todas las plantillas, con `retropad` la primera (mismo orden que el JSON).
     static let all: [RetroLayout] = [
         retroPad,

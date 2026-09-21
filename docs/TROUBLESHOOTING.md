@@ -682,3 +682,21 @@ Guía completa: [SETUP-SWITCH.md](SETUP-SWITCH.md).
 - **Quiero mi retroarch.cfg de antes:** Restaurar mi retroarch.cfg en el receptor (solo las claves de PepoMote; apaga la autoconfiguración de RetroArch).
 
 Guía completa: [SETUP-RETROARCH.md](SETUP-RETROARCH.md).
+
+## Vibración en los juegos
+
+- **El móvil no vibra con el juego:** mira la tarjeta «Vibración en los juegos» de Ajustes: ahí abajo dice lo que puede hacer el PC conectado. En Windows, sin el driver ViGEmBus no hay mando virtual del que sacar la vibración; en Linux es el permiso de `/dev/uinput`.
+- **Vibra el móvil de otro jugador:** actualiza el receptor. Hasta la 1.12 el PC escribía el mismo número de mando en los perfiles de todos los jugadores, así que la vibración de todos acababa en el Jugador 1.
+- **Vibra demasiado o demasiado poco:** Ajustes → Vibración en los juegos → Alta / Normal / Baja. El botón «Probar» te deja oírlo sin abrir un juego.
+- **No vibra nada y el móvil sí tiene motor:** algunos móviles apagan la vibración con el modo de ahorro de energía o con «No molestar». Compruébalo en los ajustes del sistema.
+- **Un iPad no vibra:** no tiene motor. Ajustes lo dice.
+
+## Mando universal
+
+- **No aparece «Mando universal» en el móvil:** el PC tiene que anunciarlo (`gamepad` entre sus modos). Actualiza PepoMote en el PC. No sale con servidor Android ni en macOS: allí no se puede crear un mando virtual.
+- **Windows: «Sin el driver ViGEmBus no hay mando»:** pulsa Descargar ViGEmBus, instálalo (es gratis y va una sola vez) y vuelve a la ventana. PepoMote lo detecta solo, sin reiniciar. Es el mismo driver que usa la vibración de los juegos.
+- **Linux: no hay mando:** es el permiso de `/dev/uinput`, el mismo que la vibración; la reparación está en la propia ventana del receptor.
+- **Los botones salen cambiados en Steam:** Steam tiene su propia capa de mando (Steam Input) y puede remapear cualquier mando a su manera, no solo este. En Steam → Ajustes → Mando, desactiva la compatibilidad para ese juego, o configúralo allí como harías con un mando de Xbox de verdad.
+- **La cámara gira sola:** deja el móvil quieto un momento. Si sigue, tu giroscopio deriva más de lo normal: usa el stick derecho de la pantalla, que manda sobre el giro mientras lo tocas.
+- **Se ha quedado un botón pulsado:** no debería: el receptor suelta el mando si el móvil deja de mandar durante un segundo. Si pasa, mira `receptor.log` y ábrelo como incidencia.
+- **El juego no ve el mando:** ábrelo después de conectar el móvil. Muchos juegos solo miran los mandos al arrancar.

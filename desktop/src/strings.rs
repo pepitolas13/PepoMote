@@ -4,6 +4,15 @@
 //! clave usada existe, que ninguna sobra y que los huecos coinciden.
 
 pub const TABLE: &[(&str, &str, &str)] = &[
+    // --- Vibración de los juegos (rumble/)
+    ("rumble.ready", "Vibración de los juegos: lista. Lo que el juego mande al mando virtual llega al móvil.", "Game rumble: ready. Whatever the game sends to the virtual controller reaches the phone."),
+    ("rumble.pad", "Mando virtual del jugador {0}: {1}", "Player {0} virtual controller: {1}"),
+    ("rumble.driver", "Para que el móvil vibre con el juego hace falta el driver ViGEmBus (gratis, se instala una vez). Instálalo y PepoMote lo verá solo, sin reiniciar.", "For the phone to rumble with the game you need the ViGEmBus driver (free, one-time install). Install it and PepoMote picks it up by itself, no restart."),
+    ("rumble.download", "Descargar ViGEmBus", "Download ViGEmBus"),
+    ("rumble.denied", "Sin permiso en /dev/uinput no hay mando virtual: el móvil no vibrará con el juego. Arriba está la reparación.", "Without permission on /dev/uinput there is no virtual controller: the phone will not rumble with the game. The repair is above."),
+    ("rumble.missing", "No existe /dev/uinput (módulo uinput sin cargar): sin vibración de los juegos.", "/dev/uinput does not exist (uinput module not loaded): no game rumble."),
+    ("rumble.unsupported", "En macOS no hay vibración de los juegos: sin driver no existe un mando virtual.", "No game rumble on macOS: without a driver there is no virtual controller."),
+    ("rumble.failed", "El mando virtual de la vibración no se pudo crear (mira receptor.log); se reintenta solo.", "The rumble virtual controller could not be created (see receptor.log); it retries by itself."),
     // --- RetroArch
     ("retroarch.why_portable", "portable, junto al ejecutable", "portable, next to the executable"),
     ("retroarch.why_roaming", "configuración de usuario", "user configuration"),
@@ -114,6 +123,11 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("win.mode_dolphin", "Modo Dolphin: todos juegan", "Dolphin mode: everyone plays"),
     ("win.mode_cemu", "Modo Wii U (Cemu): todos juegan", "Wii U mode (Cemu): everyone plays"),
     ("win.mode_switch", "Modo Switch: todos juegan", "Switch mode: everyone plays"),
+    ("win.mode_gamepad", "Mando universal: todos juegan", "Universal controller: everyone plays"),
+    ("win.gamepad_ready", "El juego ve un mando de Xbox 360. No hay nada que configurar.", "The game sees an Xbox 360 controller. There is nothing to set up."),
+    ("win.gamepad_driver", "Sin el driver ViGEmBus no hay mando (es gratis y se instala una vez). Instálalo y PepoMote lo verá solo, sin reiniciar.", "Without the ViGEmBus driver there is no controller (it is free and installs once). Install it and PepoMote picks it up by itself, no restart."),
+    ("win.gamepad_nopad", "No se ha podido crear el mando: el móvil no mueve nada todavía.", "The controller could not be created: the phone is not moving anything yet."),
+    ("win.gamepad_help", "Vale para cualquier juego que acepte mando, sin tocar su configuración. Mueve el móvil para apuntar: el giro va al stick derecho. Si juegas por Steam, su capa de mando puede remapear los botones a su manera.", "Works in any game that takes a controller, without touching its settings. Move the phone to aim: the gyro drives the right stick. If you play through Steam, its controller layer may remap the buttons its own way."),
     ("win.pps", "{0} paquetes/s · sensor {1} Hz", "{0} packets/s · sensor {1} Hz"),
     ("win.tilt", "inclinación", "tilt"),
     (
@@ -399,6 +413,11 @@ pub const TABLE: &[(&str, &str, &str)] = &[
         "Cemu: el mando 1 no es un GamePad, la pantalla táctil no se aplicará",
         "Cemu: Controller 1 is not a GamePad, the touch screen will not apply",
     ),
+    (
+        "cemu.phone_no_free_slot",
+        "Cemu: no queda ningún mando libre (admite 8) sin quitarle el suyo a otro jugador",
+        "Cemu: no free controller left (it takes 8) without taking another player's",
+    ),
     ("cemu.installs", " (en {0} instalaciones)", " (in {0} installs)"),
     (
         "cemu.open",
@@ -456,6 +475,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("tray.mode_dolphin", "Dolphin", "Dolphin"),
     ("tray.mode_cemu", "Wii U", "Wii U"),
     ("tray.mode_switch", "Switch", "Switch"),
+    ("tray.mode_gamepad", "Mando universal", "Universal controller"),
     ("tray.show", "Mostrar PepoMote", "Show PepoMote"),
     ("tray.quit", "Salir", "Quit"),
     ("tray.update", "Nueva versión {0}…", "New version {0}…"),
@@ -487,4 +507,5 @@ pub const SOURCES: &[&str] = &[
     include_str!("retroarch/link.rs"),
     include_str!("auto_mode.rs"),
     include_str!("tray.rs"),
+    include_str!("rumble/mod.rs"),
 ];

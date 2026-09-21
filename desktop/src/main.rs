@@ -24,10 +24,12 @@ mod macos;
 mod net;
 #[cfg(target_os = "macos")]
 mod procs;
+mod pad;
 mod pairing;
 mod pointer;
 mod ports;
 mod retroarch;
+mod rumble;
 mod screen;
 mod singleton;
 mod sound;
@@ -105,6 +107,7 @@ fn main() {
     let pairing = pairing::PairingInfo::generate();
 
     let dsu = dsu::start(shared.clone());
+    rumble::start(shared.clone());
     // El enlace con RetroArch (mando en red + interfaz de comandos) vive
     // siempre: sondea en silencio y solo habla en modo RetroArch
     let _ = retroarch::start(shared.clone());

@@ -86,6 +86,10 @@ struct HomeScreen: View {
                     ChannelCard(title: tr("channel_retroarch"), subtitle: tr("channel_retroarch_sub"), glyph: .retro, accent: Pepo.warn) {
                         model.openController(mode: LinkState.modeRetroArch, dolphinOnly: false)
                     }
+                    // Mando universal: cualquier juego del PC, sin configurar nada
+                    ChannelCard(title: tr("channel_gamepad"), subtitle: tr("channel_gamepad_sub"), glyph: .gamePad, accent: Pepo.blue) {
+                        model.openController(mode: LinkState.modeGamepad, dolphinOnly: false)
+                    }
                     // Con Dolphin: el segundo móvil, en la otra mano
                     ChannelCard(title: tr("channel_nunchuk"), subtitle: tr("channel_nunchuk_sub"), glyph: .stick, accent: Pepo.ok) {
                         model.openNunchuk()

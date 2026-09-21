@@ -237,7 +237,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                             horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 10.dp, Alignment.CenterHorizontally),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, supportsRetroArch = link.supportsRetroArch, androidReceiver = link.platform == "android", dense = dense)
+                            if (modeChips) ModeChips(current = link.mode, supportsCemu = link.supportsCemu, supportsSwitch = link.supportsSwitch, supportsRetroArch = link.supportsRetroArch, supportsGamepad = link.supportsGamepad, androidReceiver = link.platform == "android", dense = dense)
                             if (nunchuk) NunchukChip(link, dense = dense, modifier = Modifier.padding(start = 4.dp))
                         }
                     }
@@ -409,6 +409,7 @@ internal fun modeLabel(mode: String): String = when (mode) {
     LinkState.MODE_CEMU -> stringResource(R.string.mode_wiiu)
     LinkState.MODE_SWITCH -> stringResource(R.string.mode_switch)
     LinkState.MODE_RETROARCH -> stringResource(R.string.mode_retroarch)
+    LinkState.MODE_GAMEPAD -> stringResource(R.string.mode_gamepad)
     else -> stringResource(R.string.mode_pointer)
 }
 
@@ -420,7 +421,7 @@ internal fun modeLabel(mode: String): String = when (mode) {
  */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: Boolean = false, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier, androidReceiver: Boolean = false, supportsRetroArch: Boolean = false) {
+internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: Boolean = false, compact: Boolean = false, dense: Boolean = false, modifier: Modifier = Modifier, androidReceiver: Boolean = false, supportsRetroArch: Boolean = false, supportsGamepad: Boolean = false) {
     val chips: @Composable () -> Unit = {
         if (!androidReceiver) ModeChip(stringResource(R.string.mode_pointer), selected = current == LinkState.MODE_POINTER, compact = compact, dense = dense) {
             LinkState.requestMode(LinkState.MODE_POINTER)
@@ -441,6 +442,13 @@ internal fun ModeChips(current: String, supportsCemu: Boolean, supportsSwitch: B
         if (supportsRetroArch) {
             ModeChip(stringResource(R.string.mode_retroarch), selected = current == LinkState.MODE_RETROARCH, compact = compact, dense = dense) {
                 LinkState.requestMode(LinkState.MODE_RETROARCH)
+            }
+        }
+        // Sin este chip, en el mando universal no había ninguno marcado y al
+        // tocar otro no se podía volver sin salir al inicio.
+        if (supportsGamepad) {
+            ModeChip(stringResource(R.string.mode_gamepad), selected = current == LinkState.MODE_GAMEPAD, compact = compact, dense = dense) {
+                LinkState.requestMode(LinkState.MODE_GAMEPAD)
             }
         }
     }

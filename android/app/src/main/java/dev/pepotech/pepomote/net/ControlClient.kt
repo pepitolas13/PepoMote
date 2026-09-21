@@ -61,7 +61,15 @@ class ControlClient(
         val supportsTilt: Boolean = false,
         /** `ok.modes` contiene "retroarch": el receptor del PC entiende RetroArch. */
         val supportsRetroArch: Boolean = false,
-        val supportsFrameRotation: Boolean = false
+        val supportsFrameRotation: Boolean = false,
+        /** `ok.modes` contiene "gamepad": el receptor del PC puede hacer de mando de Xbox. */
+        val supportsGamepad: Boolean = false,
+        /**
+         * `ok.rumble`: qué puede hacer el receptor con la vibración de los
+         * juegos ("ready", "driver", "denied", "unsupported"); se guarda tal
+         * cual y Ajustes lo traduce. null = receptor sin vibración.
+         */
+        val rumble: String? = null
     )
 
     interface Callbacks {
@@ -175,7 +183,9 @@ class ControlClient(
                                     .firstOrNull { it.isNotBlank() && it.length <= 512 },
                                 supportsTilt = msg.optBoolean("tilt", false),
                                 supportsFrameRotation = msg.optBoolean("frame_rotation", false),
-                                supportsRetroArch = supportsMode(msg, "retroarch")
+                                supportsRetroArch = supportsMode(msg, "retroarch"),
+                                supportsGamepad = supportsMode(msg, "gamepad"),
+                                rumble = msg.optString("rumble", "").takeIf { it.isNotBlank() }
                             )
                         )
                     }

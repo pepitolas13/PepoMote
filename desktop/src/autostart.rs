@@ -7,16 +7,24 @@
 #[cfg(windows)]
 mod imp {
     use std::os::windows::process::CommandExt;
-    use std::process::Command;
+    use std::process::{Command, Stdio};
 
     const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
     const VALUE: &str = "PepoMote";
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+    /// `reg.exe` en silencio. Solo nos interesa si salió bien: cuando el
+    /// autoarranque está apagado, `reg query` no encuentra el valor y escupe
+    /// su «ERROR: El sistema no ha podido encontrar la clave o el valor del
+    /// Registro especificados» por stderr, que se colaba en la salida del
+    /// receptor y en `--diag` como si algo se hubiera roto. No se ha roto
+    /// nada: es la respuesta normal a «¿está puesto?» cuando no lo está.
     fn reg(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
         Command::new("reg")
             .args(args)
             .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
     }
 

@@ -1,8 +1,13 @@
 //! Auto-configuración de Cemu (modo Wii U): un perfil de mando emulado por
-//! móvil conectado en `controllerProfiles/controller{N}.xml` (N = jugador − 1),
-//! leyendo del pad DSU del móvil: el Jugador 1 es el Wii U GamePad (con
-//! movimiento y pantalla táctil), los demás Pro Controller, y el que lo pida
-//! un Mando Wii (Wiimote emulado con MotionPlus, puntero y su Nunchuk).
+//! móvil conectado en `controllerProfiles/controller{N}.xml`, leyendo del pad
+//! DSU del móvil: el Jugador 1 es el Wii U GamePad (con movimiento y pantalla
+//! táctil), los demás Pro Controller, y el que lo pida un Mando Wii (Wiimote
+//! emulado con MotionPlus, puntero y su Nunchuk).
+//!
+//! El GamePad va SIEMPRE en el mando 1 (Cemu lo exige: sin él el juego ni
+//! arranca), pero los demás móviles se colocan en los mandos que estén libres
+//! (`placement`), sin tocar los que el usuario ya tenga configurados para los
+//! otros jugadores.
 //!
 //! Formato y rutas verificados contra el código fuente de Cemu 2.x:
 //! - config en `%APPDATA%\Cemu` (Windows), `$XDG_CONFIG_HOME/Cemu` (Linux),
@@ -242,6 +247,15 @@ fn keyboard_node(out: &mut String, name: &str, mappings: &[(u32, u32)]) {
     write_mappings(out, mappings);
 }
 
+/// El mando virtual de la vibración (rumble/) como dispositivo más del
+/// mando emulado: sin botones, solo `<rumble>`. Cemu manda ahí lo que el
+/// juego pide y el receptor lo reenvía al móvil. Nada en macOS.
+fn rumble_node(out: &mut String, slot: u8, player: u8) {
+    if let Some(node) = crate::rumble::cemu_node(slot, player) {
+        out.push_str(&node);
+    }
+}
+
 /// El perfil `controller{N}.xml` de un jugador.
 pub fn profile_xml(pl: &CemuPlayer) -> String {
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<emulated_controller>\n");
@@ -263,11 +277,13 @@ pub fn profile_xml(pl: &CemuPlayer) -> String {
             out.push_str("\t<type>Wii U GamePad</type>\n");
             let _ = writeln!(out, "\t{PROFILE_MARK}");
             controller_node(&mut out, slot, &format!("PepoMote J{player} GamePad"), true, GAMEPAD);
+            rumble_node(&mut out, slot, player);
         }
         PadKind::Pro => {
             out.push_str("\t<type>Wii U Pro Controller</type>\n");
             let _ = writeln!(out, "\t{PROFILE_MARK}");
             controller_node(&mut out, slot, &format!("PepoMote J{player} Pro"), false, PRO);
+            rumble_node(&mut out, slot, player);
         }
         PadKind::Wiimote => {
             out.push_str("\t<type>Wiimote</type>\n");
@@ -278,6 +294,7 @@ pub fn profile_xml(pl: &CemuPlayer) -> String {
             if let Some(ns) = pl.nunchuk_slot {
                 controller_node(&mut out, ns, &format!("PepoMote J{player} Nunchuk"), false, NUNCHUK);
             }
+            rumble_node(&mut out, slot, player);
         }
     }
     out.push_str("</emulated_controller>\n");
@@ -306,6 +323,9 @@ pub enum Warning {
     /// El perfil del usuario en ese índice no es un GamePad: el táctil del
     /// móvil no se aplicará.
     NotGamePad { index: u8, dsu_slot: u8 },
+    /// No queda ni un mando libre en Cemu (admite 8) sin pisar los que el
+    /// usuario ya tenía configurados: ese móvil se queda sin perfil.
+    NoFreeSlot { dsu_slot: u8 },
 }
 
 /// Nodo DSU del móvil «solo pantalla» (`slot` = su pad DSU): sin movimiento
@@ -437,7 +457,7 @@ fn write_screen_only(path: &Path, pl: &CemuPlayer) -> Result<Option<Warning>, St
         }
         std::fs::write(path, &merged).map_err(|e| e.to_string())?;
     }
-    Ok((!has_gamepad_type(&base)).then_some(Warning::NotGamePad { index: pl.index, dsu_slot: slot }))
+    Ok((!has_gamepad_type(&base)).then_some(Warning::NotGamePad { index: pl.order, dsu_slot: slot }))
 }
 
 /// Mando 1 sin móvil (todos son Mando Wii): Cemu necesita un GamePad emulado
@@ -498,12 +518,61 @@ fn clean_index(path: &Path) {
 /// `controllerProfiles/controller{N}.xml` por jugador (fusionado con el mando
 /// real del usuario si el móvil es «solo pantalla»); los índices sin jugador
 /// se limpian si eran nuestros. Devuelve los avisos para los móviles.
+/// ¿Ese mando de Cemu lo tiene puesto el usuario? Un perfil que no es
+/// nuestro; o uno nuestro escrito ENCIMA del suyo, que se reconoce por el
+/// respaldo. Lo segundo es lo que dejaban las versiones que sí pisaban los
+/// mandos de los demás jugadores: así se les devuelve su sitio solo.
+fn taken_by_user(dir: &Path, index: u8) -> bool {
+    let path = profile_path(dir, index);
+    if backup_path(&path).exists() {
+        return true;
+    }
+    std::fs::read_to_string(&path).is_ok_and(|c| !c.trim().is_empty() && !is_ours(&c))
+}
+
+/// En qué `controller{N}.xml` va cada jugador EN ESTA instalación.
+///
+/// El primero manda en el mando 1 porque Cemu exige un Wii U GamePad ahí
+/// (sin él el juego ni arranca ni lee los demás mandos). Los demás se colocan
+/// en los mandos que estén LIBRES: si el usuario ya tenía a los otros
+/// jugadores con mandos de verdad en los mandos 2 y 3, los móviles van detrás
+/// en vez de pisarlos. Antes no: dos móviles de Mando Wii se comían los
+/// perfiles de los amigos y Cemu dejaba de reconocer sus mandos hasta
+/// desconectar los móviles y reiniciarlo.
+///
+/// `None` = no queda ningún mando libre (Cemu admite 8).
+fn placement(dir: &Path, layout: &Layout) -> Vec<(CemuPlayer, Option<u8>)> {
+    let mut used = [false; MAX_CONTROLLERS as usize];
+    layout
+        .iter()
+        .enumerate()
+        .map(|(i, pl)| {
+            let index = if i == 0 {
+                used[0] = true;
+                Some(0)
+            } else {
+                let libre = (1..MAX_CONTROLLERS).find(|n| !used[*n as usize] && !taken_by_user(dir, *n));
+                if let Some(n) = libre {
+                    used[n as usize] = true;
+                }
+                libre
+            };
+            (*pl, index)
+        })
+        .collect()
+}
+
 pub fn write_profiles(cfg_dir: &Path, layout: &Layout) -> Result<Vec<Warning>, String> {
     let dir = cfg_dir.join("controllerProfiles");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut warnings = Vec::new();
-    for pl in layout {
-        let path = profile_path(&dir, pl.index);
+    let places = placement(&dir, layout);
+    for (pl, index) in &places {
+        let Some(index) = *index else {
+            warnings.push(Warning::NoFreeSlot { dsu_slot: pl.dsu_slot.unwrap_or(0) });
+            continue;
+        };
+        let path = profile_path(&dir, index);
         if pl.is_empty_gamepad() {
             write_empty_gamepad(&path)?;
         } else if pl.screen_only {
@@ -515,7 +584,7 @@ pub fn write_profiles(cfg_dir: &Path, layout: &Layout) -> Result<Vec<Warning>, S
         }
     }
     for index in 0..MAX_CONTROLLERS {
-        if !layout.iter().any(|p| p.index == index) {
+        if !places.iter().any(|(_, i)| *i == Some(index)) {
             clean_index(&profile_path(&dir, index));
         }
     }
@@ -945,7 +1014,7 @@ fn run_configure(shared: &SharedState, after_close: bool, manual: bool) {
             shared.lock_tolerant().cemu_pending = false;
             return;
         }
-        layout.push(CemuPlayer { index: 0, kind: PadKind::GamePad, player: 1, dsu_slot: Some(0), nunchuk_slot: None, screen_only: false });
+        layout.push(CemuPlayer { order: 0, kind: PadKind::GamePad, player: 1, dsu_slot: Some(0), nunchuk_slot: None, screen_only: false });
     }
     let layout: &Layout = &layout;
     // Solo para los e2e en el propio equipo: escribir aunque el emulador esté abierto
@@ -983,7 +1052,10 @@ fn run_configure(shared: &SharedState, after_close: bool, manual: bool) {
     for w in warnings {
         match w {
             Warning::NotGamePad { dsu_slot, .. } => {
-                crate::net::notify_slot(dsu_slot, &tr!("cemu.phone_not_gamepad"));
+                crate::net::notify_slot(dsu_slot, tr!("cemu.phone_not_gamepad"));
+            }
+            Warning::NoFreeSlot { dsu_slot } => {
+                crate::net::notify_slot(dsu_slot, tr!("cemu.phone_no_free_slot"));
             }
         }
     }
@@ -1102,25 +1174,25 @@ mod tests {
         d
     }
 
-    fn gamepad(index: u8, slot: u8) -> CemuPlayer {
-        CemuPlayer { index, kind: PadKind::GamePad, player: index + 1, dsu_slot: Some(slot), nunchuk_slot: None, screen_only: false }
+    fn gamepad(order: u8, slot: u8) -> CemuPlayer {
+        CemuPlayer { order, kind: PadKind::GamePad, player: order + 1, dsu_slot: Some(slot), nunchuk_slot: None, screen_only: false }
     }
 
-    fn gamepad_screen(index: u8, slot: u8) -> CemuPlayer {
-        CemuPlayer { index, kind: PadKind::GamePad, player: index + 1, dsu_slot: Some(slot), nunchuk_slot: None, screen_only: true }
+    fn gamepad_screen(order: u8, slot: u8) -> CemuPlayer {
+        CemuPlayer { order, kind: PadKind::GamePad, player: order + 1, dsu_slot: Some(slot), nunchuk_slot: None, screen_only: true }
     }
 
-    fn pro(index: u8, slot: u8) -> CemuPlayer {
-        CemuPlayer { index, kind: PadKind::Pro, player: index + 1, dsu_slot: Some(slot), nunchuk_slot: None, screen_only: false }
+    fn pro(order: u8, slot: u8) -> CemuPlayer {
+        CemuPlayer { order, kind: PadKind::Pro, player: order + 1, dsu_slot: Some(slot), nunchuk_slot: None, screen_only: false }
     }
 
-    fn wii(index: u8, slot: u8, nunchuk: Option<u8>) -> CemuPlayer {
-        CemuPlayer { index, kind: PadKind::Wiimote, player: index + 1, dsu_slot: Some(slot), nunchuk_slot: nunchuk, screen_only: false }
+    fn wii(order: u8, slot: u8, nunchuk: Option<u8>) -> CemuPlayer {
+        CemuPlayer { order, kind: PadKind::Wiimote, player: order + 1, dsu_slot: Some(slot), nunchuk_slot: nunchuk, screen_only: false }
     }
 
     /// Mando Wii en el mando `index` con el jugador explícito (tras el GamePad vacío, jugador = índice).
-    fn wii_player(index: u8, player: u8, slot: u8) -> CemuPlayer {
-        CemuPlayer { player, ..wii(index, slot, None) }
+    fn wii_player(order: u8, player: u8, slot: u8) -> CemuPlayer {
+        CemuPlayer { player, ..wii(order, slot, None) }
     }
 
     /// Perfil de un mando real del usuario tal como lo guarda Cemu.
@@ -1305,7 +1377,9 @@ mod tests {
         assert!(m.contains(&(21, 41)) && m.contains(&(22, 47)) && m.contains(&(23, 46)) && m.contains(&(24, 40)));
         assert!(m.contains(&(25, 8)) && m.contains(&(26, 9)), "Mic → L2, Pantalla → R2");
         assert!(m.contains(&(27, 16)), "Home → Touch");
-        assert_eq!(xml.matches("<controller>").count(), 1);
+        // El motor virtual es un dispositivo separado sin mapeos de entrada.
+        assert_eq!(xml.matches("<api>DSUController</api>").count(), 1);
+        assert_eq!(xml.matches("<controller>").count(), 1 + usize::from(cfg!(any(windows, target_os = "linux"))));
     }
 
     #[test]
@@ -1327,7 +1401,8 @@ mod tests {
         assert!(well_formed(&xml));
         assert!(xml.contains("<type>Wiimote</type>"));
         assert!(xml.contains("<device_type>6</device_type>"), "MotionPlus + Nunchuk");
-        assert_eq!(xml.matches("<controller>").count(), 2, "el Nunchuk es el otro móvil");
+        assert_eq!(xml.matches("<api>DSUController</api>").count(), 2, "el Nunchuk es el otro móvil");
+        assert_eq!(xml.matches("<controller>").count(), 2 + usize::from(cfg!(any(windows, target_os = "linux"))));
         assert!(xml.contains("<uuid>0</uuid>") && xml.contains("<uuid>3</uuid>"));
         let m = mappings(&xml);
         assert!(m.contains(&(1, 14)) && m.contains(&(2, 13)) && m.contains(&(3, 15)) && m.contains(&(4, 12)));
@@ -1338,7 +1413,8 @@ mod tests {
         assert_eq!(xml.matches("<motion>true</motion>").count(), 1);
         let solo = profile_xml(&wii(1, 1, None));
         assert!(solo.contains("<device_type>5</device_type>"));
-        assert_eq!(solo.matches("<controller>").count(), 1);
+        assert_eq!(solo.matches("<api>DSUController</api>").count(), 1);
+        assert_eq!(solo.matches("<controller>").count(), 1 + usize::from(cfg!(any(windows, target_os = "linux"))));
     }
 
     #[test]
@@ -1358,24 +1434,91 @@ mod tests {
         assert!(profiles.join("controller2.xml").is_file());
     }
 
+    /// El mando 1 sí se toma aunque sea del usuario: Cemu exige un Wii U
+    /// GamePad ahí y es justo el papel que pide el móvil. Con respaldo, y
+    /// vuelve al irse.
     #[test]
     fn backup_del_ajeno_y_restauracion_al_irse() {
         let dir = tmp_dir("backup");
         let profiles = dir.join("controllerProfiles");
         std::fs::create_dir_all(&profiles).unwrap();
         let ajeno = "<emulated_controller><type>Wii U GamePad</type><controller><api>XInput</api></controller></emulated_controller>";
-        std::fs::write(profiles.join("controller1.xml"), ajeno).unwrap();
-        write_profiles(&dir, &[gamepad(0, 0), pro(1, 1)]).unwrap();
-        let bak = profiles.join("controller1.xml.pepomote.bak");
-        assert_eq!(std::fs::read_to_string(&bak).unwrap(), ajeno, "el ajeno queda a salvo");
-        assert!(is_ours(&std::fs::read_to_string(profiles.join("controller1.xml")).unwrap()));
-        // segunda pasada: el backup no se pisa con nuestra versión
-        write_profiles(&dir, &[gamepad(0, 0), pro(1, 1)]).unwrap();
-        assert_eq!(std::fs::read_to_string(&bak).unwrap(), ajeno);
-        // se va el jugador 2: vuelve su mando real
+        std::fs::write(profiles.join("controller0.xml"), ajeno).unwrap();
         write_profiles(&dir, &[gamepad(0, 0)]).unwrap();
-        assert_eq!(std::fs::read_to_string(profiles.join("controller1.xml")).unwrap(), ajeno);
+        let bak = profiles.join("controller0.xml.pepomote.bak");
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), ajeno, "el ajeno queda a salvo");
+        assert!(is_ours(&std::fs::read_to_string(profiles.join("controller0.xml")).unwrap()));
+        // segunda pasada: el backup no se pisa con nuestra versión
+        write_profiles(&dir, &[gamepad(0, 0)]).unwrap();
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), ajeno);
+        // se va el móvil: vuelve su mando real
+        write_profiles(&dir, &[]).unwrap();
+        assert_eq!(std::fs::read_to_string(profiles.join("controller0.xml")).unwrap(), ajeno);
         assert!(!bak.exists());
+    }
+
+    /// Perfil de un mando de verdad del usuario en el mando `n`.
+    fn suyo(n: u8) -> String {
+        format!("<emulated_controller><type>Wii U Pro Controller</type><controller><api>XInput</api><uuid>{n}</uuid></controller></emulated_controller>")
+    }
+
+    /// Lo que reportó un usuario jugando a Nintendo Land: él con un móvil de
+    /// GamePad y los demás con mandos de verdad; al meter dos móviles más
+    /// como Mando Wii, Cemu dejaba de reconocer los mandos de los otros. Nos
+    /// estábamos comiendo sus perfiles. Ahora los móviles van detrás.
+    #[test]
+    fn los_mandos_de_los_otros_jugadores_no_se_tocan() {
+        let dir = tmp_dir("ajenos");
+        let profiles = dir.join("controllerProfiles");
+        std::fs::create_dir_all(&profiles).unwrap();
+        std::fs::write(profiles.join("controller1.xml"), suyo(1)).unwrap();
+        std::fs::write(profiles.join("controller2.xml"), suyo(2)).unwrap();
+
+        let avisos = write_profiles(&dir, &[gamepad(0, 0), wii_player(1, 2, 1), wii_player(2, 3, 2)]).unwrap();
+
+        assert!(avisos.is_empty(), "hay sitio de sobra: sin avisos");
+        assert_eq!(std::fs::read_to_string(profiles.join("controller1.xml")).unwrap(), suyo(1));
+        assert_eq!(std::fs::read_to_string(profiles.join("controller2.xml")).unwrap(), suyo(2));
+        assert!(!profiles.join("controller1.xml.pepomote.bak").exists(), "no hay nada que respaldar");
+        for n in [0, 3, 4] {
+            let x = std::fs::read_to_string(profiles.join(format!("controller{n}.xml"))).unwrap();
+            assert!(is_ours(&x), "controller{n}.xml debería ser nuestro");
+        }
+    }
+
+    /// Al actualizar desde una versión que sí los pisaba, el respaldo delata
+    /// que ese mando era del usuario: se le devuelve y el móvil se va detrás,
+    /// sin que nadie toque nada.
+    #[test]
+    fn al_actualizar_se_devuelven_los_mandos_pisados() {
+        let dir = tmp_dir("rescate");
+        let profiles = dir.join("controllerProfiles");
+        std::fs::create_dir_all(&profiles).unwrap();
+        std::fs::write(profiles.join("controller1.xml"), profile_xml(&wii_player(1, 2, 1))).unwrap();
+        std::fs::write(profiles.join("controller1.xml.pepomote.bak"), suyo(1)).unwrap();
+
+        write_profiles(&dir, &[gamepad(0, 0), wii_player(1, 2, 1)]).unwrap();
+
+        assert_eq!(std::fs::read_to_string(profiles.join("controller1.xml")).unwrap(), suyo(1), "su mando vuelve");
+        assert!(!profiles.join("controller1.xml.pepomote.bak").exists());
+        assert!(is_ours(&std::fs::read_to_string(profiles.join("controller2.xml")).unwrap()), "el móvil, detrás");
+    }
+
+    /// Cemu solo admite 8 mandos: con todos ocupados por el usuario, el móvil
+    /// se queda sin perfil y se le avisa en vez de quitarle el sitio a nadie.
+    #[test]
+    fn sin_mandos_libres_se_avisa_en_vez_de_pisar() {
+        let dir = tmp_dir("lleno");
+        let profiles = dir.join("controllerProfiles");
+        std::fs::create_dir_all(&profiles).unwrap();
+        for n in 1..MAX_CONTROLLERS {
+            std::fs::write(profiles.join(format!("controller{n}.xml")), suyo(n)).unwrap();
+        }
+        let avisos = write_profiles(&dir, &[gamepad(0, 0), wii_player(1, 2, 3)]).unwrap();
+        assert_eq!(avisos, vec![Warning::NoFreeSlot { dsu_slot: 3 }]);
+        for n in 1..MAX_CONTROLLERS {
+            assert_eq!(std::fs::read_to_string(profiles.join(format!("controller{n}.xml"))).unwrap(), suyo(n));
+        }
     }
 
     #[test]

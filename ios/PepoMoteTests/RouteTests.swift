@@ -11,9 +11,10 @@ final class RouteTests: XCTestCase {
         supportsCemu: Bool = true,
         ownNunchuk: Bool = false,
         supportsSwitch: Bool = true,
+        supportsGamepad: Bool = false,
         textInput: Bool = true
     ) -> UiLink {
-        var c = ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad, ownNunchuk: ownNunchuk, supportsSwitch: supportsSwitch)
+        var c = ConnectedLink(pcName: "PC", mode: mode, rttMs: nil, sensorHz: 0, slot: slot, role: role, player: slot + 1, supportsCemu: supportsCemu, pad: pad, ownNunchuk: ownNunchuk, supportsSwitch: supportsSwitch, supportsGamepad: supportsGamepad)
         if !textInput { c.receiver = ReceiverCapabilities(ok: ["platform": "android"]) }
         return .connected(c)
     }
@@ -60,6 +61,38 @@ final class RouteTests: XCTestCase {
             XCTAssertFalse(Route.holdsPointerForKeyboard(connected(mode: mode)), mode)
         }
         XCTAssertFalse(Route.holdsPointerForKeyboard(.disconnected))
+    }
+
+    func testUniversalPadIsTheLandscapeGamePadWithoutTurningTheDpad() {
+        let link = connected(mode: LinkState.modeGamepad, supportsGamepad: true)
+        XCTAssertTrue(Route.isUniversalPad(link))
+        XCTAssertEqual(Route.route(link, .none), .gamePad)
+        XCTAssertTrue(Route.forcesLandscape(link, .none))
+        XCTAssertTrue(Route.extendedOperative(link, .none), "manda los 80 bytes con el stick derecho")
+        // No es un Mando de Wii de lado: la cruceta no se gira.
+        XCTAssertFalse(Route.sidewaysDpad(link))
+        XCTAssertEqual(Route.wantedMode(link, .none), LinkState.modeGamepad)
+    }
+
+    func testUniversalPadNeedsTheReceiverToAnnounceIt() {
+        let old = connected(mode: LinkState.modeGamepad, supportsGamepad: false)
+        XCTAssertFalse(Route.isUniversalPad(old))
+        XCTAssertFalse(Route.extendedOperative(old, .none))
+        let out = Route.afterModeEcho(.universalPad, LinkState.modePointer, old)
+        XCTAssertEqual(out.intent, .none)
+        XCTAssertEqual(out.warning, Route.warnNeedsGamepad)
+    }
+
+    func testUniversalPadIntentShowsThePadBeforeTheEcho() {
+        let link = connected(mode: LinkState.modePointer, supportsGamepad: true)
+        XCTAssertEqual(Route.route(link, .universalPad), .gamePad)
+        XCTAssertEqual(Route.wantedMode(link, .universalPad), LinkState.modeGamepad)
+        let ok = Route.afterModeEcho(.universalPad, LinkState.modeGamepad, link)
+        XCTAssertEqual(ok.intent, .none)
+        XCTAssertNil(ok.warning)
+        // Solo el Jugador 1 cambia el modo.
+        let p2 = connected(mode: LinkState.modePointer, slot: 1, supportsGamepad: true)
+        XCTAssertEqual(Route.afterModeEcho(.universalPad, LinkState.modePointer, p2).warning, Route.warnPlayer1)
     }
 
     func testSwitchAlwaysRoutesToCompleteLandscapeProController() {

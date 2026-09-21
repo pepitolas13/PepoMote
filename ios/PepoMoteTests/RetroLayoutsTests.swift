@@ -58,10 +58,19 @@ final class RetroLayoutsTests: XCTestCase {
     func testEveryLayoutIsConsistent() {
         let ids = RetroLayouts.all.map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count, "ids únicos")
+        XCTAssertFalse(ids.contains(RetroLayouts.xbox.id), "el mando universal no es una consola de RetroArch")
+        // El rombo de Xbox, por POSICIÓN: lo que se lee es lo que recibe el juego.
+        XCTAssertEqual(RetroLayouts.xbox.face.first { $0.slot == "bottom" }?.label, "A")
+        XCTAssertEqual(RetroLayouts.xbox.face.first { $0.slot == "right" }?.label, "B")
+        XCTAssertEqual(RetroLayouts.xbox.face.first { $0.slot == "left" }?.label, "X")
+        XCTAssertEqual(RetroLayouts.xbox.face.first { $0.slot == "top" }?.label, "Y")
+        XCTAssertEqual(RetroLayouts.xbox.face.first { $0.slot == "bottom" }?.bit, Btn.a)
         XCTAssertEqual(RetroLayouts.all.first?.id, "retropad")
         XCTAssertTrue(RetroLayouts.consoleIds.allSatisfy { RetroLayouts.byId($0) != nil })
         XCTAssertFalse(RetroLayouts.isConsole("retropad") || RetroLayouts.isConsole("md3"))
-        for l in RetroLayouts.all {
+        // El mando universal no es una consola (fuera de `all`), pero tiene
+        // que cumplir las mismas reglas que las demás plantillas.
+        for l in RetroLayouts.all + [RetroLayouts.xbox] {
             XCTAssertEqual(l.shape.slots.count, l.face.count, l.id)
             XCTAssertEqual(Set(l.shape.slots), Set(l.face.map(\.slot)), l.id)
             XCTAssertEqual(Set(l.face.map(\.bit)).count, l.face.count, "\(l.id): bits repetidos")

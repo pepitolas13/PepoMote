@@ -71,6 +71,30 @@ en el entorno:
   Cemu (mismo motor), yaw/pitch/roll con giroscopio y quaternion coherentes,
   «acercar» (bit 30) en rampa, fuera de cámara (centinela), Nunchuk propio
   sin roll y el `WiimoteNew.ini` escrito (IRPassthrough + IMUIR).
+- `python e2e_gamepad.py <APPDATA aislado>` — mando universal: el móvil
+  simulado contra el **mando de Xbox 360 virtual leído desde fuera** con la
+  API XInput de Windows, que es lo que ve un juego de verdad. Comprueba que
+  el modo crea un mando nuevo, cada botón en su bit (Home → Guide por el
+  ordinal 100, que es el único que lo trae), los gatillos analógicos, el
+  signo y el recorrido de los dos sticks, el giro en el stick derecho y el
+  dedo ganándole, que un móvil sin giroscopio no apunta, que callarse suelta
+  el botón, que no se configura ningún emulador y que al irse el móvil el
+  mando se desenchufa. **Necesita el driver ViGEmBus**: sin él se salta sola
+  y sale con 0 (la CI no lo tiene; el mapeo lo cubren los tests unitarios).
+  **Tres trampas de XInput aprendidas aquí**, por si alguien las vuelve a
+  pisar (ninguna es culpa del receptor: su log sale impecable en los tres
+  casos):
+  1. No refleja el último `update` al instante — hay que leer con una pausa
+     entre el envío y la lectura, no pegado al `sendto`.
+  2. No ve las *retiradas* de mandos sin un bucle de mensajes de Windows;
+     las altas sí. Para comprobar que un mando se fue hay que preguntarlo
+     desde un proceso nuevo (`connected_fresh`).
+  3. **Pulsar Guide deja de ver el mando en ese proceso.** Es el botón Xbox
+     y Windows lo captura para la barra de juego; a partir de ahí todas las
+     lecturas salen a cero mientras el receptor sigue escribiendo tan
+     ricamente. Por eso esa comprobación va la última de las que leen el
+     mando. En medio de la tanda envenenaba todo lo que viniera detrás, y
+     de forma intermitente, que es lo peor de todo.
 - `python e2e_screen.py <segundos> <salida.jpg>` — canal de pantalla (doble
   pantalla del GamePad): sesión mala rechazada, apertura, tramas. Con Cemu
   abierto y su ventana GamePad View a la vista (por ejemplo

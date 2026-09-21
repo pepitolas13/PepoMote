@@ -84,6 +84,9 @@ fn push_pad_states(shared: &SharedState, sessions: &Sessions) {
 /// y aviso a los móviles de su tipo de mando si cambió.
 fn auto_configure(shared: &SharedState, sessions: &Sessions) {
     push_pad_states(shared, sessions);
+    // Mandos virtuales de la vibración ANTES de escribir los perfiles: así
+    // Dolphin y Cemu se escriben con el índice XInput real
+    crate::rumble::sync(shared);
     crate::dolphin::maybe_auto_configure(shared);
     crate::cemu::maybe_auto_configure(shared);
     crate::eden::maybe_auto_configure(shared);
@@ -283,7 +286,15 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
         }
         (s.mode, player_number(&s.players, slot))
     };
-    let modes: Vec<&str> = Mode::ALL.iter().map(|m| m.as_str()).collect();
+    // El mando universal solo se anuncia donde PUEDE existir: en macOS no hay
+    // mando virtual sin un driver firmado por Apple, y anunciarlo dejaba al
+    // móvil en un modo que ni mueve el cursor ni mueve nada.
+    let universal = crate::rumble::status() != crate::rumble::Status::Unsupported;
+    let modes: Vec<&str> = Mode::ALL
+        .iter()
+        .filter(|m| universal || **m != Mode::Gamepad)
+        .map(|m| m.as_str())
+        .collect();
     let pad = current_pad(shared, slot);
     if let Some(sess) = sessions.lock_tolerant().get_mut(&session_id) {
         sess.last_pad = Some(pad);
@@ -300,7 +311,11 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                         "screen_only":screen_only,
                         // Este receptor entiende el apuntado por inclinación
                         // (INPUT flags bit4): el móvil solo lo pide si lo ve aquí
-                        "tilt":true, "frame_rotation":true});
+                        "tilt":true, "frame_rotation":true,
+                        // Vibración de los juegos: si este PC puede mandarla
+                        // (ready / driver / denied / unsupported), para la
+                        // línea de Ajustes del móvil
+                        "rumble":crate::rumble::status().as_str()});
     if code_ok {
         ok["token"] = json!(pairing.token);
     }
@@ -546,7 +561,11 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
     sync_retroarch_presence(shared);
     if !empty {
         auto_configure(shared, sessions);
-    } else if was_screen_only {
+    } else {
+        // sin móviles no queda ningún mando virtual
+        crate::rumble::sync(shared);
+    }
+    if empty && was_screen_only {
         // el último móvil era «solo pantalla»: el perfil del usuario vuelve
         crate::cemu::cleanup_after_screen_only(shared);
     }

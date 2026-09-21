@@ -48,7 +48,8 @@ def readmsg(f, m, timeout=3.0):
         if msg.get("m") == m: return msg
     return None
 
-def input_packet(session, seq, flags, buttons, stick=(0, 0), stick2=(0, 0), touch=(0, 0), t=1_000_000):
+def input_packet(session, seq, flags, buttons, stick=(0, 0), stick2=(0, 0), touch=(0, 0), t=1_000_000,
+                 gyro=(0.0, 0.0, 0.0), accel=(0.0, 0.0, 9.80665)):
     ext = flags & FLAG_EXT
     b = bytearray(80 if ext else 72)
     struct.pack_into("<I", b, 0, 0x31504D50); b[4] = 1; b[5] = flags
@@ -56,7 +57,7 @@ def input_packet(session, seq, flags, buttons, stick=(0, 0), stick2=(0, 0), touc
     struct.pack_into("<I", b, 8, session); struct.pack_into("<I", b, 12, seq)
     struct.pack_into("<Q", b, 16, t + seq * 4000)
     struct.pack_into("<4f", b, 24, 1, 0, 0, 0)
-    struct.pack_into("<3f", b, 40, 0, 0, 0); struct.pack_into("<3f", b, 52, 0, 0, 9.80665)
+    struct.pack_into("<3f", b, 40, *gyro); struct.pack_into("<3f", b, 52, *accel)
     struct.pack_into("<I", b, 64, buttons); b[69] = 90
     if ext:
         b[72] = stick2[0] & 0xFF; b[73] = stick2[1] & 0xFF
@@ -138,6 +139,34 @@ if d:
 d = pad_data(0, lambda i: send(sess1, FLAG_QUAT | FLAG_STICK | FLAG_EXT, 0))
 check(d is not None and d[39] == 0 and d[56] == 0 and list(d[40:44]) == [128, 128, 128, 128], f"DSU: sin dedo/Home → touch inactivo, sticks neutros (got {list(d[36:62]) if d else None})")
 
+# 3b) MOVIMIENTO: el giroscopio tiene que llegar al PadData. Cemu no mapea el
+# movimiento eje por eje como Dolphin: lo mete en su propia fusión Mahony
+# (`DSUControllerProvider.cpp`), así que si estos bytes salen mal o a cero, el
+# juego de Wii U no ve NADA y no hay forma de enterarse desde Cemu.
+# Ejes y unidades de `dsu/mapping.rs`: accel en g = (-ax, -az, ay)/9.80665,
+# gyro en °/s = (gx, -gz, gy)·57.29578.
+G = 9.80665
+d = pad_data(0, lambda i: send(sess1, FLAG_QUAT | FLAG_STICK | FLAG_EXT, 0,
+                               gyro=(0.5, 1.0, 2.0), accel=(1.0, 2.0, 9.0)))
+check(d is not None, "DSU: PadData con movimiento recibido")
+if d:
+    acc = struct.unpack_from("<3f", d, 76)
+    gyr = struct.unpack_from("<3f", d, 88)
+    esperado_acc = (-1.0 / G, -9.0 / G, 2.0 / G)
+    esperado_gyr = (0.5 * 57.29578, -2.0 * 57.29578, 1.0 * 57.29578)
+    check(all(abs(a - b) < 0.005 for a, b in zip(acc, esperado_acc)),
+          f"DSU: accel en g = {tuple(round(v, 4) for v in esperado_acc)} (got {tuple(round(v, 4) for v in acc)})")
+    check(all(abs(a - b) < 0.05 for a, b in zip(gyr, esperado_gyr)),
+          f"DSU: gyro en °/s = {tuple(round(v, 2) for v in esperado_gyr)} (got {tuple(round(v, 2) for v in gyr)})")
+    check(any(abs(v) > 1.0 for v in gyr), f"DSU: el giroscopio NO llega a cero (got {tuple(round(v, 2) for v in gyr)})")
+    ts = struct.unpack_from("<Q", d, 68)[0]
+    check(ts > 0, f"DSU: timestamp de movimiento no nulo (Cemu descarta el paquete si no crece): {ts}")
+# móvil quieto y plano: gravedad en accel Y = -1 g y giro exactamente 0
+d = pad_data(0, lambda i: send(sess1, FLAG_QUAT | FLAG_STICK | FLAG_EXT, 0))
+if d:
+    check(abs(struct.unpack_from("<f", d, 80)[0] + 1.0) < 0.005, "DSU: móvil plano → accel Y = -1 g")
+    check(struct.unpack_from("<3f", d, 88) == (0.0, 0.0, 0.0), "DSU: sin giro → gyro a cero")
+
 # 4) jugador 2 → controller1.xml Pro Controller
 s2, f2, ok2 = hello({"token": token, "name": "Mando2E2E"})
 check(ok2.get("slot") == 1 and ok2.get("pad") == "pro" and ok2.get("mode") == "cemu", f"jugador 2: slot 1, pad pro, modo cemu ({ok2})")
@@ -152,7 +181,7 @@ check(wait_profile(1, lambda x: x and "<type>Wiimote</type>" in x and "<device_t
 s3, f3, ok3 = hello({"token": token, "role": "nunchuk", "name": "NunchukE2E"})
 check(ok3.get("slot") == 3 and ok3.get("player") == 1 and ok3.get("pad") == "nunchuk", f"nunchuk: slot 3, jugador 1 ({ok3})")
 time.sleep(0.8)
-check((profile(0) or "").count("<controller>") == 1, "Cemu: J1 GamePad no usa el Nunchuk (1 controller)")
+check((profile(0) or "").count("<api>DSUController</api>") == 1, "Cemu: J1 GamePad no usa el Nunchuk (1 mando de entrada)")
 s1.sendall(b'{"m":"pad","pad":"wiimote"}\n'); r = readmsg(f1, "pad")
 check(r and r.get("pad") == "wiimote", "jugador 1: pad wiimote aceptado")
 r3 = readmsg(f3, "pad", 3.0)
@@ -163,7 +192,7 @@ check(wait_profile(0, lambda x: x and "<type>Wii U GamePad</type>" in x and "<pr
                    and "<api>Keyboard</api>" in x and "<uuid>keyboard</uuid>" in x and "DSUController" not in x and x.count("<controller>") == 1),
       "Cemu: controller0.xml = GamePad por teclado del PC (todos son Mando Wii; Cemu lo necesita con dispositivo)")
 check("<mapping>1</mapping>\n\t\t\t\t<button>13</button>" in (profile(0) or ""), "Cemu: GamePad por teclado: A → Intro")
-check(wait_profile(1, lambda x: x and "<type>Wiimote</type>" in x and "<device_type>6</device_type>" in x and x.count("<controller>") == 2
+check(wait_profile(1, lambda x: x and "<type>Wiimote</type>" in x and "<device_type>6</device_type>" in x and x.count("<api>DSUController</api>") == 2
                    and "<uuid>0</uuid>" in x and "<uuid>3</uuid>" in x and "PepoMote J1 Mando Wii" in x),
       "Cemu: controller1.xml = J1 Wiimote + Nunchuk (device_type 6, pads 0 y 3)")
 check(wait_profile(2, lambda x: x and "<type>Wiimote</type>" in x and "<device_type>5</device_type>" in x and "<uuid>1</uuid>" in x and "PepoMote J2 Mando Wii" in x),
@@ -193,6 +222,41 @@ s3.sendall(b'{"m":"bye"}\n'); s3.close()
 # 8) el jugador 2 se va → controller1.xml desaparece (era nuestro)
 s2.sendall(b'{"m":"bye"}\n'); s2.close()
 check(wait_profile(1, lambda x: x is None), "Cemu: controller1.xml eliminado al irse el jugador 2")
+
+# 8a) REGRESIÓN: los mandos de los OTROS jugadores no se pisan. Jugando a
+# Nintendo Land con un móvil de GamePad y los amigos con mandos de verdad,
+# meter dos móviles más como Mando Wii se comía sus perfiles y Cemu dejaba de
+# reconocer sus mandos hasta desconectarlos y reiniciar. Ahora el móvil se
+# coloca en el primer mando LIBRE.
+SUYO = ('<?xml version="1.0" encoding="UTF-8"?>\n<emulated_controller>\n\t<type>Wii U Pro Controller</type>\n'
+        '\t<controller>\n\t\t<api>XInput</api>\n\t\t<uuid>1</uuid>\n\t\t<display_name>Mando de otro jugador</display_name>\n'
+        '\t\t<mappings>\n\t\t</mappings>\n\t</controller>\n</emulated_controller>\n')
+open(os.path.join(PROFILES, "controller1.xml"), "w", encoding="utf-8").write(SUYO)
+s2, f2, ok2 = hello({"token": token, "name": "Mando2E2E"})
+check(wait_profile(2, lambda x: x and "<profile>PepoMote</profile>" in x), "Cemu: el móvil nuevo va al mando 3, que está libre")
+check(profile(1) == SUYO, "Cemu: el mando del otro jugador sigue intacto")
+check(not os.path.exists(os.path.join(PROFILES, "controller1.xml.pepomote.bak")), "Cemu: no ha hecho falta respaldar nada suyo")
+s2.sendall(b'{"m":"bye"}\n'); s2.close()
+check(wait_profile(2, lambda x: x is None), "Cemu: al irse el móvil, su perfil desaparece y el del otro jugador sigue")
+check(profile(1) == SUYO, "Cemu: el mando del otro jugador, intacto también después")
+os.remove(os.path.join(PROFILES, "controller1.xml"))
+
+# 8a-bis) REGRESIÓN del latido DSU: un pad SIN móvil tiene que contestar
+# igualmente «aquí no hay nadie». Cemu solo vuelve a pedir un pad cuando
+# recibe ESE pad (pide los suyos una vez al arrancar y nada más), así que sin
+# latido un móvil callado 3 s —pantalla apagada, bache de wifi— dejaba su
+# mando muerto hasta reiniciar Cemu.
+dsu_mudo = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); dsu_mudo.settimeout(1.5)
+dsu_mudo.sendto(dsu_request(3), (HOST, DSU))
+latido, fin = None, time.time() + 3.0
+while time.time() < fin:
+    try: d, _ = dsu_mudo.recvfrom(256)
+    except socket.timeout: break
+    if d[:4] == b"DSUS" and struct.unpack_from("<I", d, 16)[0] == 0x100002 and d[20] == 3:
+        latido = d; break
+dsu_mudo.close()
+check(latido is not None and len(latido) == 100 and latido[21] == 0 and latido[31] == 0,
+      f"DSU: el pad 3 (sin móvil) late igualmente diciendo desconectado ({latido[20:32].hex() if latido else None})")
 
 # 8b) «solo pantalla»: el móvil GamePad solo hace de pantalla táctil junto al mando real del usuario
 def readnotice(f, prefix, timeout=4.0):
@@ -233,7 +297,7 @@ check(d is not None and d[56] == 1 and struct.unpack_from("<H", d, 58)[0] == 960
 # apagar: perfil completo nuestro (queda la copia); encender: fusión otra vez desde la copia
 s1.sendall(b'{"m":"screen_only","on":false}\n'); r = readmsg(f1, "screen_only")
 check(r is not None and r.get("on") is False, f"solo pantalla: eco off ({r})")
-check(wait_profile(0, lambda x: x and "<profile>PepoMote</profile>" in x and x.count("<controller>") == 1), "Cemu: apagado → perfil completo nuestro")
+check(wait_profile(0, lambda x: x and "<profile>PepoMote</profile>" in x and x.count("<api>DSUController</api>") == 1), "Cemu: apagado → perfil completo nuestro")
 check(open(BAK0, encoding="utf-8").read() == AJENO, "Cemu: la copia del usuario sigue intacta")
 s1.sendall(b'{"m":"screen_only","on":true}\n'); r = readmsg(f1, "screen_only")
 check(r is not None and r.get("on") is True, f"solo pantalla: eco on ({r})")

@@ -3135,7 +3135,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pepomote"
-version = "1.11.0"
+version = "1.12.0"
 dependencies = [
  "core-foundation",
  "core-graphics",
@@ -3163,6 +3163,7 @@ dependencies = [
  "tray-icon",
  "ureq",
  "url",
+ "vigem-client",
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-misc",
@@ -3233,7 +3234,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "pmp"
-version = "1.11.0"
+version = "1.12.0"
 
 [[package]]
 name = "png"
@@ -4437,6 +4438,15 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vigem-client"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b857e6f99efe1e1eb1e4dfb035de8ae7ec8ec56bd1928edcbd7c6e4427634d52"
+dependencies = [
+ "winapi",
+]
 
 [[package]]
 name = "walkdir"

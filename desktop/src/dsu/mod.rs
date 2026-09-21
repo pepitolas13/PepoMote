@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod cemu_sim;
 mod mapping;
 mod server;
 pub mod wii_ir;
@@ -157,7 +159,10 @@ pub struct Dsu {
     socket: UdpSocket,
     clients: Clients,
     last: SlotSamples,
-    counter: AtomicU32,
+    /// Compartido con el hilo del servidor, que tambien manda PadData
+    /// (el latido de los slots callados): el contador tiene que seguir
+    /// creciendo o el emulador descarta el paquete.
+    counter: Arc<AtomicU32>,
     pulse: Mutex<[Pulse; MAX_PLAYERS]>,
 }
 
@@ -234,16 +239,17 @@ pub fn start(shared: SharedState) -> Option<Arc<Dsu>> {
         socket,
         clients: Arc::new(Mutex::new(HashMap::new())),
         last: Arc::new(Mutex::new([None; MAX_PLAYERS])),
-        counter: AtomicU32::new(0),
+        counter: Arc::new(AtomicU32::new(0)),
         pulse: Mutex::new([idle; MAX_PLAYERS]),
     });
 
     {
         let clients = dsu.clients.clone();
         let last = dsu.last.clone();
+        let counter = dsu.counter.clone();
         std::thread::Builder::new()
             .name("pmp-dsu".into())
-            .spawn(move || server::run(shared, recv_socket, clients, last))
+            .spawn(move || server::run(shared, recv_socket, clients, last, counter))
             .expect("hilo dsu");
     }
     Some(dsu)

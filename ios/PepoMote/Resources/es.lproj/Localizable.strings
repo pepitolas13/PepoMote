@@ -12,6 +12,8 @@
 "channel_wiiu_sub" = "GamePad para Cemu";
 "channel_switch" = "Switch";
 "channel_switch_sub" = "Pro Controller";
+"channel_gamepad" = "Mando universal";
+"channel_gamepad_sub" = "Cualquier juego del PC";
 "channel_nunchuk" = "Nunchuk";
 "channel_nunchuk_sub" = "La otra mano";
 "channel_settings" = "Ajustes";
@@ -120,6 +122,19 @@
 "update_install_guide" = "Guía de SideStore, AltStore y Sideloadly";
 "update_open_altstore_legacy" = "Abrir AltStore 2.1 o anterior";
 "update_altstore_legacy_help" = "Las versiones antiguas usan otro enlace. Si abre AltStore PAL, copia la fuente y añádela manualmente en AltStore Classic; este IPA necesita firma con tu cuenta.";
+"rumble_title" = "Vibración en los juegos";
+"rumble_sub" = "Cuando el juego lo pide (Mario Party, Wii Sports…), el móvil vibra. La vibración al tocar los botones es otra cosa y no cambia.";
+"rumble_high" = "Alta";
+"rumble_normal" = "Normal";
+"rumble_low" = "Baja";
+"rumble_off" = "Apagada";
+"rumble_try" = "Probar";
+"rumble_pc_ready" = "El PC conectado puede hacer vibrar el móvil.";
+"rumble_pc_driver" = "El PC necesita el driver ViGEmBus para la vibración (mira la ventana del receptor).";
+"rumble_pc_denied" = "El receptor no tiene permiso en /dev/uinput: sin vibración (mira su ventana).";
+"rumble_pc_unsupported" = "Este receptor no puede mandar vibración (macOS o servidor Android).";
+"rumble_pc_old" = "El receptor es anterior a la 1.12: sin vibración de los juegos.";
+"rumble_no_motor" = "Este dispositivo no tiene motor de vibración.";
 
 /* primer arranque */
 "onboarding_sub" = "Tu móvil, mando de tu PC en 3 pasos";
@@ -184,8 +199,11 @@
 "channel_retroarch" = "RetroArch";
 "channel_retroarch_sub" = "El mando de cada consola, Mando Wii o pistola";
 "mode_retroarch" = "RetroArch";
+"mode_gamepad" = "Mando universal";
+"activating_gamepad" = "Activando el mando universal…";
 "activating_retroarch" = "Activando RetroArch…";
 "warn_needs_retroarch" = "El PC necesita un PepoMote más nuevo para RetroArch";
+"warn_needs_gamepad" = "El PC necesita un PepoMote más nuevo para el mando universal";
 "in_retroarch" = "En RetroArch soy:";
 "retropad" = "RetroPad";
 "nes_pad" = "Mando Wii";

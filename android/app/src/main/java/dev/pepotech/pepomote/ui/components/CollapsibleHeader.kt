@@ -406,6 +406,7 @@ private fun HeaderCard(
                 supportsCemu = link.supportsCemu,
                 supportsSwitch = link.supportsSwitch,
                 supportsRetroArch = link.supportsRetroArch,
+                supportsGamepad = link.supportsGamepad,
                 androidReceiver = link.platform == "android",
                 compact = true
             )

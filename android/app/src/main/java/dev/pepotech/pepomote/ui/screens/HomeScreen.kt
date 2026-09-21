@@ -63,7 +63,9 @@ fun HomeScreen(
     onOpenUpdate: (UpdateCheck.Version) -> Unit = {},
     onDismissUpdate: (UpdateCheck.Version) -> Unit = {},
     /** Tarjeta RetroArch (receptor de PC y servidor Android). */
-    onRetroArch: () -> Unit = {}
+    onRetroArch: () -> Unit = {},
+    /** Tarjeta «Mando universal» (solo receptor de PC). */
+    onGamepad: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -187,6 +189,17 @@ fun HomeScreen(
                     glyph = ChannelGlyph.Retro,
                     accent = PepoColors.Warn,
                     onClick = onRetroArch
+                )
+            }
+            // Mando universal: solo el receptor de PC puede crear el mando
+            // de Xbox virtual, así que con servidor Android no se ofrece
+            if (!androidReceiver) item {
+                ChannelCard(
+                    title = stringResource(R.string.channel_gamepad),
+                    subtitle = stringResource(R.string.channel_gamepad_sub),
+                    glyph = ChannelGlyph.GamePad,
+                    accent = PepoColors.Blue,
+                    onClick = onGamepad
                 )
             }
             // Con Dolphin: el segundo móvil, en la otra mano

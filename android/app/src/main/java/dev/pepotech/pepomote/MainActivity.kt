@@ -47,6 +47,7 @@ import dev.pepotech.pepomote.control.AppPrefs
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.PressMode
+import dev.pepotech.pepomote.control.GameRumble
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.control.UpdateCheck
 import dev.pepotech.pepomote.service.RotationSuggester
@@ -264,6 +265,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         hideSystemBars()
         UiSounds.init(this)
+        // Motor de la vibración que piden los juegos (aparte de la de los botones)
+        GameRumble.attach(this)
         PressMode.init(this)
         NunchukSide.load(this)
         GamePadSide.load(this)
@@ -592,6 +595,7 @@ private fun Root(activity: MainActivity) {
                 onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
                 onSwitch = { activity.openController(LinkState.MODE_SWITCH, dolphinOnly = false) },
                 onRetroArch = { activity.openController(LinkState.MODE_RETROARCH, dolphinOnly = false) },
+                onGamepad = { activity.openController(LinkState.MODE_GAMEPAD, dolphinOnly = false) },
                 onNunchuk = { activity.openNunchuk() },
                 onNewPairing = { activity.currentScreen = Screen.Settings },
                 onServer = { activity.openServer() },

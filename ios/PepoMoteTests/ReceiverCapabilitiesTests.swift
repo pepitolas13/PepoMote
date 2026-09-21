@@ -44,6 +44,21 @@ final class ReceiverCapabilitiesTests: XCTestCase {
         XCTAssertEqual(ReceiverCapabilities().restoredPad(AppPrefs.retroPad), "gun")
     }
 
+    /// `ok.rumble` se guarda tal cual (Ajustes lo traduce); ausente, o no
+    /// cadena, es nil: receptor anterior a 1.10.5.
+    func testLaVibracionDelReceptorSeGuardaTalCual() {
+        XCTAssertNil(ReceiverCapabilities().rumble)
+        XCTAssertNil(ReceiverCapabilities(ok: ["platform": "desktop"]).rumble)
+        XCTAssertNil(ReceiverCapabilities(ok: ["rumble": 1]).rumble)
+        XCTAssertEqual(ReceiverCapabilities(ok: ["rumble": "ready"]).rumble, "ready")
+        XCTAssertEqual(ReceiverCapabilities(ok: ["platform": "android", "rumble": "unsupported"]).rumble, "unsupported")
+        let state = LinkState()
+        state.publish(.connected(ConnectedLink(pcName: "PC", mode: "dolphin", rttMs: nil, sensorHz: 0, receiver: ReceiverCapabilities(ok: ["rumble": "driver"]))))
+        XCTAssertEqual(state.link.connected?.rumble, "driver")
+        state.updateConnected { $0.mode = "pointer" }
+        XCTAssertEqual(state.link.connected?.rumble, "driver", "los ecos de modo lo conservan")
+    }
+
     func testCambiarModoYPadConservaCapacidadesYRutasSinVeloPendiente() {
         let state = LinkState()
         let receiver = ReceiverCapabilities(ok: ["platform": "android", "text_input": false])

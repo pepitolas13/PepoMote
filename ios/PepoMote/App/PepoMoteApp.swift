@@ -27,6 +27,8 @@ struct PepoMoteApp: App {
             UpdateManager.shared.setForeground(phase == .active)
             // La doble pantalla del GamePad solo se recibe con la app a la vista
             ScreenLink.shared.setForeground(phase == .active)
+            // Sin la app a la vista no queda vibración de los juegos
+            LinkService.shared.setForeground(phase == .active)
         }
     }
 }

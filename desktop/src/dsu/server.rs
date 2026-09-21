@@ -19,11 +19,31 @@ const SERVER_ID: u32 = 0x50455030; // "0EPP"
 const MSG_VERSION: u32 = 0x100000;
 const MSG_PORT_INFO: u32 = 0x100001;
 const MSG_PAD_DATA: u32 = 0x100002;
+/// Extensión «rumble» no oficial (protocol/DSU.md): cuántos motores tiene
+/// un mando, y órdenes de vibración. Ningún emulador la habla hoy (el DSU
+/// oficial no lleva salidas); se atiende por si algún cliente sí.
+const MSG_MOTORS: u32 = 0x110001;
+const MSG_RUMBLE: u32 = 0x110002;
+/// Motores que declaramos por mando: uno, como el Mando de Wii.
+const MOTOR_COUNT: u8 = 1;
 
 use super::CLIENT_TTL;
 
 /// Con más de esto sin muestras del móvil, ese slot se reporta desconectado.
 const PAD_TTL: Duration = Duration::from_secs(1);
+
+/// Cada cuánto se le manda a un cliente el PadData de un slot que NO tiene
+/// muestras frescas (el móvil se ha callado o todavía no ha empezado).
+///
+/// Cemu solo vuelve a pedir un pad cuando recibe ESE pad: pide los suyos una
+/// vez al arrancar y, a partir de ahí, su única forma de seguir pidiéndolo es
+/// que le contestemos (medido: 1.218.620 peticiones en 43 s para un pad que
+/// contesta y exactamente 2, las del arranque, para uno que no). Si el móvil
+/// se calla más de [`super::CLIENT_TTL`], la suscripción caduca, Cemu no
+/// vuelve a pedirlo nunca y ese mando queda muerto hasta reiniciar Cemu:
+/// bastaba con apagar la pantalla del móvil tres segundos. Con el latido la
+/// conversación no se corta y el mando vuelve solo en cuanto el móvil emite.
+const BEAT_EVERY: Duration = Duration::from_millis(500);
 
 /// MAC estable por slot: "PMP1" + 0x00 + slot.
 fn mac(slot: u8) -> [u8; 6] {
@@ -58,10 +78,17 @@ fn subscribed_slots(payload: &[u8]) -> u8 {
     mask
 }
 
-pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotSamples) {
+pub fn run(
+    shared: SharedState,
+    socket: UdpSocket,
+    clients: Clients,
+    last: SlotSamples,
+    counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
+) {
     let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
     let mut buf = [0u8; 128];
     let mut last_sweep = Instant::now();
+    let mut last_beat = Instant::now();
     // PEPOMOTE_DEBUG=1: traza de cada petición DSU (¿Dolphin nos habla?)
     let debug = std::env::var_os("PEPOMOTE_DEBUG").is_some();
 
@@ -105,9 +132,27 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
                         let mask = subscribed_slots(payload);
                         clients.lock_tolerant().entry(from).or_insert_with(Client::new).register(mask, Instant::now());
                     }
+                    MSG_MOTORS => {
+                        let samples = last.lock_tolerant();
+                        for slot in slots_of(subscribed_slots(payload)) {
+                            let _ = socket.send_to(&motors_packet(slot, &samples), from);
+                        }
+                    }
+                    MSG_RUMBLE => {
+                        if let Some((mask, intensity)) = parse_rumble(payload) {
+                            for slot in slots_of(mask) {
+                                crate::rumble::set_from_dsu(slot, intensity);
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
+        }
+
+        if last_beat.elapsed() >= BEAT_EVERY {
+            last_beat = Instant::now();
+            beat(&socket, &clients, &last, &counter);
         }
 
         if last_sweep.elapsed() > Duration::from_secs(1) {
@@ -118,6 +163,102 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
             shared.lock_tolerant().dsu_clients = c.len();
         }
     }
+}
+
+/// Un PadData «ahí no hay nadie» para cada slot pedido cuyo móvil no está
+/// emitiendo: mantiene viva la conversación con el emulador (ver
+/// [`BEAT_EVERY`]) y de paso le dice la verdad, que ese mando no está.
+/// Los slots que SÍ emiten no se tocan: de esos ya se encarga el hilo de
+/// telemetría, que es el que manda rápido y sin colas.
+fn beat(
+    socket: &UdpSocket,
+    clients: &Clients,
+    last: &SlotSamples,
+    counter: &std::sync::atomic::AtomicU32,
+) {
+    let now = Instant::now();
+    // El perfil de la ULTIMA muestra de cada slot: lo que decide donde esta
+    // el neutro de los sticks del latido (y si Right X es el centinela del
+    // puntero IR). Sin muestra nunca, el perfil Wii, que es el de Dolphin.
+    let (fresh, perfil) = {
+        let samples = last.lock_tolerant();
+        let mut out = [false; MAX_PLAYERS];
+        let mut perfil = [DsuProfile::default(); MAX_PLAYERS];
+        for (i, s) in samples.iter().enumerate() {
+            out[i] = matches!(s, Some((_, t)) if t.elapsed() < PAD_TTL);
+            if let Some((m, _)) = s {
+                perfil[i] = m.profile;
+            }
+        }
+        (out, perfil)
+    };
+    if fresh.iter().all(|f| *f) {
+        return;
+    }
+    let clients = clients.lock_tolerant();
+    for (addr, c) in clients.iter() {
+        for (slot, emitiendo) in fresh.iter().enumerate() {
+            if *emitiendo || !c.wants(slot, CLIENT_TTL, now) {
+                continue;
+            }
+            let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed).wrapping_add(1);
+            let _ = socket.send_to(&pad_absent_packet(slot as u8, n, perfil[slot]), addr);
+        }
+    }
+}
+
+/// PadData de 100 bytes de un mando que no está: la cabecera dice
+/// «desconectado», los botones y el movimiento van a cero y los sticks al
+/// NEUTRO del perfil.
+///
+/// Los sticks no pueden ir a cero aunque el paquete diga «desconectado»:
+/// Eden/yuzu no mira ese campo y calcula `(v − 127) / 127`, así que un 0 es
+/// el stick a tope; Dolphin copia el paquete entero antes de que su hotplug
+/// retire el mando, y sus ejes son `(v − 128) / ±128`. Con un móvil callado
+/// un segundo, el personaje se iba solo a la esquina.
+///
+/// En el perfil Wii, Right X = 0 es el centinela DELIBERADO de «el puntero
+/// IR está fuera de la cámara» (protocol/DSU.md), así que ahí se deja a cero.
+fn pad_absent_packet(slot: u8, counter: u32, profile: DsuProfile) -> Vec<u8> {
+    let centro = profile.stick_center().clamp(0, 255) as u8;
+    let rx = if profile == DsuProfile::Wii { 0 } else { centro };
+    let mut p = Vec::with_capacity(84);
+    p.extend_from_slice(&MSG_PAD_DATA.to_le_bytes());
+    p.extend_from_slice(&pad_info(slot, false, 0));
+    p.push(0); // connected = no
+    p.extend_from_slice(&counter.to_le_bytes());
+    p.extend_from_slice(&[0u8; 4]); // botones 1 y 2, PS, Touch
+    p.extend_from_slice(&[centro, centro, rx, centro]); // LX LY RX RY
+    p.extend_from_slice(&[0u8; 12]); // cruceta analógica, caras, gatillos
+    p.extend_from_slice(&[0u8; 12]); // los dos toques del touchpad
+    p.extend_from_slice(&[0u8; 8]); // timestamp del sensor
+    p.extend_from_slice(&[0u8; 24]); // accel y gyro
+    let out = finish(p);
+    debug_assert_eq!(out.len(), 100);
+    out
+}
+
+/// Slots de una máscara (bit i = slot i), en orden.
+fn slots_of(mask: u8) -> impl Iterator<Item = u8> {
+    (0..MAX_PLAYERS as u8).filter(move |s| mask & (1 << s) != 0)
+}
+
+/// Respuesta a MotorsInfo (0x110001): la info del slot + motores.
+fn motors_packet(slot: u8, samples: &[Option<(MotionSample, Instant)>; MAX_PLAYERS]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(16);
+    out.extend_from_slice(&MSG_MOTORS.to_le_bytes());
+    out.extend_from_slice(&slot_info(slot, samples));
+    out.push(MOTOR_COUNT);
+    finish(out)
+}
+
+/// Orden Rumble (0x110002): tras el tipo, la cabecera de mando de 8 bytes
+/// (flags, pad_id, mac) como en PadData, el motor y la intensidad 0..255.
+/// Devuelve (máscara de slots, intensidad); el motor se ignora (solo hay uno).
+fn parse_rumble(payload: &[u8]) -> Option<(u8, u8)> {
+    let intensity = *payload.get(9)?;
+    let mask = subscribed_slots(payload);
+    (mask != 0).then_some((mask, intensity))
 }
 
 /// Los 11 bytes de info de mando para PortInfo, con el estado real del slot.
@@ -488,6 +629,34 @@ mod tests {
         assert!((ay + 1.0).abs() < 1e-5, "ay={ay}");
         let pitch = f32::from_le_bytes(out[88..92].try_into().unwrap());
         assert!((pitch - 57.29578).abs() < 1e-3, "pitch={pitch}");
+    }
+
+    /// El latido de un slot sin móvil: mismo tamaño y mismo CRC que un
+    /// PadData normal (si no, el emulador lo tira), pero diciendo que ahí no
+    /// hay mando. Sin él, Cemu deja de pedir ese pad para siempre.
+    #[test]
+    fn el_latido_es_un_paddata_valido_que_dice_desconectado() {
+        let out = pad_absent_packet(2, 9, DsuProfile::WiiU);
+        assert_eq!(out.len(), 100);
+        assert_eq!(u16::from_le_bytes(out[6..8].try_into().unwrap()), 84);
+        let mut copy = out.clone();
+        let crc_in = u32::from_le_bytes(copy[8..12].try_into().unwrap());
+        copy[8..12].copy_from_slice(&[0; 4]);
+        assert_eq!(crc32fast::hash(&copy), crc_in, "CRC bueno");
+        assert_eq!(u32::from_le_bytes(out[16..20].try_into().unwrap()), MSG_PAD_DATA);
+        assert_eq!(out[20], 2, "el slot que toca");
+        assert_eq!(out[21], 0, "estado: desconectado");
+        assert_eq!(out[31], 0, "connected = no");
+        assert_eq!(u32::from_le_bytes(out[32..36].try_into().unwrap()), 9, "contador");
+        assert!(out[36..40].iter().all(|b| *b == 0), "sin botones");
+        assert_eq!(&out[40..44], &[128, 128, 128, 128], "sticks al NEUTRO, no a cero");
+        assert!(out[44..].iter().all(|b| *b == 0), "sin gatillos, táctil ni movimiento");
+        // Perfil Wii: Right X = 0 es el centinela de «puntero fuera de cámara»
+        let wii = pad_absent_packet(0, 1, DsuProfile::Wii);
+        assert_eq!(&wii[40..44], &[128, 128, 0, 128], "el centinela del puntero IR se respeta");
+        // Eden lee (v − 127) / 127: con 127 el reposo es exacto
+        let switch = pad_absent_packet(0, 1, DsuProfile::Switch);
+        assert_eq!(&switch[40..44], &[127, 127, 127, 127]);
     }
 
     #[test]

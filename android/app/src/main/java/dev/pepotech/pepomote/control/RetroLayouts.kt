@@ -103,6 +103,29 @@ object RetroLayouts {
         shoulders = RetroShoulders("L", "R", "L2", "R2"), center = SELECT_START
     )
 
+    /**
+     * Mando universal: el rombo de Xbox, con cada letra DONDE el jugador
+     * espera verla (A abajo, B derecha, X izquierda, Y arriba). El receptor
+     * traduce cada bit a su botón de XInput sin cruzar nada, así que lo que
+     * se lee en pantalla es lo que recibe el juego.
+     *
+     * Fuera de [ALL] a propósito: no es una consola de RetroArch, solo
+     * reutiliza el mismo formato de plantilla. Así el test de paridad con
+     * `protocol/retro-layouts.json` sigue valiendo tal cual.
+     */
+    val XBOX = RetroLayout(
+        id = "xbox", name = "Xbox", shape = RetroShape.DIAMOND, stagger = 0,
+        face = listOf(
+            RetroFace("top", "Y", ButtonState.Y),
+            RetroFace("left", "X", ButtonState.X),
+            RetroFace("right", "B", ButtonState.B),
+            RetroFace("bottom", "A", ButtonState.A, primary = true)
+        ),
+        leftStick = true, rightStick = RightStick.ANALOG, stickClicks = true,
+        shoulders = RetroShoulders("LB", "RB", "LT", "RT"),
+        center = listOf(RetroCenter("Back", ButtonState.MINUS), RetroCenter("Start", ButtonState.PLUS))
+    )
+
     /** Todas las plantillas, con `retropad` la primera (mismo orden que el JSON). */
     val ALL: List<RetroLayout> = listOf(
         RETROPAD,

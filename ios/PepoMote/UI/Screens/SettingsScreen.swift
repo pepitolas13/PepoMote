@@ -72,6 +72,8 @@ struct SettingsScreen: View {
                     // Avisos del receptor sobre el mando al cambiar de modo
                     SettingRow(title: tr("notices_title"), subtitle: tr("notices_sub"), on: $notices)
                         .onChange(of: notices) { AppPrefs.receiverNotices = $0 }
+                    // Vibración que piden los juegos (aparte de la de los botones)
+                    RumbleRow()
                     // Aviso de versión nueva: la única consulta fuera de la red local
                     SettingRow(title: tr("update_title"), subtitle: tr("update_sub"), on: $updateCheck)
                         .onChange(of: updateCheck) { updates.setEnabled($0) }
@@ -140,6 +142,66 @@ private struct SideRow: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pepoCard()
+    }
+}
+
+/// Tarjeta «Vibración en los juegos»: Alta / Normal / Baja / Apagada, «Probar»
+/// y, con enlace, lo que el receptor puede hacer (`ok.rumble`). Sin motor
+/// (iPad) se dice y los chips se apagan. La escala se lee en cada orden al
+/// motor, así que elegir un chip vale al instante.
+private struct RumbleRow: View {
+    @ObservedObject private var link = LinkState.shared
+    @State private var pref = AppPrefs.rumble
+    private let hasMotor = GameRumble.shared.hasMotor
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(tr("rumble_title")).pepoTitle()
+            Text(tr("rumble_sub")).pepoBody()
+            HStack(spacing: 8) {
+                ForEach(RumblePref.all, id: \.self) { p in
+                    ModeChip(label: tr("rumble_" + p.rawValue), selected: pref == p.rawValue, dense: true) {
+                        pref = p.rawValue
+                        AppPrefs.rumble = p.rawValue
+                    }
+                }
+            }
+            .padding(.top, 10)
+            .disabled(!hasMotor)
+            .opacity(hasMotor ? 1 : 0.5)
+            HStack(spacing: 8) {
+                // Un pulso de 300 ms con la escala elegida (con Apagada no hace nada)
+                TextLink(title: tr("rumble_try"), color: Pepo.blue) {
+                    GameRumble.shared.pulse(level: RumblePref.scale(pref))
+                }
+                .padding(.leading, -12)
+                .disabled(!hasMotor)
+                .opacity(hasMotor ? 1 : 0.5)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 2)
+            if !hasMotor {
+                Text(tr("rumble_no_motor")).pepoBody()
+            } else if let c = link.link.connected {
+                Text(tr(rumbleStatusKey(c.rumble))).pepoBody()
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .pepoCard()
+    }
+}
+
+/// Clave del texto de estado según `ok.rumble`; nil = receptor sin
+/// vibración. Un valor que no se conoce (receptor más nuevo) se cuenta como
+/// «no puede», que es lo que no promete nada.
+private func rumbleStatusKey(_ rumble: String?) -> String {
+    guard let r = rumble else { return "rumble_pc_old" }
+    switch r {
+    case "ready": return "rumble_pc_ready"
+    case "driver": return "rumble_pc_driver"
+    case "denied": return "rumble_pc_denied"
+    default: return "rumble_pc_unsupported"
     }
 }
 

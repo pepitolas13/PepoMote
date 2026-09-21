@@ -144,12 +144,18 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     // RetroArch: el mismo mando apaisado con etiquetas de RetroPad (L2/R2,
     // Select/Start, Menú y avance rápido); paquetes como los de Switch
     val retroPad = wantedMode == LinkState.MODE_RETROARCH
+    // Mando universal: el mismo mando, con las letras de Xbox en su sitio
+    val xboxPad = wantedMode == LinkState.MODE_GAMEPAD
     val operative = Route.isGamePad(link) && connected?.mode == wantedMode
-    val pro = switchPad || retroPad || connected?.pad == LinkState.PAD_PRO
+    val pro = switchPad || retroPad || xboxPad || connected?.pad == LinkState.PAD_PRO
     // RetroArch: la plantilla de la consola del juego cargado (o la elegida a
     // mano); fuera de RetroArch, el RetroPad de siempre (nada cambia)
     val retroChoice by LinkState.retroLayoutChoice.collectAsState()
-    val layout = if (retroPad) RetroLayouts.byId(LinkState.effectiveRetroLayout(connected, retroChoice)) ?: RetroLayouts.RETROPAD else RetroLayouts.RETROPAD
+    val layout = when {
+        xboxPad -> RetroLayouts.XBOX
+        retroPad -> RetroLayouts.byId(LinkState.effectiveRetroLayout(connected, retroChoice)) ?: RetroLayouts.RETROPAD
+        else -> RetroLayouts.RETROPAD
+    }
     val engine = LinkState.motion
     val rotation = rememberDisplayRotation()
     val screen by ScreenLink.client.collectAsState()
@@ -181,7 +187,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
             val prevKind = engine.kind
             val prevRotation = engine.rotation
             engine.rotation = rotation
-            engine.kind = if (switchPad || retroPad) SenderKind.SWITCH else SenderKind.GAMEPAD
+            engine.kind = if (switchPad || retroPad || xboxPad) SenderKind.SWITCH else SenderKind.GAMEPAD
             onDispose {
                 engine.kind = prevKind
                 engine.rotation = prevRotation
@@ -204,7 +210,10 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
     val fullScreenKb = remember { AppPrefs.gamePadFullScreenKeyboard(context) }
     // Doble pantalla: solo el GamePad (no un Pro Controller, que no tiene),
     // con el modo confirmado y sin el ajuste «GamePad sin pantalla»
-    val wantScreen = operative && !switchPad && !retroPad && connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
+    // El mando universal NO es Cemu: pedir ahí la doble pantalla dejaba el
+    // mando en negro a pantalla completa y sin botones.
+    val wantScreen = operative && !switchPad && !retroPad && !xboxPad &&
+        connected?.pad == LinkState.PAD_GAMEPAD && !noScreenPref
     // Pantalla completa: solo la pantalla de Cemu y el táctil (mando real en
     // el PC). Nunca sin el modo confirmado: el estado «Activando Wii U…»
     // sigue con cabecera y «Salir»
@@ -306,7 +315,11 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         .height(selectorH),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (connected != null && connected.mode == wantedMode) PadSelector(connected, compact = true)
+                    // El mando universal no elige mando de Cemu: el receptor
+                    // ni siquiera acepta `pad` en ese modo.
+                    if (connected != null && connected.mode == wantedMode && !xboxPad) {
+                        PadSelector(connected, compact = true)
+                    }
                 }
                 Spacer(Modifier.height(gap))
 
@@ -334,8 +347,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                         ) {
                             // Hombros y stick según la plantilla (RetroArch): sin
                             // stick, la cruceta ocupa su hueco y crece
-                            val lLabel = if (retroPad) layout.shoulders.l else "L"
-                            val zlLabel = if (retroPad) layout.shoulders.l2 else "ZL"
+                            val lLabel = if (retroPad || xboxPad) layout.shoulders.l else "L"
+                            val zlLabel = if (retroPad || xboxPad) layout.shoulders.l2 else "ZL"
                             val shoulders: @Composable () -> Unit = {
                                 Column(verticalArrangement = Arrangement.spacedBy(gap)) {
                                     if (lLabel != null) ShoulderButton(lLabel, ButtonState.L, shoulderW, shoulderH, textSize = (16 * k).roundToInt())
@@ -402,7 +415,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             // Mode/Start, Pause, Run…) con Menú (el menú de RetroArch) en
                             // medio, y Capturar es el avance rápido (mantener)
                             val home: @Composable () -> Unit = { RoundButton(stringResource(if (retroPad) R.string.retro_menu else R.string.home_btn), roundBtn, ButtonState.HOME, textSize = ((if (retroPad) 10 else 12) * k).roundToInt()) }
-                            val centers: List<@Composable () -> Unit> = if (retroPad) {
+                            val centers: List<@Composable () -> Unit> = if (retroPad || xboxPad) {
                                 val own: List<@Composable () -> Unit> = layout.center.map { c ->
                                     { RoundButton(retroLabel(c.label), roundBtn, c.bit, textSize = (9 * k).roundToInt()) }
                                 }
@@ -431,7 +444,7 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             } else {
                                 if (pro) {
                                     Text(
-                                        if (retroPad) layout.name else stringResource(R.string.pro_controller),
+                                        if (retroPad) layout.name else stringResource(if (xboxPad) R.string.mode_gamepad else R.string.pro_controller),
                                         style = MaterialTheme.typography.bodyMedium,
                                         textAlign = TextAlign.Center
                                     )
@@ -464,8 +477,8 @@ fun GamePadScreen(link: UiLink, onDisconnect: () -> Unit) {
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.Top
                         ) {
-                            val rLabel = if (retroPad) layout.shoulders.r else "R"
-                            val zrLabel = if (retroPad) layout.shoulders.r2 else "ZR"
+                            val rLabel = if (retroPad || xboxPad) layout.shoulders.r else "R"
+                            val zrLabel = if (retroPad || xboxPad) layout.shoulders.r2 else "ZR"
                             val shoulders: @Composable () -> Unit = {
                                 Column(
                                     horizontalAlignment = Alignment.End,
@@ -806,6 +819,7 @@ private fun GamePadHeaderCard(
             val retroChoice by LinkState.retroLayoutChoice.collectAsState()
             val padName = when {
                 wantedMode == LinkState.MODE_RETROARCH -> RetroLayouts.byId(LinkState.wouldBeRetroLayout(link, retroChoice))?.name ?: stringResource(R.string.retropad)
+                wantedMode == LinkState.MODE_GAMEPAD -> stringResource(R.string.mode_gamepad)
                 wantedMode == LinkState.MODE_SWITCH || link.pad == LinkState.PAD_PRO -> stringResource(R.string.pro_controller)
                 else -> stringResource(R.string.gamepad)
             }
@@ -819,6 +833,7 @@ private fun GamePadHeaderCard(
                         when (wantedMode) {
                             LinkState.MODE_SWITCH -> R.string.activating_switch
                             LinkState.MODE_RETROARCH -> R.string.activating_retroarch
+                            LinkState.MODE_GAMEPAD -> R.string.activating_gamepad
                             else -> R.string.activating_wiiu
                         }
                     )
@@ -854,6 +869,7 @@ private fun GamePadHeaderCard(
                 supportsCemu = link.supportsCemu,
                 supportsSwitch = link.supportsSwitch,
                 supportsRetroArch = link.supportsRetroArch,
+                supportsGamepad = link.supportsGamepad,
                 androidReceiver = link.platform == "android",
                 compact = true
             )

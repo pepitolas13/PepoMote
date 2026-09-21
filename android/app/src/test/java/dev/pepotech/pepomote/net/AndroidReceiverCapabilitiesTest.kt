@@ -55,6 +55,19 @@ class AndroidReceiverCapabilitiesTest {
         assertEquals("dolphin", ReceiverCapabilities.select("pointer", "dolphin", "android", false, true, true))
     }
 
+    @Test fun elMandoUniversalSoloLoOfreceUnPcQueLoAnuncia() {
+        val pc = handshake(null, "\"pointer\",\"dolphin\",\"cemu\",\"switch\",\"retroarch\",\"gamepad\"")
+        assertTrue(pc.supportsGamepad)
+        // Un receptor anterior no lo trae: el móvil no debe ofrecerlo.
+        assertFalse(handshake(null).supportsGamepad)
+        assertTrue("gamepad" in ReceiverCapabilities.modes("desktop", true, true, true, true))
+        assertFalse("gamepad" in ReceiverCapabilities.modes("desktop", true, true, true, false))
+        // Un servidor Android no puede crear un mando virtual, así que no lo
+        // ofrece ni aunque lo anunciara.
+        assertFalse("gamepad" in ReceiverCapabilities.modes("android", false, true, true, true))
+        assertEquals("gamepad", ReceiverCapabilities.select("gamepad", "dolphin", "desktop", true, true, true, true))
+    }
+
     @Test fun existingPcReceiverKeepsItsModes() {
         val ok = handshake(null)
         assertTrue(ok.supportsCemu)

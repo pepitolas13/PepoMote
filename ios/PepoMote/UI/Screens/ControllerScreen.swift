@@ -177,7 +177,7 @@ struct ControllerScreen: View {
                     let dense = m.colW < 420
                     VStack(spacing: 5) {
                         HStack(spacing: dense ? 8 : 10) {
-                            if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, supportsPointer: c.receiver.supportsPointer, dense: dense) }
+                            if modeChips { ModeChips(current: c.mode, supportsCemu: c.supportsCemu, supportsSwitch: c.supportsSwitch, supportsRetroArch: c.supportsRetroArch, supportsGamepad: c.supportsGamepad, supportsPointer: c.receiver.supportsPointer, dense: dense) }
                             if nunchuk && !(dense && c.supportsSwitch) { NunchukChip(link: c, dense: dense).padding(.leading, 4) }
                         }
                         if nunchuk && dense && c.supportsSwitch { NunchukChip(link: c, dense: dense) }

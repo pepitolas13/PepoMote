@@ -50,6 +50,13 @@ sealed class UiLink {
         val supportsTilt: Boolean = false,
         /** `ok.modes` contains "retroarch" (PC receiver with the RetroArch network gamepad). */
         val supportsRetroArch: Boolean = false,
+        /** `ok.modes` trae "gamepad": el receptor del PC puede hacer de mando de Xbox. */
+        val supportsGamepad: Boolean = false,
+        /**
+         * `ok.rumble`: si el receptor puede hacer vibrar el móvil (Ajustes lo
+         * cuenta); null = receptor sin vibración.
+         */
+        val rumble: String? = null,
         /**
          * RetroArch: el juego cargado según el receptor (mensaje `game`); con
          * su consola se elige la plantilla de mando. Se conserva al cambiar de
@@ -85,6 +92,9 @@ object LinkState {
     const val MODE_CEMU = "cemu"
     const val MODE_SWITCH = "switch"
     const val MODE_RETROARCH = "retroarch"
+
+    /** Mando universal: el móvil como mando de Xbox 360 para cualquier juego. */
+    const val MODE_GAMEPAD = "gamepad"
 
     const val PAD_GAMEPAD = "gamepad"
     const val PAD_PRO = "pro"
@@ -214,6 +224,7 @@ object LinkState {
             MODE_CEMU -> PadIntent.WiiU
             MODE_SWITCH -> PadIntent.Switch
             MODE_RETROARCH -> PadIntent.RetroArch
+            MODE_GAMEPAD -> PadIntent.Gamepad
             else -> PadIntent.None
         }
         val send = sendMode

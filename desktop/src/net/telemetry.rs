@@ -103,6 +103,10 @@ pub fn run(
         }
     };
     let _ = socket.set_read_timeout(Some(Duration::from_millis(100)));
+    // La vibración de los juegos sale por este mismo socket (PROTOCOL.md §4.5)
+    if let Ok(s) = socket.try_clone() {
+        crate::rumble::set_socket(s);
+    }
 
     // El inyector puede no nacer a la primera (/dev/uinput sin permiso, o el
     // compositor aún sin arrancar): el resto del receptor sigue vivo (Dolphin
@@ -145,6 +149,12 @@ pub fn run(
     // PEPOMOTE_RECORD=<archivo>: grabar la telemetría del Jugador 1 para
     // analizar un gesto real después (pointer/record.rs)
     let mut recorder = crate::pointer::record::Recorder::from_env();
+    // Modo mando universal: qué se le ha escrito ya a cada mando virtual,
+    // para no repetir estados (a 250 Hz serían cientos de IOCTL de más)
+    let mut feed = crate::pad::Feed::new();
+    // El mando virtual sobrevive a los cambios de modo, así que al cambiar
+    // deja de valer lo que creemos haberle escrito
+    let mut last_mode = Mode::Pointer;
 
     let mut win_start = Instant::now();
     let mut win_packets: u32 = 0;
@@ -301,6 +311,23 @@ pub fn run(
                 let alive = sessions.lock_tolerant();
                 ir_engines.retain(|id, _| alive.contains_key(id));
             }
+            // Mando universal: un móvil que se calla (app al fondo, red que
+            // se va) no puede dejarle un botón clavado al juego, y un slot
+            // vacío tiene que olvidarse para reescribir el mando que venga
+            for (slot, st) in feed.idle(Instant::now()) {
+                crate::rumble::push_pad(slot as u8, &st);
+            }
+            let vivos = {
+                let alive = sessions.lock_tolerant();
+                let mut v = [false; super::MAX_PLAYERS];
+                for s in alive.values() {
+                    if let Some(f) = v.get_mut(s.slot as usize) {
+                        *f = true;
+                    }
+                }
+                v
+            };
+            feed.forget_absent(&vivos);
         }
 
         if win_start.elapsed() >= Duration::from_secs(1) {
@@ -333,6 +360,8 @@ pub fn run(
         };
 
         match codec::parse(&buf[..len]) {
+            // Rumble travels from the receiver to the controller, never back.
+            Some(Packet::Rumble(_)) => {}
             Some(Packet::Discover) => {
                 let reply = json!({"pv": 1, "name": pairing.name, "tcp": pairing.port});
                 let mut out = codec::HERE_PREFIX.to_vec();
@@ -408,6 +437,11 @@ pub fn run(
                     (s.mode, s.config.sens_deg, s.config.abs_mode, pad_wii, own_nunchuk, retro_pad)
                 };
 
+                if mode != last_mode {
+                    last_mode = mode;
+                    feed.forget_all();
+                }
+
                 // RetroArch: botones y sticks al mando en red (el enlace los
                 // dosifica a un datagrama por fotograma). Wii y pistola del
                 // Jugador 1 además apunta con el ratón del SO, más abajo.
@@ -418,6 +452,27 @@ pub fn run(
                             link.push_input(slot, retro_pad, &p);
                         }
                     }
+                }
+
+                // Mando universal: al mando de Xbox 360 virtual que ya
+                // existe para la vibración. No se configura nada en el juego
+                // (lo crea el sistema) ni se inyecta nada en el SO.
+                if mode == Mode::Gamepad {
+                    if let Some(inj) = injector.as_deref_mut() {
+                        release_all(inj, &mut held);
+                    }
+                    if role == Role::Wiimote {
+                        if let Some(st) = feed.push(slot as usize, crate::pad::state_of(&p), Instant::now()) {
+                            // Si no había mando que escribir (driver a medio
+                            // instalar, mando recién tirado), se olvida: el
+                            // `Feed` solo manda lo que cambia y el mando nuevo
+                            // nace en reposo.
+                            if !crate::rumble::push_pad(slot, &st) {
+                                feed.forget(slot as usize);
+                            }
+                        }
+                    }
+                    continue;
                 }
 
                 if mode.feeds_dsu() || (mode == Mode::RetroArch && !(retro_pointer && slot == 0)) {

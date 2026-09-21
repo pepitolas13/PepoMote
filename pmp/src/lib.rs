@@ -11,11 +11,15 @@ pub const MAGIC: u32 = 0x3150_4D50; // "PMP1" en LE
 pub const TYPE_INPUT: u8 = 0x01;
 pub const TYPE_PING: u8 = 0x02;
 pub const TYPE_PONG: u8 = 0x03;
+/// Vibración ordenada por el juego (receptor → móvil, PROTOCOL.md §4.5):
+/// estado actual de los motores, reenviado mientras dure. Desde 1.10.5.
+pub const TYPE_RUMBLE: u8 = 0x04;
 pub const INPUT_LEN: usize = 72;
 /// INPUT con el bloque de extensión Wii U (FLAG_EXT): stick derecho y
 /// pantalla táctil en los bytes 72-79.
 pub const INPUT_EXT_LEN: usize = 80;
 pub const PING_LEN: usize = 20;
+pub const RUMBLE_LEN: usize = 20;
 
 /// Puerto por defecto del receptor (TCP control y UDP telemetría).
 pub const DEFAULT_PORT: u16 = 26761;
@@ -115,11 +119,28 @@ pub const BTN_PRECISION: u32 = 1 << 29;
 /// juegos que piden acercar el mando). En puntero, Cemu y Switch se ignora.
 pub const BTN_NEAR: u32 = 1 << 30;
 
+/// Estado de vibración que manda el receptor (PROTOCOL.md §4.5). `strong` y
+/// `weak` son los dos motores de un mando XInput (0 = parado, 255 = a tope);
+/// un Mando de Wii solo tiene uno: el móvil vibra con el mayor de los dos.
+/// El receptor lo reenvía cada 100 ms mientras haya vibración; si al móvil
+/// no le llega nada en `ttl_ms`, se para solo (Wi-Fi caída, receptor
+/// cerrado). `seq` crece por sesión: un datagrama que adelanta a otro más
+/// nuevo se ignora.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RumblePacket {
+    pub session_id: u32,
+    pub seq: u32,
+    pub strong: u8,
+    pub weak: u8,
+    pub ttl_ms: u16,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Packet {
     Input(InputPacket),
     Ping { session_id: u32, t_us: u64 },
     Pong { session_id: u32, t_us: u64 },
+    Rumble(RumblePacket),
     Discover,
 }
 
@@ -171,8 +192,26 @@ pub fn parse(buf: &[u8]) -> Option<Packet> {
                 Packet::Pong { session_id, t_us }
             })
         }
+        TYPE_RUMBLE if buf.len() == RUMBLE_LEN => Some(Packet::Rumble(RumblePacket {
+            session_id: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
+            seq: u32::from_le_bytes(buf[12..16].try_into().unwrap()),
+            strong: buf[16],
+            weak: buf[17],
+            ttl_ms: u16::from_le_bytes([buf[18], buf[19]]),
+        })),
         _ => None,
     }
+}
+
+/// RUMBLE de 20 bytes (PROTOCOL.md §4.5).
+pub fn build_rumble(p: &RumblePacket) -> Vec<u8> {
+    let mut out = Vec::with_capacity(RUMBLE_LEN);
+    header(TYPE_RUMBLE, p.session_id, &mut out);
+    out.extend_from_slice(&p.seq.to_le_bytes());
+    out.push(p.strong);
+    out.push(p.weak);
+    out.extend_from_slice(&p.ttl_ms.to_le_bytes());
+    out
 }
 
 /// INPUT de 72 bytes (PROTOCOL.md §4.1), u 80 con FLAG_EXT (bloque Wii U).
@@ -255,8 +294,31 @@ mod tests {
             "input_wiiu" => from_hex(include_str!("../../protocol/vectors/input_wiiu.hex")),
             "ping" => from_hex(include_str!("../../protocol/vectors/ping.hex")),
             "pong" => from_hex(include_str!("../../protocol/vectors/pong.hex")),
+            "rumble_on" => from_hex(include_str!("../../protocol/vectors/rumble_on.hex")),
+            "rumble_off" => from_hex(include_str!("../../protocol/vectors/rumble_off.hex")),
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn vector_rumble() {
+        let on = vector("rumble_on");
+        assert_eq!(on.len(), RUMBLE_LEN);
+        let Packet::Rumble(p) = parse(&on).unwrap() else { panic!("no es RUMBLE") };
+        assert_eq!(
+            p,
+            RumblePacket { session_id: 0xAABBCCDD, seq: 42, strong: 255, weak: 128, ttl_ms: 400 }
+        );
+        assert_eq!(build_rumble(&p), on, "build reproduce el vector");
+        let off = vector("rumble_off");
+        let Packet::Rumble(p) = parse(&off).unwrap() else { panic!("no es RUMBLE") };
+        assert_eq!(p, RumblePacket { session_id: 0xAABBCCDD, seq: 43, strong: 0, weak: 0, ttl_ms: 0 });
+        assert_eq!(build_rumble(&p), off);
+        // Un RUMBLE de otra longitud no vale (ni corto ni con cola)
+        assert!(parse(&on[..19]).is_none());
+        let mut long = on.clone();
+        long.push(0);
+        assert!(parse(&long).is_none());
     }
 
     #[test]

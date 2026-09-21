@@ -35,9 +35,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.pepotech.pepomote.control.AppPrefs
+import dev.pepotech.pepomote.control.GameRumble
+import dev.pepotech.pepomote.control.RumblePref
 import dev.pepotech.pepomote.service.GamePadSide
 import dev.pepotech.pepomote.service.LandscapeSide
 import dev.pepotech.pepomote.service.LinkState
+import dev.pepotech.pepomote.service.UiLink
 import dev.pepotech.pepomote.service.NunchukSide
 import dev.pepotech.pepomote.sensor.GyroClass
 import dev.pepotech.pepomote.sensor.GyroDetect
@@ -121,6 +124,78 @@ private fun MotionSourceCard() {
     }
 }
 
+/**
+ * Tarjeta «Vibración en los juegos»: Alta / Normal / Baja / Apagada, «Probar»
+ * y, con enlace, lo que el receptor puede hacer (`ok.rumble`). Sin motor se
+ * dice y los chips se apagan. La escala se lee en cada orden al motor, así que
+ * elegir un chip vale al instante.
+ */
+@Composable
+private fun GameRumbleCard() {
+    val context = LocalContext.current
+    var pref by remember { mutableStateOf(AppPrefs.gameRumble(context)) }
+    val hasMotor = remember { GameRumble.hasMotor }
+    val link by LinkState.flow.collectAsState()
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = PepoColors.Card),
+        border = BorderStroke(1.5.dp, PepoColors.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            Text(stringResource(R.string.rumble_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.rumble_sub), style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (p in RumblePref.ALL) {
+                    ModeChip(stringResource(rumbleLabel(p)), selected = pref == p.key, enabled = hasMotor) {
+                        pref = p.key
+                        AppPrefs.setGameRumble(context, p.key)
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            if (hasMotor) {
+                // Un pulso de 300 ms con la escala elegida (con Apagada no hace nada)
+                TextButton(onClick = { GameRumble.pulse(RumblePref.scale(pref)) }) {
+                    Text(stringResource(R.string.rumble_try), color = PepoColors.Blue)
+                }
+                Text(
+                    stringResource(rumbleStatus((link as? UiLink.Connected)?.rumble)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PepoColors.TextDim
+                )
+            } else {
+                Text(
+                    stringResource(R.string.rumble_no_motor),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PepoColors.Warn
+                )
+            }
+        }
+    }
+}
+
+private fun rumbleLabel(p: RumblePref): Int = when (p) {
+    RumblePref.HIGH -> R.string.rumble_high
+    RumblePref.NORMAL -> R.string.rumble_normal
+    RumblePref.LOW -> R.string.rumble_low
+    RumblePref.OFF -> R.string.rumble_off
+}
+
+/**
+ * Texto de estado según `ok.rumble`; null = receptor sin vibración. Un valor
+ * que no se conoce (receptor más nuevo) se cuenta como «no puede», que es lo
+ * que no promete nada.
+ */
+private fun rumbleStatus(rumble: String?): Int = when (rumble) {
+    null -> R.string.rumble_pc_old
+    "ready" -> R.string.rumble_pc_ready
+    "driver" -> R.string.rumble_pc_driver
+    "denied" -> R.string.rumble_pc_denied
+    else -> R.string.rumble_pc_unsupported
+}
+
 @Composable
 fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
@@ -162,6 +237,7 @@ fun SettingsScreen(onNewPairing: () -> Unit, onBack: () -> Unit) {
         // Sensor del puntero: giroscopio o acelerómetro (móviles sin giroscopio real)
         MotionSourceCard()
 
+        GameRumbleCard()
         Spacer(Modifier.height(14.dp))
         // Modo puntero: el botón «Teclado» hace antes clic donde apuntas
         Card(

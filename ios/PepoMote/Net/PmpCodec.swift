@@ -8,10 +8,26 @@ enum PmpCodec {
     static let typeInput: UInt8 = 0x01
     static let typePing: UInt8 = 0x02
     static let typePong: UInt8 = 0x03
+    /// RUMBLE (receptor → móvil, §4.5): estado de la vibración que pide el juego.
+    static let typeRumble: UInt8 = 0x04
     static let inputLen = 72
     /// INPUT con el bloque de extensión Wii U (flagExt): bytes 72-79.
     static let inputExtLen = 80
     static let pingLen = 20
+    static let rumbleLen = 20
+
+    /// Un RUMBLE decodificado: es ESTADO (el receptor lo repite cada 100 ms
+    /// mientras vibra), no un evento; `ttlMs` = 0 en el de parada.
+    struct Rumble: Equatable {
+        let sessionId: UInt32
+        let seq: UInt32
+        /// Motor grande, 0..255.
+        let strong: UInt8
+        /// Motor pequeño, 0..255.
+        let weak: UInt8
+        /// Sin otro RUMBLE en este tiempo el móvil para solo.
+        let ttlMs: UInt16
+    }
 
     static let discover = Data("PMPDISCOVER1".utf8)
     static let herePrefix = "PMPHERE1 "
@@ -101,6 +117,20 @@ enum PmpCodec {
 
     /// `session_id` de un PING/PONG.
     static func pingSession(_ data: Data) -> UInt32 { readU32(data, 8) }
+
+    /// RUMBLE de 20 bytes; nil con otra longitud, otro magic u otro tipo (un
+    /// PING mide lo mismo). Quién filtra la sesión es el que lo recibe.
+    static func decodeRumble(_ data: Data) -> Rumble? {
+        guard data.count == rumbleLen, packetType(data) == typeRumble else { return nil }
+        let s = data.startIndex
+        return Rumble(
+            sessionId: readU32(data, 8),
+            seq: readU32(data, 12),
+            strong: data[s + 16],
+            weak: data[s + 17],
+            ttlMs: UInt16(data[s + 18]) | (UInt16(data[s + 19]) << 8)
+        )
+    }
 
     static func readU32(_ d: Data, _ off: Int) -> UInt32 {
         let s = d.startIndex + off

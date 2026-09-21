@@ -633,6 +633,10 @@ pub fn write_wiimotes(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
         // este mismo pad (entonces Left X es su stick)
         let roll = *nslot != Some(*wslot);
         body.extend(ir_passthrough(roll).lines().map(|l| l.to_owned()));
+        // Vibración: el motor del mando virtual de ese jugador (rumble/)
+        if let Some(expr) = crate::rumble::motor_expression(*wslot) {
+            body.push(format!("Rumble/Motor = {expr}"));
+        }
         match nslot {
             Some(ns) => body.extend(NUNCHUK_MAPPING.replace("{NDEV}", &ns.to_string()).lines().map(|l| l.to_owned())),
             None => body.push("Extension = None".to_owned()),
@@ -709,6 +713,7 @@ fn write_profiles(cfg_dir: &Path, n_players: usize) {
             .replace("{DEV}", &slot.to_string())
             .lines()
             .filter(|l| !l.starts_with("Source"))
+            .chain(crate::rumble::motor_expression(slot as u8).map(|e| format!("Rumble/Motor = {e}")).as_deref())
             .fold(String::from("[Profile]\n"), |mut acc, l| {
                 acc.push_str(l);
                 acc.push('\n');

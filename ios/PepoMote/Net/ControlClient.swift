@@ -27,6 +27,8 @@ final class ControlClient {
         var supportsSwitch: Bool = false
         /// `modes` contiene "retroarch": el receptor de PC o Android entiende RetroArch.
         var supportsRetroArch: Bool = false
+        /// `modes` contiene "gamepad": el receptor de PC puede hacer de mando de Xbox.
+        var supportsGamepad: Bool = false
         var receiver = ReceiverCapabilities()
     }
 
@@ -198,6 +200,7 @@ final class ControlClient {
                 screenOnly: obj["screen_only"] as? Bool,
                 supportsSwitch: ControlClient.supportsSwitch(obj),
                 supportsRetroArch: ControlClient.supportsRetroArch(obj),
+                supportsGamepad: ControlClient.supportsGamepad(obj),
                 receiver: receiver
             )
             DispatchQueue.main.async { self.callbacks.onOk(ok) }
@@ -251,6 +254,13 @@ final class ControlClient {
     static func supportsRetroArch(_ ok: [String: Any]) -> Bool {
         guard let modes = ok["modes"] as? [Any] else { return false }
         return modes.contains { ($0 as? String) == LinkState.modeRetroArch }
+    }
+
+    /// `ok.modes` contiene "gamepad": el receptor de PC puede crear un mando
+    /// de Xbox virtual. Un receptor anterior no lo manda y el móvil no lo ofrece.
+    static func supportsGamepad(_ ok: [String: Any]) -> Bool {
+        guard let modes = ok["modes"] as? [Any] else { return false }
+        return modes.contains { ($0 as? String) == LinkState.modeGamepad }
     }
 
     // MARK: - Temporizadores

@@ -93,6 +93,11 @@ pub enum Mode {
     /// DSU; las teclas rápidas van por su interfaz de comandos (UDP 55355).
     /// Se configura `retroarch.cfg` con RetroArch cerrado.
     RetroArch,
+    /// Mando universal: el movil es un mando de Xbox 360 de verdad para el
+    /// sistema (ViGEm en Windows, uinput en Linux), asi que vale para
+    /// cualquier juego sin configurar nada. Sin DSU y sin tocar ningun
+    /// emulador: el giro mueve el stick derecho.
+    Gamepad,
 }
 
 impl Mode {
@@ -104,6 +109,7 @@ impl Mode {
             Mode::Cemu => "cemu",
             Mode::Switch => "switch",
             Mode::RetroArch => "retroarch",
+            Mode::Gamepad => "gamepad",
         }
     }
 
@@ -115,13 +121,21 @@ impl Mode {
             Some("cemu") => Mode::Cemu,
             Some("switch") => Mode::Switch,
             Some("retroarch") => Mode::RetroArch,
+            Some("gamepad") => Mode::Gamepad,
             _ => Mode::Pointer,
         }
     }
 
     /// Modos que soporta este receptor (`ok.modes`, para que el móvil sepa
     /// si puede ofrecer Wii U, Switch y RetroArch).
-    pub const ALL: [Mode; 5] = [Mode::Pointer, Mode::Dolphin, Mode::Cemu, Mode::Switch, Mode::RetroArch];
+    pub const ALL: [Mode; 6] = [
+        Mode::Pointer,
+        Mode::Dolphin,
+        Mode::Cemu,
+        Mode::Switch,
+        Mode::RetroArch,
+        Mode::Gamepad,
+    ];
 
     /// En estos modos el receptor alimenta el DSU y no inyecta nada en el SO.
     pub fn feeds_dsu(self) -> bool {
@@ -411,8 +425,11 @@ impl PadKind {
 /// Un jugador tal como se configura en Cemu: `controller{index}.xml`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct CemuPlayer {
-    /// Índice del mando en Cemu (número de mando − 1).
-    pub index: u8,
+    /// Puesto en el reparto (0 = el primero, que siempre es el GamePad).
+    /// NO es el número de `controller{N}.xml`: ese lo elige `cemu::placement`
+    /// en cada instalación, saltándose los mandos que el usuario ya tenga
+    /// configurados.
+    pub order: u8,
     pub kind: PadKind,
     /// Jugador (1..4) del móvil; 0 en el GamePad vacío del mando 1.
     pub player: u8,
@@ -430,7 +447,7 @@ pub struct CemuPlayer {
 impl CemuPlayer {
     /// El GamePad del mando 1 sin ningún móvil detrás.
     pub fn empty_gamepad() -> Self {
-        CemuPlayer { index: 0, kind: PadKind::GamePad, player: 0, dsu_slot: None, nunchuk_slot: None, screen_only: false }
+        CemuPlayer { order: 0, kind: PadKind::GamePad, player: 0, dsu_slot: None, nunchuk_slot: None, screen_only: false }
     }
 
     /// GamePad sin móvil (ver [`Self::empty_gamepad`]).
@@ -464,7 +481,7 @@ pub fn cemu_layout(players: &[Option<PlayerInfo>]) -> Vec<CemuPlayer> {
             PadKind::Pro
         };
         out.push(CemuPlayer {
-            index: out.len() as u8,
+            order: out.len() as u8,
             kind,
             player: i as u8 + 1,
             dsu_slot: Some(*wslot),
@@ -860,10 +877,12 @@ mod tests {
         for m in Mode::ALL {
             assert_eq!(Mode::parse(Some(m.as_str())), m);
         }
-        assert_eq!(Mode::ALL.len(), 5);
+        assert_eq!(Mode::ALL.len(), 6);
         assert_eq!(Mode::parse(Some("retroarch")), Mode::RetroArch);
+        assert_eq!(Mode::parse(Some("gamepad")), Mode::Gamepad);
         assert!(Mode::Cemu.feeds_dsu() && Mode::Dolphin.feeds_dsu() && Mode::Switch.feeds_dsu() && !Mode::Pointer.feeds_dsu());
         assert!(!Mode::RetroArch.feeds_dsu(), "RetroArch va por su mando en red, no por el DSU");
+        assert!(!Mode::Gamepad.feeds_dsu(), "el mando universal va al mando virtual, no por el DSU");
     }
 
     #[test]
@@ -941,8 +960,8 @@ mod tests {
         assert_eq!(
             cemu_layout(&p),
             vec![
-                CemuPlayer { index: 0, kind: PadKind::GamePad, player: 1, dsu_slot: Some(0), nunchuk_slot: None, screen_only: false },
-                CemuPlayer { index: 1, kind: PadKind::Pro, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
+                CemuPlayer { order: 0, kind: PadKind::GamePad, player: 1, dsu_slot: Some(0), nunchuk_slot: None, screen_only: false },
+                CemuPlayer { order: 1, kind: PadKind::Pro, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
             ]
         );
         assert_eq!(effective_pad_cemu(&p, 0), "gamepad");
@@ -958,8 +977,8 @@ mod tests {
             cemu_layout(&p),
             vec![
                 CemuPlayer::empty_gamepad(),
-                CemuPlayer { index: 1, kind: PadKind::Wiimote, player: 1, dsu_slot: Some(0), nunchuk_slot: Some(3), screen_only: false },
-                CemuPlayer { index: 2, kind: PadKind::Pro, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
+                CemuPlayer { order: 1, kind: PadKind::Wiimote, player: 1, dsu_slot: Some(0), nunchuk_slot: Some(3), screen_only: false },
+                CemuPlayer { order: 2, kind: PadKind::Pro, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
             ]
         );
         assert_eq!(effective_pad_cemu(&p, 0), "wiimote");
@@ -986,8 +1005,8 @@ mod tests {
             cemu_layout(&p),
             vec![
                 CemuPlayer::empty_gamepad(),
-                CemuPlayer { index: 1, kind: PadKind::Wiimote, player: 1, dsu_slot: Some(0), nunchuk_slot: None, screen_only: false },
-                CemuPlayer { index: 2, kind: PadKind::Wiimote, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
+                CemuPlayer { order: 1, kind: PadKind::Wiimote, player: 1, dsu_slot: Some(0), nunchuk_slot: None, screen_only: false },
+                CemuPlayer { order: 2, kind: PadKind::Wiimote, player: 2, dsu_slot: Some(1), nunchuk_slot: None, screen_only: false },
             ]
         );
         assert_eq!(effective_pad_cemu(&p, 0), "wiimote");
@@ -1002,7 +1021,7 @@ mod tests {
         let l = cemu_layout(&solo);
         assert_eq!(l.len(), 2);
         assert!(l[0].is_empty_gamepad());
-        assert_eq!((l[1].index, l[1].kind, l[1].dsu_slot, l[1].player), (1, PadKind::Wiimote, Some(0), 1));
+        assert_eq!((l[1].order, l[1].kind, l[1].dsu_slot, l[1].player), (1, PadKind::Wiimote, Some(0), 1));
         // un Nunchuk (slot 3) acompaña al primer Mando Wii, ahora en el mando 2
         let mut con_nunchuk = [player(Role::Wiimote), player(Role::Wiimote), None, player(Role::Nunchuk)];
         con_nunchuk[0].as_mut().unwrap().pad_wii = true;
@@ -1017,12 +1036,12 @@ mod tests {
             q.pad_wii = true;
         }
         let l = cemu_layout(&cuatro);
-        assert_eq!(l.iter().map(|c| c.index).collect::<Vec<_>>(), vec![0, 1, 2, 3, 4]);
+        assert_eq!(l.iter().map(|c| c.order).collect::<Vec<_>>(), vec![0, 1, 2, 3, 4]);
         assert_eq!(l.iter().map(|c| c.player).collect::<Vec<_>>(), vec![0, 1, 2, 3, 4]);
         // siempre hay exactamente un GamePad y está en el mando 1
         for l in [cemu_layout(&p), cemu_layout(&solo), cemu_layout(&con_nunchuk), cemu_layout(&cuatro), cemu_layout(&[player(Role::Wiimote), None, None, None])] {
             assert_eq!(l.iter().filter(|c| c.kind == PadKind::GamePad).count(), 1, "{l:?}");
-            assert_eq!((l[0].kind, l[0].index), (PadKind::GamePad, 0), "{l:?}");
+            assert_eq!((l[0].kind, l[0].order), (PadKind::GamePad, 0), "{l:?}");
             assert!(l.iter().skip(1).all(|c| !c.is_empty_gamepad()), "solo el mando 1 puede ir vacío: {l:?}");
         }
     }

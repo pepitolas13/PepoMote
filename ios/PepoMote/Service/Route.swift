@@ -15,6 +15,7 @@ enum Route {
     static let warnPlayer1 = "warn_player_1"
     static let warnNeedsSwitch = "warn_needs_switch"
     static let warnNeedsRetroArch = "warn_needs_retroarch"
+    static let warnNeedsGamepad = "warn_needs_gamepad"
 
     /// Modo Wii U activo como GamePad/Pro: el receptor confirmó `cemu` y este
     /// móvil (mando) no ha elegido ser Mando de Wii. Solo entonces se emiten
@@ -84,6 +85,13 @@ enum Route {
         isRetroArch(link) && link.connected?.pad == LinkState.padRetroPad
     }
 
+    /// Mando universal confirmado: el mismo mando apaisado de dos sticks, con
+    /// las letras de Xbox, escribiendo en el mando virtual del PC (80 bytes).
+    static func isUniversalPad(_ link: UiLink) -> Bool {
+        guard let c = link.connected else { return false }
+        return c.mode == LinkState.modeGamepad && c.role == LinkState.roleWiimote && c.supportsGamepad
+    }
+
     /// Mando Wii de RetroArch: vertical o apaisado según el teléfono.
     static func retroNes(_ link: UiLink) -> Bool {
         isRetroArch(link) && link.connected?.pad == LinkState.padNes
@@ -96,12 +104,15 @@ enum Route {
 
     /// La intención manda mientras se espera el eco, aunque todas usen GamePadScreen.
     static func wantedMode(_ link: UiLink, _ intent: PadIntent) -> String {
-        intent.mode ?? (isSwitch(link) ? LinkState.modeSwitch : isRetroPad(link) ? LinkState.modeRetroArch : LinkState.modeCemu)
+        intent.mode ?? (isSwitch(link) ? LinkState.modeSwitch
+            : isRetroPad(link) ? LinkState.modeRetroArch
+            : isUniversalPad(link) ? LinkState.modeGamepad
+            : LinkState.modeCemu)
     }
 
     /// Solo un modo confirmado puede emitir el bloque de 80 bytes.
     static func extendedOperative(_ link: UiLink, _ intent: PadIntent) -> Bool {
-        guard isGamePad(link) || isSwitch(link) || isRetroPad(link) else { return false }
+        guard isGamePad(link) || isSwitch(link) || isRetroPad(link) || isUniversalPad(link) else { return false }
         return intent.mode == nil || intent.mode == link.connected?.mode
     }
 
@@ -114,6 +125,7 @@ enum Route {
         if let wanted = intent.mode, link.alive, link.connected?.mode != wanted { return .gamePad }
         if isSwitch(link) { return .gamePad }
         if isRetroPad(link) { return .gamePad }
+        if isUniversalPad(link) { return .gamePad }
         if isGamePad(link) { return .gamePad }
         if intent != .none, link.alive { return .gamePad }
         return .wii
@@ -175,9 +187,11 @@ enum Route {
         let c = link.connected
         let supported: Bool? = wanted == LinkState.modeSwitch ? c?.supportsSwitch
             : wanted == LinkState.modeRetroArch ? c?.supportsRetroArch
+            : wanted == LinkState.modeGamepad ? c?.supportsGamepad
             : c?.supportsCemu
         let oldReceiver = wanted == LinkState.modeSwitch ? warnNeedsSwitch
             : wanted == LinkState.modeRetroArch ? warnNeedsRetroArch
+            : wanted == LinkState.modeGamepad ? warnNeedsGamepad
             : warnNeeds13
         let warning = supported == true && c?.slot != 0 ? warnPlayer1 : oldReceiver
         return Outcome(intent: .none, warning: warning)
