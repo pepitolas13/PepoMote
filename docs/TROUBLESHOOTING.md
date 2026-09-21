@@ -422,6 +422,31 @@ al cursor su aceleración de ratón: si quieres que el recorrido sea exacto,
 desactiva «Mejorar la precisión del puntero» en la configuración del ratón
 de Windows. El apuntado absoluto no pasa por esa aceleración.
 
+## Mover el móvil arriba y abajo mueve el cursor en diagonal
+
+Los ejes del puntero están girados. Es distinto de «el cursor deriva»: el
+cursor no se escapa a ningún sitio y vuelve siempre donde apuntas, pero
+«arriba» ha dejado de ser arriba. Suele aparecer **tras un buen rato jugando
+sin parar quieto** (juegos de pistola, sobre todo).
+
+Por qué pasa: el motor proyecta el giro al mundo con un marco propio, y el
+roll de ese marco (el giro sobre el eje por el que apuntas) es el único grado
+de libertad que no mueve el cursor ni un píxel mientras se tuerce — pero
+reparte un cabeceo entre horizontal y vertical, que es justo la diagonal.
+Hasta 1.12 ese roll solo se corregía con el móvil quieto, así que barriendo
+sin parar crecía sin tope.
+
+**Si te pasa:**
+
+1. Pulsa **recentrar**: desde esta versión endereza también los ejes, no solo
+   lleva el cursor al centro.
+2. O deja el móvil quieto unos segundos.
+3. Si vuelve a pasar, grábalo y mándalo: arranca el receptor con
+   `PEPOMOTE_RECORD=C:\ruta\sesion.bin`, juega hasta que se tuerza, cierra el
+   receptor y pasa el archivo por `PepoMote --replay sesion.bin`. Al terminar
+   imprime una línea con el **roll máximo del marco propio** y cuánto tiempo
+   estuvo congelado; con eso se ve al instante si es esto.
+
 ## El clic del móvil no activa la ventana (Windows)
 
 Un clic inyectado no siempre lleva la ventana a primer plano: Windows solo se

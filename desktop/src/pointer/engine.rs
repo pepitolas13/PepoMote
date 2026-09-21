@@ -64,11 +64,52 @@ const QUIET_TAU_S: f32 = 0.4;
 /// aún no (parece sesgo); para cuando el quat lo confirma, esas muestras
 /// todavía no se han usado. Solo cuenta lo que tuvo 0,2 s de quietud detrás.
 const BIAS_DELAY_SAMPLES: usize = 40;
-/// λ (1/s) con el que el marco de proyección propio (`q_est`) converge al
-/// quat del sensor: SOLO congelado y con el sensor quieto en 3D, y despacio.
+/// λ (1/s) con el que el marco de proyección propio (`q_est`) converge ENTERO
+/// al quat del sensor: SOLO congelado y con el sensor quieto en 3D, y despacio.
 /// Nunca en movimiento: ahí el roll del sensor va en fase con el giro (la
 /// aceleración del gesto lo tuerce) y seguirlo colaría yaw en pitch.
 const EST_ANCHOR_LAMBDA: f32 = 1.0;
+/// λ (1/s) del anclaje del ROLL de `q_est` (twist alrededor del eje de
+/// apuntado). Este SÍ corre siempre, también en movimiento, y es la excepción
+/// al «en movimiento no se corrige nada».
+///
+/// Hace falta porque el roll del marco propio es el único grado de libertad
+/// que NADIE vigila: un giro sobre el eje de apuntado da `w ∥ d`, luego
+/// `dd = w × d = 0` y no mueve el cursor ni un píxel mientras se integra…
+/// pero tuerce el reparto de un cabeceo entre yaw y pitch como (sin φ, cos φ),
+/// o sea GIRA LOS EJES del puntero. Y `world_angles` sale del eje de apuntado,
+/// que un twist deja idéntico: el anclaje congelado no puede ni verlo. Con la
+/// corrección solo disponible congelado, en una partida de acción no se
+/// congela nunca y φ crece sin tope (medido en un usuario: ~57°, mover el
+/// móvil arriba y abajo salía en diagonal).
+///
+/// Por qué es seguro tocarlo en movimiento, que es lo que `743665f` prohibió:
+/// el swing (hacia dónde apunta) NO se toca, así que la trayectoria sigue
+/// siendo 1:1 con el gyro, y este λ es ~100 veces más lento que el bamboleo
+/// de roll de un gesto (1-5 Hz), que además es de media cero.
+const EST_TWIST_LAMBDA: f32 = 0.05;
+/// Término INTEGRAL del mismo lazo (1/s²): lo que corrige la CAUSA en vez del
+/// síntoma, estimando el sesgo del gyro en el eje de apuntado (`bias[1]`).
+///
+/// Hace falta porque solo con el proporcional el lazo deja error estacionario
+/// φ = ε/λ, y con ε = 0,5°/s eso son 10° de ejes torcidos para siempre: no
+/// arregla el fallo, lo divide por dos. Con el integral, φ → 0 sea cual sea ε.
+///
+/// Y el integral se puede permitir mirar SIEMPRE, también barriendo, por una
+/// razón concreta: el roll falso del gesto va en fase con Ω (φ ∝ Ω), así que
+/// su integral en un vaivén completo es ∝ ∫Ω dt = 0. Lo que sí se deja engañar
+/// por ese roll falso es el proporcional (su retardo lo correlaciona con Ω y
+/// rectifica a pitch ∝ Ω²: el móvil plano sobre la mesa que subía solo), y por
+/// eso el proporcional va flojo y el integral hace el trabajo.
+///
+/// Amortiguamiento: `λ² = 4·ki` es el crítico. Con λ = 0,05 → ki = 6,25e-4,
+/// y el lazo se asienta en ~40 s de juego, no en la vida del usuario.
+const EST_TWIST_KI: f32 = 0.002_5;
+/// Tope (rad) del error que alimenta al integral: anti-acumulación. 15° es
+/// mucho más que el roll falso de un gesto (~4°) y mucho menos que un salto
+/// del sensor sin asentar, así que no frena la corrección y sí impide que un
+/// quat loco se cuele como sesgo permanente.
+const EST_TWIST_ERR_MAX: f32 = 0.262;
 /// Escape por movimiento sostenido: acumulación con fuga (τ = 1 s) del giro
 /// del gyro y del quat desde que se congeló; el ruido no la llena, un
 /// movimiento lento sí. Hace falta que gyro Y quat lo vean (ni el sesgo del
@@ -92,8 +133,11 @@ pub(crate) const SIGN_Y: f32 = -1.0;
 // parar) y la velocidad iría a trompicones (cada corrección es un frenazo o
 // un acelerón). El gyro es lo contrario: fiel al gesto, pero su sesgo
 // integrado deriva en reposo. Por eso:
-//  - En movimiento NO se corrige nada: la trayectoria es 1:1 con el gyro
-//    (menos su sesgo, que se estima en reposo).
+//  - En movimiento no se corrige nada DE LO QUE SE VE: la trayectoria es 1:1
+//    con el gyro (menos su sesgo, que se estima en reposo). La única
+//    excepción es invisible y va aparte: el ROLL del marco de proyección
+//    (`q_est`), que no mueve el cursor pero sí gira sus ejes, y que el quat
+//    sabe sin deriva porque está anclado a la gravedad. Ver `EST_TWIST_LAMBDA`.
 //  - Congelado (móvil quieto): el estado interno converge al quat, en
 //    SILENCIO (congelado no se emite nada); al descongelar, el puente
 //    absorbe la diferencia y el cursor arranca de donde estaba, sin salto.
@@ -280,10 +324,21 @@ impl Quat {
     }
 
     /// Roll (°) de `other` respecto a `self` alrededor del eje de apuntado
-    /// (device +Y): descomposición swing-twist. Solo para diagnóstico.
+    /// (device +Y): descomposición swing-twist. Lo usan `anchor_twist` y el
+    /// diagnóstico (`PointerDebug::twist_deg`).
     fn twist_about_y(self, other: Self) -> f32 {
         let d = self.conj().mul(other);
         (2.0 * d.y.atan2(d.w)).to_degrees()
+    }
+
+    /// Lleva el ROLL de `self` hacia el de `other` (twist alrededor del eje de
+    /// apuntado) con `lambda`, dejando el SWING —hacia dónde apunta— intacto.
+    /// Es la corrección que sí puede correr en movimiento: no mueve el cursor,
+    /// solo endereza sus ejes. Ver `EST_TWIST_LAMBDA`.
+    fn anchor_twist(self, other: Self, dt: f32, lambda: f32) -> Self {
+        let twist = self.twist_about_y(other).to_radians();
+        let l = 1.0 - (-dt * lambda).exp();
+        self.mul(Quat::exp_body([0.0, twist * l, 0.0])).normalized()
     }
 
     /// Rota un vector del marco del dispositivo al mundo: R(q)·v.
@@ -622,6 +677,17 @@ impl PointerEngine {
             Some(qe) => qe.mul(Quat::exp_body([gyro[0] * dt, gyro[1] * dt, gyro[2] * dt])).normalized(),
             None => q,
         };
+        // Integral del lazo del roll: el error de twist acumulado ES el sesgo
+        // del gyro en el eje de apuntado. Corre siempre (ver `EST_TWIST_KI`);
+        // el proporcional va abajo, con `anchor_twist`. Acotado como el resto
+        // del sesgo: más que eso no es sesgo, es que el quat miente.
+        // El error que alimenta al integral va acotado: un quat asentándose
+        // (o cualquier salto del sensor) puede valer decenas de grados durante
+        // segundos, y sin este tope se colaría como sesgo falso… que además
+        // sobrevive a la reconexión (`with_bias`). El proporcional sí ve el
+        // error entero: ese no acumula.
+        let twist_err = qe.twist_about_y(q).to_radians().clamp(-EST_TWIST_ERR_MAX, EST_TWIST_ERR_MAX);
+        self.bias[1] = (self.bias[1] - EST_TWIST_KI * twist_err * dt).clamp(-BIAS_MAX_RADS, BIAS_MAX_RADS);
         let (dyaw, dpitch, pole) = qe.world_rates(gyro);
         let (gy, gp) = (dyaw * dt, dpitch * dt);
         fy += gy;
@@ -652,10 +718,12 @@ impl PointerEngine {
                 let le = 1.0 - (-dt * EST_ANCHOR_LAMBDA).exp();
                 self.q_est = Some(Quat::nlerp(qe, q, le));
             } else {
-                self.q_est = Some(qe);
+                self.q_est = Some(qe.anchor_twist(q, dt, EST_TWIST_LAMBDA));
             }
         } else {
-            self.q_est = Some(qe);
+            // El swing no se toca (1:1 con el gyro); el roll sí, que es
+            // invisible en el cursor y el quat lo sabe sin deriva.
+            self.q_est = Some(qe.anchor_twist(q, dt, EST_TWIST_LAMBDA));
         }
 
         self.fused = Some((fy, fp));
@@ -828,6 +896,11 @@ impl PointerEngine {
             // Recentrar lleva el cursor al centro también en modo relativo:
             // es lo que pide el botón (los deltas siguen desde ahí)
             self.rebase(yaw_w, pitch_w);
+            // Recentrar es el único gesto de recalibración que tiene el
+            // usuario: que enderece también los ejes. Aquí el móvil apunta a
+            // la pantalla y está casi parado, el mejor instante para fiarse
+            // del roll del quat (igual que el guardián de asentamiento).
+            self.q_est = Some(q);
             return PointerOutput::Abs { nx: 0.5, ny: 0.5 };
         }
 
@@ -2387,6 +2460,159 @@ mod tests {
         for (i, s) in sweeps.iter().enumerate() {
             assert!((s - 0.8).abs() < 0.024, "barrido {i}: recorrió {s:.3} en vez de 0,8");
         }
+    }
+
+    /// Usuario apuntando en un juego de pistola: barridos VERTICALES sin
+    /// parar, con el gyro sesgado en el EJE DE APUNTADO (device +Y).
+    ///
+    /// Ese sesgo es el peor de los tres porque es INVISIBLE: un giro sobre el
+    /// eje de apuntado da `w ∥ d`, luego `dd = w × d = 0` y no mueve el cursor
+    /// ni un píxel. Pero se integra en el marco propio como roll puro, y el
+    /// roll del marco propio reparte un cabeceo entre yaw y pitch como
+    /// (sin φ, cos φ): los ejes del puntero acaban girados y subir y bajar
+    /// sale en diagonal.
+    struct Shooter {
+        e: PointerEngine,
+        ph: DivergentPhone,
+        bias: [f32; 3],
+        sens: f32,
+        t: f32,
+        last: Option<(f32, f32)>,
+        pitch: f32,
+    }
+
+    impl Shooter {
+        fn new(bias_y_deg_s: f32) -> Self {
+            Self {
+                e: PointerEngine::new(),
+                ph: DivergentPhone::new(),
+                bias: [0.0, bias_y_deg_s.to_radians(), 0.0],
+                sens: 40.0,
+                t: 0.0,
+                last: None,
+                pitch: 0.0,
+            }
+        }
+
+        fn send(&mut self, pitch: f32) -> Option<(f32, f32)> {
+            self.pitch = pitch;
+            let q = qrot_x(pitch);
+            match self.ph.send(&mut self.e, q, q, self.bias, self.sens) {
+                PointerOutput::Abs { nx, ny } => Some((nx, ny)),
+                _ => None,
+            }
+        }
+
+        /// Barre en cabeceo ±`amp` a `hz` durante `secs`. Devuelve el recorrido
+        /// acumulado (|Δnx|, |Δny|) de la salida: su cociente es tan(φ)/aspecto.
+        fn sweep(&mut self, amp: f32, hz: f32, secs: f32) -> (f32, f32) {
+            let dt = DT_US as f32 / 1e6;
+            let n = (secs / dt).round() as u32;
+            let (mut ax, mut ay) = (0.0, 0.0);
+            for _ in 0..n {
+                self.t += dt;
+                let pitch = amp * (std::f32::consts::TAU * hz * self.t).sin();
+                if let Some((nx, ny)) = self.send(pitch) {
+                    if let Some((px, py)) = self.last {
+                        ax += (nx - px).abs();
+                        ay += (ny - py).abs();
+                    }
+                    self.last = Some((nx, ny));
+                }
+            }
+            (ax, ay)
+        }
+
+        /// Quieto donde esté, `secs` segundos.
+        fn pause(&mut self, secs: f32) {
+            let dt = DT_US as f32 / 1e6;
+            for _ in 0..(secs / dt).round() as u32 {
+                self.t += dt;
+                let p = self.pitch;
+                if let Some(o) = self.send(p) {
+                    self.last = Some(o);
+                }
+            }
+        }
+
+        /// Desviación de la vertical (grados) del eje por el que sale el cursor.
+        fn axis_off_vertical_deg(&mut self, amp: f32, hz: f32, secs: f32) -> f32 {
+            let (ax, ay) = self.sweep(amp, hz, secs);
+            // nx = 0,5 + yaw/sens ; ny = 0,5 - pitch·aspecto/sens
+            (ax / ay.max(1e-9) * (16.0 / 9.0)).atan().to_degrees()
+        }
+
+        fn twist_deg(&self) -> f32 {
+            self.e.debug().twist_deg
+        }
+    }
+
+    #[test]
+    fn un_sesgo_en_el_eje_de_apuntado_no_tuerce_los_ejes_del_puntero() {
+        // El caso reportado: 2 minutos apuntando sin parar en un juego de
+        // pistola y «arriba y abajo» acaba saliendo en diagonal.
+        //
+        // Sin el lazo del roll (EST_TWIST_LAMBDA/KI a 0) esto da 62° fuera de
+        // la vertical con 0,5°/s de sesgo, que es justo lo medido en el vídeo
+        // del usuario (58°): el cursor no se escapa —la deriva neta es cero—
+        // pero sus EJES están girados.
+        let mut s = Shooter::new(0.5);
+        s.sweep(10.0, 1.3, 2.0); // asentamiento del sensor
+        s.sweep(10.0, 1.3, 120.0);
+
+        // La premisa del fallo: barriendo sin parar NO se congela nunca, que
+        // es por lo que el anclaje entero (`frozen && quiet`) no llega a correr.
+        // Si esto dejara de cumplirse, el test pasaría por el motivo equivocado.
+        assert!(!s.e.debug().frozen, "el móvil no debería congelar barriendo sin parar");
+
+        let off = s.axis_off_vertical_deg(10.0, 1.3, 4.0);
+        assert!(off < 5.0, "los ejes salieron {off:.1}° fuera de la vertical (twist={:.1}°)", s.twist_deg());
+    }
+
+    #[test]
+    fn el_roll_del_marco_propio_se_corrige_sin_congelar() {
+        // El mismo lazo, visto por dentro: `twist_deg` es el roll de `q_est`
+        // contra el quat del sensor, y tiene que quedarse acotado aunque el
+        // sesgo sea grande y el usuario no pare quieto ni un momento.
+        let mut s = Shooter::new(2.0);
+        s.sweep(10.0, 1.3, 2.0);
+        s.sweep(10.0, 1.3, 120.0);
+        assert!(!s.e.debug().frozen, "no debería congelar");
+        let twist = s.twist_deg();
+        // Sin el lazo, 2°/s durante 122 s son 250° de roll acumulado.
+        assert!(twist.abs() < 6.0, "el roll del marco propio derivó a {twist:.1}°");
+        // Y el sesgo se ha aprendido donde toca: en el eje de apuntado.
+        let b = s.e.debug().bias;
+        let esperado = 2.0_f32.to_radians();
+        assert!((b[1] - esperado).abs() < 0.2 * esperado, "sesgo en Y aprendido {:.4} rad/s, real {esperado:.4}", b[1]);
+        assert!(b[0].abs() < 0.01 && b[2].abs() < 0.01, "el lazo del roll no debe tocar X ni Z: {b:?}");
+    }
+
+    #[test]
+    fn recentrar_endereza_los_ejes_torcidos() {
+        // Recentrar es el único gesto de recalibración que tiene el usuario:
+        // con los ejes ya torcidos, tiene que dejarlos rectos de golpe.
+        let mut s = Shooter::new(2.0);
+        s.sweep(10.0, 1.3, 2.0);
+        // Con el lazo apagado a propósito no se podría; aquí lo que se mide es
+        // que el recentrado reponga `q_est` sin esperar a que el lazo converja,
+        // así que se tuerce el marco a mano y se comprueba el golpe.
+        s.e.q_est = Some(s.e.q_est.unwrap().mul(Quat::exp_body([0.0, 57.0_f32.to_radians(), 0.0])).normalized());
+        assert!(s.twist_deg().abs() > 50.0, "el montaje debería dejar los ejes torcidos");
+
+        // El mismo paquete, pero con el contador de recentrado avanzado.
+        let q = qrot_x(s.pitch);
+        let (axis, ang) = delta_axis_angle(s.ph.true_q, q);
+        s.ph.true_q = q;
+        s.ph.t += DT_US;
+        let mut p = packet(arr(q), 1, s.ph.t, FLAG_QUAT_VALID);
+        let k = ang / (DT_US as f32 / 1e6);
+        p.gyro = [axis[0] * k, axis[1] * k + s.bias[1], axis[2] * k];
+        s.e.apply(&p, s.sens, 16.0 / 9.0, true, 1920.0, false);
+
+        assert!(s.twist_deg().abs() < 1.0, "recentrar no enderezó los ejes: twist={:.1}°", s.twist_deg());
+        let off = s.axis_off_vertical_deg(10.0, 1.3, 4.0);
+        assert!(off < 5.0, "tras recentrar el eje sigue a {off:.1}° de la vertical");
     }
 
     #[test]

@@ -87,6 +87,10 @@ pub fn replay_from_args() -> bool {
             // movimiento (para reproducir carreras SendInput/GetCursorPos)
             let hint_lag: usize = std::env::var("PEPOMOTE_REPLAY_HINT_LAG").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
             let mut abs_history: std::collections::VecDeque<(f32, f32)> = std::collections::VecDeque::new();
+            // Resumen del roll del marco propio: es el que gira los EJES del
+            // puntero sin mover el cursor, así que no se ve en la traza y hay
+            // que sacarlo aparte. Ver `EST_TWIST_LAMBDA` en `engine.rs`.
+            let (mut twist_max, mut frozen_n, mut total_n) = (0.0_f32, 0u64, 0u64);
             let stdout = std::io::stdout();
             let mut w = stdout.lock();
             // Columnas de diagnóstico al final: los parsers por índice siguen
@@ -125,6 +129,27 @@ pub fn replay_from_args() -> bool {
                     d.shift.0, d.shift.1, hx, hy, d.frozen as u8, d.quiet as u8, d.bias[0], d.bias[1], d.bias[2],
                     p.accel[0], p.accel[1], p.accel[2], d.tilt as u8, d.tilt_yaw, d.tilt_pitch, tay, tap
                 );
+                if d.twist_deg.abs() > twist_max.abs() {
+                    twist_max = d.twist_deg;
+                }
+                total_n += 1;
+                frozen_n += u64::from(d.frozen);
+            }
+            // A stderr para no ensuciar el CSV de stdout.
+            if total_n > 0 {
+                eprintln!(
+                    "roll del marco propio: máximo {:.1}° | congelado el {:.1} % del tiempo ({} de {} paquetes)",
+                    twist_max,
+                    frozen_n as f64 * 100.0 / total_n as f64,
+                    frozen_n,
+                    total_n
+                );
+                if twist_max.abs() > 15.0 {
+                    eprintln!(
+                        "  ojo: {:.0}° de roll dejan los ejes del puntero muy fuera de la vertical: mover el móvil arriba y abajo se ve en diagonal.",
+                        twist_max
+                    );
+                }
             }
         }
         Err(e) => eprintln!("no puedo leer {path}: {e}"),
