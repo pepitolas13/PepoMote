@@ -42,9 +42,6 @@ fast_image_resize = "5"
 # Aviso de versión nueva: manifiesto verificado de GitHub cada hora (rustls, sin
 # depender del TLS del sistema; nada de aws-lc, que necesita cmake)
 ureq = { version = "2", default-features = false, features = ["tls"] }
-# Abrir la página de la release desde el menú de la bandeja (hilo sin egui)
-webbrowser = "1"
-
 # Icono de bandeja (Windows) / de la barra de menús (macOS)
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tray-icon = "0.19"
@@ -69,6 +66,9 @@ windows = { version = "0.58", features = [
     # Para saber en qué hueco de XInput ha caído cada mando virtual
     # (rumble/windows.rs): el driver no lo dice bien.
     "Win32_UI_Input_XboxController",
+    # ShellExecuteEx con `runas`: el instalador embebido del driver del mando
+    # virtual se lanza elevado (rumble/vigem_setup.rs).
+    "Win32_UI_Shell",
 ] }
 windows-capture = "2.0.1"
 # Mando virtual Xbox 360 (driver ViGEmBus) por el que Dolphin, Cemu y

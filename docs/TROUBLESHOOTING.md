@@ -710,7 +710,7 @@ Guía completa: [SETUP-RETROARCH.md](SETUP-RETROARCH.md).
 
 ## Vibración en los juegos
 
-- **El móvil no vibra con el juego:** mira la tarjeta «Vibración en los juegos» de Ajustes: ahí abajo dice lo que puede hacer el PC conectado. En Windows, sin el driver ViGEmBus no hay mando virtual del que sacar la vibración; en Linux es el permiso de `/dev/uinput`.
+- **El móvil no vibra con el juego:** mira la tarjeta «Vibración en los juegos» de Ajustes: ahí abajo dice lo que puede hacer el PC conectado. En Windows hace falta el mando virtual, que PepoMote instala él mismo al arrancar (pide permiso de administrador una vez): si lo cancelaste, en la ventana del receptor está el botón «Instalar el mando virtual». En Linux es el permiso de `/dev/uinput`.
 - **Vibra el móvil de otro jugador:** actualiza el receptor. Hasta la 1.12 el PC escribía el mismo número de mando en los perfiles de todos los jugadores, así que la vibración de todos acababa en el Jugador 1.
 - **Vibra demasiado o demasiado poco:** Ajustes → Vibración en los juegos → Alta / Normal / Baja. El botón «Probar» te deja oírlo sin abrir un juego.
 - **No vibra nada y el móvil sí tiene motor:** algunos móviles apagan la vibración con el modo de ahorro de energía o con «No molestar». Compruébalo en los ajustes del sistema.
@@ -721,7 +721,7 @@ Guía completa: [SETUP-RETROARCH.md](SETUP-RETROARCH.md).
 ## Mando universal
 
 - **No aparece «Mando universal» en el móvil:** el PC tiene que anunciarlo (`gamepad` entre sus modos). Actualiza PepoMote en el PC. No sale con servidor Android ni en macOS: allí no se puede crear un mando virtual.
-- **Windows: «Sin el driver ViGEmBus no hay mando»:** pulsa Descargar ViGEmBus, instálalo (es gratis y va una sola vez) y vuelve a la ventana. PepoMote lo detecta solo, sin reiniciar. Es el mismo driver que usa la vibración de los juegos.
+- **Windows: «Sin el mando virtual no hay mando»:** el driver del mando virtual (ViGEmBus) va dentro de PepoMote y se instala solo la primera vez que arranca el receptor, con una ventana de permiso de administrador de Windows. Si la cancelaste, pulsa «Instalar el mando virtual» en la ventana del receptor; PepoMote lo detecta al momento, sin reiniciar. Es el mismo driver que usa la vibración de los juegos. Para quitarlo: Configuración → Aplicaciones → «Nefarius Virtual Gamepad Emulation Bus».
 - **Linux: no hay mando:** es el permiso de `/dev/uinput`, el mismo que la vibración; la reparación está en la propia ventana del receptor.
 - **Los botones salen cambiados en Steam:** Steam tiene su propia capa de mando (Steam Input) y puede remapear cualquier mando a su manera, no solo este. En Steam → Ajustes → Mando, desactiva la compatibilidad para ese juego, o configúralo allí como harías con un mando de Xbox de verdad.
 - **Escribir o buscar dentro del juego:** toca **Teclado** en la cabecera del mando. «Enviar» pega el texto en la ventana que tenga el foco en el PC y «**Enviar + ⏎**» lo manda y pulsa Intro, que es lo que abre la búsqueda. Mientras el teclado está abierto el giro se para, para que la cámara no se vaya sola al mover el móvil escribiendo.

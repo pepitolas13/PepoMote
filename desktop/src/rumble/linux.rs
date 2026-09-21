@@ -284,7 +284,7 @@ impl Pad {
         false
     }
 
-    pub fn settle(&mut self, _slot: u8, _taken: &[bool; 4]) -> bool {
+    pub fn settle(&mut self, _slot: u8, _taken: &[bool; 4], _after: &[bool; 4]) -> bool {
         false
     }
 
@@ -309,14 +309,31 @@ pub fn static_status() -> Status {
     }
 }
 
+/// Foto de XInput: aquí no existe; `settle` no la mira.
+pub fn xinput_connected() -> [bool; 4] {
+    [false; 4]
+}
+
+/// Solo con el mando virtual de ese jugador creado: sin él, la línea del
+/// perfil de Dolphin apuntaría a un `evdev` que no existe.
 pub fn motor_expression(slot: u8) -> Option<String> {
+    super::pad_exists(slot).then(|| motor_expression_named(slot))
+}
+
+/// `Rumble/Motor` del Mando de Wii emulado de Dolphin para nuestro mando
+/// uinput, por su nombre (Dolphin lo ve como `evdev/0/<nombre>`).
+pub(super) fn motor_expression_named(slot: u8) -> String {
     let n = super::pad_name(slot);
-    Some(format!("`evdev/0/{n}:Strong`|`evdev/0/{n}:Weak`"))
+    format!("`evdev/0/{n}:Strong`|`evdev/0/{n}:Weak`")
 }
 
 pub fn cemu_node(slot: u8, player: u8) -> Option<String> {
+    super::pad_exists(slot).then(|| cemu_node_named(slot, player))
+}
+
+pub(super) fn cemu_node_named(slot: u8, player: u8) -> String {
     let guid = super::sdl_guid(0x06, &super::pad_name(slot), super::PAD_VENDOR, super::PAD_PRODUCT, super::PAD_VERSION);
-    Some(super::cemu_node_with("SDLController", &format!("0_{guid}"), player))
+    super::cemu_node_with("SDLController", &format!("0_{guid}"), player)
 }
 
 #[cfg(test)]
@@ -391,12 +408,15 @@ mod tests {
     #[test]
     fn la_expresion_de_dolphin_y_el_nodo_de_cemu_llevan_el_nombre() {
         assert_eq!(
-            motor_expression(0).unwrap(),
+            motor_expression_named(0),
             "`evdev/0/PepoMote Wiimote 1:Strong`|`evdev/0/PepoMote Wiimote 1:Weak`"
         );
-        let n = cemu_node(1, 2).unwrap();
+        let n = cemu_node_named(1, 2);
         assert!(n.contains("<api>SDLController</api>"));
         assert!(n.contains("<uuid>0_0600"));
         assert!(n.contains("PepoMote J2 vibración"));
+        // sin mando creado (tests: sin hub) no se escribe nada
+        assert!(motor_expression(0).is_none());
+        assert!(cemu_node(1, 2).is_none());
     }
 }

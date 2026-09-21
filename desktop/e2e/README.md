@@ -79,8 +79,11 @@ en el entorno:
   signo y el recorrido de los dos sticks, el giro en el stick derecho y el
   dedo ganándole, que un móvil sin giroscopio no apunta, que callarse suelta
   el botón, que no se configura ningún emulador y que al irse el móvil el
-  mando se desenchufa. **Necesita el driver ViGEmBus**: sin él se salta sola
-  y sale con 0 (la CI no lo tiene; el mapeo lo cubren los tests unitarios).
+  mando se desenchufa. **Necesita el driver del mando virtual (ViGEmBus)**,
+  que va dentro del exe: la CI lo instala antes con
+  `PepoMote.exe --install-driver`; sin él se salta sola y sale con 0. Los
+  receptores aislados arrancan con `PEPOMOTE_NO_DRIVER_SETUP=1` para que
+  ninguna prueba abra la ventana de permiso de Windows.
   **Tres trampas de XInput aprendidas aquí**, por si alguien las vuelve a
   pisar (ninguna es culpa del receptor: su log sale impecable en los tres
   casos):

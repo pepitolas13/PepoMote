@@ -69,13 +69,13 @@ Close Eden, tap **Switch** on the phone, wait for setup confirmation. Open Eden 
 
 Tap **Universal controller** on the phone. Your PC sees a real Xbox 360 controller, so **there is nothing to set up**: Steam, a game from 2019, an emulator nobody has heard of - they all just find it. Move the phone to aim, and the gyro drives the right stick; touch the on-screen right stick and your thumb takes over. The first time you connect, the phone asks whether you want that aiming: some games are worse with it (in The Binding of Isaac you shoot wherever you move the controller) and others are half the fun because of it (in Until Dawn you have to hold it still). You can change it any time in Settings. And the **Keyboard** chip types into the game or the browser on the PC: «Send» pastes the text and «**Send + ⏎**» types it and presses Enter, which is what you need to search.
 
-Windows and Linux. On Windows it needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver, installed once - PepoMote offers the download and picks it up without restarting. On Linux it uses uinput, same as the rumble controller. Not available on macOS: a virtual controller there needs a driver signed by Apple.
+Windows and Linux. On Windows the virtual controller driver ([ViGEmBus](https://github.com/nefarius/ViGEmBus), BSD-3-Clause) ships inside PepoMote: the receiver installs it by itself the first time it starts, with a single Windows permission prompt, nothing to download. On Linux it uses uinput, same as the rumble controller. Not available on macOS: a virtual controller there needs a driver signed by Apple.
 
 ## Make your phone rumble with the game
 
 When the game asks for rumble - the Mario Party dice, a hit in Wii Sports, a crash in Mario Kart - your phone rumbles. It works by itself in Dolphin, Cemu, RetroArch and the universal controller: the PC creates a virtual controller, picks up whatever the game sends to its motors and forwards it to the phone over the connection it already has.
 
-In the phone's Settings you choose how much: **High**, **Normal**, **Low** or **Off**, with a button to try it. It is on Android and iPhone; Linux phones do not get it yet. This is separate from the tap feedback on the buttons, which is unchanged. On Windows it needs the [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver (the same one as the universal controller); on Linux it goes through uinput. There is none on macOS.
+In the phone's Settings you choose how much: **High**, **Normal**, **Low** or **Off**, with a button to try it. It is on Android and iPhone; Linux phones do not get it yet. This is separate from the tap feedback on the buttons, which is unchanged. On Windows it uses the same virtual controller driver as the universal controller, which PepoMote installs by itself; on Linux it goes through uinput. There is none on macOS.
 
 ## Nice touches
 
@@ -128,7 +128,7 @@ PepoMote is an original, independent project - not affiliated with, endorsed by,
 
 ## License
 
-GPL-3.0-or-later. Original visual and sound assets: CC-BY-SA 4.0. Font: Nunito (SIL OFL 1.1).
+GPL-3.0-or-later. Original visual and sound assets: CC-BY-SA 4.0. Font: Nunito (SIL OFL 1.1). The Windows receiver embeds the official, unmodified installer of the [ViGEmBus](https://github.com/nefarius/ViGEmBus) 1.22.0 virtual gamepad driver (BSD-3-Clause, © Nefarius Software Solutions e.U.; notice in `packaging/windows/`).
 
 ---
 

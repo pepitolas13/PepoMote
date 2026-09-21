@@ -228,6 +228,11 @@ pub struct Config {
     pub update_last_check: u64,
     #[serde(default)]
     pub update_latest: Option<crate::update::Version>,
+    /// Windows: versión del instalador embebido del driver del mando virtual
+    /// que ya se intentó (instalado o cancelado por el usuario): no se
+    /// vuelve a preguntar solo hasta que PepoMote traiga uno más nuevo.
+    #[serde(default)]
+    pub vigem_setup_version: Option<String>,
 }
 
 impl Default for Config {
@@ -256,6 +261,7 @@ impl Default for Config {
             update_dismissed: None,
             update_last_check: 0,
             update_latest: None,
+            vigem_setup_version: None,
         }
     }
 }
@@ -637,6 +643,9 @@ pub struct Shared {
     /// RTT (ms) de los últimos latidos del Jugador 1 (sparkline).
     pub rtt_hist: std::collections::VecDeque<f32>,
     pub dsu_clients: usize,
+    /// Windows: en qué punto está la instalación del driver embebido del
+    /// mando virtual (la ventana lo cuenta).
+    pub rumble_setup: crate::rumble::RumbleSetup,
     /// Resultado del último intento de configurar Dolphin (para la UI).
     pub dolphin_cfg_status: Option<CfgStatus>,
     /// El emulador estaba abierto: se configurará en cuanto se cierre.
@@ -720,6 +729,7 @@ impl Shared {
             sensor_hz: 0.0,
             rtt_hist: std::collections::VecDeque::with_capacity(RTT_HIST),
             dsu_clients: 0,
+            rumble_setup: Default::default(),
             dolphin_cfg_status: None,
             dolphin_pending: false,
             cemu_pending: false,

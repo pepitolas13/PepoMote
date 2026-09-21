@@ -68,9 +68,17 @@ jobs:
       - name: Actualización y recuperación con el instalador real (archivos aislados)
         shell: pwsh
         run: ./desktop/tests/update-handoff.ps1 -Receiver desktop/target/release/PepoMote.exe
-      - name: Mandos de extremo a extremo (RetroArch, Eden, Cemu y Dolphin)
+      # Instalación en limpio del driver embebido (el runner no lo trae): con
+      # él, el mando universal se prueba de verdad en e2e_gamepad
+      - name: Instalar el mando virtual embebido (ViGEmBus)
+        shell: pwsh
+        run: |
+          ./desktop/target/release/PepoMote.exe --install-driver
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-PnpDevice -FriendlyName '*Virtual Gamepad Emulation Bus*' | Format-Table Status, FriendlyName
+      - name: Mandos de extremo a extremo (RetroArch, Eden, Cemu, Dolphin y mando universal)
         env:
-          PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir
+          PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir,e2e_gamepad
         run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
       - uses: actions/upload-artifact@v4
         if: failure()

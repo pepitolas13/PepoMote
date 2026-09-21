@@ -3168,7 +3168,6 @@ dependencies = [
  "wayland-protocols",
  "wayland-protocols-misc",
  "wayland-protocols-wlr",
- "webbrowser",
  "windows 0.58.0",
  "windows-capture",
  "winit",

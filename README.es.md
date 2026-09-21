@@ -69,13 +69,13 @@ Cierra Eden, toca **Switch** en el móvil, espera el aviso de configuración. Ab
 
 Toca **Mando universal** en el móvil. El PC ve un mando de Xbox 360 de verdad, así que **no hay nada que configurar**: Steam, un juego de 2019, un emulador que no conoce nadie - todos lo encuentran solos. Mueve el móvil para apuntar: el giro va al stick derecho, y si tocas el stick derecho de la pantalla manda el dedo. La primera vez que conectas, el móvil te pregunta si quieres ese apuntado: hay juegos en los que es un estorbo (en The Binding of Isaac disparas hacia donde muevas el mando) y otros en los que es media gracia (en Until Dawn hay que dejarlo quieto). Se cambia cuando quieras en Ajustes. Y el chip **Teclado** escribe en el juego o en el navegador del PC: «Enviar» pega el texto y «**Enviar + ⏎**» lo manda y pulsa Intro, que es lo que hace falta para buscar.
 
-Windows y Linux. En Windows hace falta el driver [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest), gratis y de una sola vez - PepoMote te ofrece la descarga y lo detecta sin reiniciar. En Linux va por uinput, igual que el mando de la vibración. En macOS no está: allí un mando virtual necesita un driver firmado por Apple.
+Windows y Linux. En Windows el driver del mando virtual ([ViGEmBus](https://github.com/nefarius/ViGEmBus), BSD-3-Clause) va dentro de PepoMote: el receptor lo instala él mismo la primera vez que arranca, con una única ventana de permiso de Windows y sin descargar nada. En Linux va por uinput, igual que el mando de la vibración. En macOS no está: allí un mando virtual necesita un driver firmado por Apple.
 
 ## Que el móvil vibre con el juego
 
 Cuando el juego pide vibración -el dado de Mario Party, un golpe en Wii Sports, un choque en Mario Kart- el móvil vibra. Va sola en Dolphin, Cemu, RetroArch y el mando universal: el PC crea un mando virtual, recoge lo que el juego le manda a los motores y se lo pasa al móvil por la misma conexión que ya usa.
 
-En Ajustes del móvil eliges cuánto: **Alta**, **Normal**, **Baja** o **Apagada**, con un botón para probarla. Está en Android y en iPhone; los móviles con Linux todavía no la reciben. Es otra cosa que la vibración al tocar los botones, que no cambia. En Windows hace falta el driver [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) (el mismo del mando universal); en Linux va por uinput. En macOS no hay.
+En Ajustes del móvil eliges cuánto: **Alta**, **Normal**, **Baja** o **Apagada**, con un botón para probarla. Está en Android y en iPhone; los móviles con Linux todavía no la reciben. Es otra cosa que la vibración al tocar los botones, que no cambia. En Windows usa el mismo driver de mando virtual que el mando universal, que PepoMote instala solo; en Linux va por uinput. En macOS no hay.
 
 ## Detalles finos
 
@@ -128,7 +128,7 @@ PepoMote es un proyecto original e independiente - sin afiliación, respaldo ni 
 
 ## Licencia
 
-GPL-3.0-or-later. Assets visuales y sonoros originales: CC-BY-SA 4.0. Tipografía: Nunito (SIL OFL 1.1).
+GPL-3.0-or-later. Assets visuales y sonoros originales: CC-BY-SA 4.0. Tipografía: Nunito (SIL OFL 1.1). El receptor de Windows lleva embebido el instalador oficial, sin modificar, del driver de mando virtual [ViGEmBus](https://github.com/nefarius/ViGEmBus) 1.22.0 (BSD-3-Clause, © Nefarius Software Solutions e.U.; aviso en `packaging/windows/`).
 
 ---
 

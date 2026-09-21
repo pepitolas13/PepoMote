@@ -26,6 +26,9 @@ use std::time::{Duration, Instant};
 mod windows;
 #[cfg(windows)]
 use windows as platform;
+/// El instalador del driver, dentro del exe (Windows).
+#[cfg(windows)]
+pub mod vigem_setup;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
@@ -47,6 +50,17 @@ pub const DSU_TIMEOUT: Duration = Duration::from_secs(5);
 /// Con el driver o /dev/uinput ausentes se vuelve a probar cada tanto: al
 /// instalarlo no hace falta reiniciar nada.
 const PROBE_EVERY: Duration = Duration::from_secs(5);
+/// Tope del reintento tras fallos seguidos al crear un mando virtual.
+const RETRY_MAX: Duration = Duration::from_secs(60);
+
+/// Cuánto esperar antes de volver a intentar crear un mando tras `failures`
+/// fallos seguidos: 5, 10, 20, 40 s y de ahí un minuto. Un driver que falla
+/// al crear cada 5 s enchufaba y desenchufaba un mando cada 5 s, y cada
+/// vaivén hacía a Dolphin releer todos sus mandos (el DSU incluido).
+fn retry_after(failures: u32) -> Duration {
+    let veces = 1u32 << failures.min(4);
+    (PROBE_EVERY * veces).min(RETRY_MAX)
+}
 
 /// Nombre del mando virtual del jugador del slot (Dolphin en Linux lo ve
 /// como `evdev/0/<nombre>`; en la lista de mandos de cualquier programa).
@@ -222,6 +236,9 @@ struct Pads {
     backend: Option<platform::Backend>,
     backend_err: Option<Status>,
     probed_at: Option<Instant>,
+    /// Fallos seguidos al crear un mando: espacia los reintentos
+    /// ([`retry_after`]); a cero en cuanto uno sale bien.
+    create_failures: u32,
     wanted: [bool; MAX_PLAYERS],
     pads: [Option<platform::Pad>; MAX_PLAYERS],
 }
@@ -248,6 +265,7 @@ pub fn start(shared: SharedState) {
             backend: None,
             backend_err: None,
             probed_at: None,
+            create_failures: 0,
             wanted: [false; MAX_PLAYERS],
             pads: [None, None, None, None],
         }),
@@ -264,6 +282,9 @@ pub fn start(shared: SharedState) {
             loop {
                 std::thread::sleep(Duration::from_millis(20));
                 let now = Instant::now();
+                // El sondeo del driver (SetupAPI en Windows) vive AQUÍ: la
+                // ventana y el canal de control solo leen el resultado
+                hub.probe_if_due();
                 let outs = hub.track.lock_tolerant().due(now);
                 for o in outs {
                     hub.send(o);
@@ -278,15 +299,18 @@ pub fn start(shared: SharedState) {
                     hub.settle_indices();
                 }
                 // Un mando que se quiere y no existe (driver recién instalado,
-                // permiso recién dado): se vuelve a intentar sin reiniciar
+                // permiso recién dado): se vuelve a intentar sin reiniciar. Si
+                // nace ya con identidad, los perfiles de los emuladores se
+                // escribieron sin él: se reescriben con su motor.
                 if now.duration_since(last_probe) >= PROBE_EVERY {
                     last_probe = now;
                     let missing = {
                         let p = hub.pads.lock_tolerant();
                         p.wanted.iter().zip(p.pads.iter()).any(|(w, p)| *w && p.is_none())
                     };
-                    if missing {
-                        hub.reconcile();
+                    if missing && hub.reconcile() {
+                        crate::dolphin::maybe_auto_configure(&hub.shared);
+                        crate::cemu::maybe_auto_configure(&hub.shared);
                     }
                 }
             }
@@ -343,14 +367,41 @@ impl Hub {
         }
     }
 
-    /// Crea o quita mandos virtuales hasta cuadrar con `wanted`.
-    fn reconcile(&self) {
-        let mut reconfigure = false;
+    /// Sondea el driver (o /dev/uinput) si toca: al arrancar, y cada
+    /// [`PROBE_EVERY`] mientras no haya backend (más si crear falla seguido,
+    /// [`retry_after`]). Solo lo llama el hilo del hub; los demás leen.
+    fn probe_if_due(&self) {
+        let mut p = self.pads.lock_tolerant();
+        if p.backend.is_some() {
+            return;
+        }
+        let due = p.probed_at.is_none_or(|t| t.elapsed() >= retry_after(p.create_failures));
+        if !due {
+            return;
+        }
+        p.probed_at = Some(Instant::now());
+        match platform::Backend::probe() {
+            Ok(b) => {
+                p.backend = Some(b);
+                p.backend_err = None;
+            }
+            Err(st) => p.backend_err = Some(st),
+        }
+    }
+
+    /// Crea o quita mandos virtuales hasta cuadrar con `wanted`. `true` si
+    /// ha nacido un mando que ya sabe quién es (en Windows, su hueco de
+    /// XInput; en Linux, siempre): los perfiles de los emuladores que se
+    /// escribieron sin él tienen que reescribirse con su motor. Quien llama
+    /// decide si eso toca ya (el hub) o lo hace su propio paso siguiente
+    /// (`sync`, desde la autoconfiguración).
+    fn reconcile(&self) -> bool {
+        let mut nacido_con_identidad = false;
         {
             let mut p = self.pads.lock_tolerant();
             let any_wanted = p.wanted.iter().any(|w| *w);
             if any_wanted && p.backend.is_none() {
-                let due = p.probed_at.is_none_or(|t| t.elapsed() >= PROBE_EVERY);
+                let due = p.probed_at.is_none_or(|t| t.elapsed() >= retry_after(p.create_failures));
                 if due {
                     p.probed_at = Some(Instant::now());
                     match platform::Backend::probe() {
@@ -371,17 +422,22 @@ impl Hub {
                     match backend.create(slot as u8) {
                         Ok(pad) => {
                             crate::log_line!("Vibración: mando virtual del jugador {} creado ({})", slot + 1, pad.describe());
-                            // El perfil se escribió antes suponiendo índice =
-                            // slot (sin otros mandos XInput, así es): si no
-                            // coincide, se reescribe (pendiente si el emulador
-                            // está abierto, con su aviso de siempre)
-                            if pad.xinput_index().is_some_and(|i| i != slot as u32) {
-                                reconfigure = true;
+                            // Con hueco de XInput ya conocido (Linux: siempre)
+                            // el perfil puede llevar su motor; si aún no,
+                            // `settle_indices` reescribe al averiguarlo
+                            if !pad.pending_index() {
+                                nacido_con_identidad = true;
                             }
                             p.pads[slot] = Some(pad);
+                            p.create_failures = 0;
                         }
                         Err(e) => {
-                            crate::log_line!("Vibración: no se pudo crear el mando virtual del jugador {}: {e}", slot + 1);
+                            p.create_failures = p.create_failures.saturating_add(1);
+                            crate::log_line!(
+                                "Vibración: no se pudo crear el mando virtual del jugador {}: {e} (se reintenta en {} s)",
+                                slot + 1,
+                                retry_after(p.create_failures).as_secs()
+                            );
                             p.backend_err = Some(Status::Failed);
                             // ViGEm caído o /dev/uinput cerrado: se vuelve a sondear
                             p.backend = None;
@@ -398,11 +454,14 @@ impl Hub {
                 set(slot as u8, Source::Pad, 0, 0);
             }
         }
-        if reconfigure {
-            crate::dolphin::maybe_auto_configure(&self.shared);
-            crate::cemu::maybe_auto_configure(&self.shared);
-        }
+        nacido_con_identidad
     }
+}
+
+/// ¿Existe ya el mando virtual del jugador del slot? Sin él no se escribe
+/// ningún motor en los perfiles de los emuladores.
+pub fn pad_exists(slot: u8) -> bool {
+    hub().is_some_and(|h| h.pads.lock_tolerant().pads.get(slot as usize).is_some_and(|p| p.is_some()))
 }
 
 /// Qué slots quieren mando virtual: los modos con emulador que vibra
@@ -421,10 +480,14 @@ impl Hub {
     /// Un mando virtual recién enchufado todavía no sabe en qué hueco de
     /// XInput ha caído: Windows tarda unas decenas de milisegundos en
     /// enumerarlo. Esperarlo al crearlo dejaría colgado al móvil que acaba de
-    /// conectarse, así que se resuelve aquí, en el tic del hub, y cuando el
-    /// hueco no es el número de jugador se reescribe la configuración del
-    /// emulador (es lo que pasa con mandos de verdad ya enchufados).
+    /// conectarse, así que se resuelve aquí, en el tic del hub, y en cuanto
+    /// se sabe el hueco se reescribe la configuración del emulador, que hasta
+    /// ahora no llevaba este mando (sin hueco no se apunta a ningún XInput:
+    /// podía ser el mando de verdad de otro jugador).
     fn settle_indices(&self) {
+        // La foto de XInput cuesta milisegundos por hueco vacío: fuera del
+        // candado, que la ventana y el canal de control también lo cogen
+        let after = platform::xinput_connected();
         let mut reconfigure = false;
         {
             let mut p = self.pads.lock_tolerant();
@@ -440,17 +503,15 @@ impl Hub {
             }
             for slot in 0..MAX_PLAYERS {
                 let Some(pad) = p.pads[slot].as_mut() else { continue };
-                if !pad.settle(slot as u8, &taken) {
+                if !pad.settle(slot as u8, &taken, &after) {
                     continue;
                 }
                 if let Some(i) = pad.xinput_index() {
                     if (i as usize) < taken.len() {
                         taken[i as usize] = true;
                     }
-                    if i != slot as u32 {
-                        reconfigure = true;
-                    }
                 }
+                reconfigure = true;
             }
         }
         if reconfigure {
@@ -507,7 +568,9 @@ pub fn sync(shared: &SharedState) {
         (wanted_slots(s.mode, &s.players), s.mode == Mode::Gamepad)
     };
     h.pads.lock_tolerant().wanted = wanted;
-    h.reconcile();
+    // Si nace un mando con identidad no hace falta reconfigurar desde aquí:
+    // quien llama (la autoconfiguración) escribe los perfiles justo después
+    let _ = h.reconcile();
     // Salir del mando universal no destruye el mando: los modos de emulador
     // también lo quieren, para la vibración. Pero conserva lo último que se
     // le escribió, así que un botón que se quedó pulsado al cambiar de modo
@@ -518,25 +581,21 @@ pub fn sync(shared: &SharedState) {
 }
 
 /// Lo que puede este receptor ahora mismo (`ok.rumble`, ventana, --diag).
+/// Solo lee lo que el hub ya sondeó (`probe_if_due`): la ventana lo pide a
+/// cada fotograma y el canal de control en cada `hello`, y ninguno de los
+/// dos tiene que pagar un sondeo del driver. Antes del primer sondeo del
+/// hub (los primeros milisegundos, o sin hub: tests, `--diag`) se sondea
+/// aquí una vez.
 pub fn status() -> Status {
     let Some(h) = hub() else { return platform::static_status() };
-    let mut p = h.pads.lock_tolerant();
+    let p = h.pads.lock_tolerant();
     if p.backend.is_some() {
         return Status::Ready;
     }
-    let due = p.probed_at.is_none_or(|t| t.elapsed() >= PROBE_EVERY);
-    if due {
-        p.probed_at = Some(Instant::now());
-        match platform::Backend::probe() {
-            Ok(b) => {
-                p.backend = Some(b);
-                p.backend_err = None;
-                return Status::Ready;
-            }
-            Err(st) => p.backend_err = Some(st),
-        }
+    match p.backend_err {
+        Some(st) => st,
+        None => platform::static_status(),
     }
-    p.backend_err.unwrap_or(Status::Unsupported)
 }
 
 /// Índice XInput que tiene el mando virtual del slot (Windows), si existe.
@@ -625,14 +684,132 @@ pub fn status_text(st: Status) -> String {
     .to_owned()
 }
 
-/// Página oficial del driver (Windows).
-pub const VIGEM_URL: &str = "https://github.com/nefarius/ViGEmBus/releases/latest";
+/// Estado de la instalación del driver embebido del mando virtual
+/// (Windows; en el resto de sistemas siempre `Idle`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum RumbleSetup {
+    #[default]
+    Idle,
+    /// El instalador está corriendo (o esperando el permiso de Windows).
+    Installing,
+    Installed,
+    /// El usuario canceló el permiso: no se vuelve a preguntar solo.
+    Declined,
+    /// El instalador terminó con este código (0 = ni llegó a lanzarse;
+    /// el detalle está en receptor.log).
+    Failed(u32),
+}
+
+/// Windows: si falta el driver del mando virtual, instalarlo ahora con el
+/// instalador que viaja dentro del exe (una vez por versión del instalador;
+/// instalado o cancelado, no se vuelve a preguntar solo).
+/// `PEPOMOTE_NO_DRIVER_SETUP` lo apaga (receptores de prueba).
+pub fn ensure_driver_on_startup(shared: SharedState) {
+    #[cfg(windows)]
+    {
+        let tried = shared.lock_tolerant().config.vigem_setup_version.clone();
+        let skip = std::env::var_os("PEPOMOTE_NO_DRIVER_SETUP").is_some();
+        if !vigem_setup::should_install(platform::static_status(), tried.as_deref(), skip) {
+            return;
+        }
+        crate::log_line!(
+            "Mando virtual: falta el driver; se instala el embebido (ViGEmBus {})",
+            vigem_setup::SETUP_VERSION
+        );
+        run_setup(shared);
+    }
+    #[cfg(not(windows))]
+    drop(shared);
+}
+
+/// Botón «Instalar el mando virtual» de la ventana.
+pub fn install_driver_now() {
+    #[cfg(windows)]
+    if let Some(h) = hub() {
+        run_setup(h.shared.clone());
+    }
+}
+
+/// `PepoMote.exe --install-driver` (la CI): instala y sale.
+pub fn install_driver_from_args() -> bool {
+    #[cfg(windows)]
+    {
+        vigem_setup::run_from_args()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+/// El instalador en su hilo: el estado va a `Shared::rumble_setup` (la
+/// ventana lo cuenta) y, al terminar bien, el hub vuelve a sondear el driver
+/// en su siguiente tic, sin reiniciar nada.
+#[cfg(windows)]
+fn run_setup(shared: SharedState) {
+    {
+        let mut s = shared.lock_tolerant();
+        if s.rumble_setup == RumbleSetup::Installing {
+            return;
+        }
+        s.rumble_setup = RumbleSetup::Installing;
+    }
+    let _ = crate::threads::spawn_once("vigem-setup", move || {
+        let mut result = vigem_setup::install();
+        // Sobre una versión anterior del driver el instalador dice «hecho» y
+        // el bus sigue siendo el viejo: hace falta un segundo pase (así lo
+        // documenta la propia release). Solo si el primero no dejó driver.
+        if matches!(result, Ok(vigem_setup::Outcome::Installed)) && platform::static_status() != Status::Ready {
+            crate::log_line!("Mando virtual: el instalador terminó pero el driver no responde; segundo pase");
+            result = vigem_setup::install();
+        }
+        let state = match &result {
+            Ok(vigem_setup::Outcome::Installed) => RumbleSetup::Installed,
+            Ok(vigem_setup::Outcome::Declined) => RumbleSetup::Declined,
+            Ok(vigem_setup::Outcome::Failed(c)) => RumbleSetup::Failed(*c),
+            Err(_) => RumbleSetup::Failed(0),
+        };
+        match &result {
+            Ok(o) => crate::log_line!("Mando virtual: instalador terminado: {o:?}"),
+            Err(e) => crate::log_line!("Mando virtual: no se pudo lanzar el instalador: {e}"),
+        }
+        {
+            let mut s = shared.lock_tolerant();
+            s.rumble_setup = state;
+            if matches!(state, RumbleSetup::Installed | RumbleSetup::Declined) {
+                s.config.vigem_setup_version = Some(vigem_setup::SETUP_VERSION.to_owned());
+                s.config.save();
+            }
+        }
+        if state == RumbleSetup::Installed {
+            if let Some(h) = hub() {
+                // que el hub lo vea ya, sin esperar su cadencia
+                h.pads.lock_tolerant().probed_at = None;
+            }
+        }
+    });
+}
 
 /// Para `--diag`.
 pub fn diag_lines() -> Vec<String> {
     let (st, pads) = ui_lines();
     let mut out = vec![format!("Vibración de los juegos: {} ({:?})", st.as_str(), st)];
     out.extend(pads.into_iter().map(|l| format!("  {l}")));
+    #[cfg(windows)]
+    {
+        let tried = crate::state::Config::load().vigem_setup_version;
+        let setup = hub().map(|h| h.shared.lock_tolerant().rumble_setup).unwrap_or_default();
+        out.push(format!(
+            "Instalador del mando virtual embebido: ViGEmBus {} · intentado en esta versión: {} · en esta sesión: {:?}",
+            vigem_setup::SETUP_VERSION,
+            match tried.as_deref() {
+                Some(v) if v == vigem_setup::SETUP_VERSION => "sí",
+                Some(_) => "con otra versión",
+                None => "no",
+            },
+            setup
+        ));
+    }
     out
 }
 
@@ -694,6 +871,23 @@ mod tests {
         let r = tr.due(t + Duration::from_secs(5));
         assert_eq!(r.len(), 1);
         assert_eq!((r[0].strong, r[0].weak, r[0].ttl_ms), (0, 0, 0), "caducado");
+    }
+
+    #[test]
+    fn los_reintentos_de_crear_se_espacian_hasta_un_minuto() {
+        let s = |n| retry_after(n).as_secs();
+        assert_eq!([s(0), s(1), s(2), s(3), s(4), s(5), s(40)], [5, 10, 20, 40, 60, 60, 60]);
+    }
+
+    /// Sin mando virtual (en los tests no hay hub) no se escribe ningún
+    /// motor en Dolphin ni en Cemu, en ninguna plataforma: la línea que
+    /// apuntaba a un `XInput/0` inexistente era la única diferencia que
+    /// Dolphin veía en un PC sin driver.
+    #[test]
+    fn sin_mando_virtual_no_hay_expresion_de_motor() {
+        assert!(!pad_exists(0));
+        assert!(motor_expression(0).is_none());
+        assert!(cemu_node(0, 1).is_none());
     }
 
     #[test]

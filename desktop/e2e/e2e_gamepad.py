@@ -3,9 +3,10 @@ reales y, al otro lado, el mando de Xbox 360 virtual leído **desde fuera** con
 la API XInput de Windows. Es la única prueba que demuestra el camino entero:
 si aquí sale un botón, el juego ve ese botón.
 
-Requiere el receptor arrancado con PEPOMOTE_PAIR_CODE=1234 y el driver
-ViGEmBus instalado. Sin driver (la CI no lo tiene) se salta sola y sale con 0:
-el mapeo ya está cubierto por los tests unitarios, que sí corren en la CI.
+Requiere el receptor arrancado con PEPOMOTE_PAIR_CODE=1234 y el driver del
+mando virtual (ViGEmBus) instalado: va dentro del exe y la CI lo instala antes
+con `PepoMote.exe --install-driver`. Sin driver se salta sola y sale con 0
+(el mapeo ya está cubierto por los tests unitarios).
 
 Uso: python e2e_gamepad.py <APPDATA aislado>"""
 import ctypes, json, os, socket, struct, sys, threading, time
@@ -186,7 +187,7 @@ sess = ok1["session_id"]
 if _get_state is None:
     done("SKIP: sin XInput en este sistema")
 if ok1.get("rumble") != "ready":
-    done(f"SKIP: sin mando virtual (rumble={ok1.get('rumble')!r}); hace falta el driver ViGEmBus")
+    done(f"SKIP: sin mando virtual (rumble={ok1.get('rumble')!r}); instala el driver con `PepoMote.exe --install-driver`")
 
 antes = connected()
 if len(antes) >= 4:

@@ -59,7 +59,11 @@ def run_suite(name):
     env.update(PEPOMOTE_PORT=str(port), PEPOMOTE_DSU_PORT=str(port-1),
                PEPOMOTE_RETROARCH_PORT=str(port+2), PEPOMOTE_RETROARCH_CMD_PORT=str(port+7),
                PEPOMOTE_PAIR_CODE="1234", PEPOMOTE_ASSUME_EMULATOR_CLOSED="1",
-               PEPOMOTE_NO_TRAY="1", PEPOMOTE_NO_UI="1", PYTHONIOENCODING="utf-8")
+               PEPOMOTE_NO_TRAY="1", PEPOMOTE_NO_UI="1", PYTHONIOENCODING="utf-8",
+               # Windows: un receptor de prueba nunca instala el driver del
+               # mando virtual (abriría un UAC); la CI lo instala antes con
+               # `PepoMote.exe --install-driver`
+               PEPOMOTE_NO_DRIVER_SETUP="1")
     (base / "config" / "settings.json").write_text(json.dumps({
         "sens_deg": 40, "abs_mode": True, "auto_mode": False,
         "auto_dolphin": True, "auto_cemu": True, "auto_eden": True, "auto_retroarch": True,

@@ -56,7 +56,11 @@ fn main() {
     // --replay <grabación>: solo el motor del puntero sobre una grabación
     // (PEPOMOTE_RECORD), CSV por stdout, y fuera. --dolphin-dirs y --diag:
     // informes por stdout, y fuera.
-    if pointer::record::replay_from_args() || dolphin::print_dirs_from_args() || diag::run_from_args() {
+    if pointer::record::replay_from_args()
+        || dolphin::print_dirs_from_args()
+        || diag::run_from_args()
+        || rumble::install_driver_from_args()
+    {
         return;
     }
     // Windows 11 estrangula los procesos sin foco (el receptor casi siempre
@@ -108,6 +112,10 @@ fn main() {
 
     let dsu = dsu::start(shared.clone());
     rumble::start(shared.clone());
+    // Windows: el driver del mando virtual viene dentro del exe y se instala
+    // en el primer arranque (una ventana de permiso), para que el mando
+    // universal y la vibración funcionen sin descargar ni instalar nada
+    rumble::ensure_driver_on_startup(shared.clone());
     // El enlace con RetroArch (mando en red + interfaz de comandos) vive
     // siempre: sondea en silencio y solo habla en modo RetroArch
     let _ = retroarch::start(shared.clone());

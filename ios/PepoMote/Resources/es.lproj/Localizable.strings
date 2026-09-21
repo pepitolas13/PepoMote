@@ -130,7 +130,7 @@
 "rumble_off" = "Apagada";
 "rumble_try" = "Probar";
 "rumble_pc_ready" = "El PC conectado puede hacer vibrar el móvil.";
-"rumble_pc_driver" = "El PC necesita el driver ViGEmBus para la vibración (mira la ventana del receptor).";
+"rumble_pc_driver" = "El PC aún no tiene el mando virtual de la vibración (mira la ventana del receptor).";
 "rumble_pc_denied" = "El receptor no tiene permiso en /dev/uinput: sin vibración (mira su ventana).";
 "rumble_pc_unsupported" = "Este receptor no puede mandar vibración (macOS o servidor Android).";
 "rumble_pc_old" = "El receptor es anterior a la 1.12: sin vibración de los juegos.";

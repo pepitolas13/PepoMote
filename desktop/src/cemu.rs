@@ -1377,9 +1377,11 @@ mod tests {
         assert!(m.contains(&(21, 41)) && m.contains(&(22, 47)) && m.contains(&(23, 46)) && m.contains(&(24, 40)));
         assert!(m.contains(&(25, 8)) && m.contains(&(26, 9)), "Mic → L2, Pantalla → R2");
         assert!(m.contains(&(27, 16)), "Home → Touch");
-        // El motor virtual es un dispositivo separado sin mapeos de entrada.
+        // El motor virtual es un dispositivo separado sin mapeos de entrada,
+        // y solo entra cuando el mando virtual existe (en los tests no hay
+        // hub, así que no hay nodo de vibración)
         assert_eq!(xml.matches("<api>DSUController</api>").count(), 1);
-        assert_eq!(xml.matches("<controller>").count(), 1 + usize::from(cfg!(any(windows, target_os = "linux"))));
+        assert_eq!(xml.matches("<controller>").count(), 1);
     }
 
     #[test]
@@ -1402,7 +1404,7 @@ mod tests {
         assert!(xml.contains("<type>Wiimote</type>"));
         assert!(xml.contains("<device_type>6</device_type>"), "MotionPlus + Nunchuk");
         assert_eq!(xml.matches("<api>DSUController</api>").count(), 2, "el Nunchuk es el otro móvil");
-        assert_eq!(xml.matches("<controller>").count(), 2 + usize::from(cfg!(any(windows, target_os = "linux"))));
+        assert_eq!(xml.matches("<controller>").count(), 2);
         assert!(xml.contains("<uuid>0</uuid>") && xml.contains("<uuid>3</uuid>"));
         let m = mappings(&xml);
         assert!(m.contains(&(1, 14)) && m.contains(&(2, 13)) && m.contains(&(3, 15)) && m.contains(&(4, 12)));
@@ -1414,7 +1416,7 @@ mod tests {
         let solo = profile_xml(&wii(1, 1, None));
         assert!(solo.contains("<device_type>5</device_type>"));
         assert_eq!(solo.matches("<api>DSUController</api>").count(), 1);
-        assert_eq!(solo.matches("<controller>").count(), 1 + usize::from(cfg!(any(windows, target_os = "linux"))));
+        assert_eq!(solo.matches("<controller>").count(), 1);
     }
 
     #[test]

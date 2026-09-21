@@ -33,7 +33,7 @@ impl Pad {
         false
     }
 
-    pub fn settle(&mut self, _slot: u8, _taken: &[bool; 4]) -> bool {
+    pub fn settle(&mut self, _slot: u8, _taken: &[bool; 4], _after: &[bool; 4]) -> bool {
         false
     }
 
@@ -44,6 +44,11 @@ impl Pad {
 
 pub fn static_status() -> Status {
     Status::Unsupported
+}
+
+/// Foto de XInput: aquí no existe.
+pub fn xinput_connected() -> [bool; 4] {
+    [false; 4]
 }
 
 pub fn motor_expression(_slot: u8) -> Option<String> {

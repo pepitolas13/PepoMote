@@ -463,7 +463,7 @@
     <string name="rumble_off">Off</string>
     <string name="rumble_try">Try it</string>
     <string name="rumble_pc_ready">The connected PC can rumble your phone.</string>
-    <string name="rumble_pc_driver">The PC needs the ViGEmBus driver for rumble (see the receiver window).</string>
+    <string name="rumble_pc_driver">The PC does not have the rumble virtual controller yet (see the receiver window).</string>
     <string name="rumble_pc_denied">The receiver has no /dev/uinput permission: no rumble (see its window).</string>
     <string name="rumble_pc_unsupported">This receiver cannot send rumble (macOS or Android server).</string>
     <string name="rumble_pc_old">The receiver is older than 1.12: no game rumble.</string>

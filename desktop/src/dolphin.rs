@@ -619,6 +619,14 @@ pub fn ensure_background_input(cfg_dir: &Path) -> Result<(), String> {
 /// apagan solo se toca la clave Source; el resto de sus líneas (un mapeo
 /// manual, por ejemplo) se conserva. Las demás secciones, intactas.
 pub fn write_wiimotes(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
+    write_wiimotes_with(cfg_dir, layout, crate::rumble::motor_expression)
+}
+
+/// `motor`: la expresión `Rumble/Motor` del mando virtual del slot, o `None`
+/// si ese jugador no tiene mando virtual (sin driver, o aún sin hueco de
+/// XInput): entonces no se escribe la clave. Separado para probar las dos
+/// ramas sin mando de verdad.
+pub fn write_wiimotes_with(cfg_dir: &Path, layout: &Layout, motor: impl Fn(u8) -> Option<String>) -> Result<(), String> {
     let path = cfg_dir.join("WiimoteNew.ini");
     let original = std::fs::read_to_string(&path).unwrap_or_default();
     let mut ini = parse_ini(&original);
@@ -633,8 +641,9 @@ pub fn write_wiimotes(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
         // este mismo pad (entonces Left X es su stick)
         let roll = *nslot != Some(*wslot);
         body.extend(ir_passthrough(roll).lines().map(|l| l.to_owned()));
-        // Vibración: el motor del mando virtual de ese jugador (rumble/)
-        if let Some(expr) = crate::rumble::motor_expression(*wslot) {
+        // Vibración: el motor del mando virtual de ese jugador (rumble/),
+        // solo si el mando existe ya y se sabe cuál es
+        if let Some(expr) = motor(*wslot) {
             body.push(format!("Rumble/Motor = {expr}"));
         }
         match nslot {
@@ -704,6 +713,10 @@ pub fn ensure_dsu_server(cfg_dir: &Path) -> Result<(), String> {
 
 /// Perfiles manuales PepoMote-P1..P4 (fallback si alguien mapea a mano).
 fn write_profiles(cfg_dir: &Path, n_players: usize) {
+    write_profiles_with(cfg_dir, n_players, crate::rumble::motor_expression)
+}
+
+fn write_profiles_with(cfg_dir: &Path, n_players: usize, motor: impl Fn(u8) -> Option<String>) {
     let dir = cfg_dir.join("Profiles").join("Wiimote");
     if std::fs::create_dir_all(&dir).is_err() {
         return;
@@ -713,7 +726,7 @@ fn write_profiles(cfg_dir: &Path, n_players: usize) {
             .replace("{DEV}", &slot.to_string())
             .lines()
             .filter(|l| !l.starts_with("Source"))
-            .chain(crate::rumble::motor_expression(slot as u8).map(|e| format!("Rumble/Motor = {e}")).as_deref())
+            .chain(motor(slot as u8).map(|e| format!("Rumble/Motor = {e}")).as_deref())
             .fold(String::from("[Profile]\n"), |mut acc, l| {
                 acc.push_str(l);
                 acc.push('\n');
@@ -905,6 +918,69 @@ mod tests {
             flatpak: None,
             mac_app_support: None,
         }
+    }
+
+    /// Cuerpo de la sección `[name]` del INI (hasta la siguiente cabecera).
+    fn section(ini: &str, name: &str) -> String {
+        let start = ini.find(&format!("[{name}]")).expect(name);
+        let rest = &ini[start + name.len() + 2..];
+        let end = rest.find("\n[").unwrap_or(rest.len());
+        rest[..end].to_owned()
+    }
+
+    /// Sin mando virtual (sin driver, o aún sin hueco de XInput) el perfil
+    /// de Dolphin no lleva `Rumble/Motor`: como en 1.11. La línea que
+    /// apuntaba a un `XInput/0/Gamepad` que no era nuestro (o no existía)
+    /// era lo único que Dolphin veía distinto con 1.12 en un PC sin driver.
+    #[test]
+    fn sin_mando_virtual_no_se_escribe_rumble() {
+        let dir = tmp_dir("rumble-sin");
+        write_wiimotes_with(&dir, &wm(2), |_| None).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(!out.contains("Rumble/Motor"), "{out}");
+        assert!(out.contains("[Wiimote1]\nDevice = DSUClient/0/PepoMote"), "{out}");
+        write_profiles_with(&dir, 4, |_| None);
+        for name in ["PepoMote.ini", "PepoMote-P2.ini", "PepoMote-P3.ini", "PepoMote-P4.ini"] {
+            let p = std::fs::read_to_string(dir.join("Profiles").join("Wiimote").join(name)).unwrap();
+            assert!(!p.contains("Rumble/Motor"), "{name}: {p}");
+        }
+    }
+
+    /// Con mando virtual, cada jugador lleva SU motor (el hueco de XInput
+    /// real, no el número de jugador), y el que aún no tiene mando, nada.
+    #[test]
+    fn con_mando_virtual_conocido_cada_jugador_lleva_su_motor() {
+        let dir = tmp_dir("rumble-con");
+        // el Jugador 1 cayó en el XInput 2 (dos mandos de verdad delante); el 2 aún no tiene mando
+        let motor = |slot: u8| (slot == 0).then(|| "`XInput/2/Gamepad:Motor L`|`XInput/2/Gamepad:Motor R`".to_owned());
+        write_wiimotes_with(&dir, &wm(2), motor).unwrap();
+        let out = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        let w1 = section(&out, "Wiimote1");
+        let w2 = section(&out, "Wiimote2");
+        assert!(w1.contains("Rumble/Motor = `XInput/2/Gamepad:Motor L`|`XInput/2/Gamepad:Motor R`"), "{w1}");
+        assert!(!w2.contains("Rumble/Motor"), "{w2}");
+        assert_eq!(out.matches("Rumble/Motor").count(), 1);
+        write_profiles_with(&dir, 2, motor);
+        let p1 = std::fs::read_to_string(dir.join("Profiles").join("Wiimote").join("PepoMote.ini")).unwrap();
+        let p2 = std::fs::read_to_string(dir.join("Profiles").join("Wiimote").join("PepoMote-P2.ini")).unwrap();
+        assert!(p1.contains("Rumble/Motor = `XInput/2/Gamepad:Motor L`"), "{p1}");
+        assert!(!p2.contains("Rumble/Motor"), "{p2}");
+    }
+
+    /// El mando virtual se va (driver desinstalado, móvil que se va y
+    /// vuelve sin hueco): la línea desaparece y el resto del mando sigue.
+    #[test]
+    fn el_rumble_desaparece_al_irse_el_mando() {
+        let dir = tmp_dir("rumble-va");
+        let con = |_: u8| Some("`XInput/0/Gamepad:Motor L`|`XInput/0/Gamepad:Motor R`".to_owned());
+        write_wiimotes_with(&dir, &wm(1), con).unwrap();
+        let antes = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(antes.contains("Rumble/Motor"));
+        write_wiimotes_with(&dir, &wm(1), |_| None).unwrap();
+        let despues = std::fs::read_to_string(dir.join("WiimoteNew.ini")).unwrap();
+        assert!(!despues.contains("Rumble/Motor"), "{despues}");
+        assert!(despues.contains("IRPassthrough/Enabled = True") && despues.contains("Extension = None"), "{despues}");
+        assert!(despues.contains("[Wiimote2]\nSource = 0"), "{despues}");
     }
 
     #[test]

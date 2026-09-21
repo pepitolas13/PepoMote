@@ -26,14 +26,19 @@ jobs:
       - name: Actualización y recuperación con el instalador real (archivos aislados)
         shell: pwsh
         run: ./desktop/tests/update-handoff.ps1 -Receiver desktop/target/release/PepoMote.exe
+      # El driver del mando virtual va dentro del exe: el runner (administrador,
+      # sin ViGEmBus de serie) es la instalación en limpio que ningún PC de
+      # desarrollo puede repetir. Sin él, e2e_gamepad no tendría mando que leer.
+      - name: Instalar el mando virtual embebido (ViGEmBus)
+        shell: pwsh
+        run: |
+          ./desktop/target/release/PepoMote.exe --install-driver
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-PnpDevice -FriendlyName '*Virtual Gamepad Emulation Bus*' | Format-Table Status, FriendlyName
       # Receptor real aislado + RetroArch falso por sockets (desktop/e2e/README.md):
       # retroarch.cfg, un datagrama por fotograma, teclas rápidas, resincronización
       - name: e2e de todos los mandos (receptor aislado)
         env:
-          # e2e_gamepad se salta sola aquí: el runner no tiene el driver
-          # ViGEmBus, así que no hay mando virtual que leer. Comprueba el
-          # anuncio del modo y sale con 0; el mapeo lo cubren los tests
-          # unitarios, y la prueba entera se corre en un PC con el driver.
           PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir,e2e_gamepad
         run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
       - uses: actions/upload-artifact@v4

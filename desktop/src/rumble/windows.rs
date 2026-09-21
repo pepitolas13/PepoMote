@@ -9,7 +9,8 @@
 //!
 //! El crate `vigem-client` habla con el driver por IOCTL (Rust puro, sin
 //! ViGEmClient.dll). Sin el driver, `Client::connect` devuelve
-//! `BusNotFound`: la ventana enseña cómo instalarlo y se reintenta solo.
+//! `BusNotFound`: PepoMote lo instala él mismo (`vigem_setup`, el
+//! instalador oficial viaja dentro del exe) y se reintenta solo.
 
 use super::{Source, Status};
 use std::sync::Arc;
@@ -51,7 +52,14 @@ impl Backend {
         let before = xinput_connected();
         let mut target = Xbox360Wired::new(self.client.clone(), TargetId::XBOX360_WIRED);
         target.plugin().map_err(|e| format!("plugin: {e:?}"))?;
-        target.wait_ready().map_err(|e| format!("wait_ready: {e:?}"))?;
+        // El mando ya está enchufado: si el driver no sabe esperar a que esté
+        // listo (o falla al hacerlo) se sigue igual, que `settle` le da 3 s
+        // para aparecer en XInput. Tirarlo aquí lo enchufaba y desenchufaba
+        // en cada reintento, y cada vaivén hacía a Dolphin releer todos sus
+        // mandos (el DSU incluido).
+        if let Err(e) = target.wait_ready() {
+            crate::log_line!("Vibración: el driver no confirma el mando virtual del jugador {} ({e:?}); se sigue sin esperar", slot + 1);
+        }
         // Windows tarda unas decenas de ms en enumerarlo. Esperarlo AQUÍ deja
         // colgado el hilo del móvil que acaba de conectarse (y con él su
         // `ok`), así que se prueba una vez —cuesta 0,1 ms— y lo que falte lo
@@ -76,8 +84,10 @@ impl Backend {
 /// Huecos de XInput (`XUSER_MAX_COUNT`).
 pub const XUSER_MAX: usize = 4;
 
-/// Qué huecos de XInput tienen un mando ahora mismo.
-fn xinput_connected() -> [bool; XUSER_MAX] {
+/// Qué huecos de XInput tienen un mando ahora mismo. Cuesta hasta unos
+/// milisegundos por hueco vacío (XInput vuelve a enumerar), así que el hub
+/// la llama FUERA de sus candados y pasa la foto a [`Pad::settle`].
+pub fn xinput_connected() -> [bool; XUSER_MAX] {
     use windows::Win32::UI::Input::XboxController::{XInputGetState, XINPUT_STATE};
     let mut out = [false; XUSER_MAX];
     for (i, hueco) in out.iter_mut().enumerate() {
@@ -115,9 +125,10 @@ impl Pad {
         self.looking.is_some()
     }
 
-    /// Un intento de averiguar el hueco (0,1 ms). `true` si lo acaba de
-    /// encontrar; quien llama mira si coincide con el número de jugador y,
-    /// si no, reescribe la configuración del emulador.
+    /// Un intento de averiguar el hueco con la foto `after` de XInput que
+    /// trae el hub. `true` si lo acaba de encontrar: quien llama reescribe
+    /// la configuración del emulador, que hasta ahora no llevaba este mando
+    /// (sin índice no se escribe nada que apunte a un XInput cualquiera).
     ///
     /// No se le pregunta al driver: `get_user_index()` contesta **0 para
     /// todos** los mandos virtuales. Medido con tres a la vez y 8 s de
@@ -126,9 +137,9 @@ impl Pad {
     /// es el slot» no llegaba a entrar nunca y los jugadores 2, 3 y 4 se
     /// quedaban sin vibración: su perfil de Cemu y de Dolphin apuntaba al
     /// mando del Jugador 1, que vibraba por todos.
-    pub fn settle(&mut self, slot: u8, taken: &[bool; XUSER_MAX]) -> bool {
+    pub fn settle(&mut self, slot: u8, taken: &[bool; XUSER_MAX], after: &[bool; XUSER_MAX]) -> bool {
         let Some(desde) = self.looking else { return false };
-        if let Some(i) = appeared(&self.before, &xinput_connected(), taken) {
+        if let Some(i) = appeared(&self.before, after, taken) {
             self.index = Some(i);
             self.looking = None;
             crate::log_line!("Vibración: el mando virtual del jugador {} es XInput {i}", slot + 1);
@@ -136,11 +147,12 @@ impl Pad {
         }
         if desde.elapsed() >= ENUMERATE_LIMIT {
             // XInput solo tiene 4 huecos: con cuatro mandos ya puestos, el
-            // nuestro no entra. Se supone el número de jugador, que es lo
-            // que sale cuando no hay más mandos.
+            // nuestro no entra. Sin índice no hay vibración para ese
+            // jugador: suponer «el número de jugador» apuntaba al mando de
+            // verdad de otra persona.
             self.looking = None;
             crate::log_line!(
-                "Vibración: XInput no enumera el mando virtual del jugador {}; se supone el índice {slot}",
+                "Vibración: XInput no enumera el mando virtual del jugador {}; sin vibración para él hasta que aparezca",
                 slot + 1
             );
         }
@@ -179,12 +191,13 @@ impl Pad {
 impl Drop for Pad {
     fn drop(&mut self) {
         // Desenchufar aborta la notificación pendiente y su hilo termina
+        // solo. No se le espera: si el driver no llegara a abortarla, un
+        // `join` aquí dejaría este hilo (y el candado de los mandos) colgado
+        // para siempre, y con él la ventana y los móviles.
         if let Some(t) = self.target.take() {
             drop(t);
         }
-        if let Some(l) = self.listener.take() {
-            let _ = l.join();
-        }
+        drop(self.listener.take());
     }
 }
 
@@ -197,13 +210,22 @@ pub fn static_status() -> Status {
     }
 }
 
+/// Solo con el mando virtual creado Y su hueco de XInput ya averiguado.
+/// Antes se suponía «índice = slot» mientras tanto (y sin driver): el perfil
+/// de Dolphin llevaba un `XInput/0/Gamepad` que no era nuestro, o que no
+/// existía. Sin mando, sin línea: como en 1.11.
 pub fn motor_expression(slot: u8) -> Option<String> {
-    let i = super::xinput_index(slot).unwrap_or(slot as u32);
-    Some(format!("`XInput/{i}/Gamepad:Motor L`|`XInput/{i}/Gamepad:Motor R`"))
+    let i = super::xinput_index(slot)?;
+    Some(motor_expression_for(i))
+}
+
+/// `Rumble/Motor` del Mando de Wii emulado de Dolphin para el mando XInput `i`.
+pub(super) fn motor_expression_for(i: u32) -> String {
+    format!("`XInput/{i}/Gamepad:Motor L`|`XInput/{i}/Gamepad:Motor R`")
 }
 
 pub fn cemu_node(slot: u8, player: u8) -> Option<String> {
-    let i = super::xinput_index(slot).unwrap_or(slot as u32);
+    let i = super::xinput_index(slot)?;
     Some(super::cemu_node_with("XInput", &i.to_string(), player))
 }
 
@@ -248,6 +270,14 @@ mod tests {
         let mut repartido = [false; XUSER_MAX];
         repartido[primero as usize] = true;
         assert_eq!(appeared(&antes, &ahora, &repartido), Some(1), "el segundo coge OTRO hueco");
+    }
+
+    #[test]
+    fn la_expresion_del_motor_lleva_el_indice_real() {
+        assert_eq!(motor_expression_for(1), "`XInput/1/Gamepad:Motor L`|`XInput/1/Gamepad:Motor R`");
+        // sin hub (tests) no hay mando ni índice: nada que escribir
+        assert!(motor_expression(0).is_none());
+        assert!(cemu_node(0, 1).is_none());
     }
 
     #[test]

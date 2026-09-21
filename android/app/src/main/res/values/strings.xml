@@ -463,7 +463,7 @@
     <string name="rumble_off">Apagada</string>
     <string name="rumble_try">Probar</string>
     <string name="rumble_pc_ready">El PC conectado puede hacer vibrar el móvil.</string>
-    <string name="rumble_pc_driver">El PC necesita el driver ViGEmBus para la vibración (mira la ventana del receptor).</string>
+    <string name="rumble_pc_driver">El PC aún no tiene el mando virtual de la vibración (mira la ventana del receptor).</string>
     <string name="rumble_pc_denied">El receptor no tiene permiso en /dev/uinput: sin vibración (mira su ventana).</string>
     <string name="rumble_pc_unsupported">Este receptor no puede mandar vibración (macOS o servidor Android).</string>
     <string name="rumble_pc_old">El receptor es anterior a la 1.12: sin vibración de los juegos.</string>

@@ -141,6 +141,8 @@ struct Snapshot {
     fix_failed: Option<String>,
     /// Vibración de los juegos: estado y mandos virtuales que hay.
     rumble: (crate::rumble::Status, Vec<String>),
+    /// Windows: en qué punto está la instalación del driver embebido.
+    rumble_setup: crate::rumble::RumbleSetup,
 }
 
 impl eframe::App for PepoMoteApp {
@@ -185,6 +187,10 @@ impl eframe::App for PepoMoteApp {
 
         self.refresh_ip();
 
+        // Fuera del candado del estado: coge el de los mandos virtuales, que
+        // el hub puede tener un rato (crear un mando, sondear el driver), y
+        // con el estado cogido pararía a la telemetría y al DSU
+        let rumble = crate::rumble::ui_lines();
         let snap = {
             let s = self.shared.lock_tolerant();
             Snapshot {
@@ -214,7 +220,8 @@ impl eframe::App for PepoMoteApp {
                 ax_denied: s.ax_denied,
                 fixing: s.fixing,
                 fix_failed: s.fix_failed.clone(),
-                rumble: crate::rumble::ui_lines(),
+                rumble,
+                rumble_setup: s.rumble_setup,
             }
         };
         // Con móviles, 20 fps (el latido respira); en espera, 10 bastan
@@ -588,10 +595,32 @@ impl PepoMoteApp {
         for l in pads {
             ui.label(RichText::new(l).size(11.0).color(theme::text_dim()));
         }
-        if *st == crate::rumble::Status::NeedsDriver
-            && ui.button(RichText::new(tr!("rumble.download")).size(13.0)).clicked()
-        {
-            let _ = webbrowser::open(crate::rumble::VIGEM_URL);
+        self.ui_driver_setup(ui, snap);
+    }
+
+    /// Windows: el driver del mando virtual viene dentro del exe y se
+    /// instala solo al arrancar. Si falta, aquí se cuenta en qué punto está
+    /// (instalando, cancelado, fallido) y queda el botón para instalarlo.
+    fn ui_driver_setup(&self, ui: &mut egui::Ui, snap: &Snapshot) {
+        use crate::rumble::{RumbleSetup, Status};
+        if snap.rumble.0 != Status::NeedsDriver {
+            return;
+        }
+        match snap.rumble_setup {
+            RumbleSetup::Installing => {
+                ui.label(RichText::new(tr!("rumble.installing")).size(12.0).color(theme::warn()));
+                return;
+            }
+            RumbleSetup::Declined => {
+                ui.label(RichText::new(tr!("rumble.declined")).size(11.0).color(theme::text_dim()));
+            }
+            RumbleSetup::Failed(code) => {
+                ui.label(RichText::new(tr!("rumble.install_failed", code)).size(11.0).color(theme::text_dim()));
+            }
+            RumbleSetup::Idle | RumbleSetup::Installed => {}
+        }
+        if ui.button(RichText::new(tr!("rumble.install")).size(13.0)).clicked() {
+            crate::rumble::install_driver_now();
         }
     }
 
@@ -621,11 +650,7 @@ impl PepoMoteApp {
         for l in pads {
             ui.label(RichText::new(l).size(11.0).color(theme::text_dim()));
         }
-        if *st == crate::rumble::Status::NeedsDriver
-            && ui.button(RichText::new(tr!("rumble.download")).size(13.0)).clicked()
-        {
-            let _ = webbrowser::open(crate::rumble::VIGEM_URL);
-        }
+        self.ui_driver_setup(ui, snap);
         ui.label(
             RichText::new(tr!("win.gamepad_help"))
                 .size(11.0)

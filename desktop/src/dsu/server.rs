@@ -158,9 +158,14 @@ pub fn run(
         if last_sweep.elapsed() > Duration::from_secs(1) {
             last_sweep = Instant::now();
             let now = Instant::now();
-            let mut c = clients.lock_tolerant();
-            c.retain(|_, cl| cl.alive(CLIENT_TTL, now));
-            shared.lock_tolerant().dsu_clients = c.len();
+            // Un candado cada vez: con los dos cogidos, un hilo esperando el
+            // estado bloqueaba también el PadData de la telemetría
+            let vivos = {
+                let mut c = clients.lock_tolerant();
+                c.retain(|_, cl| cl.alive(CLIENT_TTL, now));
+                c.len()
+            };
+            shared.lock_tolerant().dsu_clients = vivos;
         }
     }
 }

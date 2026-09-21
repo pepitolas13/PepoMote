@@ -1,5 +1,7 @@
 {
   "es": [
+    "Windows: el mando universal y la vibración funcionan sin descargar ni instalar nada aparte: PepoMote lleva dentro el driver del mando virtual y lo instala él mismo la primera vez (una única ventana de permiso de Windows).",
+    "Dolphin: el Mando de Wii ya no depende de un mando virtual que no existe; la vibración solo se configura cuando el mando virtual está creado de verdad, y el receptor no se para al crearlo.",
     "Mando universal: el móvil hace de mando de Xbox en cualquier juego del PC, sin configurar nada.",
     "El móvil vibra cuando el juego lo pide, en Dolphin, Cemu, RetroArch y el mando universal (Android y iPhone).",
     "Elige la fuerza de la vibración en Ajustes: alta, normal, baja o apagada.",
@@ -10,6 +12,8 @@
     "Vibración: el móvil ya no puede quedarse vibrando cuando el juego para (ninguna orden al motor es infinita, y Apagada, irse a otra app o desconectar paran en el acto); los pulsos rápidos de los juegos de Wii se funden en una vibración continua, y mientras vibra el juego ya no se tapan las vibraciones de notificaciones ni alarmas (Android)."
   ],
   "en": [
+    "Windows: the universal controller and rumble work without downloading or installing anything else: PepoMote ships the virtual controller driver and installs it itself the first time (a single Windows permission prompt).",
+    "Dolphin: the Wii Remote no longer depends on a virtual controller that does not exist; rumble is only set up once the virtual controller is really there, and the receiver no longer stalls while creating it.",
     "Universal controller: your phone becomes an Xbox pad for any PC game, with nothing to set up.",
     "Your phone rumbles when the game asks for it, in Dolphin, Cemu, RetroArch and the universal controller (Android and iPhone).",
     "Pick how strong the rumble is in Settings: high, normal, low or off.",
