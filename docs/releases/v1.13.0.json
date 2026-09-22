@@ -1,0 +1,22 @@
+{
+  "es": [
+    "Windows: el mando universal y la vibración funcionan sin descargar nada aparte. PepoMote lleva dentro el driver del mando virtual y lo instala él mismo la primera vez, con una única ventana de permiso; si dices que no o el instalador falla, no vuelve a preguntar solo.",
+    "Windows: la ventana ya no puede quedarse en negro si el driver del mando virtual no contesta al arrancar. Se le pregunta en segundo plano, receptor.log lo cuenta, y el puntero y los emuladores siguen funcionando mientras tanto.",
+    "Puntero: los ejes ya no se tuercen jugando mucho rato sin parar (mover el móvil arriba y abajo salía en diagonal). Vale también para el puntero IR de Dolphin y para el Mando de Wii de Cemu, y recentrar los endereza al instante.",
+    "Vibración y giroscopio: mientras el juego hace vibrar el móvil, ni el puntero ni Dolphin (MotionPlus) aprenden como sesgo lo que el motor mete en el sensor; al parar la vibración, el cursor y el Mando de Wii emulado ya no se van solos.",
+    "Mando universal: ahora eliges si mover el móvil apunta con el stick derecho. Se pregunta la primera vez, hay un interruptor en Ajustes y de serie va apagado. Y el móvil ya no puede quedarse vibrando cuando el juego para (Android).",
+    "Teclado: en modo puntero y en el mando universal, «Enviar» manda el texto tal cual y «Enviar + ⏎» añade el Intro (buscar, chatear); en Cemu, Switch y RetroArch sigue «Aceptar». El iPhone gana teclado en el mando universal.",
+    "Mando de Wii en vertical: la fila Multimedia sale solo en modo puntero, o en todos con el ajuste nuevo; en móviles pequeños los botones encogen a la vez para que la B no se salga (Android y iPhone); y en Android, con el idioma elegido a mano, el mando ya gira a apaisado.",
+    "Dolphin: el Mando de Wii ya no depende de un mando virtual que no existe; la vibración solo se configura cuando el mando virtual está creado de verdad, y el receptor no se para al crearlo."
+  ],
+  "en": [
+    "Windows: the universal controller and rumble work without downloading anything else. PepoMote ships the virtual controller driver and installs it itself the first time, with a single permission prompt; if you decline or the installer fails, it will not ask again by itself.",
+    "Windows: the window can no longer stay black when the virtual controller driver does not answer at startup. It is asked in the background, receptor.log says so, and the pointer and the emulators keep working meanwhile.",
+    "Pointer: the axes no longer twist after playing for a long while without stopping (moving the phone up and down came out diagonal). Also for Dolphin's IR pointer and Cemu's Wii Remote, and recentering straightens them at once.",
+    "Rumble and gyroscope: while the game makes the phone rumble, neither the pointer nor Dolphin (MotionPlus) learn as bias what the motor puts into the sensor; when the rumble stops, the cursor and the emulated Wii Remote no longer walk away by themselves.",
+    "Universal controller: you now choose whether moving the phone aims with the right stick. It asks the first time, there is a switch in Settings and it is off by default. And the phone can no longer keep vibrating after the game stops (Android).",
+    "Keyboard: in pointer mode and in the universal controller, \"Send\" sends the text as is and \"Send + ⏎\" adds Enter (search, chat); in Cemu, Switch and RetroArch it is still \"Accept\". The iPhone gains a keyboard in the universal controller.",
+    "Wii Remote in portrait: the Media row shows only in pointer mode, or everywhere with the new setting; on small phones all buttons shrink together so B never falls off; and on Android, with the language picked by hand, the controller now rotates to landscape.",
+    "Dolphin: the Wii Remote no longer depends on a virtual controller that does not exist; rumble is only set up once the virtual controller is really there, and the receiver no longer stalls while creating it."
+  ]
+}

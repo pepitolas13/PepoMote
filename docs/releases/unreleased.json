@@ -1,30 +1,8 @@
 {
   "es": [
-    "Windows: la ventana ya no puede quedarse en negro si el driver del mando virtual (ViGEmBus) no contesta al arrancar: al driver se le pregunta en segundo plano, la ventana y receptor.log dicen que no contesta, y el puntero y los emuladores siguen funcionando mientras tanto.",
-    "Windows: el mando universal y la vibración funcionan sin descargar ni instalar nada aparte: PepoMote lleva dentro el driver del mando virtual y lo instala él mismo la primera vez (una única ventana de permiso de Windows).",
-    "Dolphin: el Mando de Wii ya no depende de un mando virtual que no existe; la vibración solo se configura cuando el mando virtual está creado de verdad, y el receptor no se para al crearlo.",
-    "Mando universal: el móvil hace de mando de Xbox en cualquier juego del PC, sin configurar nada.",
-    "El móvil vibra cuando el juego lo pide, en Dolphin, Cemu, RetroArch y el mando universal (Android y iPhone).",
-    "Elige la fuerza de la vibración en Ajustes: alta, normal, baja o apagada.",
-    "Cemu: PepoMote ya no sustituye los mandos que tengas configurados para otros jugadores.",
-    "Cemu: un móvil que se queda unos segundos sin enviar recupera su mando solo.",
-    "Mando de Wii en vertical: en móviles pequeños los botones encogen a la vez para que la B no se salga de la pantalla; los móviles normales y las tablets se ven igual que antes (Android y iPhone).",
-    "Android: con el idioma elegido a mano (botón ES/EN), el mando ya pasa a apaisado al girar el móvil, con el giro automático o con el botón «Girar la pantalla»; antes la pantalla giraba pero la app seguía en vertical (y el tema oscuro del sistema tampoco cambiaba en caliente). Y si aceptaste «Girar la pantalla» con el bloqueo de giro puesto, al activar después el giro automático vuelve a mandar el sistema.",
-    "Vibración: el móvil ya no puede quedarse vibrando cuando el juego para (ninguna orden al motor es infinita, y Apagada, irse a otra app o desconectar paran en el acto); los pulsos rápidos de los juegos de Wii se funden en una vibración continua, y mientras vibra el juego ya no se tapan las vibraciones de notificaciones ni alarmas (Android).",
-    "La fila Multimedia del mando solo sale en modo puntero, el único en el que el PC atiende esas teclas; en Ajustes, «Multimedia en todos los modos» la enseña también en Dolphin, Wii U y RetroArch."
+    "Novedades desde la 1.13.0: por escribir."
   ],
   "en": [
-    "Windows: the window can no longer stay black when the virtual controller driver (ViGEmBus) does not answer at startup: the driver is asked in the background, the window and receptor.log say it is not answering, and the pointer and the emulators keep working meanwhile.",
-    "Windows: the universal controller and rumble work without downloading or installing anything else: PepoMote ships the virtual controller driver and installs it itself the first time (a single Windows permission prompt).",
-    "Dolphin: the Wii Remote no longer depends on a virtual controller that does not exist; rumble is only set up once the virtual controller is really there, and the receiver no longer stalls while creating it.",
-    "Universal controller: your phone becomes an Xbox pad for any PC game, with nothing to set up.",
-    "Your phone rumbles when the game asks for it, in Dolphin, Cemu, RetroArch and the universal controller (Android and iPhone).",
-    "Pick how strong the rumble is in Settings: high, normal, low or off.",
-    "Cemu: PepoMote no longer replaces the controllers you had set up for other players.",
-    "Cemu: a phone that stops sending for a few seconds gets its controller back by itself.",
-    "Wii Remote in portrait: on small phones all buttons shrink together so B never falls off the screen; regular phones and tablets look exactly as before (Android and iPhone).",
-    "Android: with the language picked by hand (ES/EN button), the controller now switches to landscape when you rotate the phone, with auto-rotate or the «Rotate the screen» button; before, the screen rotated but the app stayed in portrait (and the system dark theme did not switch live either). And if you accepted «Rotate the screen» with rotation locked, turning auto-rotate on afterwards hands control back to the system.",
-    "Rumble: the phone can no longer keep vibrating after the game stops (no order to the motor is endless, and Off, switching apps or disconnecting stop it at once); the fast pulses of Wii games merge into one steady rumble, and game rumble no longer blocks notification and alarm vibrations (Android).",
-    "The controller's Media row only shows in pointer mode, the only one where the PC obeys those keys; in Settings, \"Media in every mode\" shows it in Dolphin, Wii U and RetroArch too."
+    "Changes since 1.13.0: to be written."
   ]
 }
