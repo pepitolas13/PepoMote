@@ -111,22 +111,29 @@ pub fn run_from_args() -> bool {
     if !std::env::args().any(|a| a == "--install-driver") {
         return false;
     }
-    let code = if super::platform::static_status() == Status::Ready {
+    // Con tope: un driver que no contesta no puede colgar la CI ni a quien
+    // lo prueba a mano
+    let code = if super::bounded_status(super::ONE_SHOT_LIMIT) == Status::Ready {
         println!("El mando virtual ya está instalado (ViGEmBus).");
         0
     } else {
         println!("Instalando el mando virtual embebido (ViGEmBus {SETUP_VERSION})…");
         let mut result = install();
-        if matches!(result, Ok(Outcome::Installed)) && super::platform::static_status() != Status::Ready {
+        if matches!(result, Ok(Outcome::Installed)) && super::bounded_status(super::ONE_SHOT_LIMIT) != Status::Ready {
             println!("El driver no responde tras el primer pase (versión anterior): segundo pase…");
             result = install();
         }
         match result {
             Ok(Outcome::Installed) => {
-                let ok = super::platform::static_status() == Status::Ready;
+                let st = super::bounded_status(super::ONE_SHOT_LIMIT);
+                let ok = st == Status::Ready;
                 println!(
                     "Instalador terminado. Driver {}",
-                    if ok { "presente." } else { "todavía no visible (¿hace falta reiniciar?)." }
+                    match st {
+                        Status::Ready => "presente.",
+                        Status::Unresponsive => "instalado pero no contesta (¿hace falta reiniciar?).",
+                        _ => "todavía no visible (¿hace falta reiniciar?).",
+                    }
                 );
                 if ok { 0 } else { 4 }
             }
@@ -178,5 +185,7 @@ mod tests {
         assert!(!should_install(Status::Ready, None, false), "ya está");
         assert!(!should_install(Status::Failed, None, false), "el driver está, es otra cosa");
         assert!(!should_install(Status::NeedsDriver, None, true), "receptor de prueba: nunca un UAC");
+        assert!(!should_install(Status::Checking, None, false), "aún sin resultado: se decide cuando llegue");
+        assert!(!should_install(Status::Unresponsive, None, false), "el driver no contesta: no se instala solo, queda el botón");
     }
 }

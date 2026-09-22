@@ -14,11 +14,20 @@
 //! pierde el datagrama de parada); el móvil se para solo si no le llega
 //! nada en `TTL_MS`. Un mando de Wii solo tiene un motor: el móvil vibra con
 //! el mayor de los dos que manda un mando XInput.
+//!
+//! Con el driver solo habla el hilo del hub, y ni él espera: cada llamada
+//! (sondear el bus, enchufar un mando, desenchufarlo) corre en un hilo de un
+//! solo uso ([`Pending`]) que el hub mira en cada tic. La ventana, el `hello`
+//! del móvil, la autoconfiguración y `--diag` leen una foto ([`View`]) que el
+//! hub publica: no cogen el candado de los mandos. En la 1.12 el sondeo del
+//! driver iba en el hilo de la ventana, en su primer fotograma, y un
+//! ViGEmBus que no contestaba dejaba la ventana en negro y al móvil sin `ok`.
 
 use crate::net::MAX_PLAYERS;
 use crate::state::{LockTolerant, Mode, Role, SharedState};
 use crate::tr;
 use std::net::UdpSocket;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -52,6 +61,19 @@ pub const DSU_TIMEOUT: Duration = Duration::from_secs(5);
 const PROBE_EVERY: Duration = Duration::from_secs(5);
 /// Tope del reintento tras fallos seguidos al crear un mando virtual.
 const RETRY_MAX: Duration = Duration::from_secs(60);
+/// Cadencia del tic del hub (refresco de la vibración y sondeo de las
+/// llamadas al driver en marcha).
+const TICK: Duration = Duration::from_millis(20);
+/// Un sondeo del driver que tarde más de esto se apunta en el log y la
+/// ventana lo enseña como «no contesta». Lo normal (SetupAPI + un IOCTL) son
+/// menos de 50 ms.
+const PROBE_SLOW: Duration = Duration::from_secs(3);
+/// Lo mismo para crear un mando (`plugin` + `wait_ready`; lo normal, menos
+/// de 200 ms).
+const CREATE_SLOW: Duration = Duration::from_secs(5);
+/// Tope de espera donde no hay bucle del hub que sondee: `--diag`,
+/// `--install-driver` y la comprobación tras instalar.
+const ONE_SHOT_LIMIT: Duration = Duration::from_secs(5);
 
 /// Cuánto esperar antes de volver a intentar crear un mando tras `failures`
 /// fallos seguidos: 5, 10, 20, 40 s y de ahí un minuto. Un driver que falla
@@ -60,6 +82,20 @@ const RETRY_MAX: Duration = Duration::from_secs(60);
 fn retry_after(failures: u32) -> Duration {
     let veces = 1u32 << failures.min(4);
     (PROBE_EVERY * veces).min(RETRY_MAX)
+}
+
+/// Solo pruebas: con `PEPOMOTE_FAKE_DRIVER_HANG` puesto, la llamada al driver
+/// se cuelga para siempre, como un ViGEmBus con un IRP atascado. Con ello se
+/// reprodujo la ventana negra de la 1.12 (el sondeo del driver bloqueaba el
+/// primer fotograma) y se comprueba que ya no puede pasar
+/// (`desktop/e2e/smoke_gui.sh … hang`).
+pub(crate) fn fake_hang_if_requested(what: &str) {
+    if std::env::var_os("PEPOMOTE_FAKE_DRIVER_HANG").is_some() {
+        crate::log_line!("PEPOMOTE_FAKE_DRIVER_HANG: {what} se cuelga a propósito");
+        loop {
+            std::thread::sleep(Duration::from_secs(3600));
+        }
+    }
 }
 
 /// Nombre del mando virtual del jugador del slot (Dolphin en Linux lo ve
@@ -98,12 +134,21 @@ pub enum Status {
     Unsupported,
     /// El mando virtual falló por otra cosa.
     Failed,
+    /// El primer sondeo del driver aún no ha contestado (los primeros
+    /// milisegundos tras arrancar).
+    Checking,
+    /// El driver lleva más de [`PROBE_SLOW`] sin contestar al sondeo: un
+    /// ViGEmBus a medio instalar o con una petición atascada. Es lo que en la
+    /// 1.12 dejaba la ventana en negro; ahora solo se cuenta.
+    Unresponsive,
 }
 
 impl Status {
     /// Valor de `ok.rumble` (PROTOCOL.md §3): el móvil enseña una línea por
     /// cada uno; los fallos de Linux van como «denied» y los de Windows como
-    /// «driver» (la ventana del receptor da el detalle).
+    /// «driver» (la ventana del receptor da el detalle). «Comprobando» y «no
+    /// contesta» van como un fallo: el protocolo no tiene valor para ellos y
+    /// no merecen una versión nueva de las apps.
     pub fn as_str(self) -> &'static str {
         match self {
             Status::Ready => "ready",
@@ -111,9 +156,11 @@ impl Status {
             Status::UinputDenied | Status::UinputMissing => "denied",
             Status::Unsupported => "unsupported",
             #[cfg(windows)]
-            Status::Failed => "driver",
-            #[cfg(not(windows))]
-            Status::Failed => "denied",
+            Status::Failed | Status::Checking | Status::Unresponsive => "driver",
+            #[cfg(target_os = "linux")]
+            Status::Failed | Status::Checking | Status::Unresponsive => "denied",
+            #[cfg(not(any(windows, target_os = "linux")))]
+            Status::Failed | Status::Checking | Status::Unresponsive => "unsupported",
         }
     }
 }
@@ -231,9 +278,125 @@ impl Track {
     }
 }
 
-/// Mandos virtuales: qué jugadores lo quieren y cuáles existen.
+/// Una llamada al driver en marcha en su propio hilo. El hub la mira con
+/// [`Pending::poll`] en cada tic, sin esperar nunca: si el driver no
+/// contesta (un ViGEmBus a medio instalar, una petición atascada en el
+/// núcleo), lo único que se queda colgado es ese hilo; ni la ventana ni los
+/// móviles notan nada más que el aviso. [`Pending::wait`] es para donde no
+/// hay bucle que sondee.
+struct Pending<T> {
+    /// Qué es («el sondeo del driver», «la creación del mando del jugador 2»).
+    what: String,
+    since: Instant,
+    slow_after: Duration,
+    /// Ya se apuntó en el log que no contesta.
+    warned: bool,
+    rx: Receiver<T>,
+}
+
+impl<T: Send + 'static> Pending<T> {
+    fn start(thread: &'static str, what: String, slow_after: Duration, f: impl FnOnce() -> T + Send + 'static) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let _ = crate::threads::spawn_once(thread, move || {
+            let _ = tx.send(f());
+        });
+        Pending { what, since: Instant::now(), slow_after, warned: false, rx }
+    }
+
+    /// Lleva más de `slow_after` sin contestar.
+    fn slow(&self) -> bool {
+        self.since.elapsed() >= self.slow_after
+    }
+
+    /// `None` = sigue; `Some(Err(()))` = el hilo murió sin contestar (un
+    /// pánico, o no se pudo crear); `Some(Ok(v))` = terminó. Al pasar
+    /// `slow_after` sin respuesta se apunta una vez en el log.
+    fn poll(&mut self) -> Option<Result<T, ()>> {
+        match self.rx.try_recv() {
+            Ok(v) => Some(Ok(v)),
+            Err(TryRecvError::Disconnected) => Some(Err(())),
+            Err(TryRecvError::Empty) => {
+                if !self.warned && self.slow() {
+                    self.warned = true;
+                    crate::log_line!(
+                        "Mando virtual: {} no contesta a los {} s; se deja en segundo plano",
+                        self.what,
+                        self.slow_after.as_secs()
+                    );
+                }
+                None
+            }
+        }
+    }
+
+    /// Espera con tope. Solo para `--diag`, `--install-driver` y la
+    /// comprobación tras instalar: sin bucle del hub que sondee. Al agotarlo,
+    /// `None`; el hilo queda huérfano y, si algún día contesta, se tira.
+    fn wait(self, limit: Duration) -> Option<T> {
+        match self.rx.recv_timeout(limit) {
+            Ok(v) => Some(v),
+            Err(RecvTimeoutError::Timeout) => {
+                crate::log_line!(
+                    "Mando virtual: {} no contesta a los {} s; se abandona (el hilo queda en segundo plano)",
+                    self.what,
+                    limit.as_secs()
+                );
+                None
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                crate::log_line!("Mando virtual: el hilo de {} murió sin contestar", self.what);
+                None
+            }
+        }
+    }
+
+    fn in_flight(&self) -> InFlight {
+        InFlight { what: self.what.clone(), since: self.since, slow_after: self.slow_after }
+    }
+}
+
+/// Lo que la ventana y `--diag` saben de la llamada al driver en marcha.
+#[derive(Clone, Debug)]
+struct InFlight {
+    what: String,
+    since: Instant,
+    slow_after: Duration,
+}
+
+impl InFlight {
+    fn slow(&self) -> bool {
+        self.since.elapsed() >= self.slow_after
+    }
+}
+
+/// La llamada al driver en marcha: una como mucho.
+enum Job {
+    Probe(Pending<Result<platform::Backend, Status>>),
+    Create { slot: usize, pending: Pending<Result<platform::Pad, String>> },
+}
+
+impl Job {
+    fn in_flight(&self) -> InFlight {
+        match self {
+            Job::Probe(p) => p.in_flight(),
+            Job::Create { pending, .. } => pending.in_flight(),
+        }
+    }
+}
+
+/// Lo que una llamada terminada trae de vuelta.
+enum Done {
+    Probe(Result<Result<platform::Backend, Status>, ()>),
+    Create(usize, Result<Result<platform::Pad, String>, ()>),
+}
+
+/// Mandos virtuales: qué jugadores lo quieren y cuáles existen. Lo tocan el
+/// hub y `push_pad` (telemetría); la ventana y el canal de control leen
+/// [`View`], nunca esto: `push_pad` escribe en el mando con un IOCTL, y con
+/// este candado cogido nadie más puede esperar detrás.
 struct Pads {
-    backend: Option<platform::Backend>,
+    /// En `Arc`: la creación de un mando se lleva un clon a su hilo.
+    backend: Option<Arc<platform::Backend>>,
     backend_err: Option<Status>,
     probed_at: Option<Instant>,
     /// Fallos seguidos al crear un mando: espacia los reintentos
@@ -241,12 +404,47 @@ struct Pads {
     create_failures: u32,
     wanted: [bool; MAX_PLAYERS],
     pads: [Option<platform::Pad>; MAX_PLAYERS],
+    /// La llamada al driver en marcha, si la hay.
+    job: Option<Job>,
+    /// Tras un `sync` con cambios se crea lo que falte sin esperar la
+    /// cadencia; se apaga al no faltar nada o al fallar una creación.
+    creating: bool,
+    last_create_done: Option<Instant>,
+    /// Windows: con el primer resultado del sondeo se decide, una vez, si
+    /// instalar el driver embebido.
+    startup_decided: bool,
+}
+
+/// Lo que pide el hilo de control con [`sync`]; el hub lo recoge en su tic.
+#[derive(Default)]
+struct Wants {
+    wanted: [bool; MAX_PLAYERS],
+    dirty: bool,
+    /// Dejar los mandos en reposo (al salir del mando universal).
+    release: bool,
+}
+
+#[derive(Clone, Debug)]
+struct PadView {
+    index: Option<u32>,
+    describe: String,
+}
+
+/// Foto que el hub publica en cada tic para la ventana, el `hello` del
+/// móvil, la autoconfiguración y `--diag`: ninguno de ellos coge [`Pads`].
+#[derive(Clone, Debug)]
+struct View {
+    status: Status,
+    in_flight: Option<InFlight>,
+    pads: [Option<PadView>; MAX_PLAYERS],
 }
 
 pub struct Hub {
     track: Mutex<Track>,
     socket: Mutex<Option<UdpSocket>>,
     pads: Mutex<Pads>,
+    wants: Mutex<Wants>,
+    view: Mutex<View>,
     shared: SharedState,
 }
 
@@ -256,7 +454,7 @@ fn hub() -> Option<Arc<Hub>> {
     HUB.get().cloned()
 }
 
-/// Arranca el hilo de reenvío (y de reintento del driver). Una vez.
+/// Arranca el hilo de reenvío (y del driver). Una vez.
 pub fn start(shared: SharedState) {
     let hub = Arc::new(Hub {
         track: Mutex::new(Track::new()),
@@ -268,7 +466,13 @@ pub fn start(shared: SharedState) {
             create_failures: 0,
             wanted: [false; MAX_PLAYERS],
             pads: [None, None, None, None],
+            job: None,
+            creating: false,
+            last_create_done: None,
+            startup_decided: false,
         }),
+        wants: Mutex::new(Wants::default()),
+        view: Mutex::new(View { status: Status::Checking, in_flight: None, pads: [None, None, None, None] }),
         shared,
     });
     if HUB.set(hub.clone()).is_err() {
@@ -277,43 +481,31 @@ pub fn start(shared: SharedState) {
     let _ = crate::threads::spawn_guarded(
         "pmp-rumble",
         crate::threads::OnPanic::Restart { after: Duration::from_secs(5), max: 10 },
-        move || {
-            let mut last_probe = Instant::now();
-            loop {
-                std::thread::sleep(Duration::from_millis(20));
-                let now = Instant::now();
-                // El sondeo del driver (SetupAPI en Windows) vive AQUÍ: la
-                // ventana y el canal de control solo leen el resultado
-                hub.probe_if_due();
-                let outs = hub.track.lock_tolerant().due(now);
-                for o in outs {
-                    hub.send(o);
-                }
-                // Los mandos recién creados, a la espera de que el sistema
-                // les asigne su hueco de XInput
-                let pendientes = {
-                    let p = hub.pads.lock_tolerant();
-                    p.pads.iter().flatten().any(|pad| pad.pending_index())
-                };
-                if pendientes {
-                    hub.settle_indices();
-                }
-                // Un mando que se quiere y no existe (driver recién instalado,
-                // permiso recién dado): se vuelve a intentar sin reiniciar. Si
-                // nace ya con identidad, los perfiles de los emuladores se
-                // escribieron sin él: se reescriben con su motor.
-                if now.duration_since(last_probe) >= PROBE_EVERY {
-                    last_probe = now;
-                    let missing = {
-                        let p = hub.pads.lock_tolerant();
-                        p.wanted.iter().zip(p.pads.iter()).any(|(w, p)| *w && p.is_none())
-                    };
-                    if missing && hub.reconcile() {
-                        crate::dolphin::maybe_auto_configure(&hub.shared);
-                        crate::cemu::maybe_auto_configure(&hub.shared);
-                    }
-                }
+        move || loop {
+            // Nada de esto espera al driver: cada llamada va en su hilo
+            // (`Pending`) y aquí solo se mira si ya contestó. El tic también
+            // refresca la vibración cada 100 ms, y el móvil se para a los
+            // 400 ms sin refresco: el hub no puede quedarse parado ni 3 s.
+            let now = Instant::now();
+            hub.poll_job();
+            let (dirty, release) = hub.take_wants();
+            hub.probe_if_due();
+            let outs = hub.track.lock_tolerant().due(now);
+            for o in outs {
+                hub.send(o);
             }
+            // Los mandos recién creados, a la espera de que el sistema
+            // les asigne su hueco de XInput
+            let pendientes = {
+                let p = hub.pads.lock_tolerant();
+                p.pads.iter().flatten().any(|pad| pad.pending_index())
+            };
+            if pendientes {
+                hub.settle_indices();
+            }
+            hub.reconcile(dirty, release);
+            hub.publish();
+            std::thread::sleep(TICK);
         },
     );
 }
@@ -339,6 +531,30 @@ pub fn set(slot: u8, source: Source, strong: u8, weak: u8) {
 /// Extensión DSU: un motor, intensidad 0..255.
 pub fn set_from_dsu(slot: u8, intensity: u8) {
     set(slot, Source::Dsu, intensity, intensity);
+}
+
+/// Los mandos retirados se destruyen en un hilo aparte: en Windows el `Drop`
+/// desenchufa con un IOCTL que espera sin límite, y eso no puede correr ni
+/// con el candado de los mandos cogido ni en el hilo del hub.
+fn reap_pads(pads: Vec<platform::Pad>) {
+    if pads.is_empty() {
+        return;
+    }
+    let _ = crate::threads::spawn_once("pmp-rumble-drop", move || drop(pads));
+}
+
+/// El estado que se publica: con backend, listo; si el sondeo lleva más de
+/// [`PROBE_SLOW`] sin contestar, «no contesta» (pisa el resultado anterior:
+/// un re-sondeo colgado tras instalar dice más que el «falta el driver» de
+/// antes); si no, el último resultado, o «comprobando» antes del primero.
+fn view_status(backend: bool, last: Option<Status>, probe_slow: bool) -> Status {
+    if backend {
+        Status::Ready
+    } else if probe_slow {
+        Status::Unresponsive
+    } else {
+        last.unwrap_or(Status::Checking)
+    }
 }
 
 impl Hub {
@@ -367,12 +583,30 @@ impl Hub {
         }
     }
 
-    /// Sondea el driver (o /dev/uinput) si toca: al arrancar, y cada
-    /// [`PROBE_EVERY`] mientras no haya backend (más si crear falla seguido,
-    /// [`retry_after`]). Solo lo llama el hilo del hub; los demás leen.
+    /// Recoge lo que pidió [`sync`]: `(hubo cambios, dejar en reposo)`.
+    fn take_wants(&self) -> (bool, bool) {
+        let (wanted, dirty, release) = {
+            let mut w = self.wants.lock_tolerant();
+            let out = (w.wanted, w.dirty, w.release);
+            w.dirty = false;
+            w.release = false;
+            out
+        };
+        if dirty {
+            let mut p = self.pads.lock_tolerant();
+            p.wanted = wanted;
+            p.creating = true;
+        }
+        (dirty, release)
+    }
+
+    /// Pone en marcha el sondeo del driver (o de /dev/uinput) si toca: al
+    /// arrancar, y cada [`PROBE_EVERY`] mientras no haya backend (más si
+    /// crear falla seguido, [`retry_after`]). El sondeo corre en su hilo;
+    /// [`Hub::poll_job`] recoge el resultado.
     fn probe_if_due(&self) {
         let mut p = self.pads.lock_tolerant();
-        if p.backend.is_some() {
+        if p.backend.is_some() || p.job.is_some() {
             return;
         }
         let due = p.probed_at.is_none_or(|t| t.elapsed() >= retry_after(p.create_failures));
@@ -380,56 +614,96 @@ impl Hub {
             return;
         }
         p.probed_at = Some(Instant::now());
-        match platform::Backend::probe() {
-            Ok(b) => {
-                p.backend = Some(b);
-                p.backend_err = None;
-            }
-            Err(st) => p.backend_err = Some(st),
-        }
+        p.job = Some(Job::Probe(Pending::start(
+            "pmp-rumble-probe",
+            "el sondeo del driver".to_owned(),
+            PROBE_SLOW,
+            platform::Backend::probe,
+        )));
     }
 
-    /// Crea o quita mandos virtuales hasta cuadrar con `wanted`. `true` si
-    /// ha nacido un mando que ya sabe quién es (en Windows, su hueco de
-    /// XInput; en Linux, siempre): los perfiles de los emuladores que se
-    /// escribieron sin él tienen que reescribirse con su motor. Quien llama
-    /// decide si eso toca ya (el hub) o lo hace su propio paso siguiente
-    /// (`sync`, desde la autoconfiguración).
-    fn reconcile(&self) -> bool {
-        let mut nacido_con_identidad = false;
+    /// Mira si la llamada al driver en marcha ya contestó y aplica el
+    /// resultado. Sin esperar: si no ha contestado, vuelve.
+    fn poll_job(&self) {
+        let mut reconfigure = false;
+        let mut startup: Option<Status> = None;
+        let mut retired: Vec<platform::Pad> = Vec::new();
         {
             let mut p = self.pads.lock_tolerant();
-            let any_wanted = p.wanted.iter().any(|w| *w);
-            if any_wanted && p.backend.is_none() {
-                let due = p.probed_at.is_none_or(|t| t.elapsed() >= retry_after(p.create_failures));
-                if due {
-                    p.probed_at = Some(Instant::now());
-                    match platform::Backend::probe() {
-                        Ok(b) => {
-                            p.backend = Some(b);
+            let mut first_warning = false;
+            let done = match p.job.as_mut() {
+                None => return,
+                Some(Job::Probe(pending)) => {
+                    let was = pending.warned;
+                    let r = pending.poll();
+                    first_warning = pending.warned && !was;
+                    r.map(Done::Probe)
+                }
+                Some(Job::Create { slot, pending }) => {
+                    let slot = *slot;
+                    pending.poll().map(|r| Done::Create(slot, r))
+                }
+            };
+            let Some(done) = done else {
+                if first_warning && !p.startup_decided {
+                    crate::log_line!(
+                        "Mando virtual: el sondeo del driver no contesta; no se instala solo (queda el botón de la ventana)"
+                    );
+                }
+                return;
+            };
+            p.job = None;
+            match done {
+                Done::Probe(result) => {
+                    let st = match result {
+                        Ok(Ok(b)) => {
+                            p.backend = Some(Arc::new(b));
                             p.backend_err = None;
+                            Status::Ready
                         }
-                        Err(st) => p.backend_err = Some(st),
+                        Ok(Err(st)) => {
+                            p.backend_err = Some(st);
+                            st
+                        }
+                        Err(()) => {
+                            crate::log_line!("Mando virtual: el hilo del sondeo del driver murió sin contestar");
+                            p.backend_err = Some(Status::Failed);
+                            Status::Failed
+                        }
+                    };
+                    // `None` aquí = el instalador pidió volver a sondear
+                    // mientras este iba en vuelo: se respeta y el tic
+                    // siguiente sondea otra vez
+                    if p.probed_at.is_some() {
+                        p.probed_at = Some(Instant::now());
+                    }
+                    if !p.startup_decided {
+                        p.startup_decided = true;
+                        startup = Some(st);
                     }
                 }
-            }
-            for slot in 0..MAX_PLAYERS {
-                if p.wanted[slot] {
-                    if p.pads[slot].is_some() {
-                        continue;
-                    }
-                    let Some(backend) = p.backend.as_ref() else { continue };
-                    match backend.create(slot as u8) {
+                Done::Create(slot, result) => {
+                    p.last_create_done = Some(Instant::now());
+                    match result.unwrap_or_else(|()| Err("el hilo de creación murió sin contestar".to_owned())) {
                         Ok(pad) => {
-                            crate::log_line!("Vibración: mando virtual del jugador {} creado ({})", slot + 1, pad.describe());
-                            // Con hueco de XInput ya conocido (Linux: siempre)
-                            // el perfil puede llevar su motor; si aún no,
-                            // `settle_indices` reescribe al averiguarlo
-                            if !pad.pending_index() {
-                                nacido_con_identidad = true;
+                            if p.wanted[slot] && p.pads[slot].is_none() {
+                                crate::log_line!("Vibración: mando virtual del jugador {} creado ({})", slot + 1, pad.describe());
+                                // Con hueco de XInput ya conocido (Linux:
+                                // siempre) el perfil puede llevar su motor;
+                                // si aún no, `settle_indices` reescribe al
+                                // averiguarlo
+                                if !pad.pending_index() {
+                                    reconfigure = true;
+                                }
+                                p.pads[slot] = Some(pad);
+                                p.create_failures = 0;
+                            } else {
+                                crate::log_line!(
+                                    "Vibración: mando virtual del jugador {} creado cuando ya no se quería; se retira",
+                                    slot + 1
+                                );
+                                retired.push(pad);
                             }
-                            p.pads[slot] = Some(pad);
-                            p.create_failures = 0;
                         }
                         Err(e) => {
                             p.create_failures = p.create_failures.saturating_add(1);
@@ -442,26 +716,127 @@ impl Hub {
                             // ViGEm caído o /dev/uinput cerrado: se vuelve a sondear
                             p.backend = None;
                             p.probed_at = Some(Instant::now());
+                            p.creating = false;
                         }
                     }
-                } else if p.pads[slot].take().is_some() {
-                    crate::log_line!("Vibración: mando virtual del jugador {} retirado", slot + 1);
                 }
             }
         }
-        for slot in 0..MAX_PLAYERS {
-            if !self.pads.lock_tolerant().wanted[slot] {
-                set(slot as u8, Source::Pad, 0, 0);
+        reap_pads(retired);
+        if reconfigure {
+            // la autoconfiguración lee la foto: que lleve ya el mando nuevo
+            self.publish();
+            crate::dolphin::maybe_auto_configure(&self.shared);
+            crate::cemu::maybe_auto_configure(&self.shared);
+        }
+        if let Some(st) = startup {
+            self.decide_startup_setup(st);
+        }
+    }
+
+    /// Cuadra los mandos con `wanted`: retira los que ya no se quieren (se
+    /// destruyen en otro hilo), pone en marcha la creación del primero que
+    /// falte (una a la vez, en su hilo; los perfiles de los emuladores se
+    /// reescriben cuando nace con identidad) y, si se pidió, deja los mandos
+    /// en reposo. Nada de esto espera al driver.
+    fn reconcile(&self, dirty: bool, release: bool) {
+        let mut retired: Vec<platform::Pad> = Vec::new();
+        let mut zero: Vec<u8> = Vec::new();
+        {
+            let mut p = self.pads.lock_tolerant();
+            for slot in 0..MAX_PLAYERS {
+                if p.wanted[slot] {
+                    continue;
+                }
+                if let Some(pad) = p.pads[slot].take() {
+                    crate::log_line!("Vibración: mando virtual del jugador {} retirado", slot + 1);
+                    retired.push(pad);
+                }
+            }
+            if dirty || !retired.is_empty() {
+                zero = (0..MAX_PLAYERS).filter(|s| !p.wanted[*s]).map(|s| s as u8).collect();
+            }
+            if p.job.is_none() {
+                if let Some(backend) = p.backend.clone() {
+                    match (0..MAX_PLAYERS).find(|s| p.wanted[*s] && p.pads[*s].is_none()) {
+                        None => p.creating = false,
+                        Some(slot) => {
+                            // Tras un `sync`, ya; un mando que se tiró (`push_pad`)
+                            // se recrea a la cadencia de siempre
+                            let due = p.creating || p.last_create_done.is_none_or(|t| t.elapsed() >= PROBE_EVERY);
+                            if due {
+                                let what = format!("la creación del mando del jugador {}", slot + 1);
+                                p.job = Some(Job::Create {
+                                    slot,
+                                    pending: Pending::start("pmp-rumble-create", what, CREATE_SLOW, move || {
+                                        backend.create(slot as u8)
+                                    }),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            if release {
+                // Salir del mando universal no destruye el mando (los modos
+                // de emulador también lo quieren, para la vibración), pero
+                // conserva lo último que se le escribió: un botón que se
+                // quedó pulsado lo vería el emulador para siempre
+                for pad in p.pads.iter_mut().flatten() {
+                    let _ = pad.apply(&crate::pad::PadState::default());
+                }
             }
         }
-        nacido_con_identidad
+        reap_pads(retired);
+        for slot in zero {
+            set(slot, Source::Pad, 0, 0);
+        }
+    }
+
+    /// Publica la foto que leen la ventana, el `hello`, la
+    /// autoconfiguración y `--diag`.
+    fn publish(&self) {
+        let view = {
+            let p = self.pads.lock_tolerant();
+            let in_flight = p.job.as_ref().map(Job::in_flight);
+            let probe_slow = matches!(&p.job, Some(Job::Probe(pending)) if pending.slow());
+            let status = view_status(p.backend.is_some(), p.backend_err, probe_slow);
+            let pads = std::array::from_fn(|i| {
+                p.pads[i].as_ref().map(|pad| PadView { index: pad.xinput_index(), describe: pad.describe() })
+            });
+            View { status, in_flight, pads }
+        };
+        *self.view.lock_tolerant() = view;
+    }
+
+    /// Windows: con el primer resultado del sondeo, si falta el driver se
+    /// instala el embebido (una vez por versión del instalador; instalado o
+    /// cancelado, no se vuelve a preguntar solo). `PEPOMOTE_NO_DRIVER_SETUP`
+    /// lo apaga (receptores de prueba). Si el sondeo no contesta no se
+    /// decide nada: queda el botón de la ventana. Fuera del candado de los
+    /// mandos: `run_setup` coge el estado compartido.
+    fn decide_startup_setup(&self, st: Status) {
+        #[cfg(windows)]
+        {
+            let tried = self.shared.lock_tolerant().config.vigem_setup_version.clone();
+            let skip = std::env::var_os("PEPOMOTE_NO_DRIVER_SETUP").is_some();
+            if vigem_setup::should_install(st, tried.as_deref(), skip) {
+                crate::log_line!(
+                    "Mando virtual: falta el driver; se instala el embebido (ViGEmBus {})",
+                    vigem_setup::SETUP_VERSION
+                );
+                run_setup(self.shared.clone());
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = st;
     }
 }
 
 /// ¿Existe ya el mando virtual del jugador del slot? Sin él no se escribe
 /// ningún motor en los perfiles de los emuladores.
 pub fn pad_exists(slot: u8) -> bool {
-    hub().is_some_and(|h| h.pads.lock_tolerant().pads.get(slot as usize).is_some_and(|p| p.is_some()))
+    hub().is_some_and(|h| h.view.lock_tolerant().pads.get(slot as usize).is_some_and(|p| p.is_some()))
 }
 
 /// Qué slots quieren mando virtual: los modos con emulador que vibra
@@ -486,13 +861,13 @@ impl Hub {
     /// podía ser el mando de verdad de otro jugador).
     fn settle_indices(&self) {
         // La foto de XInput cuesta milisegundos por hueco vacío: fuera del
-        // candado, que la ventana y el canal de control también lo cogen
+        // candado, que la telemetría también lo coge
         let after = platform::xinput_connected();
         let mut reconfigure = false;
         {
             let mut p = self.pads.lock_tolerant();
             // Los huecos que ya tienen dueño, para no dárselos a dos mandos:
-            // los de una misma pasada de `reconcile` comparten foto previa.
+            // dos mandos creados seguidos pueden compartir foto previa.
             let mut taken = [false; 4];
             for pad in p.pads.iter().flatten() {
                 if let Some(i) = pad.xinput_index() {
@@ -515,43 +890,34 @@ impl Hub {
             }
         }
         if reconfigure {
+            // la autoconfiguración lee la foto: que lleve ya el hueco recién sabido
+            self.publish();
             crate::dolphin::maybe_auto_configure(&self.shared);
             crate::cemu::maybe_auto_configure(&self.shared);
-        }
-    }
-
-    /// Deja todos los mandos virtuales en reposo, sin destruirlos.
-    fn release_pads(&self) {
-        let mut p = self.pads.lock_tolerant();
-        for hueco in p.pads.iter_mut() {
-            if let Some(pad) = hueco.as_mut() {
-                let _ = pad.apply(&crate::pad::PadState::default());
-            }
         }
     }
 }
 
 /// Escribe el estado del móvil en el mando virtual del jugador (modo mando
-/// universal). Si el mando deja de aceptarlo, se tira para que el sondeo de
-/// `reconcile` lo vuelva a crear, que es el camino de recuperación de siempre.
+/// universal). Si el mando deja de aceptarlo, se tira para que el hub lo
+/// vuelva a crear, que es el camino de recuperación de siempre.
 /// `true` = el estado llegó al mando virtual. `false` = no hay mando (todavía
 /// sin driver, o se acaba de tirar): quien llama tiene que OLVIDAR lo enviado,
 /// porque el `Feed` solo manda lo que cambia y el mando nuevo nace en reposo;
 /// si no, un botón que sigue pulsado no volvería a salir nunca.
 pub fn push_pad(slot: u8, s: &crate::pad::PadState) -> bool {
     let Some(h) = hub() else { return false };
-    let fallo = {
+    let (fallo, muerto) = {
         let mut p = h.pads.lock_tolerant();
         let Some(hueco) = p.pads.get_mut(slot as usize) else { return false };
         let Some(pad) = hueco.as_mut() else { return false };
         match pad.apply(s) {
             Ok(()) => return true,
-            Err(e) => {
-                *hueco = None;
-                e
-            }
+            // se destruye fuera del candado y en otro hilo (desenchufar espera al driver)
+            Err(e) => (e, hueco.take()),
         }
     };
+    reap_pads(muerto.into_iter().collect());
     crate::log_line!("Mando universal: el jugador {} no acepta el estado ({fallo}); se recrea", slot + 1);
     // El mando ya no existe: sin esto su última vibración se seguiría
     // reenviando cada 100 ms y el móvil no pararía nunca.
@@ -560,49 +926,59 @@ pub fn push_pad(slot: u8, s: &crate::pad::PadState) -> bool {
 }
 
 /// Cuadra los mandos virtuales con el modo y los jugadores de ahora. Se
-/// llama donde se autoconfiguran los emuladores y al irse un móvil.
+/// llama donde se autoconfiguran los emuladores y al irse un móvil. Solo
+/// deja la petición: el hub la recoge en su siguiente tic (20 ms) y crea o
+/// retira los mandos en sus hilos, así que quien llama nunca espera al
+/// driver. Un mando que nazca después de que la autoconfiguración haya
+/// escrito los perfiles los hace reescribir (`poll_job`, `settle_indices`).
 pub fn sync(shared: &SharedState) {
     let Some(h) = hub() else { return };
     let (wanted, universal) = {
         let s = shared.lock_tolerant();
         (wanted_slots(s.mode, &s.players), s.mode == Mode::Gamepad)
     };
-    h.pads.lock_tolerant().wanted = wanted;
-    // Si nace un mando con identidad no hace falta reconfigurar desde aquí:
-    // quien llama (la autoconfiguración) escribe los perfiles justo después
-    let _ = h.reconcile();
-    // Salir del mando universal no destruye el mando: los modos de emulador
-    // también lo quieren, para la vibración. Pero conserva lo último que se
-    // le escribió, así que un botón que se quedó pulsado al cambiar de modo
-    // lo vería el emulador para siempre.
+    let mut w = h.wants.lock_tolerant();
+    w.wanted = wanted;
+    w.dirty = true;
     if !universal {
-        h.release_pads();
+        w.release = true;
     }
 }
 
 /// Lo que puede este receptor ahora mismo (`ok.rumble`, ventana, --diag).
-/// Solo lee lo que el hub ya sondeó (`probe_if_due`): la ventana lo pide a
-/// cada fotograma y el canal de control en cada `hello`, y ninguno de los
-/// dos tiene que pagar un sondeo del driver. Antes del primer sondeo del
-/// hub (los primeros milisegundos, o sin hub: tests, `--diag`) se sondea
-/// aquí una vez.
+/// Es una lectura de la foto del hub: nunca sondea el driver. Sin hub
+/// (tests) o antes del primer resultado, «comprobando».
 pub fn status() -> Status {
-    let Some(h) = hub() else { return platform::static_status() };
-    let p = h.pads.lock_tolerant();
-    if p.backend.is_some() {
-        return Status::Ready;
-    }
-    match p.backend_err {
-        Some(st) => st,
-        None => platform::static_status(),
-    }
+    hub().map(|h| h.view.lock_tolerant().status).unwrap_or(Status::Checking)
+}
+
+/// El estado del driver sondeándolo AHORA, con tope de espera. Solo para
+/// donde no hay bucle del hub que sondee: `--diag`, `--install-driver` y la
+/// comprobación tras instalar. Si el driver no contesta, `Unresponsive`, y el
+/// hilo queda en segundo plano.
+pub fn bounded_status(limit: Duration) -> Status {
+    Pending::start("pmp-rumble-probe", "el sondeo del driver".to_owned(), limit, platform::probe_status)
+        .wait(limit)
+        .unwrap_or(Status::Unresponsive)
+}
+
+/// Para el vigilante del primer fotograma y `--diag`: si hay una llamada al
+/// driver que lleva más de su límite sin contestar, cuál y desde cuándo.
+pub fn stuck_note() -> Option<String> {
+    let h = hub()?;
+    let f = h.view.lock_tolerant().in_flight.clone()?;
+    f.slow().then(|| {
+        format!(
+            "el driver del mando virtual no contesta: {} en curso desde hace {} s",
+            f.what,
+            f.since.elapsed().as_secs()
+        )
+    })
 }
 
 /// Índice XInput que tiene el mando virtual del slot (Windows), si existe.
 pub fn xinput_index(slot: u8) -> Option<u32> {
-    let h = hub()?;
-    let p = h.pads.lock_tolerant();
-    p.pads.get(slot as usize)?.as_ref()?.xinput_index()
+    hub()?.view.lock_tolerant().pads.get(slot as usize)?.as_ref()?.index
 }
 
 /// Expresión de `Rumble/Motor` del Mando de Wii emulado de Dolphin para el
@@ -656,19 +1032,22 @@ pub fn sdl_guid(bus: u16, name: &str, vendor: u16, product: u16, version: u16) -
     g.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Líneas para la ventana: estado y mandos virtuales que hay.
+/// Líneas para la ventana: estado, mandos virtuales que hay y, si una
+/// llamada al driver lleva más de la cuenta sin contestar, desde cuándo.
+/// Lee la foto del hub: no coge el candado de los mandos ni sondea nada.
 pub fn ui_lines() -> (Status, Vec<String>) {
-    let st = status();
+    let Some(h) = hub() else { return (Status::Checking, Vec::new()) };
+    let v = h.view.lock_tolerant().clone();
     let mut lines = Vec::new();
-    if let Some(h) = hub() {
-        let p = h.pads.lock_tolerant();
-        for (slot, pad) in p.pads.iter().enumerate() {
-            if let Some(pad) = pad {
-                lines.push(tr!("rumble.pad", slot + 1, pad.describe()));
-            }
+    for (slot, pad) in v.pads.iter().enumerate() {
+        if let Some(pad) = pad {
+            lines.push(tr!("rumble.pad", slot + 1, pad.describe));
         }
     }
-    (st, lines)
+    if let Some(f) = v.in_flight.as_ref().filter(|f| f.slow()) {
+        lines.push(tr!("rumble.stuck_line", f.since.elapsed().as_secs()));
+    }
+    (v.status, lines)
 }
 
 /// Texto de la ventana para cada estado.
@@ -680,6 +1059,8 @@ pub fn status_text(st: Status) -> String {
         Status::UinputMissing => tr!("rumble.missing"),
         Status::Unsupported => tr!("rumble.unsupported"),
         Status::Failed => tr!("rumble.failed"),
+        Status::Checking => tr!("rumble.checking"),
+        Status::Unresponsive => tr!("rumble.stuck"),
     }
     .to_owned()
 }
@@ -698,28 +1079,6 @@ pub enum RumbleSetup {
     /// El instalador terminó con este código (0 = ni llegó a lanzarse;
     /// el detalle está en receptor.log).
     Failed(u32),
-}
-
-/// Windows: si falta el driver del mando virtual, instalarlo ahora con el
-/// instalador que viaja dentro del exe (una vez por versión del instalador;
-/// instalado o cancelado, no se vuelve a preguntar solo).
-/// `PEPOMOTE_NO_DRIVER_SETUP` lo apaga (receptores de prueba).
-pub fn ensure_driver_on_startup(shared: SharedState) {
-    #[cfg(windows)]
-    {
-        let tried = shared.lock_tolerant().config.vigem_setup_version.clone();
-        let skip = std::env::var_os("PEPOMOTE_NO_DRIVER_SETUP").is_some();
-        if !vigem_setup::should_install(platform::static_status(), tried.as_deref(), skip) {
-            return;
-        }
-        crate::log_line!(
-            "Mando virtual: falta el driver; se instala el embebido (ViGEmBus {})",
-            vigem_setup::SETUP_VERSION
-        );
-        run_setup(shared);
-    }
-    #[cfg(not(windows))]
-    drop(shared);
 }
 
 /// Botón «Instalar el mando virtual» de la ventana.
@@ -759,9 +1118,17 @@ fn run_setup(shared: SharedState) {
         // Sobre una versión anterior del driver el instalador dice «hecho» y
         // el bus sigue siendo el viejo: hace falta un segundo pase (así lo
         // documenta la propia release). Solo si el primero no dejó driver.
-        if matches!(result, Ok(vigem_setup::Outcome::Installed)) && platform::static_status() != Status::Ready {
-            crate::log_line!("Mando virtual: el instalador terminó pero el driver no responde; segundo pase");
-            result = vigem_setup::install();
+        if matches!(result, Ok(vigem_setup::Outcome::Installed)) {
+            match bounded_status(ONE_SHOT_LIMIT) {
+                Status::Ready => {}
+                Status::Unresponsive => {
+                    crate::log_line!("Mando virtual: el instalador terminó pero el driver no contesta; sin segundo pase");
+                }
+                _ => {
+                    crate::log_line!("Mando virtual: el instalador terminó pero el driver no responde; segundo pase");
+                    result = vigem_setup::install();
+                }
+            }
         }
         let state = match &result {
             Ok(vigem_setup::Outcome::Installed) => RumbleSetup::Installed,
@@ -783,7 +1150,8 @@ fn run_setup(shared: SharedState) {
         }
         if state == RumbleSetup::Installed {
             if let Some(h) = hub() {
-                // que el hub lo vea ya, sin esperar su cadencia
+                // que el hub lo vea ya, sin esperar su cadencia (y si hay un
+                // sondeo viejo en vuelo, `poll_job` respeta este `None`)
                 h.pads.lock_tolerant().probed_at = None;
             }
         }
@@ -792,9 +1160,14 @@ fn run_setup(shared: SharedState) {
 
 /// Para `--diag`.
 pub fn diag_lines() -> Vec<String> {
-    let (st, pads) = ui_lines();
+    // `--diag` corre antes de arrancar el hub: se sondea aquí, con tope, que
+    // el informe que se le pide a quien tiene el problema no puede colgarse
+    let (st, pads) = if hub().is_some() { ui_lines() } else { (bounded_status(ONE_SHOT_LIMIT), Vec::new()) };
     let mut out = vec![format!("Vibración de los juegos: {} ({:?})", st.as_str(), st)];
     out.extend(pads.into_iter().map(|l| format!("  {l}")));
+    if let Some(n) = stuck_note() {
+        out.push(format!("  {n}"));
+    }
     #[cfg(windows)]
     {
         let tried = crate::state::Config::load().vigem_setup_version;
@@ -960,5 +1333,100 @@ mod tests {
         assert_eq!(Status::UinputDenied.as_str(), "denied");
         assert_eq!(Status::UinputMissing.as_str(), "denied");
         assert_eq!(Status::Unsupported.as_str(), "unsupported");
+        // sin valor nuevo en el protocolo: los dos van como un fallo
+        assert_eq!(Status::Checking.as_str(), Status::Failed.as_str());
+        assert_eq!(Status::Unresponsive.as_str(), Status::Failed.as_str());
+        assert_ne!(Status::Checking.as_str(), "ready");
+    }
+
+    /// Una llamada al driver que no contesta no para a quien la mira: `poll`
+    /// vuelve al instante y, pasado el límite, avisa una sola vez. Así se
+    /// comporta el hub con un ViGEmBus colgado (la ventana negra de la 1.12).
+    #[test]
+    fn una_llamada_en_marcha_no_bloquea_y_avisa_una_vez() {
+        let mut p = Pending::start("prueba-pending", "una llamada de prueba".to_owned(), Duration::from_millis(10), || {
+            std::thread::sleep(Duration::from_secs(60));
+            1u8
+        });
+        let t = Instant::now();
+        assert_eq!(p.poll(), None);
+        assert!(t.elapsed() < Duration::from_secs(1), "poll no espera");
+        assert!(!p.warned, "aún dentro del límite");
+        std::thread::sleep(Duration::from_millis(40));
+        assert_eq!(p.poll(), None);
+        assert!(p.warned && p.slow(), "pasado el límite se avisa");
+        assert_eq!(p.poll(), None, "y se sigue sin esperar");
+        assert!(p.in_flight().slow());
+    }
+
+    #[test]
+    fn la_espera_con_tope_se_rinde_y_deja_el_hilo_atras() {
+        let p = Pending::start("prueba-pending", "una llamada de prueba".to_owned(), Duration::from_millis(10), || {
+            std::thread::sleep(Duration::from_secs(60));
+            1u8
+        });
+        let t = Instant::now();
+        assert_eq!(p.wait(Duration::from_millis(50)), None);
+        assert!(t.elapsed() < Duration::from_secs(2), "el tope manda");
+    }
+
+    #[test]
+    fn una_llamada_que_contesta_llega_por_poll_y_por_wait() {
+        let mut p = Pending::start("prueba-pending", "una llamada de prueba".to_owned(), Duration::from_secs(5), || 7u8);
+        let mut got = None;
+        for _ in 0..400 {
+            if let Some(r) = p.poll() {
+                got = Some(r);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(got, Some(Ok(7)));
+        assert!(!p.warned);
+        let p = Pending::start("prueba-pending", "una llamada de prueba".to_owned(), Duration::from_secs(5), || 8u8);
+        assert_eq!(p.wait(Duration::from_secs(5)), Some(8));
+    }
+
+    #[test]
+    fn un_hilo_que_muere_sin_contestar_se_nota() {
+        crate::log::quiet_panics();
+        let mut p = Pending::start("prueba-pending", "una llamada de prueba".to_owned(), Duration::from_secs(5), || -> u8 {
+            panic!("boom")
+        });
+        let mut got = None;
+        for _ in 0..400 {
+            if let Some(r) = p.poll() {
+                got = Some(r);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(got, Some(Err(())));
+    }
+
+    /// Lo que ven la ventana y el `hello` según lo que sabe el hub.
+    #[test]
+    fn el_estado_publicado_antes_y_durante_un_sondeo_colgado() {
+        assert_eq!(view_status(true, None, false), Status::Ready);
+        assert_eq!(view_status(true, Some(Status::Failed), true), Status::Ready, "con backend, lo demás no importa");
+        assert_eq!(view_status(false, None, false), Status::Checking, "antes del primer resultado");
+        assert_eq!(view_status(false, None, true), Status::Unresponsive, "el sondeo no contesta");
+        assert_eq!(
+            view_status(false, Some(Status::NeedsDriver), true),
+            Status::Unresponsive,
+            "un re-sondeo colgado pisa el resultado viejo"
+        );
+        assert_eq!(view_status(false, Some(Status::NeedsDriver), false), Status::NeedsDriver);
+        assert_eq!(view_status(false, Some(Status::UinputDenied), false), Status::UinputDenied);
+    }
+
+    /// Sin hub (tests, `--diag` antes de arrancarlo) nada sondea el driver
+    /// por su cuenta: el estado es «comprobando» y no hay mandos.
+    #[test]
+    fn sin_hub_nadie_sondea_el_driver() {
+        assert_eq!(status(), Status::Checking);
+        assert_eq!(ui_lines(), (Status::Checking, Vec::new()));
+        assert!(stuck_note().is_none());
+        assert!(xinput_index(0).is_none());
     }
 }

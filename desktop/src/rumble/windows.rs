@@ -34,7 +34,11 @@ pub struct Pad {
 }
 
 impl Backend {
+    /// Abre el bus del driver. BLOQUEA sin límite si el driver no contesta
+    /// (SetupAPI + un IOCTL con espera infinita): solo lo llama el hub, en
+    /// un hilo propio que sondea sin esperar (`Pending`).
     pub fn probe() -> Result<Backend, Status> {
+        super::fake_hang_if_requested("el sondeo del driver");
         match Client::connect() {
             Ok(c) => Ok(Backend { client: Arc::new(c) }),
             Err(Error::BusNotFound) => Err(Status::NeedsDriver),
@@ -46,7 +50,11 @@ impl Backend {
         }
     }
 
+    /// Enchufa un mando. BLOQUEA sin límite si el driver no contesta
+    /// (`plugin` y `wait_ready` esperan sin tope): igual que `probe`, solo
+    /// desde el hilo propio que le pone el hub.
     pub fn create(&self, slot: u8) -> Result<Pad, String> {
+        super::fake_hang_if_requested("la creación del mando");
         // Foto de los huecos de XInput ANTES de enchufar: el que aparezca
         // después es este mando (ver `enumerated_index`)
         let before = xinput_connected();
@@ -201,8 +209,11 @@ impl Drop for Pad {
     }
 }
 
-/// Sin hub aún (tests, `--diag` temprano): se sondea el driver.
-pub fn static_status() -> Status {
+/// Sondea el driver AHORA y dice qué hay. BLOQUEA sin límite si no contesta:
+/// nunca en línea, solo a través de `super::bounded_status` (que lo corre
+/// en un hilo con tope de espera) o del hub.
+pub fn probe_status() -> Status {
+    super::fake_hang_if_requested("el sondeo del driver");
     match Client::connect() {
         Ok(_) => Status::Ready,
         Err(Error::BusNotFound) | Err(Error::BusVersionMismatch) => Status::NeedsDriver,

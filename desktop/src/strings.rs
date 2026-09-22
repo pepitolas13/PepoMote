@@ -16,6 +16,9 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("rumble.missing", "No existe /dev/uinput (módulo uinput sin cargar): sin vibración de los juegos.", "/dev/uinput does not exist (uinput module not loaded): no game rumble."),
     ("rumble.unsupported", "En macOS no hay vibración de los juegos: sin driver no existe un mando virtual.", "No game rumble on macOS: without a driver there is no virtual controller."),
     ("rumble.failed", "El mando virtual de la vibración no se pudo crear (mira receptor.log); se reintenta solo.", "The rumble virtual controller could not be created (see receptor.log); it retries by itself."),
+    ("rumble.checking", "Comprobando el mando virtual…", "Checking the virtual controller…"),
+    ("rumble.stuck", "El driver del mando virtual no contesta (ViGEmBus, en Windows). PepoMote sigue sin él: sin vibración ni mando universal hasta que responda. Si no se arregla solo, en Windows repara o quita «Nefarius Virtual Gamepad Emulation Bus» en Configuración → Aplicaciones y pulsa Instalar.", "The virtual controller driver is not answering (ViGEmBus, on Windows). PepoMote carries on without it: no rumble and no universal controller until it does. If it does not fix itself, on Windows repair or remove «Nefarius Virtual Gamepad Emulation Bus» in Settings → Apps and press Install."),
+    ("rumble.stuck_line", "Llamada al driver en curso desde hace {0} s", "Driver call running for {0} s"),
     // --- RetroArch
     ("retroarch.why_portable", "portable, junto al ejecutable", "portable, next to the executable"),
     ("retroarch.why_roaming", "configuración de usuario", "user configuration"),

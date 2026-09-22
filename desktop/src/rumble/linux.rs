@@ -102,6 +102,7 @@ fn level(effects: &HashMap<i16, Effect>, gain: u16, now: Instant) -> (u8, u8) {
 
 impl Backend {
     pub fn probe() -> Result<Backend, Status> {
+        super::fake_hang_if_requested("el sondeo de /dev/uinput");
         match crate::input::uinput_probe() {
             Ok(()) => Ok(Backend),
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(Status::UinputDenied),
@@ -111,6 +112,7 @@ impl Backend {
     }
 
     pub fn create(&self, slot: u8) -> Result<Pad, String> {
+        super::fake_hang_if_requested("la creación del mando");
         let name = super::pad_name(slot);
         let mut keys = AttributeSet::<Key>::new();
         for k in DECLARED {
@@ -302,7 +304,9 @@ impl Drop for Pad {
     }
 }
 
-pub fn static_status() -> Status {
+/// Sondea /dev/uinput ahora (`Backend::probe`, que respeta el gancho de
+/// cuelgue de pruebas): solo a través de `super::bounded_status` o del hub.
+pub fn probe_status() -> Status {
     match Backend::probe() {
         Ok(_) => Status::Ready,
         Err(s) => s,

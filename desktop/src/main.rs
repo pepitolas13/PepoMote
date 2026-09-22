@@ -111,11 +111,11 @@ fn main() {
     let pairing = pairing::PairingInfo::generate();
 
     let dsu = dsu::start(shared.clone());
+    // El hub de la vibración sondea el driver del mando virtual en su propio
+    // hilo y, en Windows, si falta lo instala él (el instalador viaja dentro
+    // del exe). Aquí, en el hilo principal, no se le pregunta nada al driver:
+    // un ViGEmBus que no contesta dejaba el receptor sin ventana ni red.
     rumble::start(shared.clone());
-    // Windows: el driver del mando virtual viene dentro del exe y se instala
-    // en el primer arranque (una ventana de permiso), para que el mando
-    // universal y la vibración funcionen sin descargar ni instalar nada
-    rumble::ensure_driver_on_startup(shared.clone());
     // El enlace con RetroArch (mando en red + interfaz de comandos) vive
     // siempre: sondea en silencio y solo habla en modo RetroArch
     let _ = retroarch::start(shared.clone());
@@ -188,6 +188,12 @@ fn main() {
 
     let attempt = launch::attempt();
     launch::start_smoke_watchdog();
+    // Vigilante siempre activo: si la ventana no pinta, que quede en el log
+    // qué la frena (con --minimized la ventana no existe hasta que se pide:
+    // aquí ya se ha pedido)
+    if !hidden_window {
+        launch::start_paint_watchdog();
+    }
     let smoke_fail_first = attempt.n == 1 && std::env::var_os(launch::ENV_SMOKE_FAIL_FIRST).is_some();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

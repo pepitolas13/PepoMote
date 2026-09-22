@@ -472,6 +472,34 @@ ahorro de energía de Windows 11 (EcoQoS), que frenaba los procesos sin foco;
 el log dice «Ahorro de energía de Windows (EcoQoS): desactivado». Y si lo que
 no responde es una ventana elevada (administrador), ver el punto anterior.
 
+## Windows: la ventana de PepoMote sale negra (1.12)
+
+Síntoma (1.12.0): la ventana se abre pero está entera en negro, sin ni
+siquiera el fondo gris o blanco, y el móvil se queda en «Conectando…». En
+`receptor.log` (`%APPDATA%\pepotech\PepoMote\config`) está la línea
+«PepoMote 1.12.0 arranca…» pero no «Ventana: primer fotograma pintado».
+
+Por qué: la 1.12 le preguntaba al driver del mando virtual (ViGEmBus) antes
+de pintar el primer fotograma, y el móvil, al conectar, esperaba a esa misma
+pregunta. Un ViGEmBus a medio instalar, con una petición atascada dentro o
+pisado por otro programa de mandos no contesta nunca, y con él se quedaban la
+ventana y el `ok` del móvil.
+
+Arreglado en 1.13: al driver se le pregunta en segundo plano y sin esperar.
+Si no contesta a los 3 s, la ventana lo dice («El driver del mando virtual
+no contesta…», con el botón «Instalar el mando virtual», que
+repara la instalación) y todo lo demás funciona —puntero, Dolphin, Cemu,
+RetroArch—, sin vibración ni mando universal hasta que el driver responda.
+El log lo apunta («Mando virtual: el sondeo del driver no contesta a los
+3 s») y, si la ventana tardara en pintar por lo que sea, «Ventana: sin primer
+fotograma a los 15 s» con lo que la está frenando.
+
+Si te pasa con la 1.12: Configuración → Aplicaciones → «Nefarius Virtual
+Gamepad Emulation Bus» → Modificar (reparar) o Desinstalar, reinicia si lo
+pide y vuelve a abrir PepoMote; o instala ViGEmBus 1.22.0 desde su página.
+Si sigue negra, manda `receptor.log` en un issue (en 1.12, `PepoMote.exe
+--diag` puede colgarse por lo mismo: eso también lo confirma).
+
 ## El cursor va a tirones
 
 - HUD del receptor: si el RTT sube de ~15 ms, es la red — pásate a 5 GHz o al hotspot del móvil.

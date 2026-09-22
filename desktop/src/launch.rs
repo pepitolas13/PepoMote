@@ -8,7 +8,7 @@
 use std::any::Any;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Intento en curso (1..=3); lo pone el propio receptor al relanzarse.
 pub const ENV_ATTEMPT: &str = "PEPOMOTE_UI_ATTEMPT";
@@ -26,6 +26,9 @@ pub const ENV_SMOKE_FAIL_FIRST: &str = "PEPOMOTE_SMOKE_FAIL_FIRST";
 pub const ENV_SOFTWARE_GL: &str = "LIBGL_ALWAYS_SOFTWARE";
 /// Sin primer fotograma pasado esto, el modo humo se rinde.
 const SMOKE_DEADLINE: Duration = Duration::from_secs(30);
+/// Cuándo apunta el vigilante del primer fotograma que la ventana sigue sin
+/// pintar (siempre activo, en todos los sistemas).
+const PAINT_CHECKS: [Duration; 2] = [Duration::from_secs(15), Duration::from_secs(60)];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Backend {
@@ -150,6 +153,41 @@ pub fn start_smoke_watchdog() {
         if !first_frame_done() {
             crate::log_line!("PEPOMOTE_SMOKE: sin primer fotograma a los {} s, salgo con 3", SMOKE_DEADLINE.as_secs());
             std::process::exit(3);
+        }
+    });
+}
+
+/// La línea del vigilante del primer fotograma, con lo que pueda estar
+/// frenando la ventana si se sabe.
+pub fn paint_watchdog_line(at: Duration, stuck: Option<String>) -> String {
+    let mut s = format!("Ventana: sin primer fotograma a los {} s", at.as_secs());
+    if let Some(n) = stuck {
+        s.push_str(" · ");
+        s.push_str(&n);
+    }
+    s
+}
+
+/// Vigilante siempre activo: si la ventana no ha pintado a los 15 y a los
+/// 60 s, lo apunta en el log junto con lo que pueda estar frenándola (una
+/// llamada al driver del mando virtual sin contestar: la ventana negra de la
+/// 1.12). Solo apunta: sin diálogos ni relanzamientos, que una red que
+/// funciona no se mata por una ventana que no pinta. Un cuelgue así nunca
+/// llega a `finish`: sin esto no dejaba ni rastro.
+pub fn start_paint_watchdog() {
+    let _ = crate::threads::spawn_once("paint-watchdog", || {
+        let start = Instant::now();
+        for at in PAINT_CHECKS {
+            while start.elapsed() < at {
+                if first_frame_done() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            if first_frame_done() {
+                return;
+            }
+            crate::log_line!("{}", paint_watchdog_line(at, crate::rumble::stuck_note()));
         }
     });
 }
@@ -338,6 +376,17 @@ mod tests {
         assert_eq!(smoke_linger(Some("1")), Some(Duration::from_millis(1500)));
         assert_eq!(smoke_linger(Some("800")), Some(Duration::from_millis(800)));
         assert_eq!(smoke_linger(Some("abc")), None);
+    }
+
+    #[test]
+    fn la_linea_del_vigilante_del_primer_fotograma() {
+        assert_eq!(paint_watchdog_line(Duration::from_secs(15), None), "Ventana: sin primer fotograma a los 15 s");
+        assert_eq!(
+            paint_watchdog_line(Duration::from_secs(60), Some("el driver del mando virtual no contesta".into())),
+            "Ventana: sin primer fotograma a los 60 s · el driver del mando virtual no contesta"
+        );
+        assert_eq!(PAINT_CHECKS[0], Duration::from_secs(15));
+        assert!(PAINT_CHECKS[1] > PAINT_CHECKS[0]);
     }
 
     #[test]

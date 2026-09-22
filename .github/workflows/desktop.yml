@@ -139,8 +139,9 @@ jobs:
       # La VENTANA de verdad, bajo sway (Wayland) y Xvfb (X11), con el binario
       # y con el AppImage, y el relanzamiento con render por software cuando el
       # primer intento falla (desktop/e2e/smoke_gui.sh). Antes el AppImage se
-      # publicaba sin haberse abierto nunca.
-      - name: Humo de la ventana (sway, Xvfb, AppImage, relanzamiento)
+      # publicaba sin haberse abierto nunca. Y con el driver del mando virtual
+      # colgado a propósito (hang): la ventana tiene que pintar igual.
+      - name: Humo de la ventana (sway, Xvfb, AppImage, relanzamiento, driver colgado)
         run: |
           sudo apt-get install -y --no-install-recommends sway xvfb x11-utils libegl1 libgl1 libgl1-mesa-dri libgles2 libwayland-egl1 libxkbcommon-x11-0 libnotify-bin
           bash desktop/e2e/smoke_gui.sh wayland
@@ -149,6 +150,7 @@ jobs:
           PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1 bash desktop/e2e/smoke_gui.sh x11
           bash desktop/e2e/smoke_gui.sh wayland fallback
           PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1 bash desktop/e2e/smoke_gui.sh x11 fallback
+          bash desktop/e2e/smoke_gui.sh x11 hang
       - uses: actions/upload-artifact@v4
         if: always()
         with:

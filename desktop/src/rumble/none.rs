@@ -42,7 +42,8 @@ impl Pad {
     }
 }
 
-pub fn static_status() -> Status {
+/// Aquí no hay driver que sondear: siempre «no soportado», al instante.
+pub fn probe_status() -> Status {
     Status::Unsupported
 }
 

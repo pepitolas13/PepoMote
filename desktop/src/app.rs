@@ -14,7 +14,10 @@ pub struct PepoMoteApp {
     pairing: PairingInfo,
     qr_modules: Vec<bool>,
     qr_width: usize,
-    autostart: bool,
+    /// Autoarranque (registro de Windows). `None` hasta el segundo
+    /// fotograma: leerlo lanza `reg.exe` y espera, y eso no va delante de
+    /// la primera pintura.
+    autostart: Option<bool>,
     /// Última comprobación de la IP local (el QR debe llevar la IP viva).
     ip_checked: Instant,
     /// Ajustes cambiados en la UI pendientes de escribir a disco.
@@ -69,7 +72,7 @@ impl PepoMoteApp {
             pairing,
             qr_modules,
             qr_width,
-            autostart: crate::autostart::is_enabled(),
+            autostart: None,
             ip_checked: Instant::now(),
             config_dirty: false,
             frames: 0,
@@ -157,6 +160,12 @@ impl eframe::App for PepoMoteApp {
             crate::launch::mark_first_frame();
             self.painted_at = Some(Instant::now());
             crate::log_line!("Ventana: primer fotograma pintado ({})", crate::launch::describe(crate::launch::attempt()));
+        }
+        // Con la ventana ya pintada: `is_enabled` lanza `reg.exe` y lo
+        // espera (decenas de ms; sin tope con algún antivirus), y antes iba
+        // en `new`, delante del primer fotograma
+        if self.autostart.is_none() && self.frames >= 2 {
+            self.autostart = Some(crate::autostart::is_enabled());
         }
         if let (Some(t), Some(linger)) = (self.painted_at, self.smoke) {
             if t.elapsed() >= linger {
@@ -589,8 +598,12 @@ impl PepoMoteApp {
     /// (en Windows, el driver; en Linux, el permiso de uinput).
     fn ui_rumble(&self, ui: &mut egui::Ui, snap: &Snapshot) {
         let (st, pads) = &snap.rumble;
-        let ok = *st == crate::rumble::Status::Ready;
-        let color = if ok { theme::ok() } else { theme::warn() };
+        let color = match st {
+            crate::rumble::Status::Ready => theme::ok(),
+            // los primeros milisegundos, sin resultado aún: nada que avisar
+            crate::rumble::Status::Checking => theme::text_dim(),
+            _ => theme::warn(),
+        };
         ui.label(RichText::new(crate::rumble::status_text(*st)).size(12.0).color(color));
         for l in pads {
             ui.label(RichText::new(l).size(11.0).color(theme::text_dim()));
@@ -603,7 +616,8 @@ impl PepoMoteApp {
     /// (instalando, cancelado, fallido) y queda el botón para instalarlo.
     fn ui_driver_setup(&self, ui: &mut egui::Ui, snap: &Snapshot) {
         use crate::rumble::{RumbleSetup, Status};
-        if snap.rumble.0 != Status::NeedsDriver {
+        // También con el driver colgado: el instalador repara la instalación
+        if !matches!(snap.rumble.0, Status::NeedsDriver | Status::Unresponsive) {
             return;
         }
         match snap.rumble_setup {
@@ -900,15 +914,18 @@ impl PepoMoteApp {
                 theme::set_preference(ui.ctx(), config.theme);
             }
             ui.add_space(4.0);
-            let before_auto = self.autostart;
-            ui.checkbox(
-                &mut self.autostart,
-                RichText::new(tr!("cfg.autostart")).size(13.0),
+            // Sin leer todavía (los dos primeros fotogramas): la casilla espera
+            let mut auto = self.autostart.unwrap_or(false);
+            ui.add_enabled(
+                self.autostart.is_some(),
+                egui::Checkbox::new(&mut auto, RichText::new(tr!("cfg.autostart")).size(13.0)),
             );
-            if self.autostart != before_auto {
-                if let Err(e) = crate::autostart::set_enabled(self.autostart) {
-                    self.shared.lock_tolerant().last_error = Some(tr!("cfg.autostart_err", e));
-                    self.autostart = before_auto;
+            if let Some(before_auto) = self.autostart {
+                if auto != before_auto {
+                    match crate::autostart::set_enabled(auto) {
+                        Ok(()) => self.autostart = Some(auto),
+                        Err(e) => self.shared.lock_tolerant().last_error = Some(tr!("cfg.autostart_err", e)),
+                    }
                 }
             }
             ui.add_space(4.0);

@@ -135,7 +135,12 @@ sola (`PEPOMOTE_SMOKE=2500`); comprueba el código de salida, la línea «Ventan
 primer fotograma pintado» del log y que la ventana esté en el árbol de
 ventanas. Con `fallback`, el primer intento falla a propósito
 (`PEPOMOTE_SMOKE_FAIL_FIRST=1`) y se exige el relanzamiento con render por
-software. `PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1`
+software. Con `hang`, el sondeo del driver del mando virtual se cuelga a
+propósito (`PEPOMOTE_FAKE_DRIVER_HANG=1`; vale también en Windows a mano, con
+`PEPOMOTE_SMOKE`) y se exige que la ventana pinte igual y que el log diga
+«Mando virtual: el sondeo del driver no contesta»: es la regresión de la
+ventana negra de la 1.12, cuando ese sondeo iba en el hilo de la ventana.
+`PEPOMOTE_BIN=dist/PepoMote-x86_64.AppImage APPIMAGE_EXTRACT_AND_RUN=1`
 lo prueba con el AppImage. Necesita `sway` o `Xvfb` + `x11-utils` y las
 bibliotecas de Mesa; deja todo en `/tmp/pepomote-smoke/<modo>`.
 
