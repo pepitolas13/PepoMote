@@ -276,6 +276,19 @@ impl Track {
     pub fn level(&self, slot: usize) -> (u8, u8) {
         self.slots.get(slot).map(|s| (s.strong, s.weak)).unwrap_or((0, 0))
     }
+
+    /// ¿Vibra (o acaba de vibrar) el móvil del slot? Nivel vigente distinto
+    /// de cero, o a cero desde hace menos de [`TTL_MS`]: si el cero se perdió
+    /// por el camino, el móvil sigue hasta que caduque la última orden. Lo
+    /// mira el motor del puntero para no aprender como sesgo lo que el motor
+    /// mete en el giroscopio (`PointerEngine::set_shaking`).
+    pub fn shaking(&self, slot: usize, now: Instant) -> bool {
+        self.slots.get(slot).is_some_and(|s| {
+            s.strong != 0
+                || s.weak != 0
+                || s.changed_at.is_some_and(|t| now.duration_since(t) < Duration::from_millis(u64::from(TTL_MS)))
+        })
+    }
 }
 
 /// Una llamada al driver en marcha en su propio hilo. El hub la mira con
@@ -533,6 +546,16 @@ pub fn set_from_dsu(slot: u8, intensity: u8) {
     set(slot, Source::Dsu, intensity, intensity);
 }
 
+/// ¿El receptor tiene encendido (o recién apagado) el motor del móvil del
+/// slot? Lo pregunta la telemetría antes de cada paquete del puntero: un
+/// gyro sacudido por el motor no sirve para aprender el sesgo. Sin hub
+/// (tests, receptores de prueba), nunca.
+pub fn is_shaking(slot: u8) -> bool {
+    let Some(h) = hub() else { return false };
+    let shaking = h.track.lock_tolerant().shaking(slot as usize, Instant::now());
+    shaking
+}
+
 /// Los mandos retirados se destruyen en un hilo aparte: en Windows el `Drop`
 /// desenchufa con un IOCTL que espera sin límite, y eso no puede correr ni
 /// con el candado de los mandos cogido ni en el hilo del hub.
@@ -579,6 +602,11 @@ impl Hub {
                 weak: o.weak,
                 ttl_ms: o.ttl_ms,
             });
+            // La grabación del puntero (PEPOMOTE_RECORD) apunta lo que se le
+            // manda al Jugador 1: en la reproducción se sabe cuándo vibraba
+            if o.slot == 0 {
+                crate::pointer::record::write(&pkt);
+            }
             let _ = sock.send_to(&pkt, addr);
         }
     }
@@ -1445,6 +1473,24 @@ mod tests {
         assert_eq!(ui_lines(), (Status::Checking, Vec::new()));
         assert!(stuck_note().is_none());
         assert!(xinput_index(0).is_none());
+    }
+
+    /// El motor del puntero pregunta si el móvil vibra: con nivel, sí; recién
+    /// parado, todavía (el cero pudo perderse y el móvil sigue hasta caducar);
+    /// pasado el TTL, no.
+    #[test]
+    fn vibrando_o_recien_parado_cuenta_como_sacudido() {
+        let t0 = Instant::now();
+        let mut t = Track::new();
+        assert!(!t.shaking(0, t0), "sin órdenes no vibra");
+        t.set(0, Source::Dsu, 200, 200, t0);
+        assert!(t.shaking(0, t0));
+        assert!(!t.shaking(1, t0), "el otro slot no");
+        t.set(0, Source::Dsu, 0, 0, t0 + Duration::from_millis(300));
+        assert!(t.shaking(0, t0 + Duration::from_millis(600)), "recién parado: el cero pudo perderse");
+        assert!(!t.shaking(0, t0 + Duration::from_millis(300 + u64::from(TTL_MS) + 1)), "pasado el TTL, quieto");
+        assert!(!t.shaking(7, t0), "slot fuera de rango");
+        assert!(!is_shaking(0), "sin hub, nunca");
     }
 
     /// El intento del instalador se recuerda también si falla: si no, la

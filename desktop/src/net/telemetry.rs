@@ -146,9 +146,10 @@ pub fn run(
     // Modo Wii U con «Mando Wii»: cada uno de esos móviles tiene su propio
     // motor de puntero (su IR va a Cemu por el touchpad DSU, no al SO)
     let mut ir_engines: HashMap<u32, IrPointer> = HashMap::new();
-    // PEPOMOTE_RECORD=<archivo>: grabar la telemetría del Jugador 1 para
-    // analizar un gesto real después (pointer/record.rs)
-    let mut recorder = crate::pointer::record::Recorder::from_env();
+    // PEPOMOTE_RECORD=<archivo>: grabar la telemetría del Jugador 1 (y las
+    // órdenes de vibración que se le mandan) para analizar un gesto real
+    // después (pointer/record.rs)
+    crate::pointer::record::start_from_env();
     // Modo mando universal: qué se le ha escrito ya a cada mando virtual,
     // para no repetir estados (a 250 Hz serían cientos de IOCTL de más)
     let mut feed = crate::pad::Feed::new();
@@ -417,9 +418,7 @@ pub fn run(
                         win_first_t = Some(p.t_sensor_us);
                     }
                     win_last_t = p.t_sensor_us;
-                    if let Some(r) = recorder.as_mut() {
-                        r.write(&buf[..len]);
-                    }
+                    crate::pointer::record::write(&buf[..len]);
                 }
 
                 let (mode, sens_deg, abs_mode, pad_wii, own_nunchuk, retro_pad) = {
@@ -497,6 +496,7 @@ pub fn run(
                                     ir_engines
                                         .entry(p.session_id)
                                         .or_default()
+                                        .shaking(crate::rumble::is_shaking(slot))
                                         .apply(&p, sens_deg, aspect, screen_w)
                                 } else {
                                     gamepad_touch(&p)
@@ -514,6 +514,7 @@ pub fn run(
                                     ir_engines
                                         .entry(p.session_id)
                                         .or_default()
+                                        .shaking(crate::rumble::is_shaking(slot))
                                         .apply_wii(&p, screen_w, own_nunchuk)
                                 });
                                 (DsuProfile::Wii, None, wii_ir.flatten())
@@ -555,6 +556,9 @@ pub fn run(
                         inj.move_abs(0.5, 0.5);
                     }
 
+                    // Con el motor de vibración encendido el gyro viene sacudido:
+                    // el motor no aprende el sesgo mientras tanto (engine.rs)
+                    engine.set_shaking(crate::rumble::is_shaking(slot));
                     engine.set_cursor_hint(inj.cursor_pos());
                     let precision = p.buttons & codec::BTN_PRECISION != 0;
                     match engine.apply(&p, sens_deg, aspect, abs_mode, screen_w, precision) {
@@ -623,6 +627,13 @@ impl Default for IrPointer {
 }
 
 impl IrPointer {
+    /// El motor de vibración de este móvil está encendido (o acaba de
+    /// apagarse): ver `PointerEngine::set_shaking`.
+    fn shaking(&mut self, on: bool) -> &mut Self {
+        self.engine.set_shaking(on);
+        self
+    }
+
     /// Pasa el paquete por el motor y devuelve el apuntado en grados. La
     /// salida absoluta del motor es lineal en `sens_deg` (grados que cubre el
     /// ancho, y `sens_deg / aspect` el alto), así que se deshace aquí. Sin

@@ -117,6 +117,20 @@ const EST_TWIST_ERR_MAX: f32 = 0.262;
 const FREEZE_ESCAPE_DEG: f32 = 0.08;
 const FREEZE_ESCAPE_QUAT_DEG: f32 = 0.04;
 const FREEZE_LEAK_TAU_S: f32 = 1.0;
+/// Vibración: mientras el receptor tiene encendido el motor del móvil, y
+/// hasta esto (µs) después de la última orden (los juegos de Wii vibran a
+/// pulsos, el motor tarda en pararse, y la orden y las muestras viajan por
+/// la red), el gyro lleva encima lo que el motor le mete: una oscilación a
+/// la frecuencia del motor que al muestrearla se pliega a cualquier
+/// frecuencia (también a continua) y el sesgo por rectificación propio de
+/// un MEMS sacudido. Nada de eso es la mano. Así que de un gyro sacudido no
+/// se aprende el sesgo: lo aprendido se quedaría puesto al parar el motor y
+/// arrastraría el cursor hasta el siguiente reposo (y con el móvil quieto en
+/// la mano vibrando, congelado no se emite nada, luego no aprenderlo no
+/// cuesta un píxel). El lazo del roll sí sigue: su integral es de media cero
+/// con una oscilación, no mueve el cursor, y pararlo dejaría los ejes
+/// torcidos justo en los juegos de pistola, que vibran a cada disparo.
+const SHAKE_TAIL_US: u64 = 600_000;
 
 /// Signos del fallback relativo (h1) y del apuntado por giro del mando
 /// universal (`pad::aim`). Corrección SOLO aquí.
@@ -453,6 +467,11 @@ pub struct PointerEngine {
     /// Velocidad del quat suavizada (°/s por eje): «el quat ve movimiento».
     quat_rate: Option<(f32, f32)>,
     last_quat: Option<(f32, f32)>,
+    /// El receptor tiene encendido el motor de vibración de este móvil (lo
+    /// dice la telemetría antes de cada paquete) y hasta cuándo (µs del
+    /// sensor) se da el gyro por sacudido: ver `SHAKE_TAIL_US`.
+    shaking: bool,
+    shake_until_us: Option<u64>,
     /// Sesgo estimado del gyro (rad/s, ejes del dispositivo).
     bias: [f32; 3],
     /// Últimas muestras crudas del gyro (anillo): el sesgo se aprende de la
@@ -509,6 +528,9 @@ pub struct PointerDebug {
     pub hint: Option<(f32, f32)>,
     pub frozen: bool,
     pub quiet: bool,
+    /// El gyro se da por sacudido por el motor de vibración (encendido, o
+    /// apagado hace menos de `SHAKE_TAIL_US`): no se aprende el sesgo.
+    pub shaken: bool,
     pub bias: [f32; 3],
     /// El último paquete pedía apuntado por inclinación (flags bit4).
     pub tilt: bool,
@@ -550,6 +572,8 @@ impl PointerEngine {
             frozen_at: None,
             quat_rate: None,
             last_quat: None,
+            shaking: false,
+            shake_until_us: None,
             bias: [0.0; 3],
             gyro_hist: [[0.0; 3]; BIAS_DELAY_SAMPLES],
             gyro_hist_i: 0,
@@ -610,6 +634,7 @@ impl PointerEngine {
             hint: self.cursor_hint,
             frozen: self.frozen,
             quiet: self.quiet,
+            shaken: self.shaken_now(),
             bias: self.bias,
             tilt,
             tilt_yaw,
@@ -620,8 +645,10 @@ impl PointerEngine {
 
     /// Estado (yaw, pitch) del mundo y velocidades del gyro (°/s): el gyro
     /// (sin sesgo) integrado siempre; congelado, además converge al quat en
-    /// silencio y aprende el sesgo. Ver el bloque «El gyro manda».
-    fn track(&mut self, p: &InputPacket, q: Quat, qyaw: f32, qpitch: f32, dt: Option<f32>) -> (f32, f32, f32, f32) {
+    /// silencio y aprende el sesgo (salvo `shaken`: el gyro viene sacudido
+    /// por el motor de vibración, ver `SHAKE_TAIL_US`). Ver el bloque «El
+    /// gyro manda».
+    fn track(&mut self, p: &InputPacket, q: Quat, qyaw: f32, qpitch: f32, dt: Option<f32>, shaken: bool) -> (f32, f32, f32, f32) {
         // Primera muestra o hueco grande (suspensión, pérdida): el quat es
         // la mejor verdad disponible.
         let Some(dt) = dt else {
@@ -663,6 +690,7 @@ impl PointerEngine {
         }
         let truly_still = self.frozen
             && self.quiet
+            && !shaken
             && history_full
             && self.frozen_at.is_some_and(|(t0, _, _)| p.t_sensor_us.saturating_sub(t0) >= BIAS_LEARN_AFTER_US);
         if truly_still {
@@ -821,6 +849,22 @@ impl PointerEngine {
         self.cursor_hint = hint;
     }
 
+    /// La telemetría lo dice antes de cada paquete: el receptor tiene
+    /// encendido el motor de vibración de este móvil (o lo acaba de apagar).
+    /// Mientras dure, y `SHAKE_TAIL_US` después, de este gyro no se aprende
+    /// el sesgo.
+    pub fn set_shaking(&mut self, on: bool) {
+        self.shaking = on;
+    }
+
+    /// ¿El último paquete llegó con el gyro sacudido por el motor?
+    fn shaken_now(&self) -> bool {
+        match (self.shake_until_us, self.last_t_us) {
+            (Some(until), Some(t)) => t <= until,
+            _ => false,
+        }
+    }
+
     /// El sesgo está expresado en este marco: no heredarlo al reconectar girado.
     pub fn same_frame(&self, p: &InputPacket) -> bool {
         self.last_frame == Some(p.flags & crate::net::codec::FLAG_FRAME_MASK)
@@ -850,9 +894,11 @@ impl PointerEngine {
             // este paquete, conservando el monitor y el cursor del sistema.
             let bounds = self.cursor_bounds;
             let hint = self.cursor_hint;
+            let shaking = self.shaking;
             *self = Self::new();
             self.cursor_bounds = bounds;
             self.cursor_hint = hint;
+            self.shaking = shaking;
         }
         self.last_frame = Some(frame);
         let tilt = p.flags & FLAG_TILT != 0;
@@ -895,7 +941,12 @@ impl PointerEngine {
 
         let q = Quat::from_packet(p);
         let (qyaw, qpitch) = q.world_angles();
-        let (yaw_w, pitch_w, rate_yaw, rate_pitch) = self.track(p, q, qyaw, qpitch, dt);
+        // Motor encendido: este paquete, y los de la cola, traen el gyro sacudido
+        if self.shaking {
+            self.shake_until_us = Some(p.t_sensor_us.saturating_add(SHAKE_TAIL_US));
+        }
+        let shaken = self.shake_until_us.is_some_and(|until| p.t_sensor_us <= until);
+        let (yaw_w, pitch_w, rate_yaw, rate_pitch) = self.track(p, q, qyaw, qpitch, dt, shaken);
 
         if recentered || self.ref_angles.is_none() {
             // Recentrar lleva el cursor al centro también en modo relativo:
@@ -3273,5 +3324,69 @@ mod tests {
         let (nx, _) = ph.hold(&mut e, 60);
         let expected = 0.5 + 12.0 / 40.0;
         assert!((nx - expected).abs() < 0.015, "nx={nx} esperado={expected} (recentró en el hueco?)");
+    }
+
+    /// Vibrando (el receptor tiene el motor del móvil encendido) NO se
+    /// aprende el sesgo: lo que el motor mete en el gyro se quedaría puesto
+    /// al parar y arrastraría el cursor. Con el motor apagado, pasada la cola,
+    /// se aprende como siempre. Móvil quieto en la mano, quat clavado, y un
+    /// gyro que lee 1°/s de sesgo por rectificación mientras vibra.
+    #[test]
+    fn vibrando_no_se_aprende_el_sesgo_y_al_parar_si() {
+        let q = Quat { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
+        let mut e = PointerEngine::new();
+        let mut t = 0u64;
+        let mut send = |e: &mut PointerEngine, gyro: [f32; 3], shaking: bool| {
+            t += DT_US;
+            let mut p = packet(arr(q), 0, t, FLAG_QUAT_VALID);
+            p.gyro = gyro;
+            e.set_shaking(shaking);
+            e.apply(&p, 40.0, 16.0 / 9.0, true, 1920.0, false)
+        };
+        // 1 s quieto sin vibrar: congela, y el sesgo (cero) se queda en cero
+        for _ in 0..200 {
+            send(&mut e, [0.0; 3], false);
+        }
+        assert!(e.debug().frozen, "quieto 1 s: congelado");
+        assert!(!e.debug().shaken);
+        // 3 s vibrando, quieto de verdad: el gyro lee 1°/s que no es la mano
+        let b = 1.0_f32.to_radians();
+        for _ in 0..600 {
+            send(&mut e, [b, 0.0, 0.0], true);
+        }
+        assert!(e.debug().shaken);
+        assert!(e.debug().frozen, "quieto vibrando: sigue congelado (no se emite nada)");
+        let learned = e.bias()[0];
+        assert!(learned.abs() < 0.05_f32.to_radians(), "vibrando aprendió sesgo: {:.3}°/s", learned.to_degrees());
+        // El motor para: durante la cola (0,6 s) tampoco se aprende
+        for _ in 0..100 {
+            send(&mut e, [b, 0.0, 0.0], false);
+        }
+        assert!(e.debug().shaken, "0,5 s tras parar: aún en la cola");
+        let learned = e.bias()[0];
+        assert!(learned.abs() < 0.05_f32.to_radians(), "en la cola aprendió sesgo: {:.3}°/s", learned.to_degrees());
+        // Pasada la cola, lo que lea el gyro quieto es sesgo de verdad y se aprende como siempre
+        for _ in 0..600 {
+            send(&mut e, [b, 0.0, 0.0], false);
+        }
+        assert!(!e.debug().shaken);
+        let learned = e.bias()[0];
+        assert!((learned - b).abs() < 0.1_f32.to_radians(), "sin vibrar no aprendió: {:.3}°/s", learned.to_degrees());
+    }
+
+    /// El lazo del roll no se para por la vibración: si se parara, en un
+    /// juego de pistola (vibra a cada disparo) los ejes volverían a torcerse.
+    /// Igual que `un_sesgo_en_el_eje_de_apuntado_no_tuerce_los_ejes_del_puntero`,
+    /// pero con el motor encendido todo el rato.
+    #[test]
+    fn vibrando_el_lazo_del_roll_sigue_enderezando_los_ejes() {
+        let mut s = Shooter::new(0.5);
+        s.e.set_shaking(true);
+        s.sweep(10.0, 1.3, 2.0);
+        s.sweep(10.0, 1.3, 120.0);
+        assert!(s.e.debug().shaken);
+        assert!(!s.e.debug().frozen, "el móvil no debería congelar barriendo sin parar");
+        let off = s.axis_off_vertical_deg(10.0, 1.3, 4.0);
+        assert!(off < 5.0, "vibrando, los ejes salieron {off:.1}° fuera de la vertical (twist={:.1}°)", s.twist_deg());
     }
 }

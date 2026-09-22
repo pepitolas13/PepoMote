@@ -3,10 +3,15 @@
 //! la mano:
 //!
 //! - `PEPOMOTE_RECORD=<archivo>` al arrancar el receptor: cada INPUT UDP del
-//!   Jugador 1 se apunta tal cual llega (con su instante de llegada).
+//!   Jugador 1 se apunta tal cual llega (con su instante de llegada), y
+//!   también cada orden RUMBLE que el receptor le manda: así la grabación
+//!   sabe cuándo vibraba el móvil (la vibración sacude el gyro, y el motor
+//!   del puntero lo tiene en cuenta).
 //! - `PepoMote --replay <archivo> [sens_deg]`: pasa la grabación por el motor
 //!   del puntero y saca un CSV por stdout (una fila por paquete: tiempo del
-//!   sensor, llegada, salida del motor) para mirarlo con calma.
+//!   sensor, llegada, salida del motor) para mirarlo con calma. Las órdenes
+//!   RUMBLE grabadas encienden y apagan el motor en la reproducción igual que
+//!   en el móvil (hasta un cero o hasta que caduque el TTL).
 //!
 //! Formato del archivo: registros `[u64 llegada_us LE][u16 len LE][paquete]`.
 
@@ -14,7 +19,33 @@ use crate::net::codec::{self, Packet};
 use crate::pointer::{PointerEngine, PointerOutput};
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Instant;
+
+/// La grabación en marcha, si la hay. La escriben dos hilos (la telemetría,
+/// los INPUT; el hub de la vibración, los RUMBLE), así que vive aquí.
+static RECORDER: Mutex<Option<Recorder>> = Mutex::new(None);
+static RECORDING: AtomicBool = AtomicBool::new(false);
+
+/// Abre la grabación si `PEPOMOTE_RECORD` está definida (la telemetría, al nacer).
+pub fn start_from_env() {
+    if let Some(r) = Recorder::from_env() {
+        *RECORDER.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+        RECORDING.store(true, Ordering::Release);
+    }
+}
+
+/// Apunta un paquete (un INPUT recibido del Jugador 1 o un RUMBLE que se le
+/// manda) si se está grabando; sin grabación no cuesta ni un candado.
+pub fn write(raw: &[u8]) {
+    if !RECORDING.load(Ordering::Acquire) {
+        return;
+    }
+    if let Some(r) = RECORDER.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        r.write(raw);
+    }
+}
 
 pub struct Recorder {
     out: BufWriter<File>,
@@ -90,7 +121,11 @@ pub fn replay_from_args() -> bool {
             // Resumen del roll del marco propio: es el que gira los EJES del
             // puntero sin mover el cursor, así que no se ve en la traza y hay
             // que sacarlo aparte. Ver `EST_TWIST_LAMBDA` en `engine.rs`.
-            let (mut twist_max, mut frozen_n, mut total_n) = (0.0_f32, 0u64, 0u64);
+            let (mut twist_max, mut frozen_n, mut shaken_n, mut total_n) = (0.0_f32, 0u64, 0u64, 0u64);
+            // El motor del móvil según las órdenes RUMBLE grabadas: vibra
+            // desde una orden distinta de cero hasta un cero o hasta que
+            // caduque su TTL (como hace el móvil)
+            let mut motor_until: Option<u64> = None;
             let stdout = std::io::stdout();
             let mut w = stdout.lock();
             // Columnas de diagnóstico al final: los parsers por índice siguen
@@ -99,10 +134,19 @@ pub fn replay_from_args() -> bool {
             // torcido por la aceleración del gesto).
             let _ = writeln!(
                 w,
-                "t_sensor_us,llegada_us,flags,gx,gy,gz,qw,qx,qy,qz,salida,nx_o_dx,ny_o_dy,qyaw,qpitch,fyaw,fpitch,twist,off_y,off_p,shift_y,shift_p,hint_x,hint_y,congelado,quieto,bias_x,bias_y,bias_z,ax,ay,az,inclinacion,tilt_yaw,tilt_pitch,tilt_ancla_y,tilt_ancla_p"
+                "t_sensor_us,llegada_us,flags,gx,gy,gz,qw,qx,qy,qz,salida,nx_o_dx,ny_o_dy,qyaw,qpitch,fyaw,fpitch,twist,off_y,off_p,shift_y,shift_p,hint_x,hint_y,congelado,quieto,bias_x,bias_y,bias_z,ax,ay,az,inclinacion,tilt_yaw,tilt_pitch,tilt_ancla_y,tilt_ancla_p,vibrando"
             );
             for (arrival, raw) in recs {
-                let Some(Packet::Input(p)) = codec::parse(&raw) else { continue };
+                let p = match codec::parse(&raw) {
+                    Some(Packet::Input(p)) => p,
+                    Some(Packet::Rumble(r)) => {
+                        motor_until =
+                            (r.strong != 0 || r.weak != 0).then(|| arrival.saturating_add(u64::from(r.ttl_ms) * 1000));
+                        continue;
+                    }
+                    _ => continue,
+                };
+                engine.set_shaking(motor_until.is_some_and(|until| arrival <= until));
                 let seen = if hint_lag == 0 { last_abs } else { abs_history.front().copied().or(last_abs) };
                 engine.set_cursor_hint(seen.map(|(x, y)| (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0))));
                 let out = engine.apply(&p, sens, 16.0 / 9.0, true, 2560.0, p.buttons & codec::BTN_PRECISION != 0);
@@ -123,17 +167,18 @@ pub fn replay_from_args() -> bool {
                 let (tay, tap) = d.tilt_anchor.unwrap_or((f32::NAN, f32::NAN));
                 let _ = writeln!(
                     w,
-                    "{},{},{},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{},{:.5},{:.5},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{:.5},{:.5},{:.5},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4}",
+                    "{},{},{},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{},{:.5},{:.5},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{:.5},{:.5},{:.5},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{}",
                     p.t_sensor_us, arrival, p.flags, p.gyro[0], p.gyro[1], p.gyro[2], p.quat[0], p.quat[1], p.quat[2],
                     p.quat[3], kind, a, b, d.qyaw, d.qpitch, d.fyaw, d.fpitch, d.twist_deg, d.offset.0, d.offset.1,
                     d.shift.0, d.shift.1, hx, hy, d.frozen as u8, d.quiet as u8, d.bias[0], d.bias[1], d.bias[2],
-                    p.accel[0], p.accel[1], p.accel[2], d.tilt as u8, d.tilt_yaw, d.tilt_pitch, tay, tap
+                    p.accel[0], p.accel[1], p.accel[2], d.tilt as u8, d.tilt_yaw, d.tilt_pitch, tay, tap, d.shaken as u8
                 );
                 if d.twist_deg.abs() > twist_max.abs() {
                     twist_max = d.twist_deg;
                 }
                 total_n += 1;
                 frozen_n += u64::from(d.frozen);
+                shaken_n += u64::from(d.shaken);
             }
             // A stderr para no ensuciar el CSV de stdout.
             if total_n > 0 {
@@ -144,6 +189,12 @@ pub fn replay_from_args() -> bool {
                     frozen_n,
                     total_n
                 );
+                if shaken_n > 0 {
+                    eprintln!(
+                        "vibrando (motor encendido o en su cola) el {:.1} % del tiempo: ahí no se aprende el sesgo del gyro",
+                        shaken_n as f64 * 100.0 / total_n as f64
+                    );
+                }
                 if twist_max.abs() > 15.0 {
                     eprintln!(
                         "  ojo: {:.0}° de roll dejan los ejes del puntero muy fuera de la vertical: mover el móvil arriba y abajo se ve en diagonal.",
