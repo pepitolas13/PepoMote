@@ -1,0 +1,10 @@
+{
+  "es": [
+    "Tras actualizar con la app abierta (o cerrar y abrir deprisa), el receptor ya no se queda sin puntero con «Inyección: ninguna»: espera a que el puerto del móvil se suelte y, si sigue ocupado, lo reintenta solo cada dos segundos.",
+    "Android y iPhone: en la primera pantalla, con la letra del sistema grande o en un móvil pequeño, el botón «¡Vamos!» se salía por abajo y no se podía entrar en la app. Ahora los pasos se desplazan y el botón queda siempre a la vista."
+  ],
+  "en": [
+    "After updating with the app open (or closing and reopening quickly), the receiver no longer loses the pointer with \"Injection: none\": it waits for the phone port to be released and, if still busy, keeps retrying by itself every two seconds.",
+    "Android and iPhone: on the first screen, with a large system font or on a small phone, the \"Let's go!\" button fell off the bottom and the app could not be entered. Now the steps scroll and the button always stays in view."
+  ]
+}
