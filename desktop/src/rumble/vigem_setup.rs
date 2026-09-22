@@ -48,11 +48,6 @@ pub fn outcome_of(code: u32) -> Outcome {
     }
 }
 
-/// Otra instalación en marcha (`ERROR_INSTALL_ALREADY_RUNNING`): el único
-/// fallo que se resuelve solo, así que no se apunta y se vuelve a intentar en
-/// el siguiente arranque.
-pub const INSTALL_ALREADY_RUNNING: u32 = 1618;
-
 /// Si toca instalar al arrancar: falta el driver, no se intentó ya con esta
 /// versión del instalador (instalado, cancelado o fallido) y no lo apaga
 /// `PEPOMOTE_NO_DRIVER_SETUP` (receptores de prueba: nunca un UAC).

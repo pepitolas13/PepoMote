@@ -107,7 +107,16 @@ def run_suite(name):
                 receiver.wait(timeout=8)
             except subprocess.TimeoutExpired:
                 receiver.kill()
-                receiver.wait()
+                try:
+                    receiver.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    # Un hilo atascado en el núcleo (una llamada al driver del
+                    # mando virtual que nunca vuelve) deja el proceso «terminando»
+                    # para siempre: no se espera más, se cuenta, y la siguiente
+                    # prueba fallará al no poder abrir los puertos, con este aviso
+                    # delante en vez de un runner colgado media hora.
+                    print(f"El receptor (PID {receiver.pid}) no muere ni con kill: hilo atascado en el núcleo; "
+                          "mira receiver.out y receptor.log", flush=True)
             if sys.exc_info()[0] is not None:
                 # La CI debe conservar también lo que vio el receptor cuando
                 # falla una comprobación, no solo el error del móvil simulado.

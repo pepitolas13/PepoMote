@@ -1119,10 +1119,17 @@ pub enum RumbleSetup {
 pub fn remembers_attempt(state: RumbleSetup) -> bool {
     match state {
         RumbleSetup::Installed | RumbleSetup::Declined => true,
-        RumbleSetup::Failed(code) => code != vigem_setup::INSTALL_ALREADY_RUNNING,
+        RumbleSetup::Failed(code) => code != INSTALL_ALREADY_RUNNING,
         RumbleSetup::Idle | RumbleSetup::Installing => false,
     }
 }
+
+/// Otra instalación en marcha (`ERROR_INSTALL_ALREADY_RUNNING`, 1618): el
+/// único fallo del instalador que se resuelve solo, así que no se apunta y
+/// se vuelve a intentar en el siguiente arranque. Vive aquí y no en
+/// `vigem_setup` porque ese módulo es solo de Windows y esta decisión se
+/// compila en todos los sistemas.
+pub const INSTALL_ALREADY_RUNNING: u32 = 1618;
 
 /// Botón «Instalar el mando virtual» de la ventana.
 pub fn install_driver_now() {

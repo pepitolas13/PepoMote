@@ -83,12 +83,26 @@ jobs:
           Get-Content $out, $err -ErrorAction SilentlyContinue
           if ($p.ExitCode -ne 0) { Write-Host "::error::PepoMote.exe --install-driver salió con $($p.ExitCode)"; exit $p.ExitCode }
           Get-PnpDevice -FriendlyName '*Virtual Gamepad Emulation Bus*' | Format-Table Status, FriendlyName
+      - name: Diagnóstico del mando virtual en el runner
+        shell: pwsh
+        run: |
+          # ViGEmBus crea un mando de Xbox 360: hace falta el driver de clase xusb22
+          # (en un Windows Server puede no venir). Si falta, el mando nunca está «listo».
+          Write-Host "xusb22.sys: $(Test-Path C:\Windows\System32\drivers\xusb22.sys)"
+          sc.exe query xusb22
+          Get-PnpDevice | Where-Object { $_.FriendlyName -like '*Xbox*' -or $_.FriendlyName -like '*Virtual Gamepad*' } | Format-Table Status, Class, FriendlyName
+          [Environment]::OSVersion.VersionString
       - name: Mandos de extremo a extremo (RetroArch, Eden, Cemu, Dolphin y mando universal)
+        timeout-minutes: 12
         env:
           PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir,e2e_gamepad
           # Con el driver recién instalado, saltarse el mando universal es un fallo
           PEPOMOTE_E2E_REQUIRE_GAMEPAD: "1"
         run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
+      - name: Procesos del receptor que se quedaron terminando
+        if: always()
+        shell: pwsh
+        run: Get-Process PepoMote -ErrorAction SilentlyContinue | Format-Table Id, StartTime, HasExited, Responding
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
