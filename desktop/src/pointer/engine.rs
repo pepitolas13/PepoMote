@@ -328,6 +328,11 @@ impl Quat {
     /// diagnóstico (`PointerDebug::twist_deg`).
     fn twist_about_y(self, other: Self) -> f32 {
         let d = self.conj().mul(other);
+        // q y −q son el mismo giro: el sensor del móvil entrega w ≥ 0 y
+        // cambia de signo al cruzar los 180° de su referencia, mientras el
+        // marco propio (gyro integrado) sigue continuo. Sin canonizar, la
+        // diferencia es −identidad y el twist lee ±360° en vez de 0.
+        let d = if d.w < 0.0 { Self { w: -d.w, x: -d.x, y: -d.y, z: -d.z } } else { d };
         (2.0 * d.y.atan2(d.w)).to_degrees()
     }
 
@@ -2479,6 +2484,7 @@ mod tests {
         t: f32,
         last: Option<(f32, f32)>,
         pitch: f32,
+        yaw: f32,
     }
 
     impl Shooter {
@@ -2491,15 +2497,34 @@ mod tests {
                 t: 0.0,
                 last: None,
                 pitch: 0.0,
+                yaw: 0.0,
             }
         }
 
         fn send(&mut self, pitch: f32) -> Option<(f32, f32)> {
             self.pitch = pitch;
-            let q = qrot_x(pitch);
-            match self.ph.send(&mut self.e, q, q, self.bias, self.sens) {
+            // Yaw en el mundo, cabeceo en el cuerpo. El sensor entrega el
+            // cuaternión CANÓNICO (w ≥ 0), como el móvil real: al cruzar los
+            // 180° de su referencia cambia de signo de golpe.
+            let q = qrot_z(self.yaw).mul(qrot_x(pitch));
+            let sent = if q.w < 0.0 { Quat { w: -q.w, x: -q.x, y: -q.y, z: -q.z } } else { q };
+            match self.ph.send(&mut self.e, q, sent, self.bias, self.sens) {
                 PointerOutput::Abs { nx, ny } => Some((nx, ny)),
                 _ => None,
+            }
+        }
+
+        /// Gira el móvil en yaw hasta `yaw_end` grados, a ritmo uniforme, en `secs`.
+        fn turn(&mut self, yaw_end: f32, secs: f32) {
+            let dt = DT_US as f32 / 1e6;
+            let n = (secs / dt).round() as u32;
+            let yaw0 = self.yaw;
+            for i in 1..=n {
+                self.t += dt;
+                self.yaw = yaw0 + (yaw_end - yaw0) * i as f32 / n as f32;
+                if let Some(o) = self.send(0.0) {
+                    self.last = Some(o);
+                }
             }
         }
 
@@ -2613,6 +2638,31 @@ mod tests {
         assert!(s.twist_deg().abs() < 1.0, "recentrar no enderezó los ejes: twist={:.1}°", s.twist_deg());
         let off = s.axis_off_vertical_deg(10.0, 1.3, 4.0);
         assert!(off < 5.0, "tras recentrar el eje sigue a {off:.1}° de la vertical");
+    }
+
+    #[test]
+    fn cruzar_los_180_grados_del_sensor_no_tuerce_los_ejes() {
+        // El cuaternión del sensor llega canónico (w ≥ 0: en las grabaciones
+        // reales gesto1-4, 191k paquetes, ni una muestra trae w < 0). Al girar
+        // más de 180° desde su referencia, q pasa a −q de golpe. Es el MISMO
+        // giro, pero el marco propio integra el gyro y no salta con él: la
+        // diferencia entre ambos es −identidad y, sin canonizar el signo, el
+        // twist leía ±360° y el lazo del roll daba una vuelta entera a los
+        // ejes en ~50 s: cabeceos puros salían horizontales. Sin sesgo: el
+        // fallo es solo del signo.
+        //
+        // sens grande: 190° de yaw tienen que seguir dentro de la pantalla,
+        // que si no el recorte de cordura de `emit` esconde la horizontal.
+        let mut s = Shooter::new(0.0);
+        s.sens = 800.0;
+        s.sweep(10.0, 1.3, 2.0); // asentamiento del sensor
+        s.turn(190.0, 20.0); // pasa por los 180°: el sensor cambia de signo
+        s.sweep(10.0, 1.3, 30.0);
+        assert!(!s.e.debug().frozen, "no debería congelar cabeceando");
+        let twist = s.twist_deg();
+        assert!(twist.abs() < 6.0, "twist={twist:.1}° tras cruzar los 180° (leía ±360°)");
+        let off = s.axis_off_vertical_deg(10.0, 1.3, 4.0);
+        assert!(off < 5.0, "los ejes salieron {off:.1}° fuera de la vertical (twist={:.1}°)", s.twist_deg());
     }
 
     #[test]
