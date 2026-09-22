@@ -258,6 +258,7 @@ impl ControllerUi {
 
     /// `pad_pending`: tipo de mando pedido al receptor y aún sin eco (el
     /// selector lo pinta a medio tono). `press`: los ajustes de pulsación.
+    /// `media_everywhere`: el ajuste «Multimedia en todos los modos».
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
@@ -269,6 +270,7 @@ impl ControllerUi {
         sensor_hz: f32,
         press: Press,
         layout_name: &str,
+        media_everywhere: bool,
     ) -> Action {
         let mut action = Action::None;
         self.press = press;
@@ -376,14 +378,19 @@ impl ControllerUi {
         // Home solo conectado y fuera del modo puntero (el PC no le da uso)
         let home = matches!(status, Status::Connected { mode, .. } if mode != "pointer");
         self.dolphin = matches!(status, Status::Connected { mode, .. } if mode == "dolphin");
-        self.layout(ui, rect, buttons, home);
+        let connected_mode = match status {
+            Status::Connected { mode, .. } => Some(mode.as_str()),
+            _ => None,
+        };
+        let media = shows_media(connected_mode, media_everywhere);
+        self.layout(ui, rect, buttons, home, media);
         self.process_events(ui.ctx(), buttons);
         action
     }
 
     /// `home`: pintar el botón Home entre 1 y 2 (Dolphin: menú HOME de la Wii;
     /// Cemu: Mario Party 10 lo pide para dar por emparejado cada Mando de Wii).
-    fn layout(&mut self, ui: &mut egui::Ui, rect: Rect, buttons: &Buttons, home: bool) {
+    fn layout(&mut self, ui: &mut egui::Ui, rect: Rect, buttons: &Buttons, home: bool, media: bool) {
         let painter = ui.painter();
         let cv = Canvas::new(painter, rect, Transform::Straight);
         let pressed = buttons.physical();
@@ -431,36 +438,38 @@ impl ControllerUi {
         self.circle(&cv, Pos2::new(cx + dx, y + r12), r12, if retro { "A" } else { "2" }, 18.0 * s, pmp::BTN_TWO, pressed, false);
         y += r12 * 2.0 + 8.0 * s;
 
-        // Multimedia (plegable)
-        let toggle = Rect::from_center_size(Pos2::new(cx, y + 14.0 * s), Vec2::new(150.0 * s, 26.0 * s));
-        let toggle_resp = ui.interact(toggle, ui.id().with("media"), Sense::click());
-        if toggle_resp.clicked() {
-            self.show_media = !self.show_media;
-        }
-        painter.text(
-            toggle.center(),
-            Align2::CENTER_CENTER,
-            if self.show_media { tr!("ctl.media_open") } else { tr!("ctl.media_closed") },
-            FontId::proportional(13.0 * s),
-            theme::text_dim(),
-        );
-        y += 28.0 * s;
-        if self.show_media {
-            let items = [
-                ("⏮", pmp::BTN_MEDIA_PREV),
-                ("🔉", pmp::BTN_MEDIA_VOL_DOWN),
-                ("⏯", pmp::BTN_MEDIA_PLAY_PAUSE),
-                ("🔇", pmp::BTN_MEDIA_MUTE),
-                ("🔊", pmp::BTN_MEDIA_VOL_UP),
-                ("⏭", pmp::BTN_MEDIA_NEXT),
-            ];
-            let r = 22.0 * s;
-            let step = r * 2.0 + 8.0 * s;
-            let x0 = cx - step * 2.5;
-            for (i, (label, bit)) in items.iter().enumerate() {
-                self.circle(&cv, Pos2::new(x0 + step * i as f32, y + r), r, label, 15.0 * s, *bit, pressed, false);
+        // Multimedia (plegable): solo en modo puntero, o en todos con el ajuste
+        if media {
+            let toggle = Rect::from_center_size(Pos2::new(cx, y + 14.0 * s), Vec2::new(150.0 * s, 26.0 * s));
+            let toggle_resp = ui.interact(toggle, ui.id().with("media"), Sense::click());
+            if toggle_resp.clicked() {
+                self.show_media = !self.show_media;
             }
-            y += r * 2.0 + 8.0 * s;
+            painter.text(
+                toggle.center(),
+                Align2::CENTER_CENTER,
+                if self.show_media { tr!("ctl.media_open") } else { tr!("ctl.media_closed") },
+                FontId::proportional(13.0 * s),
+                theme::text_dim(),
+            );
+            y += 28.0 * s;
+            if self.show_media {
+                let items = [
+                    ("⏮", pmp::BTN_MEDIA_PREV),
+                    ("🔉", pmp::BTN_MEDIA_VOL_DOWN),
+                    ("⏯", pmp::BTN_MEDIA_PLAY_PAUSE),
+                    ("🔇", pmp::BTN_MEDIA_MUTE),
+                    ("🔊", pmp::BTN_MEDIA_VOL_UP),
+                    ("⏭", pmp::BTN_MEDIA_NEXT),
+                ];
+                let r = 22.0 * s;
+                let step = r * 2.0 + 8.0 * s;
+                let x0 = cx - step * 2.5;
+                for (i, (label, bit)) in items.iter().enumerate() {
+                    self.circle(&cv, Pos2::new(x0 + step * i as f32, y + r), r, label, 15.0 * s, *bit, pressed, false);
+                }
+                y += r * 2.0 + 8.0 * s;
+            }
         }
 
         // Gatillo B: banda inferior
@@ -675,10 +684,33 @@ impl ControllerUi {
     }
 }
 
+/// ¿Se enseña la fila multimedia (⏯, volumen…)? Siempre en modo puntero, el
+/// único en el que el PC atiende esas teclas (en Dolphin, Wii U y Switch los
+/// paquetes van al DSU y en RetroArch solo se aplican los bits de la pistola);
+/// en los demás modos nunca, salvo con el ajuste «Multimedia en todos los
+/// modos». Sin enlace confirmado (`None`: conectando, reconectando) se ve: el
+/// trazado sin modo es el de puntero, como con el botón Home. La misma regla
+/// que en Android e iOS.
+pub fn shows_media(connected_mode: Option<&str>, everywhere: bool) -> bool {
+    everywhere || connected_mode.is_none_or(|mode| mode == "pointer")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ui::touch::Press;
+
+    /// Mismos casos que RouteTest (Android) y RouteTests (iOS).
+    #[test]
+    fn la_fila_multimedia_solo_en_puntero_salvo_ajuste() {
+        assert!(shows_media(Some("pointer"), false));
+        for mode in ["dolphin", "cemu", "retroarch"] {
+            assert!(!shows_media(Some(mode), false), "{mode}");
+            assert!(shows_media(Some(mode), true), "{mode}");
+        }
+        // Sin enlace confirmado: trazado de puntero
+        assert!(shows_media(None, false));
+    }
 
     fn connected(mode: &str) -> Status {
         Status::Connected {
@@ -691,13 +723,39 @@ mod tests {
 
     /// Pinta un frame (sin eventos) para tener el trazado y sus formas.
     fn render(ctl: &mut ControllerUi, buttons: &Buttons, status: &Status, press: Press) {
+        render_with(ctl, buttons, status, press, false);
+    }
+
+    /// Como [render], eligiendo el ajuste «Multimedia en todos los modos».
+    fn render_with(ctl: &mut ControllerUi, buttons: &Buttons, status: &Status, press: Press, media_everywhere: bool) {
         let ctx = egui::Context::default();
         let size = Vec2::new(400.0, 900.0);
         let _ = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), ..Default::default() }, |ctx| {
             egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
-                ctl.show(ui, buttons, status, false, None, 0.0, press, "RetroPad");
+                ctl.show(ui, buttons, status, false, None, 0.0, press, "RetroPad", media_everywhere);
             });
         });
+    }
+
+    /// El trazado de verdad: con la fila desplegada, sus botones existen en
+    /// modo puntero y no en Dolphin; con el ajuste, también en Dolphin.
+    #[test]
+    fn la_fila_multimedia_no_se_pinta_fuera_del_puntero() {
+        let mut ctl = ControllerUi::new();
+        ctl.show_media = true;
+        let b = Buttons::new();
+        let press = Press { slide: false, sticky: true };
+        let has_media = |ctl: &ControllerUi| {
+            ctl.hits.iter().any(|(_, t)| matches!(t, Target::Button(bit) if *bit == pmp::BTN_MEDIA_PLAY_PAUSE))
+        };
+        render_with(&mut ctl, &b, &connected("pointer"), press, false);
+        assert!(has_media(&ctl), "en puntero la fila se pinta");
+        render_with(&mut ctl, &b, &connected("dolphin"), press, false);
+        assert!(!has_media(&ctl), "en Dolphin no");
+        render_with(&mut ctl, &b, &connected("dolphin"), press, true);
+        assert!(has_media(&ctl), "con el ajuste, también en Dolphin");
+        render_with(&mut ctl, &b, &Status::Connecting, press, false);
+        assert!(has_media(&ctl), "sin enlace confirmado, trazado de puntero");
     }
 
     fn position(ctl: &ControllerUi, target: Target) -> Pos2 {

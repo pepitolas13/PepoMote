@@ -82,7 +82,8 @@ import dev.pepotech.pepomote.R
 
 /**
  * Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/Home/2 (Home fuera
- * del modo puntero), multimedia, B.
+ * del modo puntero), multimedia (solo en modo puntero, o en todos con el
+ * ajuste «Multimedia en todos los modos»), B.
  * `showChips`: mostrar el selector Puntero/Dolphin/Wii U (entrada por Conectar
  * con el ajuste activo). Entrando por la tarjeta Dolphin no hay selector: esa
  * pantalla es solo-Dolphin. Dentro de Wii U como Mando de Wii, la cabecera lo
@@ -104,6 +105,9 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
     // La fila multimedia, abierta o plegada: la pantalla lo sabe porque, en un
     // móvil bajo, abrirla encoge un poco el resto en vez de echar la B fuera
     var mediaOpen by remember { mutableStateOf(false) }
+    // Multimedia solo en modo puntero (el PC no atiende esas teclas en los
+    // demás), o en todos con el ajuste; sin la fila, el cuerpo cuenta con su alto
+    val showsMedia = dev.pepotech.pepomote.service.Route.showsMedia(link, dev.pepotech.pepomote.control.AppPrefs.mediaEverywhere(context))
 
     // El teclado y la pose congelada van juntos, y se sueltan SOLOS: al
     // cerrarlo, al cambiar de modo (el PC lo cambia por su cuenta al abrir un
@@ -268,7 +272,7 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                 // (pantalla dividida), se recorta el cuerpo por abajo; la B queda
                 // fuera del recorte y siempre entera. En tablet, igual que antes
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                    val m = WiiRemoteMetrics(grow, maxHeight.value, mediaOpen)
+                    val m = WiiRemoteMetrics(grow, maxHeight.value, mediaOpen, mediaRow = showsMedia)
                     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
                         Column(
                             modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds(),
@@ -323,8 +327,10 @@ fun ControllerScreen(link: UiLink, showChips: Boolean, onDisconnect: () -> Unit)
                                 RoundButton(if (retro) "A" else "2", m.one.dp, ButtonState.TWO, textSize = m.text(18))
                             }
 
-                            Gap(m.gap(10f).dp, m.flexible)
-                            MediaRow(expanded = mediaOpen, onToggle = { mediaOpen = !mediaOpen }, buttonSize = m.media.dp, textSize = m.text(16))
+                            if (showsMedia) {
+                                Gap(m.gap(10f).dp, m.flexible)
+                                MediaRow(expanded = mediaOpen, onToggle = { mediaOpen = !mediaOpen }, buttonSize = m.media.dp, textSize = m.text(16))
+                            }
 
                             Spacer(Modifier.weight(1f))
                         }

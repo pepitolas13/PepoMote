@@ -39,6 +39,25 @@ class WiiRemoteMetricsTest {
         assertEquals(1f, WiiRemoteMetrics.forScreen(440f, 956f, 130f, mediaOpen = true).s, 0f)
     }
 
+    /**
+     * Fuera del modo puntero no hay fila multimedia (ni su botón ni su hueco):
+     * en un móvil bajo el cuerpo encoge menos, y abierta o cerrada da igual.
+     */
+    @Test
+    fun sinFilaMultimediaElCuerpoEncogeMenos() {
+        val con = WiiRemoteMetrics.forScreen(360f, 640f, 44f)
+        val sin = WiiRemoteMetrics.forScreen(360f, 640f, 44f, mediaRow = false)
+        assertTrue("con fila ${con.s} < 1", con.s < 1f)
+        assertTrue("sin fila ${sin.s} > con fila ${con.s}", sin.s > con.s)
+        assertEquals(sin.s, WiiRemoteMetrics.forScreen(360f, 640f, 44f, mediaOpen = true, mediaRow = false).s, 0f)
+        assertFalse(WiiRemoteMetrics.forScreen(360f, 640f, 44f, mediaOpen = true, mediaRow = false).mediaOpen)
+        fits(sin)
+        // Sin fila, lo que sobra son justo su botón y su hueco
+        val conS1 = WiiRemoteMetrics(1f, 900f)
+        val sinS1 = WiiRemoteMetrics(1f, 900f, mediaRow = false)
+        assertEquals(WiiRemoteMetrics.MEDIA_BUTTON + WiiRemoteMetrics.MEDIA_GAP, conS1.bodyMin - sinS1.bodyMin, eps)
+    }
+
     @Test
     fun movilPequenoEncogeParaQueQuepaLaB() {
         // 360×640 en modo puntero: antes se salían ~60 dp (la B a medias)

@@ -22,6 +22,16 @@ class AppPrefsTest {
         assertTrue(AppPrefs.keyboardClickFirst(context))
     }
 
+    /** «Multimedia en todos los modos» viene apagado y se recuerda. */
+    @Test fun laMultimediaEnTodosLosModosVieneApagada() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        assertFalse(AppPrefs.mediaEverywhere(context))
+        AppPrefs.setMediaEverywhere(context, true)
+        assertTrue(AppPrefs.mediaEverywhere(context))
+        AppPrefs.setMediaEverywhere(context, false)
+        assertFalse(AppPrefs.mediaEverywhere(context))
+    }
+
     /**
      * Mando universal: el giro no está elegido hasta que se contesta la
      * pregunta de la primera vez, y mientras tanto va apagado. Las dos

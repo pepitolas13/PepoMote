@@ -34,7 +34,9 @@ struct RemoteFrame {
 /// cualquier otro iPhone las medidas de siempre (`s` = 1, exacto); en un iPad
 /// todo crece a la vez (`grow` > 1) y nunca encoge, aunque la cabecera sea
 /// alta, y los huecos se vuelven flexibles para repartir la holgura vertical
-/// entre todos en vez de dejarla en uno solo.
+/// entre todos en vez de dejarla en uno solo. `hasMediaRow`: la fila
+/// multimedia se enseña (solo en modo puntero, o en todos con el ajuste);
+/// sin ella, ni su botón ni su hueco cuentan y `mediaOpen` da igual.
 struct RemoteMetrics {
     /// Margen superior de la columna, encima de la cabecera.
     static let top: CGFloat = 10
@@ -49,12 +51,15 @@ struct RemoteMetrics {
     /// Fila multimedia desplegada: botones de 46 (escalan) bajo un hueco de 4.
     static let mediaRow: CGFloat = 46
     static let mediaSpacing: CGFloat = 4
+    /// Hueco entre 1/2 y la fila multimedia (dentro de `scalable`).
+    static let mediaGap: CGFloat = 10
     /// Por debajo no se encoge más (1 y 2 quedan en 31 pt): con menos alto
     /// (iPad a media pantalla) el cuerpo se recorta por abajo y la B sigue entera.
     static let floor: CGFloat = 0.6
 
     let grow: CGFloat
     let bodyH: CGFloat
+    let hasMediaRow: Bool
     let mediaOpen: Bool
     let flexible: Bool
     let s: CGFloat
@@ -67,13 +72,16 @@ struct RemoteMetrics {
     let trigger: CGFloat
     let spacing: CGFloat
 
-    init(grow: CGFloat, bodyH: CGFloat, mediaOpen: Bool = false) {
+    init(grow: CGFloat, bodyH: CGFloat, mediaOpen: Bool = false, hasMediaRow: Bool = true) {
         self.grow = grow
         self.bodyH = bodyH
-        self.mediaOpen = mediaOpen
+        self.hasMediaRow = hasMediaRow
+        let open = hasMediaRow && mediaOpen
+        self.mediaOpen = open
         flexible = grow > 1
-        let fixed: CGFloat = Self.mediaButton + Self.gapMin + Self.bottom + (mediaOpen ? Self.mediaSpacing : 0)
-        let scalable: CGFloat = Self.scalable + (mediaOpen ? Self.mediaRow : 0)
+        // Sin la fila multimedia no cuentan ni su botón (fijo) ni su hueco (escala)
+        let fixed: CGFloat = (hasMediaRow ? Self.mediaButton : 0) + Self.gapMin + Self.bottom + (open ? Self.mediaSpacing : 0)
+        let scalable: CGFloat = Self.scalable - (hasMediaRow ? 0 : Self.mediaGap) + (open ? Self.mediaRow : 0)
         let fit: CGFloat = (bodyH - fixed) / scalable
         // iPad: crece y nunca encoge; iPhone: 1 si cabe y, si no, lo justo para que quepa
         s = flexible ? grow : Swift.min(1, Swift.max(Self.floor, fit))
@@ -88,11 +96,12 @@ struct RemoteMetrics {
     }
 
     /// Medidas para una pantalla entera con una cabecera de `headerH` pt.
-    static func forScreen(_ size: CGSize, headerH: CGFloat, mediaOpen: Bool = false) -> RemoteMetrics {
+    static func forScreen(_ size: CGSize, headerH: CGFloat, mediaOpen: Bool = false, hasMediaRow: Bool = true) -> RemoteMetrics {
         RemoteMetrics(
             grow: UiScale.factor(size, base: UiScale.remoteBase, fixed: UiScale.remoteFixed),
             bodyH: size.height - top - headerH,
-            mediaOpen: mediaOpen
+            mediaOpen: mediaOpen,
+            hasMediaRow: hasMediaRow
         )
     }
 
@@ -103,10 +112,10 @@ struct RemoteMetrics {
 
     /// Alto mínimo del cuerpo con estas medidas: para las pruebas.
     var bodyMin: CGFloat {
-        let gaps: CGFloat = gap(18) + gap(16) + gap(16) + gap(14) + gap(10)
+        let gaps: CGFloat = gap(18) + gap(16) + gap(16) + gap(14) + (hasMediaRow ? gap(Self.mediaGap) : 0)
         let buttons: CGFloat = cross + recenter + big + one + trigger
-        let mediaH: CGFloat = mediaOpen ? Self.mediaSpacing + media : 0
-        let fixed: CGFloat = Self.mediaButton + Self.gapMin + Self.bottom
+        let mediaH: CGFloat = (hasMediaRow ? Self.mediaButton : 0) + (mediaOpen ? Self.mediaSpacing + media : 0)
+        let fixed: CGFloat = Self.gapMin + Self.bottom
         return gaps + buttons + mediaH + fixed
     }
 
@@ -135,7 +144,8 @@ struct Gap: View {
 }
 
 /// Mando vertical estilo Wiimote: cruceta, −/diana/+, A, 1/Home/2 (Home fuera
-/// del modo puntero), multimedia, B.
+/// del modo puntero), multimedia (solo en modo puntero, o en todos con el
+/// ajuste «Multimedia en todos los modos»), B.
 /// `showChips`: mostrar el selector Puntero/Dolphin/Wii U. Dentro de Wii U
 /// como Mando de Wii, la cabecera lo dice, los chips se ven siempre (Jugador
 /// 1) y debajo va el selector «En Cemu soy». En modo Wii U la cabecera lleva
@@ -157,6 +167,9 @@ struct ControllerScreen: View {
 
     /// Home del Mando de Wii: conectado y fuera del modo puntero.
     private var showHome: Bool { link.link.connected.map(showHomeButton) ?? false }
+    /// Multimedia solo en modo puntero (el PC no atiende esas teclas en los
+    /// demás), o en todos con el ajuste.
+    private var showsMedia: Bool { Route.showsMedia(link.link, AppPrefs.mediaEverywhere) }
 
     var body: some View {
         GeometryReader { geo in
@@ -268,7 +281,7 @@ struct ControllerScreen: View {
             // si ni así cabe (iPad a media pantalla), se recorta el cuerpo por
             // abajo; la B queda fuera del recorte y siempre entera
             GeometryReader { avail in
-                let m = RemoteMetrics(grow: f.grow, bodyH: avail.size.height, mediaOpen: mediaOpen)
+                let m = RemoteMetrics(grow: f.grow, bodyH: avail.size.height, mediaOpen: mediaOpen, hasMediaRow: showsMedia)
                 VStack(spacing: 0) {
                     VStack(spacing: 0) {
                         // Hueco de sobra entre los chips y la cruceta: que ir a por ↑ no toque un chip
@@ -308,8 +321,13 @@ struct ControllerScreen: View {
                             }
                             RoundButton(label: retro ? "A" : "2", size: m.one, bit: Btn.two, textSize: m.text(18))
                         }
-                        Gap(m.gap(10), flexible: m.flexible)
-                        MediaRow(expanded: $mediaOpen, buttonSize: m.media, textSize: m.text(16))
+                        // Multimedia solo cuando se enseña (modo puntero, o todos con
+                        // el ajuste): sin la fila, ni su hueco ni su botón, y el cuerpo
+                        // cuenta con ese alto (RemoteMetrics.hasMediaRow)
+                        if showsMedia {
+                            Gap(m.gap(RemoteMetrics.mediaGap), flexible: m.flexible)
+                            MediaRow(expanded: $mediaOpen, buttonSize: m.media, textSize: m.text(16))
+                        }
                         Spacer(minLength: RemoteMetrics.gapMin)
                     }
                     // Con mínimo y máximo, el marco mide justo lo que le dan:

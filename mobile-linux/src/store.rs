@@ -60,6 +60,11 @@ pub struct Settings {
     /// apunta el usuario, para dejar el cursor dentro del campo. Apagado, el
     /// clic lo da el usuario con A. Encendido de serie.
     pub keyboard_click_first: bool,
+    /// «Multimedia en todos los modos»: la fila multimedia del mando vertical
+    /// sale siempre en modo puntero (el único en el que el PC atiende esas
+    /// teclas); encendido, sale también en Dolphin, Wii U y RetroArch.
+    /// Apagado de serie.
+    pub media_everywhere: bool,
 }
 
 impl Default for Settings {
@@ -80,6 +85,7 @@ impl Default for Settings {
             slide_press: false,
             sticky_press: true,
             keyboard_click_first: true,
+            media_everywhere: false,
         }
     }
 }
@@ -348,6 +354,7 @@ mod tests {
     fn ajustes_con_valores_por_defecto() {
         let d = Settings::default();
         assert_eq!(d.rotation, Rotation::Left);
+        assert!(!d.media_everywhere, "la multimedia en todos los modos viene apagada");
         assert_eq!(serde_json::from_str::<Settings>("{}").unwrap(), d, "archivo vacío: por defecto");
         let s: Settings = serde_json::from_str(r#"{"rotation":"right"}"#).unwrap();
         assert_eq!(s.rotation, Rotation::Right);
@@ -369,6 +376,7 @@ mod tests {
             slide_press: true,
             sticky_press: false,
             keyboard_click_first: false,
+            media_everywhere: true,
         };
         let back: Settings = serde_json::from_str(&serde_json::to_string(&mine).unwrap()).unwrap();
         assert_eq!(back, mine);

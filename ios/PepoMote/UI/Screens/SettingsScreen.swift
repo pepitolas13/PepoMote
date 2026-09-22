@@ -10,6 +10,7 @@ struct SettingsScreen: View {
     @State private var slidePress = AppPrefs.slidePress
     @State private var stickyPress = AppPrefs.stickyPress
     @State private var dolphinChips = AppPrefs.showDolphinChips
+    @State private var mediaEverywhere = AppPrefs.mediaEverywhere
     @State private var noScreen = AppPrefs.gamePadNoScreen
     @State private var fullScreen = AppPrefs.gamePadFullScreen
     @State private var fullScreenKb = AppPrefs.gamePadFullScreenKeyboard
@@ -40,6 +41,10 @@ struct SettingsScreen: View {
                     .onChange(of: stickyPress) { AppPrefs.stickyPress = $0 }
                     SettingRow(title: tr("chips_title"), subtitle: tr("chips_sub"), on: $dolphinChips)
                         .onChange(of: dolphinChips) { AppPrefs.showDolphinChips = $0 }
+                    // Fila multimedia del mando vertical: solo en modo puntero (el PC no
+                    // atiende esas teclas en los demás) o, con esto, en todos los modos
+                    SettingRow(title: tr("media_everywhere_title"), subtitle: tr("media_everywhere_sub"), on: $mediaEverywhere)
+                        .onChange(of: mediaEverywhere) { AppPrefs.mediaEverywhere = $0 }
                     // Nunchuk en el mismo móvil (Dolphin): stick, C y Z con el móvil de lado
                     SettingRow(title: tr("nunchuk_own_title"), subtitle: tr("nunchuk_own_sub"), on: $ownNunchuk)
                         .onChange(of: ownNunchuk) {

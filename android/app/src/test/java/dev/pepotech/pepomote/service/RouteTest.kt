@@ -56,6 +56,31 @@ class RouteTest {
     }
 
     /**
+     * La fila multimedia: siempre en modo puntero (el único en el que el PC
+     * atiende esas teclas), nunca en los demás salvo con el ajuste; sin enlace
+     * confirmado se ve, como el trazado de puntero (igual que Home).
+     */
+    @Test
+    fun laFilaMultimediaSoloEnPunteroSalvoAjuste() {
+        assertEquals(true, Route.showsMedia(connected(mode = "pointer"), everywhere = false))
+        assertEquals(true, Route.showsMedia(connected(mode = "pointer", slot = 1), everywhere = false))
+        val others = listOf(
+            connected(mode = "dolphin"),
+            connected(mode = "cemu", pad = LinkState.PAD_WIIMOTE),
+            connected(mode = "retroarch", pad = LinkState.PAD_NES),
+            connected(mode = "retroarch", pad = LinkState.PAD_GUN)
+        )
+        for (link in others) {
+            assertEquals(link.mode, false, Route.showsMedia(link, everywhere = false))
+            assertEquals(link.mode, true, Route.showsMedia(link, everywhere = true))
+        }
+        // Sin enlace confirmado: trazado de puntero
+        assertEquals(true, Route.showsMedia(UiLink.Connecting, everywhere = false))
+        assertEquals(true, Route.showsMedia(UiLink.Disconnected, everywhere = false))
+        assertEquals(true, Route.showsMedia(UiLink.Reconnecting("PC", 1), everywhere = false))
+    }
+
+    /**
      * La cara del diálogo: con el teclado del PC el azul manda el texto tal
      * cual y el Intro va aparte; con el teclado en pantalla de un emulador,
      * «Aceptar» manda texto + Intro (es lo que lo confirma).

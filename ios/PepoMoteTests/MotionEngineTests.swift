@@ -137,7 +137,7 @@ final class MotionEngineTests: XCTestCase {
         defer { engine.stop(); buttons.reset() }
         engine.start()
         for _ in 0..<6 {
-            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8])
+            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8], quaternion: [1, 0, 0, 0])
             runFor(0.005)
         }
         XCTAssertTrue(
@@ -150,7 +150,7 @@ final class MotionEngineTests: XCTestCase {
         runFor(0.02)
         let desde = recorder.packets.count
         for _ in 0..<6 {
-            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8])
+            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8], quaternion: [1, 0, 0, 0])
             runFor(0.005)
         }
         let apagados = Array(recorder.packets.dropFirst(desde))
@@ -167,7 +167,7 @@ final class MotionEngineTests: XCTestCase {
 
         engine.padAim = true
         for _ in 0..<6 {
-            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8])
+            source.emit(gyro: [0.5, 0, 0], accel: [1, 2, 9.8], quaternion: [1, 0, 0, 0])
             runFor(0.005)
         }
         XCTAssertTrue(

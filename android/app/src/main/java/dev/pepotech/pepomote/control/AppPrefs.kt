@@ -214,6 +214,21 @@ object AppPrefs {
             .edit().putBoolean("showDolphinChips", value).apply()
     }
 
+    /**
+     * «Multimedia en todos los modos»: la fila multimedia del mando vertical
+     * sale siempre en modo puntero (el único en el que el PC atiende esas
+     * teclas); con esto encendido sale también en Dolphin, Wii U y RetroArch.
+     * Apagado de serie.
+     */
+    fun mediaEverywhere(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("mediaEverywhere", false)
+
+    fun setMediaEverywhere(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("mediaEverywhere", value).apply()
+    }
+
     fun soundsEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean("sounds", true)

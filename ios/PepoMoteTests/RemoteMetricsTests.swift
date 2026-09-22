@@ -77,4 +77,27 @@ final class RemoteMetricsTests: XCTestCase {
         XCTAssertGreaterThan(small.grow, 1)
         XCTAssertEqual(small.s, UiScale.factor(sz(600, 830), base: UiScale.remoteBase, fixed: UiScale.remoteFixed))
     }
+
+    /// Fuera del modo puntero no hay fila multimedia (ni su botón ni su hueco):
+    /// en un iPhone bajo el cuerpo encoge menos, y abierta o cerrada da igual.
+    /// Mismos vectores que Android (sinFilaMultimediaElCuerpoEncogeMenos).
+    func testSinFilaMultimediaElCuerpoEncogeMenos() {
+        let con = RemoteMetrics.forScreen(sz(375, 667), headerH: 44)
+        let sin = RemoteMetrics.forScreen(sz(375, 667), headerH: 44, hasMediaRow: false)
+        XCTAssertLessThan(con.s, 1, "con fila encoge")
+        XCTAssertGreaterThan(sin.s, con.s, "sin fila encoge menos")
+        XCTAssertEqual(sin.s, 1, "en el SE sin fila cabe todo a escala 1")
+        XCTAssertFalse(sin.hasMediaRow)
+        let abierta = RemoteMetrics.forScreen(sz(375, 667), headerH: 44, mediaOpen: true, hasMediaRow: false)
+        XCTAssertEqual(abierta.s, sin.s, "sin fila, abierta o cerrada da igual")
+        XCTAssertFalse(abierta.mediaOpen)
+        assertFits(sin)
+        // Sin fila, lo que sobra son justo su botón y su hueco
+        let conS1 = RemoteMetrics(grow: 1, bodyH: 900)
+        let sinS1 = RemoteMetrics(grow: 1, bodyH: 900, hasMediaRow: false)
+        XCTAssertEqual(conS1.bodyMin - sinS1.bodyMin, RemoteMetrics.mediaButton + RemoteMetrics.mediaGap, accuracy: 0.001)
+        // El iPad crece igual con o sin fila
+        let ipad = RemoteMetrics.forScreen(sz(820, 1180), headerH: 86, hasMediaRow: false)
+        XCTAssertEqual(ipad.s, RemoteMetrics.forScreen(sz(820, 1180), headerH: 86).s)
+    }
 }

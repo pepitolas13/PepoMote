@@ -69,6 +69,8 @@
 "sticky_press_sub" = "Un botón pulsado sigue pulsado mientras no levantes el dedo, aunque se salga";
 "chips_title" = "Modo Dolphin en el mando";
 "chips_sub" = "Muestra el selector Puntero/Dolphin al entrar por Conectar. Apágalo para un mando solo-puntero, sin selector";
+"media_everywhere_title" = "Multimedia en todos los modos";
+"media_everywhere_sub" = "La fila Multimedia (⏯, volumen…) sale siempre en modo Puntero, el único en el que el PC atiende esas teclas. Enciéndelo para verla también en Dolphin, Wii U y RetroArch";
 "nunchuk_own_title" = "Nunchuk en el mismo móvil";
 "nunchuk_own_sub" = "Para los juegos que piden Nunchuk (Mario Galaxy, Zelda…): tu mando lo lleva y pasa solo a apaisado, con stick, C y Z en la mano izquierda. Apagado, de lado es el mando NES. Dolphin tiene que reabrirse al cambiarlo. Se recuerda";
 "notices_title" = "Avisos del PC en pantalla";
