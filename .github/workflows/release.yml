@@ -73,12 +73,21 @@ jobs:
       - name: Instalar el mando virtual embebido (ViGEmBus)
         shell: pwsh
         run: |
-          ./desktop/target/release/PepoMote.exe --install-driver
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # PepoMote.exe es de subsistema GUI: PowerShell no lo espera y $LASTEXITCODE
+          # no cambia (la puerta era de papel: el e2e del mando universal se saltaba en
+          # silencio). Start-Process -Wait sí espera y da el código de salida; la salida
+          # del exe va a archivos porque no tiene consola.
+          $out = Join-Path $env:RUNNER_TEMP 'install-driver.out'
+          $err = Join-Path $env:RUNNER_TEMP 'install-driver.err'
+          $p = Start-Process -FilePath ./desktop/target/release/PepoMote.exe -ArgumentList '--install-driver' -Wait -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+          Get-Content $out, $err -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { Write-Host "::error::PepoMote.exe --install-driver salió con $($p.ExitCode)"; exit $p.ExitCode }
           Get-PnpDevice -FriendlyName '*Virtual Gamepad Emulation Bus*' | Format-Table Status, FriendlyName
       - name: Mandos de extremo a extremo (RetroArch, Eden, Cemu, Dolphin y mando universal)
         env:
           PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir,e2e_gamepad
+          # Con el driver recién instalado, saltarse el mando universal es un fallo
+          PEPOMOTE_E2E_REQUIRE_GAMEPAD: "1"
         run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
       - uses: actions/upload-artifact@v4
         if: failure()

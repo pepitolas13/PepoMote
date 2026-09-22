@@ -6,7 +6,9 @@ si aquí sale un botón, el juego ve ese botón.
 Requiere el receptor arrancado con PEPOMOTE_PAIR_CODE=1234 y el driver del
 mando virtual (ViGEmBus) instalado: va dentro del exe y la CI lo instala antes
 con `PepoMote.exe --install-driver`. Sin driver se salta sola y sale con 0
-(el mapeo ya está cubierto por los tests unitarios).
+(el mapeo ya está cubierto por los tests unitarios), salvo con
+PEPOMOTE_E2E_REQUIRE_GAMEPAD=1 (la CI, que acaba de instalar el driver): ahí
+saltarse es un fallo, para que una CI verde demuestre el mando universal.
 
 Uso: python e2e_gamepad.py <APPDATA aislado>"""
 import ctypes, json, os, socket, struct, sys, threading, time
@@ -42,8 +44,14 @@ def check(cond, msg):
                 print(f"       XInput {i} [{etiqueta}]: {estado}")
 
 def done(extra=""):
+    global fails
     if extra:
-        print(extra)
+        if extra.startswith("SKIP") and os.environ.get("PEPOMOTE_E2E_REQUIRE_GAMEPAD"):
+            # La CI acaba de instalar el driver: saltarse aquí es que algo falló
+            print("FAIL " + extra + " (PEPOMOTE_E2E_REQUIRE_GAMEPAD: no se admite saltarlo)")
+            fails += 1
+        else:
+            print(extra)
     print("FAILS:", fails)
     sys.exit(1 if fails else 0)
 
