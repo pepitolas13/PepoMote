@@ -4,17 +4,25 @@ struct OnboardingScreen: View {
     let onDone: () -> Void
 
     var body: some View {
+        // Los pasos van en un ScrollView y el botón queda fuera, pegado abajo:
+        // con la letra del sistema grande (o un iPhone pequeño) los tres pasos
+        // no caben, y antes empujaban «¡Vamos!» fuera de la pantalla sin forma
+        // de avanzar. Así el botón se ve siempre y lo que sobra se desplaza.
         VStack(alignment: .center, spacing: 0) {
-            Spacer().frame(height: 48)
-            Text("PepoMote").font(PepoFont.display()).foregroundColor(Pepo.text)
-            Text(tr("onboarding_sub")).pepoBody()
-            Spacer().frame(height: 32)
-            Step(n: 1, title: tr("ob1_title"), text: tr("ob1_body"))
-            Spacer().frame(height: 14)
-            Step(n: 2, title: tr("ob2_title"), text: tr("ob2_body"))
-            Spacer().frame(height: 14)
-            Step(n: 3, title: tr("ob3_title"), text: tr("ob3_body"))
-            Spacer()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .center, spacing: 0) {
+                    Spacer().frame(height: 48)
+                    Text("PepoMote").font(PepoFont.display()).foregroundColor(Pepo.text)
+                    Text(tr("onboarding_sub")).pepoBody()
+                    Spacer().frame(height: 32)
+                    Step(n: 1, title: tr("ob1_title"), text: tr("ob1_body"))
+                    Spacer().frame(height: 14)
+                    Step(n: 2, title: tr("ob2_title"), text: tr("ob2_body"))
+                    Spacer().frame(height: 14)
+                    Step(n: 3, title: tr("ob3_title"), text: tr("ob3_body"))
+                    Spacer().frame(height: 16)
+                }
+            }
             PrimaryButton(title: tr("lets_go"), action: onDone)
             Spacer().frame(height: 24)
         }
