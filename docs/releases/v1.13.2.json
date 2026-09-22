@@ -1,0 +1,10 @@
+{
+  "es": [
+    "Windows: la ventana del receptor ya no puede quedarse en negro esperando a reg.exe, a la IP local o al candado del estado; y si su hilo se para, el log dice cuánto lleva y en qué paso, y PepoMote.exe --diag se lo pregunta al receptor abierto.",
+    "Windows: el móvil ya no se queda vibrando al parar el juego. El receptor podía perder el último «apaga» del mando virtual (Dolphin lo manda en dos pasos y un ViGEmBus anterior a 1.17.333 perdía uno); ya no pierde ninguno, y un motor que el emulador deja encendido para a los 10 s."
+  ],
+  "en": [
+    "Windows: the receiver window can no longer stay black waiting for reg.exe, the local IP or the state lock; and if its thread stalls, the log says for how long and at which step, and PepoMote.exe --diag asks the running receiver.",
+    "Windows: the phone no longer keeps vibrating after the game stops. The receiver could miss the last \"stop\" of the virtual controller (Dolphin sends it in two steps and ViGEmBus before 1.17.333 dropped one); now it misses none, and a motor the emulator leaves on stops after 10 s."
+  ]
+}
