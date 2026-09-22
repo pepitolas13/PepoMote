@@ -4,9 +4,11 @@
 //! original, así que no se recompila ni se modifica: PepoMote lo instala él
 //! mismo la primera vez que arranca sin él, con la única ventana de permiso
 //! de administrador que Windows exige a cualquier driver, y si el usuario
-//! dice que no, no vuelve a preguntar por su cuenta con esta versión (queda
-//! el botón de la ventana). `PepoMote.exe --install-driver` lo instala desde
-//! la línea de comandos (la CI, que corre como administrador y sin driver).
+//! dice que no, o el instalador falla, no vuelve a intentarlo por su cuenta
+//! con esta versión (queda el botón de la ventana): un instalador que falla
+//! no puede sacar la ventana de permiso en cada arranque. `PepoMote.exe
+//! --install-driver` lo instala desde la línea de comandos (la CI, que corre
+//! como administrador y sin driver).
 
 use super::Status;
 use std::path::PathBuf;
@@ -14,7 +16,8 @@ use std::path::PathBuf;
 /// El instalador oficial, byte a byte (`packaging/windows/README.md`).
 const SETUP: &[u8] = include_bytes!("../../../packaging/windows/ViGEmBus_1.22.0_x64_x86_arm64.exe");
 /// Versión del instalador embebido: se guarda en los ajustes al intentarlo
-/// para no volver a preguntar; una versión nueva vuelve a intentarlo.
+/// (instalado, cancelado o fallido) para no volver a preguntar; una versión
+/// nueva vuelve a intentarlo.
 pub const SETUP_VERSION: &str = "1.22.0";
 const SETUP_FILE: &str = "ViGEmBus_1.22.0_x64_x86_arm64.exe";
 /// SHA-256 del instalador tal como se descargó de GitHub (releases/v1.22.0).
@@ -34,18 +37,24 @@ pub enum Outcome {
 }
 
 /// Qué significa el código de salida del instalador: 0 = hecho; 3010 =
-/// hecho y Windows querría reiniciar (el bus funciona sin reiniciar);
+/// hecho y Windows querría reiniciar (el bus funciona sin reiniciar); 1641 =
+/// hecho y Windows ya ha empezado a reiniciar (`ERROR_SUCCESS_REBOOT_INITIATED`);
 /// 1223 = `ERROR_CANCELLED`, el usuario dijo que no al permiso.
 pub fn outcome_of(code: u32) -> Outcome {
     match code {
-        0 | 3010 => Outcome::Installed,
+        0 | 3010 | 1641 => Outcome::Installed,
         1223 => Outcome::Declined,
         c => Outcome::Failed(c),
     }
 }
 
+/// Otra instalación en marcha (`ERROR_INSTALL_ALREADY_RUNNING`): el único
+/// fallo que se resuelve solo, así que no se apunta y se vuelve a intentar en
+/// el siguiente arranque.
+pub const INSTALL_ALREADY_RUNNING: u32 = 1618;
+
 /// Si toca instalar al arrancar: falta el driver, no se intentó ya con esta
-/// versión del instalador (instalado o cancelado) y no lo apaga
+/// versión del instalador (instalado, cancelado o fallido) y no lo apaga
 /// `PEPOMOTE_NO_DRIVER_SETUP` (receptores de prueba: nunca un UAC).
 pub fn should_install(status: Status, tried_version: Option<&str>, skip_env: bool) -> bool {
     status == Status::NeedsDriver && tried_version != Some(SETUP_VERSION) && !skip_env
@@ -173,6 +182,7 @@ mod tests {
     fn el_codigo_de_salida_se_lee_como_windows() {
         assert_eq!(outcome_of(0), Outcome::Installed);
         assert_eq!(outcome_of(3010), Outcome::Installed, "instalado, reinicio sugerido");
+        assert_eq!(outcome_of(1641), Outcome::Installed, "instalado, reinicio ya iniciado");
         assert_eq!(outcome_of(1223), Outcome::Declined, "ERROR_CANCELLED: el usuario dijo que no");
         assert_eq!(outcome_of(1603), Outcome::Failed(1603));
     }
@@ -181,7 +191,7 @@ mod tests {
     fn solo_se_instala_al_arrancar_si_falta_y_no_se_intento_con_esta_version() {
         assert!(should_install(Status::NeedsDriver, None, false));
         assert!(should_install(Status::NeedsDriver, Some("1.21.0"), false), "instalador nuevo: se vuelve a intentar");
-        assert!(!should_install(Status::NeedsDriver, Some(SETUP_VERSION), false), "ya se intentó (instalado o cancelado)");
+        assert!(!should_install(Status::NeedsDriver, Some(SETUP_VERSION), false), "ya se intentó (instalado, cancelado o fallido)");
         assert!(!should_install(Status::Ready, None, false), "ya está");
         assert!(!should_install(Status::Failed, None, false), "el driver está, es otra cosa");
         assert!(!should_install(Status::NeedsDriver, None, true), "receptor de prueba: nunca un UAC");

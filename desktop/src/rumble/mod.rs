@@ -810,8 +810,8 @@ impl Hub {
     }
 
     /// Windows: con el primer resultado del sondeo, si falta el driver se
-    /// instala el embebido (una vez por versión del instalador; instalado o
-    /// cancelado, no se vuelve a preguntar solo). `PEPOMOTE_NO_DRIVER_SETUP`
+    /// instala el embebido (una vez por versión del instalador; instalado,
+    /// cancelado o fallido, no se vuelve a preguntar solo). `PEPOMOTE_NO_DRIVER_SETUP`
     /// lo apaga (receptores de prueba). Si el sondeo no contesta no se
     /// decide nada: queda el botón de la ventana. Fuera del candado de los
     /// mandos: `run_setup` coge el estado compartido.
@@ -1077,8 +1077,23 @@ pub enum RumbleSetup {
     /// El usuario canceló el permiso: no se vuelve a preguntar solo.
     Declined,
     /// El instalador terminó con este código (0 = ni llegó a lanzarse;
-    /// el detalle está en receptor.log).
+    /// el detalle está en receptor.log). Tampoco se vuelve a intentar solo:
+    /// queda el botón de la ventana.
     Failed(u32),
+}
+
+/// ¿Se apunta este resultado en los ajustes para no repetir el intento solo
+/// con esta versión del instalador? Todos los definitivos, también un fallo:
+/// sin esto, un instalador que fallaba (un MSI roto, una directiva de la
+/// empresa, un antivirus) sacaba la ventana de permiso de Windows en CADA
+/// arranque. Solo «otra instalación en marcha» se deja para el siguiente
+/// arranque: se resuelve sola.
+pub fn remembers_attempt(state: RumbleSetup) -> bool {
+    match state {
+        RumbleSetup::Installed | RumbleSetup::Declined => true,
+        RumbleSetup::Failed(code) => code != vigem_setup::INSTALL_ALREADY_RUNNING,
+        RumbleSetup::Idle | RumbleSetup::Installing => false,
+    }
 }
 
 /// Botón «Instalar el mando virtual» de la ventana.
@@ -1143,7 +1158,9 @@ fn run_setup(shared: SharedState) {
         {
             let mut s = shared.lock_tolerant();
             s.rumble_setup = state;
-            if matches!(state, RumbleSetup::Installed | RumbleSetup::Declined) {
+            // Instalado, cancelado o fallido: con esta versión del instalador
+            // no se vuelve a intentar solo (queda el botón). Ver `remembers_attempt`.
+            if remembers_attempt(state) {
                 s.config.vigem_setup_version = Some(vigem_setup::SETUP_VERSION.to_owned());
                 s.config.save();
             }
@@ -1428,5 +1445,18 @@ mod tests {
         assert_eq!(ui_lines(), (Status::Checking, Vec::new()));
         assert!(stuck_note().is_none());
         assert!(xinput_index(0).is_none());
+    }
+
+    /// El intento del instalador se recuerda también si falla: si no, la
+    /// ventana de permiso de Windows salía en cada arranque mientras fallara.
+    #[test]
+    fn el_intento_del_instalador_se_recuerda_tambien_si_falla() {
+        assert!(remembers_attempt(RumbleSetup::Installed));
+        assert!(remembers_attempt(RumbleSetup::Declined));
+        assert!(remembers_attempt(RumbleSetup::Failed(1603)), "un fallo no puede sacar el permiso en cada arranque");
+        assert!(remembers_attempt(RumbleSetup::Failed(0)), "ni siquiera si no se pudo lanzar");
+        assert!(!remembers_attempt(RumbleSetup::Failed(1618)), "otra instalación en marcha: se resuelve sola");
+        assert!(!remembers_attempt(RumbleSetup::Idle));
+        assert!(!remembers_attempt(RumbleSetup::Installing));
     }
 }
