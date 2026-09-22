@@ -6,7 +6,7 @@
 //! se prueba en cualquier SO.
 
 use std::any::Any;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -24,8 +24,22 @@ pub const ENV_SMOKE: &str = "PEPOMOTE_SMOKE";
 pub const ENV_SMOKE_FAIL_FIRST: &str = "PEPOMOTE_SMOKE_FAIL_FIRST";
 /// Mesa: render por software (llvmpipe) en vez de la GPU.
 pub const ENV_SOFTWARE_GL: &str = "LIBGL_ALWAYS_SOFTWARE";
+/// Solo pruebas: el hilo de la ventana se duerme para siempre (lo que haría
+/// un `reg.exe` que no vuelve o un candado retenido) en el tercer fotograma,
+/// o en el fotograma que diga el valor (`=40`): así se comprueba que el
+/// vigilante lo apunta, que `--diag` lo cuenta y que el modo humo sale con 4
+/// en vez de quedarse colgado.
+pub const ENV_FAKE_UI_HANG: &str = "PEPOMOTE_FAKE_UI_HANG";
 /// Sin primer fotograma pasado esto, el modo humo se rinde.
 const SMOKE_DEADLINE: Duration = Duration::from_secs(30);
+/// Modo humo: la ventana colgada después de pintar sale con 4 pasado esto
+/// (después del primer aviso del vigilante, que tiene que quedar en el log).
+const SMOKE_STALL: Duration = Duration::from_secs(20);
+/// Cuándo apunta el vigilante que la ventana, pintada y a la vista, lleva
+/// sin repintar: a los 10 s, a los 60 s y después cada 10 min.
+const STALL_FIRST: Duration = Duration::from_secs(10);
+const STALL_SECOND: Duration = Duration::from_secs(60);
+const STALL_EVERY: Duration = Duration::from_secs(600);
 /// Cuándo apunta el vigilante del primer fotograma que la ventana sigue sin
 /// pintar (siempre activo, en todos los sistemas).
 const PAINT_CHECKS: [Duration; 2] = [Duration::from_secs(15), Duration::from_secs(60)];
@@ -136,6 +150,171 @@ pub fn first_frame_done() -> bool {
     FIRST_FRAME.load(Ordering::SeqCst)
 }
 
+/// Qué estaba haciendo el hilo de la ventana la última vez que se supo: la
+/// miga que sale en el log (y en `--diag`) cuando deja de repintar. Todo lo
+/// que puede esperar en ese hilo se marca antes de llamarlo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Step {
+    /// egui: medir, pintar, presentar y atender la ventana (fuera de nuestro código)
+    Egui = 0,
+    /// el candado del estado compartido
+    StateLock = 1,
+    /// la foto de los mandos virtuales (`rumble::ui_lines`)
+    Rumble = 2,
+    /// escribir settings.json
+    SaveConfig = 3,
+    /// el aviso de versión nueva y la instalación de la actualización
+    Updater = 4,
+    /// escribir en receptor.log
+    Log = 5,
+    /// `PEPOMOTE_FAKE_UI_HANG`
+    TestHook = 6,
+}
+
+impl Step {
+    pub fn name(self) -> &'static str {
+        match self {
+            Step::Egui => "egui (pintar y atender la ventana)",
+            Step::StateLock => "el candado del estado",
+            Step::Rumble => "la foto de los mandos virtuales",
+            Step::SaveConfig => "guardar ajustes",
+            Step::Updater => "el aviso de versión nueva",
+            Step::Log => "escribir en receptor.log",
+            Step::TestHook => "gancho de prueba",
+        }
+    }
+
+    fn from_u8(v: u8) -> Step {
+        match v {
+            1 => Step::StateLock,
+            2 => Step::Rumble,
+            3 => Step::SaveConfig,
+            4 => Step::Updater,
+            5 => Step::Log,
+            6 => Step::TestHook,
+            _ => Step::Egui,
+        }
+    }
+}
+
+static UI_STEP: AtomicU8 = AtomicU8::new(0);
+/// Instantes del último `update()` y del último «mostrar» tras estar oculta,
+/// en ms desde el arranque más uno (0 = nunca).
+static LAST_FRAME_MS: AtomicU64 = AtomicU64::new(0);
+static SHOWN_MS: AtomicU64 = AtomicU64::new(0);
+/// La ventana está escondida en la bandeja: no repinta, y no es un cuelgue.
+static WINDOW_HIDDEN: AtomicBool = AtomicBool::new(false);
+static EPOCH: OnceLock<Instant> = OnceLock::new();
+
+fn now_ms() -> u64 {
+    EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64 + 1
+}
+
+fn age_of(stamp: u64) -> Option<Duration> {
+    (stamp != 0).then(|| Duration::from_millis(now_ms().saturating_sub(stamp)))
+}
+
+/// La ventana entra en `update()`: latido, y la miga vuelve a «egui».
+pub fn mark_frame() {
+    LAST_FRAME_MS.store(now_ms(), Ordering::SeqCst);
+    UI_STEP.store(Step::Egui as u8, Ordering::SeqCst);
+}
+
+/// Lo que el hilo de la ventana va a hacer ahora (y podría no volver).
+pub fn ui_step(step: Step) {
+    UI_STEP.store(step as u8, Ordering::SeqCst);
+}
+
+pub fn last_step() -> Step {
+    Step::from_u8(UI_STEP.load(Ordering::SeqCst))
+}
+
+/// Cuánto hace del último `update()` (None: ninguno todavía).
+pub fn last_frame_age() -> Option<Duration> {
+    age_of(LAST_FRAME_MS.load(Ordering::SeqCst))
+}
+
+/// Cerrar a la bandeja / volver a mostrar. Al volver a la vista empieza de
+/// cero la cuenta del cuelgue: oculta no ha podido repintar.
+pub fn set_window_hidden(hidden: bool) {
+    let was_hidden = WINDOW_HIDDEN.swap(hidden, Ordering::SeqCst);
+    if was_hidden && !hidden {
+        SHOWN_MS.store(now_ms(), Ordering::SeqCst);
+    }
+}
+
+pub fn window_hidden() -> bool {
+    WINDOW_HIDDEN.load(Ordering::SeqCst)
+}
+
+/// Cuánto lleva la ventana, ya pintada y a la vista, sin repintar (None:
+/// sin primer fotograma, o escondida en la bandeja).
+fn stall_age() -> Option<Duration> {
+    if !first_frame_done() || window_hidden() {
+        return None;
+    }
+    age_of(LAST_FRAME_MS.load(Ordering::SeqCst).max(SHOWN_MS.load(Ordering::SeqCst)))
+}
+
+/// La línea del vigilante cuando la ventana lleva `age` sin repintar.
+pub fn stall_line(age: Duration, step: Step) -> String {
+    format!("Ventana: sin repintar desde hace {} s · último paso: {}", age.as_secs(), step.name())
+}
+
+/// Umbral del aviso número `reported` (0 = el primero): 10 s, 60 s y
+/// después cada 10 min, que un cuelgue de horas no llene el log.
+pub fn stall_threshold(reported: u32) -> Duration {
+    match reported {
+        0 => STALL_FIRST,
+        1 => STALL_SECOND,
+        n => STALL_SECOND + STALL_EVERY * (n - 1),
+    }
+}
+
+/// El estado de la ventana en una línea: para el log cuando otra copia
+/// pide mostrarla y para `--diag` (por el cerrojo de instancia única).
+pub fn window_status_line(first_frame: bool, frame_age: Option<Duration>, step: Step, hidden: bool) -> String {
+    match (first_frame, frame_age) {
+        (_, None) => "la ventana no se ha creado o no ha entrado en su primer fotograma".to_owned(),
+        (false, Some(age)) => format!(
+            "primer fotograma empezado hace {} s y sin terminar · último paso: {}",
+            age.as_secs(),
+            step.name()
+        ),
+        (true, Some(age)) => format!(
+            "último fotograma hace {} s · último paso: {} · ventana {}",
+            age.as_secs(),
+            step.name(),
+            if hidden { "oculta (en la bandeja)" } else { "a la vista" }
+        ),
+    }
+}
+
+pub fn window_status() -> String {
+    window_status_line(first_frame_done(), last_frame_age(), last_step(), window_hidden())
+}
+
+/// En qué fotograma se cuelga la ventana según `PEPOMOTE_FAKE_UI_HANG`:
+/// None sin la variable; el tercero (ya con el QR a la vista) con `1` o
+/// cualquier cosa que no sea un número mayor; ese número si lo es.
+pub fn fake_hang_frame(env: Option<&str>) -> Option<u32> {
+    let v = env?.trim();
+    Some(v.parse::<u32>().ok().filter(|n| *n > 3).unwrap_or(3))
+}
+
+/// Solo pruebas (`PEPOMOTE_FAKE_UI_HANG`): el hilo de la ventana se cuelga
+/// a propósito en el fotograma pedido.
+pub fn fake_ui_hang_if_requested(frames: u32) {
+    if fake_hang_frame(std::env::var(ENV_FAKE_UI_HANG).ok().as_deref()) == Some(frames) {
+        ui_step(Step::TestHook);
+        crate::log_line!("PEPOMOTE_FAKE_UI_HANG: el hilo de la ventana se cuelga a propósito en el fotograma {frames}");
+        loop {
+            std::thread::sleep(Duration::from_secs(3600));
+        }
+    }
+}
+
 /// `Some(espera)` en modo humo: "" o "1" = 1500 ms, otro número = esos ms.
 pub fn smoke_linger(env: Option<&str>) -> Option<Duration> {
     let v = env?.trim();
@@ -143,16 +322,34 @@ pub fn smoke_linger(env: Option<&str>) -> Option<Duration> {
     Some(Duration::from_millis(ms))
 }
 
-/// Modo humo: un vigilante que sale con 3 si no llega el primer fotograma.
+/// Modo humo: un vigilante que sale con 3 si no llega el primer fotograma
+/// y con 4 si la ventana, ya pintada, deja de repintar (la salida limpia
+/// con 0 la da `update()`, que en ese caso no vuelve a correr).
 pub fn start_smoke_watchdog() {
     if smoke_linger(std::env::var(ENV_SMOKE).ok().as_deref()).is_none() {
         return;
     }
     let _ = crate::threads::spawn_once("smoke-watchdog", || {
-        std::thread::sleep(SMOKE_DEADLINE);
-        if !first_frame_done() {
-            crate::log_line!("PEPOMOTE_SMOKE: sin primer fotograma a los {} s, salgo con 3", SMOKE_DEADLINE.as_secs());
-            std::process::exit(3);
+        let start = Instant::now();
+        loop {
+            std::thread::sleep(Duration::from_millis(250));
+            if !first_frame_done() {
+                if start.elapsed() >= SMOKE_DEADLINE {
+                    crate::log_line!("PEPOMOTE_SMOKE: sin primer fotograma a los {} s, salgo con 3", SMOKE_DEADLINE.as_secs());
+                    std::process::exit(3);
+                }
+                continue;
+            }
+            if let Some(age) = stall_age() {
+                if age >= SMOKE_STALL {
+                    crate::log_line!(
+                        "PEPOMOTE_SMOKE: la ventana no repinta desde hace {} s (último paso: {}), salgo con 4",
+                        age.as_secs(),
+                        last_step().name()
+                    );
+                    std::process::exit(4);
+                }
+            }
         }
     });
 }
@@ -168,26 +365,41 @@ pub fn paint_watchdog_line(at: Duration, stuck: Option<String>) -> String {
     s
 }
 
-/// Vigilante siempre activo: si la ventana no ha pintado a los 15 y a los
-/// 60 s, lo apunta en el log junto con lo que pueda estar frenándola (una
-/// llamada al driver del mando virtual sin contestar: la ventana negra de la
-/// 1.12). Solo apunta: sin diálogos ni relanzamientos, que una red que
-/// funciona no se mata por una ventana que no pinta. Un cuelgue así nunca
-/// llega a `finish`: sin esto no dejaba ni rastro.
+/// Vigilante siempre activo. Antes del primer fotograma: si la ventana no
+/// ha pintado a los 15 y a los 60 s, lo apunta en el log junto con lo que
+/// pueda estar frenándola (una llamada al driver del mando virtual sin
+/// contestar: la ventana negra de la 1.12). Después: si la ventana, a la
+/// vista, deja de repintar, apunta cuánto lleva y en qué paso se quedó
+/// (a los 10 s, a los 60 s y luego cada 10 min), y cuándo vuelve. Solo
+/// apunta: sin diálogos ni relanzamientos, que una red que funciona no se
+/// mata por una ventana que no pinta. Un cuelgue así nunca llega a
+/// `finish`: sin esto no dejaba ni rastro.
 pub fn start_paint_watchdog() {
     let _ = crate::threads::spawn_once("paint-watchdog", || {
         let start = Instant::now();
-        for at in PAINT_CHECKS {
-            while start.elapsed() < at {
-                if first_frame_done() {
-                    return;
+        let mut paint_checks = PAINT_CHECKS.iter().copied().peekable();
+        let mut reported = 0u32;
+        loop {
+            std::thread::sleep(Duration::from_millis(250));
+            if !first_frame_done() {
+                if let Some(&at) = paint_checks.peek() {
+                    if start.elapsed() >= at {
+                        crate::log_line!("{}", paint_watchdog_line(at, crate::rumble::stuck_note()));
+                        paint_checks.next();
+                    }
                 }
-                std::thread::sleep(Duration::from_millis(250));
+                continue;
             }
-            if first_frame_done() {
-                return;
+            if reported > 0 && last_frame_age().is_some_and(|age| age < STALL_FIRST) {
+                crate::log_line!("Ventana: vuelve a repintar");
+                reported = 0;
             }
-            crate::log_line!("{}", paint_watchdog_line(at, crate::rumble::stuck_note()));
+            if let Some(age) = stall_age() {
+                if age >= stall_threshold(reported) {
+                    crate::log_line!("{}", stall_line(age, last_step()));
+                    reported += 1;
+                }
+            }
         }
     });
 }
@@ -387,6 +599,66 @@ mod tests {
         );
         assert_eq!(PAINT_CHECKS[0], Duration::from_secs(15));
         assert!(PAINT_CHECKS[1] > PAINT_CHECKS[0]);
+    }
+
+    #[test]
+    fn la_linea_del_cuelgue_y_sus_umbrales() {
+        assert_eq!(
+            stall_line(Duration::from_secs(12), Step::StateLock),
+            "Ventana: sin repintar desde hace 12 s · último paso: el candado del estado"
+        );
+        assert_eq!(stall_threshold(0), Duration::from_secs(10));
+        assert_eq!(stall_threshold(1), Duration::from_secs(60));
+        assert_eq!(stall_threshold(2), Duration::from_secs(660));
+        assert_eq!(stall_threshold(3), Duration::from_secs(1260));
+        assert!(SMOKE_STALL > STALL_FIRST, "el humo no se rinde antes de que el vigilante lo apunte");
+        for v in 0..=7u8 {
+            assert_eq!(Step::from_u8(v) as u8, if v <= 6 { v } else { 0 });
+        }
+    }
+
+    #[test]
+    fn el_gancho_del_cuelgue_y_su_fotograma() {
+        assert_eq!(fake_hang_frame(None), None);
+        assert_eq!(fake_hang_frame(Some("1")), Some(3));
+        assert_eq!(fake_hang_frame(Some("")), Some(3));
+        assert_eq!(fake_hang_frame(Some("2")), Some(3), "antes del tercero no hay QR que ver");
+        assert_eq!(fake_hang_frame(Some(" 40 ")), Some(40));
+        assert_eq!(fake_hang_frame(Some("abc")), Some(3));
+    }
+
+    #[test]
+    fn el_estado_de_la_ventana_en_una_linea() {
+        assert_eq!(
+            window_status_line(false, None, Step::Egui, false),
+            "la ventana no se ha creado o no ha entrado en su primer fotograma"
+        );
+        assert_eq!(
+            window_status_line(false, Some(Duration::from_secs(4)), Step::TestHook, false),
+            "primer fotograma empezado hace 4 s y sin terminar · último paso: gancho de prueba"
+        );
+        assert_eq!(
+            window_status_line(true, Some(Duration::ZERO), Step::Egui, false),
+            "último fotograma hace 0 s · último paso: egui (pintar y atender la ventana) · ventana a la vista"
+        );
+        assert_eq!(
+            window_status_line(true, Some(Duration::from_secs(90)), Step::SaveConfig, true),
+            "último fotograma hace 90 s · último paso: guardar ajustes · ventana oculta (en la bandeja)"
+        );
+    }
+
+    #[test]
+    fn el_latido_la_miga_y_la_bandeja() {
+        mark_frame();
+        assert_eq!(last_step(), Step::Egui);
+        ui_step(Step::Rumble);
+        assert_eq!(last_step(), Step::Rumble);
+        assert!(last_frame_age().unwrap() < Duration::from_secs(1));
+        set_window_hidden(true);
+        assert!(window_hidden());
+        set_window_hidden(false);
+        assert!(!window_hidden());
+        assert!(window_status().contains("último paso: la foto de los mandos virtuales"));
     }
 
     #[test]

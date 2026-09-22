@@ -8,6 +8,8 @@
 //! `PMPSHOW1` y solo se retira si la primera contesta `PMPACK01`: un puerto
 //! ocupado por otra cosa, un cerrojo que no responde o un `bind` que falla
 //! por otro motivo (sandbox, red rara) ya no dejan al usuario sin ventana.
+//! `PMPDIAG1` (lo manda `--diag`) devuelve en una línea cómo está la
+//! ventana del receptor abierto: último fotograma y en qué paso se quedó.
 
 use crate::state::LockTolerant;
 use std::net::UdpSocket;
@@ -17,6 +19,9 @@ use std::time::{Duration, Instant};
 
 const SHOW: &[u8] = b"PMPSHOW1";
 const ACK: &[u8] = b"PMPACK01";
+/// `--diag` pregunta por la ventana del receptor abierto; la respuesta es
+/// una línea de texto (versión, último fotograma, último paso).
+const DIAG: &[u8] = b"PMPDIAG1";
 /// Cuánto espera la segunda copia el acuse de la primera.
 const ACK_TIMEOUT: Duration = Duration::from_millis(600);
 
@@ -43,6 +48,7 @@ pub fn set_show_signal(tx: Sender<()>) {
 /// y los comandos de viewport se encolan: el empujón NATIVO (SW_RESTORE)
 /// genera mensajes reales que lo despiertan, y entonces los comandos entran.
 pub fn request_show() {
+    crate::launch::set_window_hidden(false);
     if let Some(ctx) = UI_CTX.get() {
         // macOS: por AppKit en la cola principal (vale con la ventana oculta
         // o minimizada, donde egui no repinta y sus comandos no llegarían)
@@ -105,29 +111,46 @@ pub fn acquire_on(port: u16) -> Singleton {
     }
 }
 
-/// Manda `PMPSHOW1` al cerrojo y espera el acuse. true = hay un PepoMote
-/// vivo al otro lado (y ya sabe que tiene que mostrarse).
-fn ping(port: u16, timeout: Duration) -> bool {
-    let Ok(s) = UdpSocket::bind(("127.0.0.1", 0)) else {
-        return false;
-    };
-    if s.set_read_timeout(Some(timeout)).is_err() || s.send_to(SHOW, ("127.0.0.1", port)).is_err() {
-        return false;
-    }
-    let mut buf = [0u8; 16];
+/// Manda `msg` al cerrojo y devuelve lo primero que conteste desde ese
+/// puerto antes de `timeout`.
+fn ask(port: u16, msg: &[u8], timeout: Duration) -> Option<Vec<u8>> {
+    let s = UdpSocket::bind(("127.0.0.1", 0)).ok()?;
+    s.set_read_timeout(Some(timeout)).ok()?;
+    s.send_to(msg, ("127.0.0.1", port)).ok()?;
+    let mut buf = [0u8; 512];
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         match s.recv_from(&mut buf) {
-            Ok((len, from)) if from.port() == port && &buf[..len] == ACK => return true,
+            Ok((len, from)) if from.port() == port => return Some(buf[..len].to_vec()),
             Ok(_) => continue,
-            Err(_) => return false,
+            Err(_) => return None,
         }
     }
-    false
+    None
+}
+
+/// Manda `PMPSHOW1` al cerrojo y espera el acuse. true = hay un PepoMote
+/// vivo al otro lado (y ya sabe que tiene que mostrarse).
+fn ping(port: u16, timeout: Duration) -> bool {
+    ask(port, SHOW, timeout).is_some_and(|reply| reply == ACK)
+}
+
+/// `--diag`: cómo está la ventana del receptor abierto, en sus palabras.
+/// None = nadie contesta en el cerrojo (no hay receptor, o no responde).
+pub fn query_status(port: u16, timeout: Duration) -> Option<String> {
+    ask(port, DIAG, timeout).map(|reply| String::from_utf8_lossy(&reply).into_owned())
+}
+
+/// La respuesta a `PMPDIAG1`: versión y estado de la ventana. La escribe
+/// el hilo del cerrojo, que sigue vivo aunque el de la ventana se cuelgue.
+fn status_reply() -> String {
+    format!("PepoMote {} · {}", env!("CARGO_PKG_VERSION"), crate::launch::window_status())
 }
 
 /// Hilo del cerrojo: cada "PMPSHOW1" recibe su "PMPACK01" y pide mostrar la
-/// ventana.
+/// ventana (dejando en el log cómo estaba: si el usuario reabre el exe
+/// porque la ve negra, ahí queda el último fotograma y el último paso);
+/// cada "PMPDIAG1" recibe ese mismo estado en texto.
 pub fn watch(sock: UdpSocket) {
     crate::threads::spawn_guarded(
         "pmp-singleton",
@@ -139,8 +162,13 @@ pub fn watch(sock: UdpSocket) {
                     Ok((len, from)) => {
                         if &buf[..len] == SHOW {
                             let _ = sock.send_to(ACK, from);
-                            crate::log_line!("Otra copia de PepoMote pide mostrar la ventana");
+                            crate::log_line!(
+                                "Otra copia de PepoMote pide mostrar la ventana · {}",
+                                crate::launch::window_status()
+                            );
                             request_show();
+                        } else if &buf[..len] == DIAG {
+                            let _ = sock.send_to(status_reply().as_bytes(), from);
                         }
                     }
                     // Socket en error (en Windows, un ICMP de un destino que
@@ -176,6 +204,20 @@ mod tests {
         let t = Instant::now();
         assert!(matches!(acquire_on(p), Singleton::AlreadyRunning));
         assert!(t.elapsed() < ACK_TIMEOUT, "contesta al instante, no por timeout");
+    }
+
+    #[test]
+    fn el_diag_pregunta_y_la_primera_contesta_con_su_ventana() {
+        let p = free_port();
+        let Singleton::Primary(lock) = acquire_on(p) else {
+            panic!("el puerto estaba libre");
+        };
+        watch(lock);
+        let reply = query_status(p, ACK_TIMEOUT).expect("la primera contesta");
+        assert!(reply.starts_with(&format!("PepoMote {} · ", env!("CARGO_PKG_VERSION"))), "{reply}");
+        assert!(reply.contains("fotograma"), "{reply}");
+        let mute = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        assert!(query_status(mute.local_addr().unwrap().port(), Duration::from_millis(100)).is_none());
     }
 
     #[test]

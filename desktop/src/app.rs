@@ -4,9 +4,17 @@ use crate::state::{LinkStatus, Mode, PlayerInfo, SharedState};
 use crate::theme;
 use egui::{Color32, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
 use std::time::{Duration, Instant};
+use crate::launch::Step;
+use std::net::IpAddr;
+use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
 use crate::i18n;
 use crate::state::CfgStatus;
 use crate::tr;
+
+/// Cuánto espera la ventana al candado del estado antes de repintar con la
+/// foto del fotograma anterior.
+const LOCK_WAIT: Duration = Duration::from_millis(200);
 
 pub struct PepoMoteApp {
     updater: crate::update::UpdateUi,
@@ -14,12 +22,21 @@ pub struct PepoMoteApp {
     pairing: PairingInfo,
     qr_modules: Vec<bool>,
     qr_width: usize,
-    /// Autoarranque (registro de Windows). `None` hasta el segundo
-    /// fotograma: leerlo lanza `reg.exe` y espera, y eso no va delante de
-    /// la primera pintura.
+    /// Autoarranque (registro de Windows). `None` hasta que `reg.exe`,
+    /// lanzado en su hilo en el segundo fotograma, contesta: el hilo de la
+    /// ventana no lo espera nunca.
     autostart: Option<bool>,
-    /// Última comprobación de la IP local (el QR debe llevar la IP viva).
-    ip_checked: Instant,
+    /// `reg.exe` en curso (la consulta al arrancar, o el cambio pedido en
+    /// Ajustes): el resultado llega por aquí. Mientras, la casilla espera
+    /// deshabilitada. `Err` trae el valor que hay que restaurar y el motivo.
+    autostart_rx: Option<Receiver<Result<bool, (bool, String)>>>,
+    /// IP local publicada por el hilo `ip-watch` (el QR debe llevar la IP viva).
+    ip: Arc<Mutex<IpAddr>>,
+    /// Foto del estado del último fotograma: si el candado del estado tarda
+    /// más de `LOCK_WAIT`, se repinta con ella en vez de esperar.
+    last_snap: Option<Snapshot>,
+    /// Ya se apuntó en el log que el candado tarda (una vez por atasco).
+    lock_stall_logged: bool,
     /// Ajustes cambiados en la UI pendientes de escribir a disco.
     config_dirty: bool,
     /// Fotogramas pintados (el segundo marca la ventana como viva).
@@ -66,6 +83,8 @@ impl PepoMoteApp {
             }
         }
         let (qr_modules, qr_width) = build_qr(&pairing.pair_url());
+        let ip = Arc::new(Mutex::new(pairing.host));
+        start_ip_watch(ip.clone());
         Self {
             updater: crate::update::UpdateUi::default(),
             shared,
@@ -73,7 +92,10 @@ impl PepoMoteApp {
             qr_modules,
             qr_width,
             autostart: None,
-            ip_checked: Instant::now(),
+            autostart_rx: None,
+            ip,
+            last_snap: None,
+            lock_stall_logged: false,
             config_dirty: false,
             frames: 0,
             painted_at: None,
@@ -91,15 +113,9 @@ impl PepoMoteApp {
         }
     }
 
-    /// Con autoarranque el receptor suele nacer antes que la red (QR con
-    /// 127.0.0.1), y la IP puede cambiar con la Wi-Fi o el DHCP: cada 3 s se
-    /// re-consulta (un socket UDP sin tráfico) y el QR se regenera si cambió.
+    /// El QR se regenera si la IP que publica `ip-watch` ya no es la suya.
     fn refresh_ip(&mut self) {
-        if self.ip_checked.elapsed() < Duration::from_secs(3) {
-            return;
-        }
-        self.ip_checked = Instant::now();
-        let ip = crate::pairing::local_ip();
+        let ip = *self.ip.lock_tolerant();
         if ip != self.pairing.host {
             self.pairing.host = ip;
             let (m, w) = build_qr(&self.pairing.pair_url());
@@ -107,8 +123,52 @@ impl PepoMoteApp {
             self.qr_width = w;
         }
     }
+
+    /// Lo que contestó `reg.exe` desde su hilo (la consulta o un cambio), si
+    /// ya terminó. Un cambio fallido restaura la casilla y cuenta el motivo.
+    fn poll_autostart(&mut self) {
+        let Some(result) = self.autostart_rx.as_ref().map(|rx| rx.try_recv()) else {
+            return;
+        };
+        match result {
+            Ok(Ok(on)) => {
+                self.autostart = Some(on);
+                self.autostart_rx = None;
+            }
+            Ok(Err((before, why))) => {
+                self.autostart = Some(before);
+                self.autostart_rx = None;
+                self.shared.lock_tolerant().last_error = Some(tr!("cfg.autostart_err", why));
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                // el hilo murió sin contestar (un pánico, ya en el log): la
+                // casilla no se queda esperando para siempre
+                self.autostart_rx = None;
+                self.autostart.get_or_insert(false);
+            }
+        }
+    }
 }
 
+/// Con autoarranque el receptor suele nacer antes que la red (QR con
+/// 127.0.0.1), y la IP puede cambiar con la Wi-Fi o el DHCP: cada 3 s se
+/// re-consulta (un socket UDP sin tráfico) y la ventana regenera el QR si
+/// cambió. En su hilo: un cortafuegos que retenga el socket no puede parar
+/// el pintado.
+fn start_ip_watch(slot: Arc<Mutex<IpAddr>>) {
+    let _ = crate::threads::spawn_guarded(
+        "ip-watch",
+        crate::threads::OnPanic::Restart { after: Duration::from_secs(5), max: 10 },
+        move || loop {
+            std::thread::sleep(Duration::from_secs(3));
+            let ip = crate::pairing::local_ip();
+            *slot.lock_tolerant() = ip;
+        },
+    );
+}
+
+#[derive(Clone)]
 struct Snapshot {
     status: LinkStatus,
     mode: Mode,
@@ -146,10 +206,54 @@ struct Snapshot {
     rumble: (crate::rumble::Status, Vec<String>),
     /// Windows: en qué punto está la instalación del driver embebido.
     rumble_setup: crate::rumble::RumbleSetup,
+    /// Ajustes tal cual están (la ventana los edita sobre esta copia).
+    config: crate::state::Config,
+    /// Código de emparejamiento sin cámara y lo que le queda.
+    pair_code: (String, Duration),
+}
+
+impl Snapshot {
+    /// La foto del estado, con el candado ya cogido.
+    fn of(s: &mut crate::state::Shared, rumble: (crate::rumble::Status, Vec<String>)) -> Snapshot {
+        Snapshot {
+            status: s.status,
+            mode: s.mode,
+            players: s.players.clone(),
+            player_count: s.player_count(),
+            pps: s.pps,
+            sensor_hz: s.sensor_hz,
+            rtt_hist: s.rtt_hist.iter().copied().collect(),
+            dsu_clients: s.dsu_clients,
+            dolphin_status: s.dolphin_cfg_status.clone(),
+            cemu_status: s.cemu_cfg_status.clone(),
+            cemu_screen: s.cemu_screen_status.clone(),
+            eden_status: s.eden_cfg_status.clone(),
+            retroarch_status: s.retroarch_cfg_status.clone(),
+            retroarch_live: s.retroarch_live.clone(),
+            retroarch_game: s.retroarch_game.clone(),
+            error: s.last_error.clone(),
+            port_notice: s.port_notice.clone(),
+            firewall: s.firewall,
+            auto_fix_due: s.auto_fix_due,
+            fix_done: s.fix_done.clone(),
+            injector: s.injector,
+            uinput_denied: s.uinput_denied,
+            uinput_missing: s.uinput_missing,
+            ax_denied: s.ax_denied,
+            fixing: s.fixing,
+            fix_failed: s.fix_failed.clone(),
+            rumble,
+            rumble_setup: s.rumble_setup,
+            config: s.config.clone(),
+            pair_code: s.pair_code.current(),
+        }
+    }
 }
 
 impl eframe::App for PepoMoteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Latido: el vigilante apunta si este hilo deja de entrar aquí
+        crate::launch::mark_frame();
         theme::sync(ctx);
 
         // Ventana viva: egui usa el primer fotograma para medir; el segundo ya
@@ -159,14 +263,22 @@ impl eframe::App for PepoMoteApp {
         if self.frames == 2 {
             crate::launch::mark_first_frame();
             self.painted_at = Some(Instant::now());
+            crate::launch::ui_step(Step::Log);
             crate::log_line!("Ventana: primer fotograma pintado ({})", crate::launch::describe(crate::launch::attempt()));
+            crate::launch::ui_step(Step::Egui);
         }
-        // Con la ventana ya pintada: `is_enabled` lanza `reg.exe` y lo
-        // espera (decenas de ms; sin tope con algún antivirus), y antes iba
-        // en `new`, delante del primer fotograma
-        if self.autostart.is_none() && self.frames >= 2 {
-            self.autostart = Some(crate::autostart::is_enabled());
+        crate::launch::fake_ui_hang_if_requested(self.frames);
+        // Con la ventana ya pintada, `reg.exe` en su hilo (decenas de ms; sin
+        // tope con algún antivirus): este hilo nunca lo espera. En 1.12 iba
+        // en `new`, delante del primer fotograma; en 1.13.0, aquí pero en línea
+        if self.autostart.is_none() && self.autostart_rx.is_none() && self.frames >= 2 {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let _ = crate::threads::spawn_once("autostart-query", move || {
+                let _ = tx.send(Ok(crate::autostart::is_enabled()));
+            });
+            self.autostart_rx = Some(rx);
         }
+        self.poll_autostart();
         if let (Some(t), Some(linger)) = (self.painted_at, self.smoke) {
             if t.elapsed() >= linger {
                 crate::log_line!("PEPOMOTE_SMOKE: fin, salgo con 0");
@@ -183,6 +295,7 @@ impl eframe::App for PepoMoteApp {
         #[cfg(windows)]
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            crate::launch::set_window_hidden(true);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
         // En macOS, el botón rojo = minimizar (el Dock la restaura; "Salir"
@@ -199,40 +312,41 @@ impl eframe::App for PepoMoteApp {
         // Fuera del candado del estado: coge el de los mandos virtuales, que
         // el hub puede tener un rato (crear un mando, sondear el driver), y
         // con el estado cogido pararía a la telemetría y al DSU
+        crate::launch::ui_step(Step::Rumble);
         let rumble = crate::rumble::ui_lines();
-        let snap = {
-            let s = self.shared.lock_tolerant();
-            Snapshot {
-                status: s.status,
-                mode: s.mode,
-                players: s.players.clone(),
-                player_count: s.player_count(),
-                pps: s.pps,
-                sensor_hz: s.sensor_hz,
-                rtt_hist: s.rtt_hist.iter().copied().collect(),
-                dsu_clients: s.dsu_clients,
-                dolphin_status: s.dolphin_cfg_status.clone(),
-                cemu_status: s.cemu_cfg_status.clone(),
-                cemu_screen: s.cemu_screen_status.clone(),
-                eden_status: s.eden_cfg_status.clone(),
-                retroarch_status: s.retroarch_cfg_status.clone(),
-                retroarch_live: s.retroarch_live.clone(),
-                retroarch_game: s.retroarch_game.clone(),
-                error: s.last_error.clone(),
-                port_notice: s.port_notice.clone(),
-                firewall: s.firewall,
-                auto_fix_due: s.auto_fix_due,
-                fix_done: s.fix_done.clone(),
-                injector: s.injector,
-                uinput_denied: s.uinput_denied,
-                uinput_missing: s.uinput_missing,
-                ax_denied: s.ax_denied,
-                fixing: s.fixing,
-                fix_failed: s.fix_failed.clone(),
-                rumble,
-                rumble_setup: s.rumble_setup,
+        // El candado del estado, con tope: si otro hilo lo retiene (un
+        // driver o un archivo que no vuelven), se repinta con la foto
+        // anterior y el vigilante sabe en qué paso se está. Sin foto anterior
+        // (los primeros fotogramas) no hay más remedio que esperar
+        crate::launch::ui_step(Step::StateLock);
+        let snap = match self.shared.lock_within(LOCK_WAIT) {
+            Some(mut s) => {
+                let snap = Snapshot::of(&mut s, rumble);
+                drop(s);
+                if self.lock_stall_logged {
+                    crate::log_line!("Ventana: el estado compartido vuelve a estar libre");
+                    self.lock_stall_logged = false;
+                }
+                self.last_snap = Some(snap.clone());
+                snap
             }
+            None => match &self.last_snap {
+                Some(prev) => {
+                    if !self.lock_stall_logged {
+                        crate::log_line!(
+                            "Ventana: el estado compartido lleva más de {} ms en manos de otro hilo; se repinta con la foto anterior",
+                            LOCK_WAIT.as_millis()
+                        );
+                        self.lock_stall_logged = true;
+                    }
+                    let mut snap = prev.clone();
+                    snap.rumble = rumble;
+                    snap
+                }
+                None => Snapshot::of(&mut self.shared.lock_tolerant(), rumble),
+            },
         };
+        crate::launch::ui_step(Step::Egui);
         // Con móviles, 20 fps (el latido respira); en espera, 10 bastan
         ctx.request_repaint_after(Duration::from_millis(if snap.player_count > 0 { 50 } else { 100 }));
 
@@ -276,7 +390,7 @@ impl eframe::App for PepoMoteApp {
                             self.ui_repair(ui, &snap);
 
                             if snap.player_count == 0 {
-                                self.ui_qr(ui, 280.0, tr!("win.waiting"));
+                                self.ui_qr(ui, 280.0, tr!("win.waiting"), &snap.pair_code);
                             } else {
                                 ui_players(ui, &snap);
                                 if snap.mode == Mode::Dolphin {
@@ -292,12 +406,12 @@ impl eframe::App for PepoMoteApp {
                                 }
                                 if snap.player_count < crate::net::MAX_PLAYERS {
                                     ui.add_space(12.0);
-                                    self.ui_qr(ui, 170.0, tr!("win.another_player"));
+                                    self.ui_qr(ui, 170.0, tr!("win.another_player"), &snap.pair_code);
                                 }
                             }
 
                             ui.add_space(10.0);
-                            self.ui_settings(ui);
+                            self.ui_settings(ui, &snap.config);
 
                             self.ui_repair(ui, &snap);
                             #[cfg(target_os = "macos")]
@@ -326,11 +440,8 @@ impl eframe::App for PepoMoteApp {
                     });
             });
 
-        let (enabled, dismissed) = {
-            let s = self.shared.lock_tolerant();
-            (s.config.update_check, s.config.update_dismissed)
-        };
-        if let Some(version) = self.updater.frame(ctx, enabled, dismissed) {
+        crate::launch::ui_step(Step::Updater);
+        if let Some(version) = self.updater.frame(ctx, snap.config.update_check, snap.config.update_dismissed) {
             let mut s = self.shared.lock_tolerant();
             s.config.update_dismissed = Some(version);
             s.config.save();
@@ -339,6 +450,7 @@ impl eframe::App for PepoMoteApp {
             self.shared.lock_tolerant().config.save();
             let _ = crate::update::finish_install(&plan);
         }
+        crate::launch::ui_step(Step::Egui);
         let _ = snap.status;
     }
 }
@@ -546,7 +658,7 @@ impl PepoMoteApp {
         });
     }
 
-    fn ui_qr(&self, ui: &mut egui::Ui, size: f32, caption: &str) {
+    fn ui_qr(&self, ui: &mut egui::Ui, size: f32, caption: &str, pair_code: &(String, Duration)) {
         draw_qr_card(ui, &self.qr_modules, self.qr_width, size);
         ui.add_space(8.0);
         ui.label(RichText::new(caption).size(13.0).color(theme::text_dim()));
@@ -556,7 +668,7 @@ impl PepoMoteApp {
                 .color(theme::text_dim()),
         );
         // Sin cámara (Linux móvil): código de 4 dígitos, un solo uso, 120 s
-        let (code, left) = self.shared.lock_tolerant().pair_code.current();
+        let (code, left) = pair_code;
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new(tr!("win.no_camera_code")).size(12.0).color(theme::text_dim()));
@@ -769,8 +881,8 @@ impl PepoMoteApp {
         ui.label(RichText::new(tr!("win.retroarch_help")).size(11.0).color(theme::text_dim()));
     }
 
-    fn ui_settings(&mut self, ui: &mut egui::Ui) {
-        let mut config = self.shared.lock_tolerant().config.clone();
+    fn ui_settings(&mut self, ui: &mut egui::Ui, current: &crate::state::Config) {
+        let mut config = current.clone();
         let before = config.clone();
 
         egui::CollapsingHeader::new(
@@ -914,18 +1026,26 @@ impl PepoMoteApp {
                 theme::set_preference(ui.ctx(), config.theme);
             }
             ui.add_space(4.0);
-            // Sin leer todavía (los dos primeros fotogramas): la casilla espera
+            // Sin respuesta de reg.exe todavía (al arrancar, o tras un
+            // cambio): la casilla espera
+            let busy = self.autostart_rx.is_some();
             let mut auto = self.autostart.unwrap_or(false);
             ui.add_enabled(
-                self.autostart.is_some(),
+                self.autostart.is_some() && !busy,
                 egui::Checkbox::new(&mut auto, RichText::new(tr!("cfg.autostart")).size(13.0)),
             );
             if let Some(before_auto) = self.autostart {
-                if auto != before_auto {
-                    match crate::autostart::set_enabled(auto) {
-                        Ok(()) => self.autostart = Some(auto),
-                        Err(e) => self.shared.lock_tolerant().last_error = Some(tr!("cfg.autostart_err", e)),
-                    }
+                if auto != before_auto && !busy {
+                    // reg.exe en su hilo: la casilla cambia ya y, si falla,
+                    // vuelve atrás con el motivo (`poll_autostart`)
+                    self.autostart = Some(auto);
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let _ = crate::threads::spawn_once("autostart-set", move || {
+                        let _ = tx.send(
+                            crate::autostart::set_enabled(auto).map(|()| auto).map_err(|why| (before_auto, why)),
+                        );
+                    });
+                    self.autostart_rx = Some(rx);
                 }
             }
             ui.add_space(4.0);
@@ -946,7 +1066,9 @@ impl PepoMoteApp {
             self.config_dirty = true;
         }
         if self.config_dirty && !ui.input(|i| i.pointer.any_down()) {
+            crate::launch::ui_step(Step::SaveConfig);
             config.save();
+            crate::launch::ui_step(Step::Egui);
             self.config_dirty = false;
         }
     }

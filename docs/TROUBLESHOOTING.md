@@ -535,7 +535,7 @@ con la columna `vibrando` y los tres ejes del giroscopio: lo que lea el
 giroscopio quieto mientras `vibrando` sea 1 es el sesgo del motor. Si el
 cursor se sigue yendo con la 1.13, manda esa grabación en una incidencia.
 
-## Windows: la ventana de PepoMote sale negra (1.12)
+## Windows: la ventana de PepoMote sale negra
 
 Síntoma (1.12.0): la ventana se abre pero está entera en negro, sin ni
 siquiera el fondo gris o blanco, y el móvil se queda en «Conectando…». En
@@ -562,6 +562,37 @@ Gamepad Emulation Bus» → Modificar (reparar) o Desinstalar, reinicia si lo
 pide y vuelve a abrir PepoMote; o instala ViGEmBus 1.22.0 desde su página.
 Si sigue negra, manda `receptor.log` en un issue (en 1.12, `PepoMote.exe
 --diag` puede colgarse por lo mismo: eso también lo confirma).
+
+### Con la 1.13 o posterior
+
+Un negro puro (ni el fondo gris ni el blanco del tema) es una ventana en la
+que no ha llegado a presentarse ningún fotograma, o que se quedó sin
+repintar después del primero: Windows enseña la ventana justo antes de
+presentar ese primer fotograma, y si el hilo que la pinta se para ahí, o
+poco después, queda así. Hasta la 1.13.1 ese hilo todavía esperaba a
+`reg.exe` (leer el autoarranque, justo después de pintar el QR), a la
+consulta de la IP local y al candado del estado sin tope; y un cuelgue
+posterior al primer fotograma no dejaba nada en el log.
+
+Desde la 1.13.2: `reg.exe` y la IP local van en sus hilos, el candado del
+estado tiene tope (si otro hilo lo retiene, la ventana repinta con la foto
+anterior y lo apunta), y un vigilante deja en `receptor.log` «Ventana: sin
+repintar desde hace N s · último paso: …» (a los 10 s, a los 60 s y luego
+cada 10 min) y «Ventana: vuelve a repintar» si se recupera. Al abrir el
+exe otra vez con la ventana negra, la copia abierta apunta cómo está
+(«Otra copia de PepoMote pide mostrar la ventana · último fotograma hace
+N s · último paso: …»), y `PepoMote.exe --diag` se lo pregunta por el
+cerrojo de instancia única y lo imprime en «Receptor abierto:», aunque su
+ventana esté colgada.
+
+Si te pasa: con la ventana negra a la vista, `PepoMote.exe --diag > diag.txt`
+desde una consola en la carpeta del exe, y manda `diag.txt` y
+`receptor.log` (`%APPDATA%\pepotech\PepoMote\config`) en un issue, con
+la versión de Windows y la tarjeta gráfica, y si el móvil conecta y mueve
+el puntero aunque la ventana esté negra (entonces es solo la ventana; el
+receptor sigue vivo). Para cerrar PepoMote no hace falta el Administrador
+de tareas: cerrar la ventana la esconde en la bandeja; «Salir» está en el
+menú del icono.
 
 ## El cursor va a tirones
 

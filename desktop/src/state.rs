@@ -778,11 +778,56 @@ pub type SharedState = Arc<Mutex<Shared>>;
 /// frame). Vale para cualquier `Mutex`; es lo que usa todo el receptor.
 pub trait LockTolerant<T> {
     fn lock_tolerant(&self) -> std::sync::MutexGuard<'_, T>;
+    /// Como `lock_tolerant`, pero se rinde pasado `limit`. Para el hilo de
+    /// la ventana: un candado que otro hilo retiene mientras espera a algo
+    /// (un driver, un archivo) no puede parar el pintado; la ventana negra
+    /// de la 1.12 fue exactamente eso.
+    fn lock_within(&self, limit: std::time::Duration) -> Option<std::sync::MutexGuard<'_, T>>;
 }
 
 impl<T> LockTolerant<T> for Mutex<T> {
     fn lock_tolerant(&self) -> std::sync::MutexGuard<'_, T> {
         self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn lock_within(&self, limit: std::time::Duration) -> Option<std::sync::MutexGuard<'_, T>> {
+        let start = std::time::Instant::now();
+        loop {
+            match self.try_lock() {
+                Ok(guard) => return Some(guard),
+                Err(std::sync::TryLockError::Poisoned(e)) => return Some(e.into_inner()),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if start.elapsed() >= limit {
+                        return None;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod lock_within_tests {
+    use super::LockTolerant;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn se_rinde_a_tiempo_y_entra_cuando_se_suelta() {
+        let m = Arc::new(Mutex::new(7u32));
+        let held = m.clone();
+        let holder = std::thread::spawn(move || {
+            let _g = held.lock().unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        let t0 = Instant::now();
+        assert!(m.lock_within(Duration::from_millis(60)).is_none(), "retenido: se rinde");
+        assert!(t0.elapsed() < Duration::from_millis(250), "y a tiempo");
+        assert_eq!(*m.lock_within(Duration::from_secs(5)).unwrap(), 7, "suelto: entra");
+        holder.join().unwrap();
+        assert!(m.lock_within(Duration::ZERO).is_some(), "libre: al instante, aun con tope cero");
     }
 }
 

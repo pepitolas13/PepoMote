@@ -1,8 +1,8 @@
 {
   "es": [
-    "Novedades desde la 1.13.1: por escribir."
+    "Windows: la ventana del receptor ya no puede quedarse en negro esperando a reg.exe, a la IP local o al candado del estado; y si su hilo se para, el log dice cuánto lleva y en qué paso, y PepoMote.exe --diag se lo pregunta al receptor abierto."
   ],
   "en": [
-    "Changes since 1.13.1: to be written."
+    "Windows: the receiver window can no longer stay black waiting for reg.exe, the local IP or the state lock; and if its thread stalls, the log says for how long and at which step, and PepoMote.exe --diag asks the running receiver."
   ]
 }

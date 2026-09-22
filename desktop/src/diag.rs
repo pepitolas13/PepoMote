@@ -1,5 +1,6 @@
 //! `PepoMote --diag`: informe de diagnóstico (sesión, inyección, audio,
-//! firewall, puertos y últimas líneas del log) para pegar en un issue.
+//! firewall, puertos, cómo está la ventana del receptor abierto y últimas
+//! líneas del log) para pegar en un issue.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -114,6 +115,13 @@ pub fn report() -> String {
         crate::firewall::describe(&crate::firewall::check(crate::pairing::port()))
     ));
     out.extend(ports_section(crate::pairing::port(), crate::dsu::port()));
+    // El receptor abierto contesta por su cerrojo aunque su ventana esté
+    // colgada: último fotograma y en qué paso se quedó
+    out.push(format!(
+        "Receptor abierto: {}",
+        crate::singleton::query_status(crate::singleton::port(), std::time::Duration::from_millis(600))
+            .unwrap_or_else(|| "no contesta (no hay otro PepoMote abierto, o su cerrojo no responde)".to_owned())
+    ));
     #[cfg(target_os = "linux")]
     {
         let ld = std::process::Command::new("ldconfig")

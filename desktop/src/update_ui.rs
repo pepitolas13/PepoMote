@@ -68,6 +68,7 @@ impl UpdateUi {
                 self.seen = Some(version);
                 announced = Some(version);
                 self.open = true;
+                crate::launch::set_window_hidden(false);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);

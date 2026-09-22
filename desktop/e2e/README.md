@@ -110,6 +110,17 @@ en el entorno:
   receptor debe esperar a que se suelte, cogerlo y llegar al inyector; hasta
   la 1.13.0 se rendía a la primera y se quedaba con «Inyección: ninguna».
   Se cierra solo; en Linux sin ventana añade `PEPOMOTE_NO_UI=1`.
+- `python e2e_ui_hang.py <PepoMote.exe> [dir]` — la ventana se cuelga
+  después de pintar (`PEPOMOTE_FAKE_UI_HANG=1`: el hilo de la ventana se
+  duerme en el fotograma 3, con el QR a la vista; `=40`, en el 40) y tiene
+  que notarse:
+  `--diag` imprime «Receptor abierto: … último paso: gancho de prueba»
+  preguntándoselo al receptor por su cerrojo, `receptor.log` apunta
+  «Ventana: sin repintar desde hace 10 s · último paso: …» y el modo humo
+  sale con 4 en vez de quedarse colgado. Sin el gancho, el humo sale con 0
+  y el log no habla de cuelgues. Abre ventanas de verdad (dos receptores
+  aislados, uno detrás de otro); hasta la 1.13.1 el humo daba por buena
+  una ventana que ya no repintaba.
 - `python e2e_screen.py <segundos> <salida.jpg>` — canal de pantalla (doble
   pantalla del GamePad): sesión mala rechazada, apertura, tramas. Con Cemu
   abierto y su ventana GamePad View a la vista (por ejemplo
