@@ -26,6 +26,13 @@ static CONFIGURE_LOCK: Mutex<()> = Mutex::new(());
 /// puntero IMU de Dolphin es el grupo `IMUIR` (así se llama en su código;
 /// un `IMUPointer/...` se ignora en silencio): queda como respaldo para un
 /// Dolphin sin passthrough (anterior a 2407), ver `ir_passthrough`.
+/// `IMUGyroscope/Calibration Period = 0`: la calibración del giroscopio la
+/// hace el receptor (el sesgo aprendido por el motor del puntero con el
+/// móvil quieto de verdad, el quat de testigo y nunca vibrando; se resta
+/// antes de mandarlo, telemetry.rs). La de Dolphin es la media de 3 s de
+/// muestras dentro de la zona muerta, y aprendía como cero un movimiento
+/// lento de la mano o lo que mete el motor de vibración: el MotionPlus
+/// emulado se iba solo hasta la siguiente pausa. La zona muerta sigue.
 /// {DEV} = índice de pad del cliente DSU (slot).
 const MAPPING: &str = "Device = DSUClient/{DEV}/PepoMote
 Source = 1
@@ -53,6 +60,7 @@ IMUGyroscope/Roll Right = `Gyro Roll Right`
 IMUGyroscope/Yaw Left = `Gyro Yaw Left`
 IMUGyroscope/Yaw Right = `Gyro Yaw Right`
 IMUGyroscope/Dead Zone = 3.
+IMUGyroscope/Calibration Period = 0.
 IMUIR/Enabled = True
 IMUIR/Recenter = `Touch Button`
 IMUIR/Total Yaw = 25.000000000000000

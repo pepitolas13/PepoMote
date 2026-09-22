@@ -472,6 +472,61 @@ ahorro de energía de Windows 11 (EcoQoS), que frenaba los procesos sin foco;
 el log dice «Ahorro de energía de Windows (EcoQoS): desactivado». Y si lo que
 no responde es una ventana elevada (administrador), ver el punto anterior.
 
+## El puntero se va solo después de vibrar (o el mando en un juego con MotionPlus)
+
+Síntoma: el juego hace vibrar el móvil y, al parar la vibración, el cursor (o
+el Mando de Wii emulado en Wii Sports Resort, Skyward Sword y otros juegos
+con MotionPlus) se va solo mientras mueves la mano, hasta que dejas el móvil
+quieto un momento. Apareció con la vibración de la 1.12.
+
+Por qué: el motor de vibración sacude el mismo giroscopio que apunta. Un
+giroscopio MEMS sacudido lee una oscilación a la frecuencia del motor (150 a
+250 Hz) que, muestreada a 200 o 400 Hz, se pliega a cualquier frecuencia
+(también a continua) y además rectifica un pequeño sesgo. El receptor aprende
+el sesgo del giroscopio con el móvil quieto, y la 1.12 lo aprendía también
+con el móvil quieto VIBRANDO: lo que aprendía era el motor. Al parar la
+vibración ese sesgo falso se quedaba puesto y el cursor se iba mientras la
+mano se movía, hasta el siguiente reposo (ahí se corrige solo en uno o dos
+segundos). Dolphin hacía lo mismo por su cuenta con el MotionPlus: su
+calibración es la media de 3 s de muestras «estables» (dentro de la zona
+muerta de 3°/s), y para ella la vibración es estable.
+
+Desde 1.13: el receptor sabe cuándo tiene encendido el motor de cada móvil
+(es él quien manda la vibración) y mientras vibra, y 0,6 s después, no
+aprende el sesgo ni deja que un giroscopio sacudido mueva el estado interno
+con el móvil quieto. En Dolphin, además, el giroscopio va sin el sesgo que ha
+aprendido el receptor y el perfil apaga la calibración de Dolphin
+(`IMUGyroscope/Calibration Period = 0`; la zona muerta sigue igual). Lo que
+no cambia: mientras el móvil vibra y a la vez lo mueves, el sesgo del motor
+se suma al movimiento (ningún receptor puede separarlos), así que si el motor
+mete 0,5°/s el cursor se corre unos 30 px por cada segundo de vibración a
+1080p; al parar, ya no sigue.
+
+Lo que se midió, por simulación: grabaciones reales de un móvil sin
+vibración, con la vibración inyectada en el giroscopio y pasadas por el motor
+del puntero de la 1.12 y por el de la 1.13 (Full HD, sensibilidad 35, 55 px
+por grado; 5,7 s quieto vibrando y luego 5 s moviéndose):
+
+| Sesgo que mete el motor | 1.12: sesgo falso aprendido | 1.12: cursor de más en los 5 s tras parar | 1.13: sesgo aprendido | 1.13: cursor de más | Dolphin con su calibración: giro de más en 5 s |
+|---|---|---|---|---|---|
+| 0,5°/s | 0,5°/s | 31 px | ninguno | 6 px | 2° |
+| 1°/s | 1°/s | 79 px | ninguno | 2 px | 5° |
+| 3°/s | 2,9°/s | 314 px | ninguno | 0 | 14° |
+
+Con la calibración de Dolphin apagada y el sesgo del receptor, que no aprende
+vibrando, no queda nada que aprender: el giro de más tras parar es cero por
+construcción. Los 6 px de la 1.13 son el sesgo real del sensor de esa
+grabación (0,1°/s), que durante la vibración tampoco se aprende y se aprende
+en el siguiente reposo sin vibrar.
+
+Cuánto mete el motor de TU móvil no se sabe desde aquí: depende del motor,
+de la carcasa y de la mano. Para medirlo: arranca el receptor con
+`PEPOMOTE_RECORD=C:\ruta\vibra.bin`, juega a algo que vibre y deja el móvil
+quieto en la mano mientras vibra; `PepoMote --replay vibra.bin` saca un CSV
+con la columna `vibrando` y los tres ejes del giroscopio: lo que lea el
+giroscopio quieto mientras `vibrando` sea 1 es el sesgo del motor. Si el
+cursor se sigue yendo con la 1.13, manda esa grabación en una incidencia.
+
 ## Windows: la ventana de PepoMote sale negra (1.12)
 
 Síntoma (1.12.0): la ventana se abre pero está entera en negro, sin ni
@@ -748,6 +803,7 @@ Guía completa: [SETUP-RETROARCH.md](SETUP-RETROARCH.md).
 - **No vibra nada y el móvil sí tiene motor:** algunos móviles apagan la vibración con el modo de ahorro de energía o con «No molestar». Compruébalo en los ajustes del sistema.
 - **Un iPad no vibra:** no tiene motor. Ajustes lo dice.
 - **El móvil se queda vibrando cuando el juego ya ha parado:** actualiza la app del móvil. Desde la 1.13 ninguna orden al motor es infinita: cada una caduca sola a los 3 s aunque el sistema del teléfono pierda la parada, y Apagada en Ajustes, irse a otra app o desconectar paran en el acto. Si con la app al día sigue vibrando, es el propio teléfono: reinícialo y, si vuelve a pasar, ábrelo como incidencia con el modelo y la versión de Android.
+- **El puntero (o el mando emulado) se va solo al parar de vibrar:** ver «El puntero se va solo después de vibrar», más arriba: desde 1.13 el receptor no aprende el sesgo del giroscopio mientras el motor está encendido, ni Dolphin calibra por su cuenta.
 - **Sigue vibrando con el juego cerrado:** si cierras el emulador o el juego mientras pide vibración, el mando virtual del PC se queda con la última orden (igual que un mando de Xbox de verdad tras un cierre brusco) y el receptor la sigue mandando. Cambia de modo o desconecta el móvil; al volver a abrir el juego se pone a cero solo.
 
 ## Mando universal

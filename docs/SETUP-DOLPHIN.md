@@ -162,7 +162,11 @@ Si prefieres mapear a mano (o el perfil no carga): en Configure, Device =
 cruceta del DSU), y en Motion Input los seis `Accel *` y los seis `Gyro *` a
 sus homónimos. `IMUIR/Recenter` = `Touch Button` (la diana del móvil manda un
 pulso de Touch al recentrar; el grupo del puntero IMU se llama `IMUIR` en
-Dolphin). El puntero IR por passthrough (acercar, giro) no se mapea a mano:
+Dolphin). En Motion Input pon también `Calibration Period` del giroscopio a
+0: la calibración la hace el receptor (con el móvil quieto de verdad y nunca
+mientras vibra) y la de Dolphin, que promedia 3 s de muestras dentro de la
+zona muerta, aprendía como cero la vibración del motor o un movimiento lento
+de la mano. El puntero IR por passthrough (acercar, giro) no se mapea a mano:
 cárgalo del perfil `PepoMote.ini`, que lleva las expresiones del grupo
 «Point (Passthrough)».
 

@@ -81,7 +81,9 @@ en el entorno:
   el botón, que no se configura ningún emulador y que al irse el móvil el
   mando se desenchufa. **Necesita el driver del mando virtual (ViGEmBus)**,
   que va dentro del exe: la CI lo instala antes con
-  `PepoMote.exe --install-driver`; sin él se salta sola y sale con 0. Los
+  `PepoMote.exe --install-driver` (esperando de verdad al exe, que es de
+  subsistema GUI) y pone `PEPOMOTE_E2E_REQUIRE_GAMEPAD=1` para que saltarse
+  cuente como fallo; a mano, sin él, se salta sola y sale con 0. Los
   receptores aislados arrancan con `PEPOMOTE_NO_DRIVER_SETUP=1` para que
   ninguna prueba abra la ventana de permiso de Windows.
   **Tres trampas de XInput aprendidas aquí**, por si alguien las vuelve a

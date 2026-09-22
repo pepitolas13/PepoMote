@@ -488,7 +488,7 @@ pub fn run(
                     }
                     // Todos los jugadores al DSU, cada uno en su slot, INLINE
                     if let Some(dsu) = &dsu {
-                        let (profile, touch, wii_ir) = match mode {
+                        let (profile, touch, wii_ir, dsu_gyro) = match mode {
                             Mode::Cemu => {
                                 let touch = if role == Role::Wiimote && pad_wii {
                                     // Mando Wii en Cemu: su puntero IR es el
@@ -501,11 +501,11 @@ pub fn run(
                                 } else {
                                     gamepad_touch(&p)
                                 };
-                                (DsuProfile::WiiU, touch, None)
+                                (DsuProfile::WiiU, touch, None, p.gyro)
                             }
                             // Switch: el mismo paquete de 80 bytes que el
                             // GamePad, sin táctil (Eden no lo usa)
-                            Mode::Switch => (DsuProfile::Switch, None, None),
+                            Mode::Switch => (DsuProfile::Switch, None, None, p.gyro),
                             // Dolphin: los puntos IR del Mando Wii los genera
                             // el receptor (perfil IRPassthrough, dsu/wii_ir.rs);
                             // un Nunchuk no apunta
@@ -517,7 +517,13 @@ pub fn run(
                                         .shaking(crate::rumble::is_shaking(slot))
                                         .apply_wii(&p, screen_w, own_nunchuk)
                                 });
-                                (DsuProfile::Wii, None, wii_ir.flatten())
+                                // El MotionPlus emulado integra este gyro tal
+                                // cual: va sin el sesgo que el motor del puntero
+                                // ha aprendido (quieto de verdad y sin vibrar);
+                                // la calibración propia de Dolphin queda apagada
+                                // en el perfil (dolphin.rs)
+                                let gyro = ir_engines.get(&p.session_id).map_or(p.gyro, |ir| ir.gyro_without_bias(p.gyro));
+                                (DsuProfile::Wii, None, wii_ir.flatten(), gyro)
                             }
                         };
                         dsu.push(
@@ -525,7 +531,7 @@ pub fn run(
                             &MotionSample {
                                 t_us: p.t_sensor_us,
                                 accel_ms2: p.accel,
-                                gyro_rads: p.gyro,
+                                gyro_rads: dsu_gyro,
                                 buttons: p.buttons,
                                 battery_pct: p.battery_pct,
                                 recenter_count: p.recenter_count,
@@ -632,6 +638,17 @@ impl IrPointer {
     fn shaking(&mut self, on: bool) -> &mut Self {
         self.engine.set_shaking(on);
         self
+    }
+
+    /// El gyro sin el sesgo que el motor del puntero ha aprendido (con el
+    /// móvil quieto de verdad, el quat de testigo y nunca vibrando). Para el
+    /// MotionPlus de Dolphin, que integra el gyro tal cual: su calibración
+    /// propia (la media de 3 s de muestras dentro de la zona muerta) aprendía
+    /// como cero un movimiento lento de la mano o lo que mete el motor de
+    /// vibración, y el mando emulado se iba solo hasta la siguiente pausa.
+    fn gyro_without_bias(&self, gyro: [f32; 3]) -> [f32; 3] {
+        let b = self.engine.bias();
+        [gyro[0] - b[0], gyro[1] - b[1], gyro[2] - b[2]]
     }
 
     /// Pasa el paquete por el motor y devuelve el apuntado en grados. La

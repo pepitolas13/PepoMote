@@ -22,7 +22,7 @@ gyro_dsu  = gyro_android · 180 / π
 
 ## Timestamp
 
-`motion_ts` = `t_sensor_us` del paquete PMP **tal cual** (reloj del sensor del móvil). Dolphin integra el gyro con este timestamp: el jitter de la red no ensucia la integración. No usar el reloj de llegada.
+`motion_ts` = `t_sensor_us` del paquete PMP **tal cual** (reloj del sensor del móvil). Dolphin integra el gyro con este timestamp: el jitter de la red no ensucia la integración. No usar el reloj de llegada. En el perfil Wii el gyro va **sin el sesgo** que el motor de puntero del receptor ha aprendido para ese móvil (quieto de verdad, con el quat de testigo y nunca mientras vibra), y el perfil de Dolphin lleva `IMUGyroscope/Calibration Period = 0`: la calibración de Dolphin (media de 3 s dentro de la zona muerta) aprendía como cero la vibración del motor o un movimiento lento de la mano. En Wii U y Switch el gyro sigue crudo.
 
 ## Cadencia y clientes
 

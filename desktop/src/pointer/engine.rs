@@ -523,6 +523,11 @@ pub struct PointerDebug {
     /// Roll del quat del sensor respecto al marco propio (°): en fase con
     /// `gz` durante un barrido = la causa del «sube solo».
     pub twist_deg: f32,
+    /// Hacia dónde apunta el marco propio (`q_est`), en (yaw, pitch) del
+    /// mundo: su distancia al quat del sensor es lo que el gyro integrado se
+    /// ha separado de la verdad del sensor.
+    pub est_yaw: f32,
+    pub est_pitch: f32,
     pub offset: (f32, f32),
     pub shift: (f32, f32),
     pub hint: Option<(f32, f32)>,
@@ -617,6 +622,7 @@ impl PointerEngine {
     pub fn debug(&self) -> PointerDebug {
         let (qyaw, qpitch) = self.last_q_sensor.map_or((0.0, 0.0), |q| q.world_angles());
         let (fyaw, fpitch) = self.fused.unwrap_or((0.0, 0.0));
+        let (est_yaw, est_pitch) = self.q_est.map_or((qyaw, qpitch), |e| e.world_angles());
         let twist_deg = match (self.q_est, self.last_q_sensor) {
             (Some(e), Some(s)) => e.twist_about_y(s),
             _ => 0.0,
@@ -629,6 +635,8 @@ impl PointerEngine {
             fyaw,
             fpitch,
             twist_deg,
+            est_yaw,
+            est_pitch,
             offset: self.offset,
             shift: self.shift,
             hint: self.cursor_hint,
@@ -703,10 +711,22 @@ impl PointerEngine {
             }
         }
         let gyro = [p.gyro[0] - self.bias[0], p.gyro[1] - self.bias[1], p.gyro[2] - self.bias[2]];
+        // Sacudido por el motor y quieto de verdad (congelado, y el quat lo
+        // confirma en 3D): lo que lee el gyro es el motor, no la mano, y no
+        // se integra en ningún sitio (ni en el marco propio, ni en el
+        // apuntado, ni en lo que se recupera al descongelar): el estado se
+        // queda clavado al quat. Las velocidades sí se calculan: son las que
+        // descongelan cuando la mano se mueve de verdad. Sin esto, un sesgo
+        // de 2°/s metido por el motor dejaba el apuntado 0,25° detrás del
+        // quat y el marco propio 2° torcido, y al arrancar a moverse la
+        // trayectoria salía cruzada durante segundos (medido en simulación
+        // sobre grabaciones reales).
+        let hold = shaken && self.frozen && self.quiet;
         // Marco de proyección propio: el gyro integrado en el cuerpo (exacto
         // para el giro real), no el quat del sensor con su roll torcido por
         // la aceleración del gesto
         let qe = match self.q_est {
+            Some(qe) if hold => qe,
             Some(qe) => qe.mul(Quat::exp_body([gyro[0] * dt, gyro[1] * dt, gyro[2] * dt])).normalized(),
             None => q,
         };
@@ -722,7 +742,7 @@ impl PointerEngine {
         let twist_err = qe.twist_about_y(q).to_radians().clamp(-EST_TWIST_ERR_MAX, EST_TWIST_ERR_MAX);
         self.bias[1] = (self.bias[1] - EST_TWIST_KI * twist_err * dt).clamp(-BIAS_MAX_RADS, BIAS_MAX_RADS);
         let (dyaw, dpitch, pole) = qe.world_rates(gyro);
-        let (gy, gp) = (dyaw * dt, dpitch * dt);
+        let (gy, gp) = if hold { (0.0, 0.0) } else { (dyaw * dt, dpitch * dt) };
         fy += gy;
         fp += gp;
         self.raw_int.0 += gy;
@@ -3388,5 +3408,42 @@ mod tests {
         assert!(!s.e.debug().frozen, "el móvil no debería congelar barriendo sin parar");
         let off = s.axis_off_vertical_deg(10.0, 1.3, 4.0);
         assert!(off < 5.0, "vibrando, los ejes salieron {off:.1}° fuera de la vertical (twist={:.1}°)", s.twist_deg());
+    }
+
+    /// Quieto vibrando (congelado, y el quat quieto en 3D), el gyro sacudido
+    /// no se integra en ningún sitio: el apuntado y el marco propio se quedan
+    /// clavados al quat. Sin esto, con el aprendizaje del sesgo parado por la
+    /// vibración, 2°/s metidos por el motor dejaban el apuntado 0,25° detrás
+    /// del quat (el anclaje corre a λ = 8/s) y el marco propio 2° torcido
+    /// (λ = 1/s), y al arrancar a moverse la trayectoria salía cruzada.
+    #[test]
+    fn vibrando_quieto_el_estado_se_queda_clavado_al_quat() {
+        let q = qrot_z(30.0).mul(qrot_x(-20.0));
+        let b = 2.0_f32.to_radians();
+        let mut e = PointerEngine::new();
+        let mut t = 0u64;
+        let mut send = |e: &mut PointerEngine, gyro: [f32; 3], shaking: bool| {
+            t += DT_US;
+            let mut p = packet(arr(q), 0, t, FLAG_QUAT_VALID);
+            p.gyro = gyro;
+            e.set_shaking(shaking);
+            e.apply(&p, 40.0, 16.0 / 9.0, true, 1920.0, false)
+        };
+        for _ in 0..200 {
+            send(&mut e, [0.0; 3], false);
+        }
+        assert!(e.debug().frozen && e.debug().quiet, "quieto 1 s: congelado y quieto en 3D");
+        // 5 s vibrando con un gyro que miente en dos ejes (el motor)
+        for _ in 0..1000 {
+            send(&mut e, [b, 0.3 * b, 0.5 * b], true);
+        }
+        let d = e.debug();
+        assert!(d.frozen, "sigue congelado: no se emite nada");
+        let swing = (d.fyaw - d.qyaw).abs().max((d.fpitch - d.qpitch).abs());
+        assert!(swing < 0.02, "vibrando, el apuntado se separó {swing:.3}° del quat");
+        let est = (d.est_yaw - d.qyaw).abs().max((d.est_pitch - d.qpitch).abs());
+        assert!(est < 0.05, "vibrando, el marco propio se separó {est:.3}° del quat");
+        assert!(d.twist_deg.abs() < 0.1, "vibrando, el marco propio se torció {:.2}°", d.twist_deg);
+        assert!(d.bias[0].abs() < 0.05_f32.to_radians(), "y el sesgo no se aprendió: {:.3}°/s", d.bias[0].to_degrees());
     }
 }
