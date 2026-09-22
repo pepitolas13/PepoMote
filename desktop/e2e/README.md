@@ -103,6 +103,23 @@ en el entorno:
      ricamente. Por eso esa comprobación va la última de las que leen el
      mando. En medio de la tanda envenenaba todo lo que viniera detrás, y
      de forma intermitente, que es lo peor de todo.
+- `python e2e_rumble.py` - vibración de los juegos en modo Dolphin: se le
+  escribe al mando virtual **desde fuera** con `XInputSetState`, igual que
+  Dolphin (cada cambio son dos llamadas seguidas, primero el motor L y luego
+  el R), y se mira lo que le llega al móvil simulado. Ráfagas que acaban en
+  «apaga» (el último RUMBLE es cero y no llega ninguno con nivel después;
+  `PEPOMOTE_E2E_RUMBLE_EPISODES` cambia cuántas, 25 de serie, y
+  `PEPOMOTE_E2E_TIMEOUT` el tope del lanzador para tandas largas), encender y
+  callar (como Dolphin en pausa: el receptor lo da por acabado a los 10 s),
+  un cambio en una sola llamada (como Cemu) y la retirada del mando al cambiar
+  de modo mientras el emulador aún le escribe. Mismo driver y mismas reglas de
+  salto que `e2e_gamepad` (`PEPOMOTE_E2E_REQUIRE_GAMEPAD=1`). Hasta la 1.13.2
+  el receptor dejaba una sola petición de aviso en el driver y podía perder el
+  último «apaga»: con un ViGEmBus anterior a 1.17.333 siempre (el móvil no
+  paraba de vibrar), y con los nuevos de tarde en tarde. Si otro programa
+  escribe en el mando mientras tanto (en el PC de Daniel llega un 0/0 ajeno
+  cada veinte segundos o así; lo único abierto que toca mandos es la Xbox
+  Game Bar), la prueba de encender y callar se repite.
 - `python e2e_port_linger.py <PepoMote.exe> [dir]` — arranca él solo un
   receptor aislado con el puerto UDP del móvil todavía en manos de un proceso
   que acaba de morir (un padre lo abre, un hijo lo hereda y el padre muere):

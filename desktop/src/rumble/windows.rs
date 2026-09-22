@@ -12,10 +12,13 @@
 //! `BusNotFound`: PepoMote lo instala él mismo (`vigem_setup`, el
 //! instalador oficial viaja dentro del exe) y se reintenta solo.
 
-use super::{Source, Status};
+use super::ring;
+use super::Status;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use vigem_client::{Client, Error, TargetId, Xbox360Wired};
+use vigem_client::{Client, Error, TargetId, XRequestNotification, Xbox360Wired};
 
 pub struct Backend {
     client: Arc<Client>,
@@ -24,6 +27,9 @@ pub struct Backend {
 pub struct Pad {
     target: Option<Xbox360Wired<Arc<Client>>>,
     listener: Option<std::thread::JoinHandle<()>>,
+    /// Lo que avise el escuchador de los motores cuenta mientras esto siga a
+    /// `true`: se apaga al retirar el mando ([`Pad::retire`]) y al soltarlo.
+    alive: Arc<AtomicBool>,
     index: Option<u32>,
     /// Huecos de XInput ocupados justo ANTES de enchufar este mando: el que
     /// aparezca después es el suyo ([`appeared`]).
@@ -40,7 +46,13 @@ impl Backend {
     pub fn probe() -> Result<Backend, Status> {
         super::fake_hang_if_requested("el sondeo del driver");
         match Client::connect() {
-            Ok(c) => Ok(Backend { client: Arc::new(c) }),
+            Ok(c) => {
+                // Qué driver hay, para leer un receptor.log: un ViGEmBus
+                // anterior a 1.17.333 perdía el último «apaga» con una sola
+                // petición esperando (ver `ring`)
+                crate::log_line!("Mando virtual: {}", driver_line());
+                Ok(Backend { client: Arc::new(c) })
+            }
             Err(Error::BusNotFound) => Err(Status::NeedsDriver),
             Err(Error::BusVersionMismatch) => Err(Status::NeedsDriver),
             Err(e) => {
@@ -73,19 +85,146 @@ impl Backend {
         // `ok`), así que se prueba una vez —cuesta 0,1 ms— y lo que falte lo
         // resuelve el tic del hub con `settle`.
         let index = appeared(&before, &xinput_connected(), &[false; XUSER_MAX]);
-        let notif = target.request_notification().map_err(|e| format!("notification: {e:?}"))?;
+        // Varias peticiones de aviso esperando en el driver (`ring`): con
+        // una sola, el segundo aviso de cada cambio de Dolphin se perdía y el
+        // móvil se quedaba vibrando. Aquí solo se preparan: las lanza el hilo
+        // que las escucha.
+        let mut peticiones = Vec::with_capacity(ring::IN_FLIGHT);
+        for _ in 0..ring::IN_FLIGHT {
+            let n = target.request_notification().map_err(|e| format!("notification: {e:?}"))?;
+            peticiones.push(Xusb(Box::pin(n)));
+        }
         // Reposo explícito: que ningún programa vea un eje a medias
         let _ = target.update(&vigem_client::XGamepad::default());
-        let listener = notif.spawn_thread(move |_, n| {
-            super::set(slot, Source::Pad, n.large_motor, n.small_motor);
-        });
+        let alive = Arc::new(AtomicBool::new(true));
+        let listener = listen(slot, peticiones, alive.clone()).map_err(|e| format!("hilo: {e}"))?;
         Ok(Pad {
             target: Some(target),
             listener: Some(listener),
+            alive,
             index,
             before,
             looking: index.is_none().then(Instant::now),
         })
+    }
+}
+
+/// El hilo que escucha los motores del mando del slot. Las peticiones las
+/// lanza él, dentro de `ring::serve`: Windows cancela la E/S de un hilo
+/// cuando ese hilo termina, y `create` corre en uno de un solo uso.
+fn listen(slot: u8, mut peticiones: Vec<Xusb>, alive: Arc<AtomicBool>) -> std::io::Result<std::thread::JoinHandle<()>> {
+    std::thread::Builder::new().name(format!("pmp-rumble-xusb-{}", slot + 1)).spawn(move || {
+        let fin = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            ring::serve(&mut peticiones, |grande, pequeno| super::set_from_pad(slot, &alive, grande, pequeno))
+        }));
+        let motivo = match fin {
+            Ok(ring::Ending::Unplugged) => "el driver lo dio por desenchufado".to_owned(),
+            Ok(ring::Ending::Failed(e)) => e,
+            Err(_) => "pánico (detalles arriba)".to_owned(),
+        };
+        // Retirado por el hub: su cero ya está puesto y esto es lo esperado.
+        // Si no, el mando sigue en su sitio y ya nadie oye sus motores: lo
+        // último que avisó no vale, y dejarlo seguiría haciendo vibrar el móvil.
+        if alive.load(Ordering::SeqCst) {
+            crate::log_line!(
+                "Vibración: el jugador {} deja de oír los motores de su mando virtual ({motivo}); se para su vibración (cambia de modo o reconecta el móvil para recuperarla)",
+                slot + 1
+            );
+            super::set_from_pad(slot, &alive, 0, 0);
+        }
+    })
+}
+
+/// Una petición de aviso del crate, para el anillo de `ring`.
+struct Xusb(Pin<Box<XRequestNotification>>);
+
+impl ring::Request for Xusb {
+    fn request(&mut self) -> Result<(), String> {
+        use windows::Win32::Foundation::{GetLastError, SetLastError, ERROR_IO_PENDING, WIN32_ERROR};
+        // El crate no mira lo que devuelve `DeviceIoControl`, y una petición
+        // que el driver rechaza en el acto no se completa nunca: esperarla
+        // colgaría el hilo. Se mira el último error del hilo, puesto a cero
+        // antes (una petición que queda esperando deja ERROR_IO_PENDING).
+        unsafe { SetLastError(WIN32_ERROR(0)) };
+        self.0.as_mut().request();
+        let e = unsafe { GetLastError() };
+        if e == WIN32_ERROR(0) || e == ERROR_IO_PENDING {
+            Ok(())
+        } else {
+            Err(format!("el driver rechazó la petición de aviso (error {})", e.0))
+        }
+    }
+
+    fn wait(&mut self) -> Result<(u8, u8), ring::Ending> {
+        match self.0.as_mut().poll(true) {
+            Ok(Some(n)) => Ok((n.large_motor, n.small_motor)),
+            // Esperando, «aún no» no puede llegar; si llegara, se sale en
+            // vez de dar vueltas
+            Ok(None) => Err(ring::Ending::Failed("la espera volvió sin aviso".to_owned())),
+            Err(Error::OperationAborted) => Err(ring::Ending::Unplugged),
+            Err(e) => Err(ring::Ending::Failed(format!("{e:?}"))),
+        }
+    }
+}
+
+/// Versión de archivo del driver instalado (`ViGEmBus.sys`). Para el log y
+/// `--diag`: el paquete 1.22.0 lleva el driver 1.21.442.0.
+pub fn driver_version() -> Result<(u16, u16, u16, u16), &'static str> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::Storage::FileSystem::{
+        GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
+    };
+    let root = std::env::var_os("SystemRoot").ok_or("sin SystemRoot")?;
+    let path = std::path::Path::new(&root).join("System32").join("drivers").join("ViGEmBus.sys");
+    if !path.is_file() {
+        return Err("no está System32\\drivers\\ViGEmBus.sys");
+    }
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let ilegible = "versión ilegible";
+    unsafe {
+        let size = GetFileVersionInfoSizeW(PCWSTR(wide.as_ptr()), None);
+        if size == 0 {
+            return Err(ilegible);
+        }
+        let mut buf = vec![0u8; size as usize];
+        GetFileVersionInfoW(PCWSTR(wide.as_ptr()), 0, size, buf.as_mut_ptr().cast()).map_err(|_| ilegible)?;
+        let mut info: *mut core::ffi::c_void = std::ptr::null_mut();
+        let mut len = 0u32;
+        if !VerQueryValueW(buf.as_ptr().cast(), w!("\\"), &mut info, &mut len).as_bool()
+            || info.is_null()
+            || (len as usize) < std::mem::size_of::<VS_FIXEDFILEINFO>()
+        {
+            return Err(ilegible);
+        }
+        let f = std::ptr::read_unaligned(info as *const VS_FIXEDFILEINFO);
+        Ok((
+            (f.dwFileVersionMS >> 16) as u16,
+            (f.dwFileVersionMS & 0xFFFF) as u16,
+            (f.dwFileVersionLS >> 16) as u16,
+            (f.dwFileVersionLS & 0xFFFF) as u16,
+        ))
+    }
+}
+
+/// ¿Es un ViGEmBus anterior a 1.17.333? Esos tiran el aviso de los motores
+/// si no hay ninguna petición esperando (nefarius/ViGEmBus#68).
+fn drops_notices(v: (u16, u16, u16, u16)) -> bool {
+    (v.0, v.1, v.2) < (1, 17, 333)
+}
+
+/// Línea del driver para el log y `--diag`.
+pub fn driver_line() -> String {
+    match driver_version() {
+        Ok(v) => {
+            let viejo = if drops_notices(v) {
+                " (anterior a 1.17.333: pierde avisos de los motores; PepoMote deja varias peticiones esperando)"
+            } else {
+                ""
+            };
+            format!("ViGEmBus {}.{}.{}.{}{viejo}", v.0, v.1, v.2, v.3)
+        }
+        Err(e) => format!("ViGEmBus ({e})"),
     }
 }
 
@@ -128,6 +267,15 @@ fn appeared(before: &[bool; XUSER_MAX], after: &[bool; XUSER_MAX], taken: &[bool
 const ENUMERATE_LIMIT: Duration = Duration::from_secs(3);
 
 impl Pad {
+    /// Desde aquí, lo que avise el escuchador de sus motores ya no cuenta. El
+    /// hub lo llama al retirar el mando y ANTES de poner a cero la vibración
+    /// del jugador: hasta que el hilo que lo destruye lo desenchufa, el
+    /// emulador aún puede escribirle, y ese aviso tardío dejaba al jugador
+    /// vibrando sin mando (o pisaba al mando nuevo del mismo jugador).
+    pub fn retire(&self) {
+        self.alive.store(false, Ordering::SeqCst);
+    }
+
     /// Todavía no se sabe en qué hueco de XInput ha caído.
     pub fn pending_index(&self) -> bool {
         self.looking.is_some()
@@ -198,10 +346,11 @@ impl Pad {
 
 impl Drop for Pad {
     fn drop(&mut self) {
-        // Desenchufar aborta la notificación pendiente y su hilo termina
-        // solo. No se le espera: si el driver no llegara a abortarla, un
-        // `join` aquí dejaría este hilo (y el candado de los mandos) colgado
-        // para siempre, y con él la ventana y los móviles.
+        self.retire();
+        // Desenchufar aborta las peticiones de aviso pendientes y su hilo
+        // termina solo. No se le espera: si el driver no llegara a abortarlas,
+        // un `join` aquí dejaría este hilo (y el candado de los mandos)
+        // colgado para siempre, y con él la ventana y los móviles.
         if let Some(t) = self.target.take() {
             drop(t);
         }
@@ -289,6 +438,23 @@ mod tests {
         // sin hub (tests) no hay mando ni índice: nada que escribir
         assert!(motor_expression(0).is_none());
         assert!(cemu_node(0, 1).is_none());
+    }
+
+    /// Los ViGEmBus que tiraban el aviso de los motores sin petición
+    /// esperando: hasta 1.17.306. El paquete 1.22.0 lleva el driver 1.21.442.0.
+    #[test]
+    fn que_drivers_pierden_avisos() {
+        assert!(drops_notices((1, 16, 116, 0)), "el de BetterJoy y x360ce");
+        assert!(drops_notices((1, 17, 306, 0)));
+        assert!(!drops_notices((1, 17, 333, 0)), "el primero con la cola de avisos");
+        assert!(!drops_notices((1, 21, 442, 0)), "el que instala PepoMote");
+        assert!(!drops_notices((2, 0, 0, 0)));
+    }
+
+    /// Leer la versión del driver no falla haya o no driver (en la CI no hay).
+    #[test]
+    fn la_linea_del_driver_se_lee_siempre() {
+        assert!(driver_line().starts_with("ViGEmBus"));
     }
 
     #[test]

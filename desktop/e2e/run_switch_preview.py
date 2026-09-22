@@ -89,7 +89,8 @@ def run_suite(name):
             command = [sys.executable, str(HERE / (name + ".py"))]
             if name == "e2e_cemu":
                 command.append(env["APPDATA"])
-            result = subprocess.run(command, env=env, capture_output=True, timeout=180,
+            result = subprocess.run(command, env=env, capture_output=True,
+                                    timeout=int(os.environ.get("PEPOMOTE_E2E_TIMEOUT", "180")),
                                     creationflags=creation)
             (base / "checks.log").write_bytes(result.stdout + result.stderr)
             print(result.stdout.decode("utf-8", errors="replace"), end="", flush=True)

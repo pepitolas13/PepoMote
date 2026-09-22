@@ -13,7 +13,11 @@
 //! 100 ms mientras haya vibración (y medio segundo más tras parar, por si se
 //! pierde el datagrama de parada); el móvil se para solo si no le llega
 //! nada en `TTL_MS`. Un mando de Wii solo tiene un motor: el móvil vibra con
-//! el mayor de los dos que manda un mando XInput.
+//! el mayor de los dos que manda un mando XInput. Así que el móvil vibra
+//! exactamente mientras el receptor crea que el motor está encendido: en
+//! Windows el escuchador deja varias peticiones de aviso esperando en el
+//! driver para no perder ningún «apaga» (`ring`), y un motor que el emulador
+//! deja encendido y callado se da por acabado a los 10 s ([`PAD_STALE`]).
 //!
 //! Con el driver solo habla el hilo del hub, y ni él espera: cada llamada
 //! (sondear el bus, enchufar un mando, desenchufarlo) corre en un hilo de un
@@ -27,10 +31,15 @@ use crate::net::MAX_PLAYERS;
 use crate::state::{LockTolerant, Mode, Role, SharedState};
 use crate::tr;
 use std::net::UdpSocket;
+#[cfg(any(windows, test))]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+/// Escuchar los motores sin perder avisos (Windows; los tests, en todos).
+#[cfg(any(windows, test))]
+mod ring;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
@@ -56,6 +65,19 @@ pub const ZERO_TAIL: Duration = Duration::from_millis(500);
 /// Extensión DSU: sin paquetes de vibración en este tiempo el slot vuelve a
 /// cero (la spec recomienda el timeout de cliente, unos 5 s).
 pub const DSU_TIMEOUT: Duration = Duration::from_secs(5);
+/// Mando virtual: un motor que sigue encendido sin NINGÚN aviso del
+/// emulador en este tiempo se da por acabado. En XInput lo último que se
+/// escribe en el mando se queda para siempre, y Dolphin no apaga el Mando de
+/// Wii al pausar ni al parar el juego, tras releer sus mandos (cualquier
+/// enchufe USB) se come el siguiente «apaga» (solo escribe si el valor cambia
+/// respecto a su copia, y la copia nueva nace a cero), y un emulador que se
+/// cierra o se cuelga vibrando deja el motor como estaba. Sin esto el móvil
+/// vibraba hasta cambiar de modo. Es la cota que el propio Dolphin pone a
+/// sus vibraciones en mandos SDL y evdev (`RUMBLE_LENGTH_MS`, «al menos tan
+/// larga como la vibración más larga que un juego pueda pedir»). Solo en
+/// Windows: en Linux los efectos de uinput traen su duración y el núcleo los
+/// borra cuando el programa que los subió se cierra.
+pub const PAD_STALE: Option<Duration> = if cfg!(windows) { Some(Duration::from_secs(10)) } else { None };
 /// Con el driver o /dev/uinput ausentes se vuelve a probar cada tanto: al
 /// instalarlo no hace falta reiniciar nada.
 const PROBE_EVERY: Duration = Duration::from_secs(5);
@@ -178,6 +200,9 @@ pub struct Out {
 #[derive(Clone, Copy, Default, Debug)]
 struct SlotState {
     pad: (u8, u8),
+    /// Último aviso del mando virtual, cambiara o no el nivel: mientras el
+    /// emulador siga escribiendo en los motores, está vivo ([`PAD_STALE`]).
+    pad_at: Option<Instant>,
     dsu: (u8, u8),
     dsu_at: Option<Instant>,
     /// Estado combinado vigente (lo último que se mandó o se va a mandar).
@@ -193,6 +218,11 @@ struct SlotState {
 /// La parte pura del envío: qué mandar y cuándo (se prueba sin red).
 pub struct Track {
     slots: [SlotState; MAX_PLAYERS],
+    /// [`PAD_STALE`] del sistema; los tests fijan el suyo.
+    pad_stale: Option<Duration>,
+    /// Motores dados por acabados en `due` y aún sin recoger por el hub
+    /// (`take_expired`): slot y nivel que tenían.
+    expired: Vec<(u8, (u8, u8))>,
 }
 
 impl Default for Track {
@@ -203,7 +233,12 @@ impl Default for Track {
 
 impl Track {
     pub fn new() -> Self {
-        Track { slots: [SlotState::default(); MAX_PLAYERS] }
+        Self::with_pad_stale(PAD_STALE)
+    }
+
+    /// Con otro límite para el mando virtual (`None` = sin límite).
+    pub fn with_pad_stale(pad_stale: Option<Duration>) -> Self {
+        Track { slots: [SlotState::default(); MAX_PLAYERS], pad_stale, expired: Vec::new() }
     }
 
     fn combined(s: &SlotState) -> (u8, u8) {
@@ -238,7 +273,10 @@ impl Track {
     pub fn set(&mut self, slot: usize, source: Source, strong: u8, weak: u8, now: Instant) -> Option<Out> {
         let s = self.slots.get_mut(slot)?;
         match source {
-            Source::Pad => s.pad = (strong, weak),
+            Source::Pad => {
+                s.pad = (strong, weak);
+                s.pad_at = Some(now);
+            }
             Source::Dsu => {
                 s.dsu = (strong, weak);
                 s.dsu_at = Some(now);
@@ -247,13 +285,42 @@ impl Track {
         Self::recompute(s, slot, now)
     }
 
+    /// Aviso del escuchador de un mando virtual, que solo cuenta si ese mando
+    /// no se ha retirado. Se mira aquí, con el candado de la vibración cogido:
+    /// el cero que pone el hub al retirarlo pasa por el mismo candado DESPUÉS
+    /// de apagar `alive`, así que un aviso tardío nunca queda encima.
+    #[cfg(any(windows, test))]
+    pub fn set_pad_guarded(&mut self, slot: usize, alive: &AtomicBool, strong: u8, weak: u8, now: Instant) -> Option<Out> {
+        if !alive.load(Ordering::SeqCst) {
+            return None;
+        }
+        self.set(slot, Source::Pad, strong, weak, now)
+    }
+
     /// Lo que toca reenviar ahora: refrescos de la vibración viva, la cola
-    /// de ceros tras parar y los slots DSU caducados.
+    /// de ceros tras parar, los slots DSU caducados y los motores del mando
+    /// virtual que el emulador dejó encendidos y callados ([`PAD_STALE`]).
     pub fn due(&mut self, now: Instant) -> Vec<Out> {
         let mut out = Vec::new();
+        let pad_stale = self.pad_stale;
+        let expired = &mut self.expired;
         for (slot, s) in self.slots.iter_mut().enumerate() {
-            if s.dsu != (0, 0) && s.dsu_at.is_some_and(|t| now.duration_since(t) >= DSU_TIMEOUT) {
+            // Las dos fuentes caducan a la vez y se recalcula UNA vez: si no,
+            // la segunda esperaría al tic siguiente con otro datagrama
+            let mut caducado = false;
+            if s.dsu != (0, 0) && s.dsu_at.is_some_and(|t| now.saturating_duration_since(t) >= DSU_TIMEOUT) {
                 s.dsu = (0, 0);
+                caducado = true;
+            }
+            if let Some(limit) = pad_stale {
+                // `saturating`: el aviso puede ser más nuevo que el `now` del tic
+                if s.pad != (0, 0) && s.pad_at.is_some_and(|t| now.saturating_duration_since(t) >= limit) {
+                    expired.push((slot as u8, s.pad));
+                    s.pad = (0, 0);
+                    caducado = true;
+                }
+            }
+            if caducado {
                 if let Some(o) = Self::recompute(s, slot, now) {
                     out.push(o);
                     continue;
@@ -270,6 +337,12 @@ impl Track {
             }
         }
         out
+    }
+
+    /// Los motores que `due` dio por acabados desde la última vez (para el
+    /// log, fuera del candado): slot y nivel que tenían. Cada uno sale una vez.
+    pub fn take_expired(&mut self) -> Vec<(u8, (u8, u8))> {
+        std::mem::take(&mut self.expired)
     }
 
     /// Estado combinado vigente del slot (para la ventana).
@@ -503,7 +576,17 @@ pub fn start(shared: SharedState) {
             hub.poll_job();
             let (dirty, release) = hub.take_wants();
             hub.probe_if_due();
-            let outs = hub.track.lock_tolerant().due(now);
+            let (outs, expired) = {
+                let mut t = hub.track.lock_tolerant();
+                (t.due(now), t.take_expired())
+            };
+            for (slot, (strong, weak)) in expired {
+                crate::log_line!(
+                    "Vibración: el mando virtual del jugador {} lleva {} s con el motor encendido ({strong}/{weak}) sin ningún aviso del emulador (en pausa, juego cerrado o un aviso perdido); se da por acabado y el móvil para",
+                    slot + 1,
+                    PAD_STALE.map_or(0, |d| d.as_secs())
+                );
+            }
             for o in outs {
                 hub.send(o);
             }
@@ -546,6 +629,18 @@ pub fn set_from_dsu(slot: u8, intensity: u8) {
     set(slot, Source::Dsu, intensity, intensity);
 }
 
+/// Aviso de los motores del mando virtual del slot, desde su escuchador
+/// (Windows). No cuenta si ese mando ya se retiró: ver
+/// [`Track::set_pad_guarded`] y `Pad::retire`.
+#[cfg(windows)]
+pub fn set_from_pad(slot: u8, alive: &AtomicBool, strong: u8, weak: u8) {
+    let Some(h) = hub() else { return };
+    let out = h.track.lock_tolerant().set_pad_guarded(slot as usize, alive, strong, weak, Instant::now());
+    if let Some(o) = out {
+        h.send(o);
+    }
+}
+
 /// ¿El receptor tiene encendido (o recién apagado) el motor del móvil del
 /// slot? Lo pregunta la telemetría antes de cada paquete del puntero: un
 /// gyro sacudido por el motor no sirve para aprender el sesgo. Sin hub
@@ -562,6 +657,13 @@ pub fn is_shaking(slot: u8) -> bool {
 fn reap_pads(pads: Vec<platform::Pad>) {
     if pads.is_empty() {
         return;
+    }
+    // Ya mismo, antes del cero que pone quien llama: hasta que el hilo de
+    // abajo lo desenchufe, el emulador aún puede escribir en el mando, y ese
+    // aviso tardío no puede volver a encender al jugador
+    #[cfg(windows)]
+    for pad in &pads {
+        pad.retire();
     }
     let _ = crate::threads::spawn_once("pmp-rumble-drop", move || drop(pads));
 }
@@ -1222,6 +1324,7 @@ pub fn diag_lines() -> Vec<String> {
     }
     #[cfg(windows)]
     {
+        out.push(format!("Driver instalado: {}", platform::driver_line()));
         let tried = crate::state::Config::load().vigem_setup_version;
         let setup = hub().map(|h| h.shared.lock_tolerant().rumble_setup).unwrap_or_default();
         out.push(format!(
@@ -1296,6 +1399,128 @@ mod tests {
         let r = tr.due(t + Duration::from_secs(5));
         assert_eq!(r.len(), 1);
         assert_eq!((r[0].strong, r[0].weak, r[0].ttl_ms), (0, 0, 0), "caducado");
+    }
+
+    const DIEZ: Duration = Duration::from_secs(10);
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    /// El emulador deja el motor encendido y se calla (Dolphin en pausa, el
+    /// juego cerrado, un «apaga» perdido): el móvil vibra 10 s y para, con
+    /// su cero y su cola, y no vuelve a salir nada.
+    #[test]
+    fn un_motor_que_nadie_toca_se_da_por_acabado_a_los_diez_segundos() {
+        let mut tr = Track::with_pad_stale(Some(DIEZ));
+        let t = t0();
+        tr.set(0, Source::Pad, 255, 255, t).expect("enciende");
+        let r = tr.due(t + ms(9_900));
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].strong, r[0].weak, r[0].ttl_ms), (255, 255, TTL_MS), "aún vivo: refresco");
+        assert!(tr.take_expired().is_empty());
+        let r = tr.due(t + DIEZ);
+        assert_eq!(r.len(), 1, "un solo datagrama");
+        assert_eq!((r[0].strong, r[0].weak, r[0].ttl_ms), (0, 0, 0), "cero al instante");
+        assert_eq!(tr.take_expired(), vec![(0, (255, 255))], "para el log, una vez");
+        assert!(tr.take_expired().is_empty());
+        assert_eq!(tr.level(0), (0, 0));
+        let cola = tr.due(t + ms(10_200));
+        assert_eq!(cola.len(), 1);
+        assert_eq!((cola[0].strong, cola[0].weak), (0, 0), "cola de ceros");
+        assert!(tr.due(t + ms(10_600)).is_empty(), "y se acaba");
+        assert!(tr.due(t + Duration::from_secs(60)).is_empty(), "no vuelve a salir nada");
+        assert!(tr.take_expired().is_empty(), "no se apunta otra vez");
+    }
+
+    /// Cualquier aviso del mando cuenta, aunque traiga el mismo nivel: un
+    /// emulador que sigue escribiendo en el motor está vivo.
+    #[test]
+    fn un_aviso_igual_renueva_el_plazo() {
+        let mut tr = Track::with_pad_stale(Some(DIEZ));
+        let t = t0();
+        tr.set(0, Source::Pad, 200, 0, t);
+        assert!(tr.set(0, Source::Pad, 200, 0, t + Duration::from_secs(8)).is_none(), "igual: no sale nada");
+        let r = tr.due(t + Duration::from_secs(12));
+        assert_eq!((r.len(), r[0].strong), (1, 200), "sigue vivo");
+        let r = tr.due(t + Duration::from_secs(18));
+        assert_eq!((r[0].strong, r[0].ttl_ms), (0, 0), "diez segundos desde el último aviso");
+    }
+
+    /// Tras darse por acabado, el siguiente aviso lo vuelve a encender aunque
+    /// traiga el mismo nivel que antes (el juego sigue ahí y vibra otra vez).
+    #[test]
+    fn tras_darse_por_acabado_el_mismo_nivel_vuelve_a_encender() {
+        let mut tr = Track::with_pad_stale(Some(DIEZ));
+        let t = t0();
+        tr.set(1, Source::Pad, 255, 255, t);
+        tr.due(t + DIEZ);
+        let o = tr.set(1, Source::Pad, 255, 255, t + Duration::from_secs(11)).expect("vuelve");
+        assert_eq!((o.slot, o.strong, o.weak, o.ttl_ms), (1, 255, 255, TTL_MS));
+    }
+
+    /// DSU y mando caducan en el mismo tic: un solo cero, no dos datagramas
+    /// en dos tics.
+    #[test]
+    fn dsu_y_mando_que_caducan_a_la_vez_dan_un_solo_cero() {
+        let mut tr = Track::with_pad_stale(Some(DIEZ));
+        let t = t0();
+        tr.set(0, Source::Pad, 255, 0, t);
+        tr.set(0, Source::Dsu, 100, 100, t + Duration::from_secs(5));
+        let r = tr.due(t + DIEZ);
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].strong, r[0].weak, r[0].ttl_ms), (0, 0, 0));
+    }
+
+    /// Si caduca el mando y el DSU sigue vivo, queda lo del DSU.
+    #[test]
+    fn si_caduca_el_mando_queda_lo_del_dsu() {
+        let mut tr = Track::with_pad_stale(Some(DIEZ));
+        let t = t0();
+        tr.set(2, Source::Pad, 255, 255, t);
+        tr.set(2, Source::Dsu, 100, 100, t + Duration::from_secs(8));
+        let r = tr.due(t + DIEZ);
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].strong, r[0].weak, r[0].ttl_ms), (100, 100, TTL_MS));
+    }
+
+    /// Sin límite (Linux: los efectos de uinput traen su duración) el motor
+    /// nunca caduca por su cuenta; y un motor ya parado no se da por acabado.
+    #[test]
+    fn sin_limite_no_caduca_y_un_motor_parado_no_cuenta() {
+        let mut tr = Track::with_pad_stale(None);
+        let t = t0();
+        tr.set(0, Source::Pad, 255, 255, t);
+        let r = tr.due(t + Duration::from_secs(60));
+        assert_eq!((r.len(), r[0].strong), (1, 255));
+        assert!(tr.take_expired().is_empty());
+
+        let mut tr = Track::with_pad_stale(Some(DIEZ));
+        tr.set(0, Source::Pad, 255, 0, t);
+        tr.set(0, Source::Pad, 0, 0, t + Duration::from_secs(1));
+        tr.due(t + Duration::from_secs(20));
+        assert!(tr.take_expired().is_empty(), "parado a tiempo: nada que apuntar");
+    }
+
+    /// El límite es de Windows (XInput); en Linux y macOS no hay.
+    #[test]
+    fn el_limite_es_solo_de_windows() {
+        assert_eq!(PAD_STALE.is_some(), cfg!(windows));
+        assert_eq!(Track::new().pad_stale, PAD_STALE);
+    }
+
+    /// Un mando retirado no puede volver a encender al jugador con un aviso
+    /// tardío de su escuchador (ni pisar al mando nuevo del mismo jugador).
+    #[test]
+    fn un_escuchador_retirado_no_cambia_nada() {
+        let mut tr = Track::with_pad_stale(Some(DIEZ));
+        let t = t0();
+        let vivo = AtomicBool::new(true);
+        assert!(tr.set_pad_guarded(0, &vivo, 255, 255, t).is_some());
+        vivo.store(false, Ordering::SeqCst);
+        tr.set(0, Source::Pad, 0, 0, t + ms(5)); // el cero del hub al retirarlo
+        assert!(tr.set_pad_guarded(0, &vivo, 255, 255, t + ms(6)).is_none(), "tardío: no cuenta");
+        assert_eq!(tr.level(0), (0, 0));
     }
 
     #[test]

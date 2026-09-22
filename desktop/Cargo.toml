@@ -69,6 +69,9 @@ windows = { version = "0.58", features = [
     # ShellExecuteEx con `runas`: el instalador embebido del driver del mando
     # virtual se lanza elevado (rumble/vigem_setup.rs).
     "Win32_UI_Shell",
+    # Versión de ViGEmBus.sys para el log y --diag: los anteriores a 1.17.333
+    # perdían el aviso de «motor apagado» (rumble/windows.rs).
+    "Win32_Storage_FileSystem",
 ] }
 windows-capture = "2.0.1"
 # Mando virtual Xbox 360 (driver ViGEmBus) por el que Dolphin, Cemu y

@@ -76,7 +76,7 @@ jobs:
       - name: Mandos de extremo a extremo (RetroArch, Eden, Cemu, Dolphin y mando universal)
         timeout-minutes: 12
         env:
-          PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir,e2e_gamepad
+          PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir,e2e_gamepad,e2e_rumble
         run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
       - name: Procesos del receptor que se quedaron terminando
         if: always()
