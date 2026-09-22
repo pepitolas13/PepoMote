@@ -81,9 +81,12 @@ en el entorno:
   el botón, que no se configura ningún emulador y que al irse el móvil el
   mando se desenchufa. **Necesita el driver del mando virtual (ViGEmBus)**,
   que va dentro del exe: la CI lo instala antes con
-  `PepoMote.exe --install-driver` (esperando de verdad al exe, que es de
-  subsistema GUI) y pone `PEPOMOTE_E2E_REQUIRE_GAMEPAD=1` para que saltarse
-  cuente como fallo; a mano, sin él, se salta sola y sale con 0. Los
+  `PepoMote.exe --install-driver` lo instala en un PC; en la CI NO se instala:
+  el Windows Server de GitHub no trae el driver de clase del mando de Xbox 360
+  (`xusb22`), un mando de ViGEm nunca está listo allí y el receptor se queda
+  «terminando» (medido: el paso del e2e colgado media hora), así que ahí se
+  salta sola y sale con 0. Con `PEPOMOTE_E2E_REQUIRE_GAMEPAD=1` saltarse
+  cuenta como fallo (para un PC con el driver, donde se ejecuta de verdad). Los
   receptores aislados arrancan con `PEPOMOTE_NO_DRIVER_SETUP=1` para que
   ninguna prueba abra la ventana de permiso de Windows.
   **Tres trampas de XInput aprendidas aquí**, por si alguien las vuelve a

@@ -7,8 +7,9 @@ Requiere el receptor arrancado con PEPOMOTE_PAIR_CODE=1234 y el driver del
 mando virtual (ViGEmBus) instalado: va dentro del exe y la CI lo instala antes
 con `PepoMote.exe --install-driver`. Sin driver se salta sola y sale con 0
 (el mapeo ya está cubierto por los tests unitarios), salvo con
-PEPOMOTE_E2E_REQUIRE_GAMEPAD=1 (la CI, que acaba de instalar el driver): ahí
-saltarse es un fallo, para que una CI verde demuestre el mando universal.
+PEPOMOTE_E2E_REQUIRE_GAMEPAD=1 (un PC con el driver, antes de publicar): ahí
+saltarse es un fallo. En la CI de GitHub no hay driver: su Windows Server no
+trae xusb22 y un mando de ViGEm nunca está listo allí.
 
 Uso: python e2e_gamepad.py <APPDATA aislado>"""
 import ctypes, json, os, socket, struct, sys, threading, time
