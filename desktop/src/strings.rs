@@ -295,8 +295,8 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("port.cannot_listen", "{0}: no puedo escuchar en {1} {2}: {3}", "{0}: cannot listen on {1} {2}: {3}"),
     (
         "port.busy_unknown",
-        "{0}: el puerto {1} {2} está ocupado por otro programa que no he podido identificar; ciérralo (o reinicia) y vuelve a abrir PepoMote",
-        "{0}: port {1} {2} is taken by another program I could not identify; close it (or reboot) and open PepoMote again",
+        "{0}: el puerto {1} {2} está ocupado por otro programa que no he podido identificar; ciérralo (o reinicia)",
+        "{0}: port {1} {2} is taken by another program I could not identify; close it (or reboot)",
     ),
     ("port.same_process", "{0}: el puerto {1} {2} ya está abierto en este mismo proceso", "{0}: port {1} {2} is already open in this very process"),
     (
@@ -306,9 +306,12 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ),
     (
         "port.busy_known",
-        "{0}: el puerto {1} {2} lo tiene {3} (PID {4}) y no he podido cerrarlo (¿va como administrador?): ciérralo tú y vuelve a abrir PepoMote",
-        "{0}: port {1} {2} is held by {3} (PID {4}) and I could not close it (running as administrator?): close it yourself and open PepoMote again",
+        "{0}: el puerto {1} {2} lo tiene {3} (PID {4}) y no he podido cerrarlo (¿va como administrador?): ciérralo tú",
+        "{0}: port {1} {2} is held by {3} (PID {4}) and I could not close it (running as administrator?): close it yourself",
     ),
+    // Coletillas: los hilos del móvil siguen intentándolo solos; el DSU no
+    ("port.will_retry", "PepoMote lo seguirá intentando solo", "PepoMote will keep trying by itself"),
+    ("port.reopen", "y vuelve a abrir PepoMote", "and open PepoMote again"),
     // --- inyección
     ("inj.error", "Inyección de entrada: {0}", "Input injection: {0}"),
     (
@@ -514,4 +517,5 @@ pub const SOURCES: &[&str] = &[
     include_str!("auto_mode.rs"),
     include_str!("tray.rs"),
     include_str!("rumble/mod.rs"),
+    include_str!("dsu/mod.rs"),
 ];

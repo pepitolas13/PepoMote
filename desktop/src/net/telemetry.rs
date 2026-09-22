@@ -95,13 +95,16 @@ pub fn run(
     pairing: PairingInfo,
     dsu: Option<Arc<Dsu>>,
 ) {
-    let socket = match crate::ports::bind_udp(&shared, "0.0.0.0", pairing.port, tr!("port.what_phone")) {
-        Ok(s) => s,
-        Err(e) => {
-            shared.lock_tolerant().last_error = Some(e);
-            return;
-        }
-    };
+    // El puerto del móvil puede estar un instante en manos del receptor que
+    // acaba de morir (la actualización en caliente arranca este proceso menos
+    // de un segundo después de cerrar el anterior): `bind_udp` espera a que
+    // lo suelte y, si ni así, aquí se insiste cada 2 s en vez de morir. Sin
+    // este socket no hay puntero ni inyector: es lo que dejaba «Inyección:
+    // ninguna» en el pie de la ventana hasta reabrir PepoMote.
+    let what = tr!("port.what_phone");
+    let socket = crate::ports::bind_insisting(&shared, &format!("{what} UDP {}", pairing.port), || {
+        crate::ports::bind_udp(&shared, "0.0.0.0", pairing.port, what)
+    });
     let _ = socket.set_read_timeout(Some(Duration::from_millis(100)));
     // La vibración de los juegos sale por este mismo socket (PROTOCOL.md §4.5)
     if let Ok(s) = socket.try_clone() {

@@ -309,6 +309,14 @@ ciérralo tú y vuelve a abrir PepoMote. Si el mando iba «a la vez» a otro
 servidor DSU, Dolphin puede haber estado hablando con ese otro y no con
 PepoMote: al recuperar el puerto, reinicia Dolphin.
 
+Justo después de una actualización en caliente (o de cerrar PepoMote y volver
+a abrirlo enseguida) el puerto del móvil puede seguir un instante en manos del
+receptor que acaba de cerrarse. Hasta la 1.13.0 el receptor nuevo se rendía a
+la primera y se quedaba sin puntero (el pie de la ventana decía «Inyección:
+ninguna») hasta reabrirlo. Ahora espera a que se suelte y, si aun así sigue
+ocupado, lo reintenta cada dos segundos con el aviso a la vista; el log
+(`receptor.log`) deja dicho a quién esperó y cuánto.
+
 ## Dolphin enseña el mando desconectado aunque el PC diga «1 cliente(s) DSU»
 
 El DSU llega, pero el Wiimote emulado no está activo en ese Dolphin. Casi

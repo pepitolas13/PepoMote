@@ -4,13 +4,18 @@
 //! o un PepoMote antiguo que se quedó colgado), se cierra ese proceso y se
 //! vuelve a abrir el puerto. Se deja dicho en la ventana y en los móviles.
 //!
+//! Un puerto en manos de un proceso que YA NO EXISTE (el receptor que acaba
+//! de cerrarse en una actualización en caliente, o al cerrar y abrir deprisa)
+//! tarda un instante en soltarse: se espera y se reintenta en vez de darlo
+//! por perdido, y los hilos del móvil insisten hasta conseguirlo.
+//!
 //! Windows: tablas UDP/TCP con PID (iphlpapi) + TerminateProcess.
 //! Linux: /proc/net/{udp,tcp} → inodo → /proc/*/fd → PID + `kill`.
 
 use crate::state::LockTolerant;
 use crate::state::SharedState;
 use std::net::{TcpListener, UdpSocket};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use crate::tr;
 
 /// Proceso que tiene abierto un puerto local: (pid, nombre).
@@ -26,54 +31,185 @@ pub enum Proto {
     Tcp,
 }
 
-/// Cuánto se espera a que el proceso muera y suelte el puerto.
+/// Cuánto se espera a que el proceso desalojado muera y suelte el puerto.
 const EVICT_WAIT: Duration = Duration::from_millis(2500);
+/// Puerto ocupado por un proceso que ya no existe, o cuyo dueño no se sabe:
+/// el sistema tarda un instante en soltar el endpoint tras morir su dueño.
+/// La actualización en caliente arranca el receptor nuevo menos de un segundo
+/// después de cerrar el viejo, y en Windows el UDP del móvil (dos handles y un
+/// `recv` pendiente) aún seguía cogido: se reintenta hasta este tope antes de
+/// darlo por perdido.
+const LINGER_WAIT: Duration = Duration::from_millis(3000);
+/// Cada cuánto se reintenta el bind mientras se espera.
+const RETRY_EVERY: Duration = Duration::from_millis(100);
+/// Los hilos que viven del puerto del móvil (control TCP y telemetría UDP)
+/// insisten cada tanto si ni con la espera se consiguió.
+pub const BIND_RETRY: Duration = Duration::from_secs(2);
 
-/// Abre un socket UDP; si el puerto está ocupado, desaloja al dueño y reintenta.
+/// Cómo se consiguió el puerto.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Recovered {
+    /// A la primera.
+    AtOnce,
+    /// Se cerró al proceso que lo tenía y quedó libre.
+    Evicted(Owner),
+    /// Estaba ocupado por un proceso ya muerto (o sin identificar, o que no se
+    /// pudo cerrar) y quedó libre solo tras esperar `waited`.
+    Lingered { owner: Option<Owner>, waited: Duration },
+}
+
+/// Por qué no se consiguió.
+#[derive(Debug)]
+pub enum Failure {
+    /// Un error que no es «puerto ocupado» (sin red, sandbox…): no se insiste.
+    CannotListen(std::io::Error),
+    /// El puerto ya está abierto en este mismo proceso: no va a soltarse.
+    SameProcess,
+    /// Ocupado, sin dueño identificable, y no se soltó en [`LINGER_WAIT`].
+    BusyUnknown,
+    /// Ocupado por ese proceso, que no se pudo cerrar (o cerrado no lo soltó).
+    BusyKnown(Owner),
+}
+
+/// Abre un socket UDP; si el puerto está ocupado, desaloja al dueño o espera
+/// a que se suelte, y reintenta.
 pub fn bind_udp(shared: &SharedState, addr: &str, port: u16, what: &str) -> Result<UdpSocket, String> {
     bind_evicting(shared, port, Proto::Udp, what, || UdpSocket::bind((addr, port)))
 }
 
-/// Abre un listener TCP; si el puerto está ocupado, desaloja al dueño y reintenta.
+/// Abre un listener TCP; si el puerto está ocupado, desaloja al dueño o espera
+/// a que se suelte, y reintenta.
 pub fn bind_tcp(shared: &SharedState, addr: &str, port: u16, what: &str) -> Result<TcpListener, String> {
     bind_evicting(shared, port, Proto::Tcp, what, || TcpListener::bind((addr, port)))
 }
 
+/// Núcleo puro de la apertura de un puerto: `bind` lo intenta, `owner` dice
+/// quién lo tiene, `kill` lo cierra y `sleep` espera (en los tests ninguno
+/// toca el sistema). Reglas:
+/// - libre → a la primera;
+/// - ocupado por este mismo proceso → error al instante (no va a soltarse);
+/// - ocupado por otro proceso vivo → se le cierra y se reintenta hasta
+///   [`EVICT_WAIT`];
+/// - ocupado por un proceso que ya no existe (o que no se pudo cerrar), o sin
+///   dueño conocido → se reintenta hasta [`LINGER_WAIT`]: es lo que pasa justo
+///   después de reiniciar el receptor (actualización, cerrar y abrir deprisa).
+pub fn bind_with_policy<T>(
+    mut bind: impl FnMut() -> std::io::Result<T>,
+    owner: impl FnOnce() -> Option<Owner>,
+    kill: impl FnOnce(u32) -> bool,
+    self_pid: u32,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(T, Recovered), Failure> {
+    let first = match bind() {
+        Ok(s) => return Ok((s, Recovered::AtOnce)),
+        Err(e) => e,
+    };
+    if first.kind() != std::io::ErrorKind::AddrInUse {
+        return Err(Failure::CannotListen(first));
+    }
+    let owner = owner();
+    if owner.as_ref().is_some_and(|o| o.pid == self_pid) {
+        return Err(Failure::SameProcess);
+    }
+    let killed = owner.as_ref().is_some_and(|o| kill(o.pid));
+    let limit = if killed { EVICT_WAIT } else { LINGER_WAIT };
+    let mut waited = Duration::ZERO;
+    while waited < limit {
+        sleep(RETRY_EVERY);
+        waited += RETRY_EVERY;
+        if let Ok(s) = bind() {
+            let how = match owner {
+                Some(o) if killed => Recovered::Evicted(o),
+                owner => Recovered::Lingered { owner, waited },
+            };
+            return Ok((s, how));
+        }
+    }
+    Err(match owner {
+        Some(o) => Failure::BusyKnown(o),
+        None => Failure::BusyUnknown,
+    })
+}
+
+/// [`bind_with_policy`] contra el sistema de verdad, con lo que hay que contar
+/// al usuario: el desalojo va a la ventana, al log y a los móviles; la espera
+/// por un puerto que se suelta solo, al log (para saber qué pasó al arrancar).
 fn bind_evicting<T>(
     shared: &SharedState,
     port: u16,
     proto: Proto,
     what: &str,
-    bind: impl Fn() -> std::io::Result<T>,
+    bind: impl FnMut() -> std::io::Result<T>,
 ) -> Result<T, String> {
-    let first = match bind() {
-        Ok(s) => return Ok(s),
-        Err(e) => e,
-    };
-    if first.kind() != std::io::ErrorKind::AddrInUse {
-        return Err(tr!("port.cannot_listen", what, proto_name(proto), port, first));
+    let name = proto_name(proto);
+    match bind_with_policy(bind, || owner(port, proto), kill, std::process::id(), std::thread::sleep) {
+        Ok((s, Recovered::AtOnce)) => Ok(s),
+        Ok((s, Recovered::Evicted(o))) => {
+            let msg = tr!("port.freed", name, port, o.name, o.pid);
+            shared.lock_tolerant().port_notice = Some(msg.clone());
+            crate::log_line!("{msg}");
+            crate::net::notify_all(&msg);
+            Ok(s)
+        }
+        Ok((s, Recovered::Lingered { owner, waited })) => {
+            let who = match owner {
+                Some(o) => format!("lo tenía {} (PID {}) y no se pudo cerrar", o.name, o.pid),
+                None => "sin dueño identificable".to_owned(),
+            };
+            crate::log_line!(
+                "Puerto {name} {port} ({what}): ocupado al arrancar ({who}); quedó libre solo a los {} ms",
+                waited.as_millis()
+            );
+            Ok(s)
+        }
+        Err(Failure::CannotListen(e)) => Err(tr!("port.cannot_listen", what, name, port, e)),
+        Err(Failure::SameProcess) => Err(tr!("port.same_process", what, name, port)),
+        Err(Failure::BusyUnknown) => Err(tr!("port.busy_unknown", what, name, port)),
+        Err(Failure::BusyKnown(o)) => Err(tr!("port.busy_known", what, name, port, o.name, o.pid)),
     }
-    let Some(owner) = owner(port, proto) else {
-        return Err(tr!("port.busy_unknown", what, proto_name(proto), port));
-    };
-    if owner.pid == std::process::id() {
-        return Err(tr!("port.same_process", what, proto_name(proto), port));
-    }
-    let killed = kill(owner.pid);
-    if killed {
-        let start = Instant::now();
-        while start.elapsed() < EVICT_WAIT {
-            std::thread::sleep(Duration::from_millis(100));
-            if let Ok(s) = bind() {
-                let msg = tr!("port.freed", proto_name(proto), port, owner.name, owner.pid);
-                shared.lock_tolerant().port_notice = Some(msg.clone());
-                crate::log_line!("{msg}");
-                crate::net::notify_all(&msg);
-                return Ok(s);
+}
+
+/// Para los hilos que viven del puerto del móvil (control TCP y telemetría
+/// UDP): si ni con la espera de [`bind_with_policy`] se consiguió, no se
+/// rinden: lo vuelven a intentar cada [`BIND_RETRY`] con el error a la vista
+/// en la ventana (y una sola vez en el log por texto distinto), y lo retiran
+/// al abrirlo. Antes el hilo moría a la primera y el receptor se quedaba sin
+/// puntero (con «Inyección: ninguna» en el pie) hasta reabrirlo.
+pub fn bind_insisting<T>(shared: &SharedState, what: &str, bind: impl FnMut() -> Result<T, String>) -> T {
+    bind_insisting_with(shared, what, bind, std::thread::sleep)
+}
+
+/// [`bind_insisting`] con la espera inyectada (los tests no duermen).
+pub fn bind_insisting_with<T>(
+    shared: &SharedState,
+    what: &str,
+    mut bind: impl FnMut() -> Result<T, String>,
+    mut sleep: impl FnMut(Duration),
+) -> T {
+    let mut shown: Option<String> = None;
+    loop {
+        match bind() {
+            Ok(s) => {
+                if let Some(msg) = shown {
+                    crate::log_line!("{what}: puerto conseguido tras insistir");
+                    let mut st = shared.lock_tolerant();
+                    if st.last_error.as_deref() == Some(msg.as_str()) {
+                        st.last_error = None;
+                    }
+                }
+                return s;
+            }
+            Err(e) => {
+                let msg = format!("{e}; {}", tr!("port.will_retry"));
+                if shown.as_deref() != Some(msg.as_str()) {
+                    crate::log_line!("{msg}");
+                    shown = Some(msg.clone());
+                }
+                shared.lock_tolerant().last_error = Some(msg);
+                sleep(BIND_RETRY);
             }
         }
     }
-    Err(tr!("port.busy_known", what, proto_name(proto), port, owner.name, owner.pid))
 }
 
 fn proto_name(p: Proto) -> &'static str {
@@ -313,6 +449,196 @@ mod tests {
         let r = bind_udp(&shared, "127.0.0.1", port, "prueba");
         assert!(r.is_err(), "no debía abrirse: {:?}", r.as_ref().map(|_| ()));
         assert!(shared.lock_tolerant().port_notice.is_none());
+    }
+
+    /// `bind` de mentira: falla con `kind` las `fails` primeras veces y luego
+    /// devuelve el número del intento que lo consiguió.
+    fn flaky_bind(fails: usize, kind: std::io::ErrorKind) -> impl FnMut() -> std::io::Result<usize> {
+        let mut n = 0;
+        move || {
+            n += 1;
+            if n <= fails {
+                Err(std::io::Error::new(kind, "ocupado"))
+            } else {
+                Ok(n)
+            }
+        }
+    }
+
+    fn slept(log: &std::cell::RefCell<Vec<Duration>>) -> Duration {
+        log.borrow().iter().sum()
+    }
+
+    fn alguien(pid: u32) -> Option<Owner> {
+        Some(Owner { pid, name: "otro.exe".into() })
+    }
+
+    #[test]
+    fn libre_a_la_primera_sin_esperar() {
+        let slept_log = std::cell::RefCell::new(Vec::new());
+        let r = bind_with_policy(
+            flaky_bind(0, std::io::ErrorKind::AddrInUse),
+            || panic!("no debe mirar el dueño"),
+            |_| panic!("no debe matar"),
+            1,
+            |d| slept_log.borrow_mut().push(d),
+        );
+        assert!(matches!(r, Ok((1, Recovered::AtOnce))));
+        assert_eq!(slept(&slept_log), Duration::ZERO);
+    }
+
+    #[test]
+    fn ocupado_por_un_proceso_muerto_se_espera_a_que_lo_suelte() {
+        // El caso de la actualización en caliente: el receptor viejo acaba de
+        // morir y su puerto tarda un instante en soltarse; `kill` falla
+        // porque el PID ya no existe
+        let slept_log = std::cell::RefCell::new(Vec::new());
+        let killed = std::cell::Cell::new(0);
+        let r = bind_with_policy(
+            flaky_bind(5, std::io::ErrorKind::AddrInUse),
+            || alguien(2256),
+            |pid| {
+                assert_eq!(pid, 2256);
+                killed.set(killed.get() + 1);
+                false
+            },
+            1,
+            |d| slept_log.borrow_mut().push(d),
+        );
+        let (n, how) = r.expect("debía abrirse al soltarse");
+        assert_eq!(n, 6);
+        assert_eq!(how, Recovered::Lingered { owner: alguien(2256), waited: Duration::from_millis(500) });
+        assert_eq!(killed.get(), 1, "se intenta cerrar una vez y ya");
+        assert_eq!(slept(&slept_log), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn sin_dueno_conocido_tambien_se_espera() {
+        let slept_log = std::cell::RefCell::new(Vec::new());
+        let r = bind_with_policy(
+            flaky_bind(3, std::io::ErrorKind::AddrInUse),
+            || None,
+            |_| panic!("sin dueño no hay a quién cerrar"),
+            1,
+            |d| slept_log.borrow_mut().push(d),
+        );
+        let (n, how) = r.expect("debía abrirse");
+        assert_eq!(n, 4);
+        assert_eq!(how, Recovered::Lingered { owner: None, waited: Duration::from_millis(300) });
+    }
+
+    #[test]
+    fn dueno_vivo_se_cierra_y_se_espera_a_que_muera() {
+        let slept_log = std::cell::RefCell::new(Vec::new());
+        let r = bind_with_policy(
+            flaky_bind(2, std::io::ErrorKind::AddrInUse),
+            || alguien(777),
+            |pid| pid == 777,
+            1,
+            |d| slept_log.borrow_mut().push(d),
+        );
+        let (n, how) = r.expect("debía abrirse tras cerrar al dueño");
+        assert_eq!(n, 3);
+        assert_eq!(how, Recovered::Evicted(alguien(777).unwrap()));
+        assert_eq!(slept(&slept_log), Duration::from_millis(200));
+    }
+
+    #[test]
+    fn el_mismo_proceso_no_se_espera_ni_se_cierra() {
+        let r = bind_with_policy(
+            flaky_bind(99, std::io::ErrorKind::AddrInUse),
+            || alguien(4242),
+            |_| panic!("no debe cerrarse a sí mismo"),
+            4242,
+            |_| panic!("no debe esperar"),
+        );
+        assert!(matches!(r, Err(Failure::SameProcess)));
+    }
+
+    #[test]
+    fn otro_error_no_se_reintenta() {
+        let r = bind_with_policy(
+            flaky_bind(99, std::io::ErrorKind::PermissionDenied),
+            || panic!("no debe mirar el dueño"),
+            |_| panic!("no debe matar"),
+            1,
+            |_| panic!("no debe esperar"),
+        );
+        assert!(matches!(r, Err(Failure::CannotListen(e)) if e.kind() == std::io::ErrorKind::PermissionDenied));
+    }
+
+    #[test]
+    fn agotado_el_plazo_se_rinde_con_el_dueno_que_haya() {
+        // sin dueño: toda la espera de un puerto que se suelta solo, y BusyUnknown
+        let slept_log = std::cell::RefCell::new(Vec::new());
+        let r = bind_with_policy(flaky_bind(999, std::io::ErrorKind::AddrInUse), || None, |_| false, 1, |d| {
+            slept_log.borrow_mut().push(d)
+        });
+        assert!(matches!(r, Err(Failure::BusyUnknown)));
+        assert_eq!(slept(&slept_log), LINGER_WAIT);
+        // dueño muerto (no se pudo cerrar): la misma espera, y BusyKnown
+        let slept_log = std::cell::RefCell::new(Vec::new());
+        let r = bind_with_policy(flaky_bind(999, std::io::ErrorKind::AddrInUse), || alguien(5), |_| false, 1, |d| {
+            slept_log.borrow_mut().push(d)
+        });
+        assert!(matches!(r, Err(Failure::BusyKnown(o)) if o.pid == 5));
+        assert_eq!(slept(&slept_log), LINGER_WAIT);
+        // dueño vivo cerrado que no suelta: la espera del desalojo, y BusyKnown
+        let slept_log = std::cell::RefCell::new(Vec::new());
+        let r = bind_with_policy(flaky_bind(999, std::io::ErrorKind::AddrInUse), || alguien(6), |_| true, 1, |d| {
+            slept_log.borrow_mut().push(d)
+        });
+        assert!(matches!(r, Err(Failure::BusyKnown(o)) if o.pid == 6));
+        assert_eq!(slept(&slept_log), EVICT_WAIT);
+    }
+
+    #[test]
+    fn insistir_ensena_el_error_y_lo_retira_al_conseguirlo() {
+        let shared = crate::state::new_shared();
+        let slept_log = std::cell::RefCell::new(Vec::new());
+        let mut n = 0;
+        let got = bind_insisting_with(
+            &shared,
+            "prueba UDP 1",
+            || {
+                n += 1;
+                if n < 3 {
+                    Err("ocupado".to_owned())
+                } else {
+                    Ok(7)
+                }
+            },
+            |d| {
+                // mientras se insiste, el error (y que se insiste) está a la vista
+                let err = shared.lock_tolerant().last_error.clone().unwrap_or_default();
+                assert!(err.starts_with("ocupado; "), "{err}");
+                slept_log.borrow_mut().push(d);
+            },
+        );
+        assert_eq!(got, 7);
+        assert_eq!(slept(&slept_log), BIND_RETRY * 2);
+        assert!(shared.lock_tolerant().last_error.is_none(), "el error del puerto se retira al abrirlo");
+    }
+
+    #[test]
+    fn insistir_no_borra_un_error_que_ya_es_de_otro() {
+        let shared = crate::state::new_shared();
+        let mut n = 0;
+        let got = bind_insisting_with(
+            &shared,
+            "prueba UDP 2",
+            || {
+                n += 1;
+                if n < 2 {
+                    Err("ocupado".to_owned())
+                } else {
+                    Ok(1)
+                }
+            },
+            |_| shared.lock_tolerant().last_error = Some("otro aviso".to_owned()),
+        );
+        assert_eq!(got, 1);
+        assert_eq!(shared.lock_tolerant().last_error.as_deref(), Some("otro aviso"));
     }
 
     #[test]

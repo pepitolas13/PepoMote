@@ -24,13 +24,13 @@ fn debug() -> bool {
 }
 
 pub fn run(shared: SharedState, sessions: Sessions, pairing: PairingInfo, hub: Arc<ScreenHub>) {
-    let listener = match crate::ports::bind_tcp(&shared, "0.0.0.0", pairing.port, tr!("port.what_phone")) {
-        Ok(l) => l,
-        Err(e) => {
-            shared.lock_tolerant().last_error = Some(e);
-            return;
-        }
-    };
+    // Como la telemetría: el puerto puede tardar un instante en soltarse tras
+    // cerrar el receptor anterior (actualización en caliente, cerrar y abrir
+    // deprisa); se espera y, si hace falta, se insiste en vez de morir
+    let what = tr!("port.what_phone");
+    let listener = crate::ports::bind_insisting(&shared, &format!("{what} TCP {}", pairing.port), || {
+        crate::ports::bind_tcp(&shared, "0.0.0.0", pairing.port, what)
+    });
 
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };

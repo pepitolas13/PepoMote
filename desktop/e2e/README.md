@@ -103,6 +103,13 @@ en el entorno:
      ricamente. Por eso esa comprobación va la última de las que leen el
      mando. En medio de la tanda envenenaba todo lo que viniera detrás, y
      de forma intermitente, que es lo peor de todo.
+- `python e2e_port_linger.py <PepoMote.exe> [dir]` — arranca él solo un
+  receptor aislado con el puerto UDP del móvil todavía en manos de un proceso
+  que acaba de morir (un padre lo abre, un hijo lo hereda y el padre muere):
+  lo que pasa al actualizar en caliente o al cerrar y abrir deprisa. El
+  receptor debe esperar a que se suelte, cogerlo y llegar al inyector; hasta
+  la 1.13.0 se rendía a la primera y se quedaba con «Inyección: ninguna».
+  Se cierra solo; en Linux sin ventana añade `PEPOMOTE_NO_UI=1`.
 - `python e2e_screen.py <segundos> <salida.jpg>` — canal de pantalla (doble
   pantalla del GamePad): sesión mala rechazada, apertura, tramas. Con Cemu
   abierto y su ventana GamePad View a la vista (por ejemplo

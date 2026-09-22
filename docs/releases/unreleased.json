@@ -1,8 +1,8 @@
 {
   "es": [
-    "Novedades desde la 1.13.0: por escribir."
+    "Tras actualizar con la app abierta (o cerrar y abrir deprisa), el receptor ya no se queda sin puntero con «Inyección: ninguna»: espera a que el puerto del móvil se suelte y, si sigue ocupado, lo reintenta solo cada dos segundos."
   ],
   "en": [
-    "Changes since 1.13.0: to be written."
+    "After updating with the app open (or closing and reopening quickly), the receiver no longer loses the pointer with \"Injection: none\": it waits for the phone port to be released and, if still busy, keeps retrying by itself every two seconds."
   ]
 }

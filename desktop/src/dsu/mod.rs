@@ -219,6 +219,12 @@ pub fn start(shared: SharedState) -> Option<Arc<Dsu>> {
     let socket = match crate::ports::bind_udp(&shared, "127.0.0.1", port, "DSU") {
         Ok(s) => s,
         Err(e) => {
+            // Aquí no se insiste (esto corre en el hilo principal, antes de
+            // la ventana): la espera de `bind_udp` cubre el puerto que suelta
+            // un receptor recién cerrado; si sigue ocupado, se dice (también
+            // en el log) y el DSU queda apagado hasta reabrir PepoMote
+            let e = format!("{e} {}", crate::tr!("port.reopen"));
+            crate::log_line!("{e}");
             shared.lock_tolerant().last_error = Some(e);
             return None;
         }
