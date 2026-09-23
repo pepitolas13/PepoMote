@@ -29,6 +29,11 @@ mod i18n;
 // «actual» es la de este crate)
 #[path = "../../desktop/src/update.rs"]
 mod update;
+/// `update_ui.rs` (compartido) avisa al vigilante de la ventana del receptor
+/// cuando el aviso de versión la saca de la bandeja; aquí no hay vigilante.
+mod launch {
+    pub fn set_window_hidden(_hidden: bool) {}
+}
 mod strings;
 
 fn main() -> eframe::Result {
