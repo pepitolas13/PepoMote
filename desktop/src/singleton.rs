@@ -32,10 +32,61 @@ pub fn port() -> u16 {
 
 static UI_CTX: OnceLock<egui::Context> = OnceLock::new();
 static SHOW_SIGNAL: Mutex<Option<Sender<()>>> = Mutex::new(None);
+/// Windows: el HWND de NUESTRA ventana, guardado al crearla. Antes se
+/// buscaba con `FindWindowW(null, "PepoMote")`, que devuelve la primera
+/// ventana de CUALQUIER programa con ese título: en Windows 10 el
+/// Explorador abierto en una carpeta llamada «PepoMote» (donde mucha gente
+/// guarda el exe) se titula así y se llevaba el empujón, y la ventana
+/// escondida en la bandeja no volvía nunca.
+#[cfg(windows)]
+static UI_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
 /// La UI registra su contexto en cuanto existe.
 pub fn set_ctx(ctx: egui::Context) {
     let _ = UI_CTX.set(ctx);
+}
+
+/// Windows: la UI registra su ventana (el HWND que le ha dado winit) al
+/// crearse, junto al contexto.
+#[cfg(windows)]
+pub fn remember_window(cc: &eframe::CreationContext<'_>) {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    if let Ok(handle) = cc.window_handle() {
+        if let RawWindowHandle::Win32(w) = handle.as_raw() {
+            UI_HWND.store(w.hwnd.get(), std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+/// Qué `ShowWindow` hacen falta para tener delante una ventana: escondida
+/// (la X la esconde en la bandeja) → `SW_SHOW`; minimizada → `SW_RESTORE`.
+/// Una ventana a la vista y sin minimizar no se toca: `SW_RESTORE` la
+/// desmaximizaría.
+#[cfg(any(windows, test))]
+pub fn show_steps(visible: bool, minimized: bool) -> (bool, bool) {
+    (!visible, minimized)
+}
+
+/// Windows: nuestra ventana, solo si el HWND guardado sigue vivo y es de
+/// este proceso (nunca la de otro programa).
+#[cfg(windows)]
+fn own_window() -> Option<windows::Win32::Foundation::HWND> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
+    let raw = UI_HWND.load(std::sync::atomic::Ordering::SeqCst);
+    if raw == 0 {
+        return None;
+    }
+    let hwnd = HWND(raw as *mut core::ffi::c_void);
+    unsafe {
+        if !IsWindow(hwnd).as_bool() {
+            return None;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        (pid == GetCurrentProcessId()).then_some(hwnd)
+    }
 }
 
 /// Canal que desbloquea la CREACIÓN de la ventana (arranque --minimized).
@@ -45,8 +96,10 @@ pub fn set_show_signal(tx: Sender<()>) {
 
 /// Muestra la ventana: si aún no existe, desbloquea su creación; si existe,
 /// la restaura. Con la ventana minimizada u oculta el bucle de eframe DUERME
-/// y los comandos de viewport se encolan: el empujón NATIVO (SW_RESTORE)
-/// genera mensajes reales que lo despiertan, y entonces los comandos entran.
+/// y los comandos de viewport se encolan: el empujón NATIVO (ShowWindow en
+/// NUESTRO HWND) genera mensajes reales que lo despiertan, y entonces los
+/// comandos entran (`Visible(true)` el primero: resincroniza la bandera de
+/// visibilidad que winit guarda aparte).
 pub fn request_show() {
     crate::launch::set_window_hidden(false);
     if let Some(ctx) = UI_CTX.get() {
@@ -54,14 +107,22 @@ pub fn request_show() {
         // o minimizada, donde egui no repinta y sus comandos no llegarían)
         #[cfg(target_os = "macos")]
         crate::macos::on_main(crate::macos::show_windows);
+        // `ShowWindowAsync`: desde otro hilo, `ShowWindow` espera a que el de
+        // la ventana conteste, y con él colgado se quedarían colgados también
+        // la bandeja o el cerrojo (que es quien contesta a `--diag`)
         #[cfg(windows)]
-        unsafe {
-            use windows::core::{w, PCWSTR};
+        if let Some(h) = own_window() {
             use windows::Win32::UI::WindowsAndMessaging::{
-                FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
+                IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindowAsync, SW_RESTORE, SW_SHOW,
             };
-            if let Ok(h) = FindWindowW(PCWSTR::null(), w!("PepoMote")) {
-                let _ = ShowWindow(h, SW_RESTORE);
+            unsafe {
+                let (show, restore) = show_steps(IsWindowVisible(h).as_bool(), IsIconic(h).as_bool());
+                if show {
+                    let _ = ShowWindowAsync(h, SW_SHOW);
+                }
+                if restore {
+                    let _ = ShowWindowAsync(h, SW_RESTORE);
+                }
                 let _ = SetForegroundWindow(h);
             }
         }
@@ -101,6 +162,14 @@ pub fn acquire_on(port: u16) -> Singleton {
     match UdpSocket::bind(("127.0.0.1", port)) {
         Ok(sock) => Singleton::Primary(sock),
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            // Windows solo deja ponerse delante a quien tiene el primer plano:
+            // esta copia, recién abierta por el usuario, se lo cede a la otra
+            // antes de pedirle que se muestre
+            #[cfg(windows)]
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+                let _ = AllowSetForegroundWindow(ASFW_ANY);
+            }
             if ping(port, ACK_TIMEOUT) {
                 Singleton::AlreadyRunning
             } else {
@@ -218,6 +287,18 @@ mod tests {
         assert!(reply.contains("fotograma"), "{reply}");
         let mute = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         assert!(query_status(mute.local_addr().unwrap().port(), Duration::from_millis(100)).is_none());
+    }
+
+    #[test]
+    fn mostrar_solo_hace_lo_que_hace_falta() {
+        // escondida en la bandeja (la X): enseñarla
+        assert_eq!(show_steps(false, false), (true, false));
+        // minimizada: restaurarla
+        assert_eq!(show_steps(true, true), (false, true));
+        // escondida estando minimizada: las dos cosas
+        assert_eq!(show_steps(false, true), (true, true));
+        // a la vista: ni se toca (SW_RESTORE la desmaximizaría)
+        assert_eq!(show_steps(true, false), (false, false));
     }
 
     #[test]

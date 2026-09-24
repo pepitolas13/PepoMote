@@ -227,6 +227,8 @@ fn main() {
             options,
             Box::new(move |cc| {
                 singleton::set_ctx(cc.egui_ctx.clone());
+                #[cfg(windows)]
+                singleton::remember_window(cc);
                 Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing, start_hidden)))
             }),
         )
