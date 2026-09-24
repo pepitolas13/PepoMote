@@ -84,7 +84,7 @@ pub fn show_steps(visible: bool, minimized: bool) -> (bool, bool) {
 /// Windows: nuestra ventana, solo si el HWND guardado sigue vivo y es de
 /// este proceso (nunca la de otro programa).
 #[cfg(windows)]
-fn own_window() -> Option<windows::Win32::Foundation::HWND> {
+pub(crate) fn own_window() -> Option<windows::Win32::Foundation::HWND> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::System::Threading::GetCurrentProcessId;
     use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};

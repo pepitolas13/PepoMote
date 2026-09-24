@@ -120,6 +120,47 @@ pub(crate) fn fake_hang_if_requested(what: &str) {
     }
 }
 
+/// Solo pruebas: con `PEPOMOTE_FAKE_DRIVER_MISSING` puesto, el sondeo dice
+/// que falta el driver y el instalador contesta «cancelado» sin lanzar nada
+/// (después de apuntar con qué ventana habría pedido el permiso). Así se
+/// comprueba, en un PC que ya tiene ViGEmBus, cuándo y delante de qué se pide
+/// el permiso de administrador (`desktop/e2e/e2e_driver_prompt.py`).
+#[cfg(windows)]
+pub(crate) fn fake_driver_missing() -> bool {
+    std::env::var_os("PEPOMOTE_FAKE_DRIVER_MISSING").is_some()
+}
+
+/// Windows: instalación del driver pedida al arrancar, a la espera de que la
+/// ventana esté a la vista (ver `decide_startup_setup` y `window_ready`).
+#[cfg(windows)]
+static SETUP_WANTED: AtomicBool = AtomicBool::new(false);
+
+/// ¿Toca lanzar ya la instalación pedida al arrancar? Con la ventana pintada
+/// y con el foco: solo así Windows saca su permiso de administrador delante.
+/// Sin ventana, o desde un programa en segundo plano, lo deja minimizado y
+/// parpadeando en la barra de tareas (y al iniciar sesión lo bloquea).
+#[cfg(any(windows, test))]
+pub fn setup_due(wanted: bool, painted: bool, focused: bool) -> bool {
+    wanted && painted && focused
+}
+
+/// La ventana, en cada fotograma: lanza la instalación pedida al arrancar en
+/// cuanto se la ve pintada y con el foco. Con `--minimized`, al abrirla.
+pub fn window_ready(painted: bool, focused: bool) {
+    #[cfg(windows)]
+    if setup_due(SETUP_WANTED.load(Ordering::SeqCst), painted, focused) && SETUP_WANTED.swap(false, Ordering::SeqCst) {
+        if let Some(h) = hub() {
+            crate::log_line!("Mando virtual: ventana a la vista y con el foco; se instala el driver");
+            // `run_setup` coge el estado compartido: fuera del hilo de la
+            // ventana, que nunca lo espera sin tope
+            let shared = h.shared.clone();
+            let _ = crate::threads::spawn_once("vigem-setup-start", move || run_setup(shared));
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (painted, focused);
+}
+
 /// Nombre del mando virtual del jugador del slot (Dolphin en Linux lo ve
 /// como `evdev/0/<nombre>`; en la lista de mandos de cualquier programa).
 pub fn pad_name(slot: u8) -> String {
@@ -943,8 +984,10 @@ impl Hub {
     /// instala el embebido (una vez por versión del instalador; instalado,
     /// cancelado o fallido, no se vuelve a preguntar solo). `PEPOMOTE_NO_DRIVER_SETUP`
     /// lo apaga (receptores de prueba). Si el sondeo no contesta no se
-    /// decide nada: queda el botón de la ventana. Fuera del candado de los
-    /// mandos: `run_setup` coge el estado compartido.
+    /// decide nada: queda el botón de la ventana. No se lanza aquí, decenas
+    /// de ms tras arrancar y sin ventana (Windows dejaba su permiso
+    /// minimizado en la barra de tareas): queda pedido y lo lanza la ventana
+    /// cuando está a la vista (`window_ready`).
     fn decide_startup_setup(&self, st: Status) {
         #[cfg(windows)]
         {
@@ -952,10 +995,22 @@ impl Hub {
             let skip = std::env::var_os("PEPOMOTE_NO_DRIVER_SETUP").is_some();
             if vigem_setup::should_install(st, tried.as_deref(), skip) {
                 crate::log_line!(
-                    "Mando virtual: falta el driver; se instala el embebido (ViGEmBus {})",
+                    "Mando virtual: falta el driver; se instalará el embebido (ViGEmBus {}) con la ventana a la vista",
                     vigem_setup::SETUP_VERSION
                 );
-                run_setup(self.shared.clone());
+                SETUP_WANTED.store(true, Ordering::SeqCst);
+            } else if st == Status::NeedsDriver {
+                crate::log_line!(
+                    "Mando virtual: falta el driver y no se instala solo: {}",
+                    if skip {
+                        "PEPOMOTE_NO_DRIVER_SETUP".to_owned()
+                    } else {
+                        format!(
+                            "ya se intentó con este instalador (ViGEmBus {}); queda el botón de la ventana",
+                            vigem_setup::SETUP_VERSION
+                        )
+                    }
+                );
             }
         }
         #[cfg(not(windows))]
@@ -1233,10 +1288,12 @@ pub fn remembers_attempt(state: RumbleSetup) -> bool {
 /// compila en todos los sistemas.
 pub const INSTALL_ALREADY_RUNNING: u32 = 1618;
 
-/// Botón «Instalar el mando virtual» de la ventana.
+/// Botón «Instalar el mando virtual» de la ventana (la instalación pedida al
+/// arrancar, si quedaba alguna, es esta misma).
 pub fn install_driver_now() {
     #[cfg(windows)]
     if let Some(h) = hub() {
+        SETUP_WANTED.store(false, Ordering::SeqCst);
         run_setup(h.shared.clone());
     }
 }
@@ -1736,5 +1793,16 @@ mod tests {
         assert!(!remembers_attempt(RumbleSetup::Failed(1618)), "otra instalación en marcha: se resuelve sola");
         assert!(!remembers_attempt(RumbleSetup::Idle));
         assert!(!remembers_attempt(RumbleSetup::Installing));
+    }
+
+    /// El permiso de administrador del driver solo se pide con la ventana
+    /// pintada y delante: antes salía a los pocos ms de arrancar, sin
+    /// ventana, y Windows lo dejaba minimizado en la barra de tareas.
+    #[test]
+    fn el_permiso_del_driver_espera_a_la_ventana_delante() {
+        assert!(setup_due(true, true, true));
+        assert!(!setup_due(true, false, true), "sin pintar aún");
+        assert!(!setup_due(true, true, false), "sin el foco: Windows lo dejaría en segundo plano");
+        assert!(!setup_due(false, true, true), "nada pedido");
     }
 }

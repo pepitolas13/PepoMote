@@ -45,6 +45,9 @@ impl Backend {
     /// un hilo propio que sondea sin esperar (`Pending`).
     pub fn probe() -> Result<Backend, Status> {
         super::fake_hang_if_requested("el sondeo del driver");
+        if super::fake_driver_missing() {
+            return Err(Status::NeedsDriver);
+        }
         match Client::connect() {
             Ok(c) => {
                 // Qué driver hay, para leer un receptor.log: un ViGEmBus
@@ -363,6 +366,9 @@ impl Drop for Pad {
 /// en un hilo con tope de espera) o del hub.
 pub fn probe_status() -> Status {
     super::fake_hang_if_requested("el sondeo del driver");
+    if super::fake_driver_missing() {
+        return Status::NeedsDriver;
+    }
     match Client::connect() {
         Ok(_) => Status::Ready,
         Err(Error::BusNotFound) | Err(Error::BusVersionMismatch) => Status::NeedsDriver,

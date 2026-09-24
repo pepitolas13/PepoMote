@@ -68,7 +68,10 @@ fn unpack() -> Result<PathBuf, String> {
 
 /// Lanza el instalador embebido elevado (`runas`: la ventana de permiso de
 /// Windows; si el proceso ya es administrador, no pregunta) y espera a que
-/// termine. Bloquea: llamar desde un hilo propio.
+/// termine. Bloquea: llamar desde un hilo propio. El permiso va con la
+/// ventana de PepoMote como dueña: sin ella Windows lo trata como de segundo
+/// plano y lo deja minimizado en la barra de tareas (sin ventana solo queda
+/// `--install-driver`, desde una consola).
 pub fn install() -> Result<Outcome, String> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
@@ -77,6 +80,18 @@ pub fn install() -> Result<Outcome, String> {
     use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
     use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
+    let owner = crate::singleton::own_window();
+    crate::log_line!(
+        "Mando virtual: se pide el permiso de administrador para el driver ({})",
+        match owner {
+            Some(h) => format!("con la ventana 0x{:X} como dueña", h.0 as usize),
+            None => "sin ventana".to_owned(),
+        }
+    );
+    if super::fake_driver_missing() {
+        crate::log_line!("PEPOMOTE_FAKE_DRIVER_MISSING: el instalador no se lanza; cuenta como cancelado");
+        return Ok(Outcome::Declined);
+    }
     let path = unpack()?;
     let wide = |s: &std::ffi::OsStr| -> Vec<u16> { s.encode_wide().chain(std::iter::once(0)).collect() };
     let verb = wide("runas".as_ref());
@@ -85,6 +100,7 @@ pub fn install() -> Result<Outcome, String> {
     let mut info = SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
         fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC,
+        hwnd: owner.unwrap_or_default(),
         lpVerb: PCWSTR(verb.as_ptr()),
         lpFile: PCWSTR(file.as_ptr()),
         lpParameters: PCWSTR(params.as_ptr()),

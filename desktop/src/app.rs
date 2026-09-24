@@ -349,6 +349,12 @@ impl eframe::App for PepoMoteApp {
 
         self.refresh_ip();
 
+        // Windows: el driver del mando virtual que faltaba al arrancar se
+        // instala ahora, con la ventana pintada y delante (su permiso de
+        // administrador sale entonces en primer plano)
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
+        crate::rumble::window_ready(self.frames >= 2, focused);
+
         // Fuera del candado del estado: coge el de los mandos virtuales, que
         // el hub puede tener un rato (crear un mando, sondear el driver), y
         // con el estado cogido pararía a la telemetría y al DSU
@@ -426,6 +432,14 @@ impl eframe::App for PepoMoteApp {
                                     .color(theme::text_dim()),
                             );
                             ui.add_space(18.0);
+
+                            // El permiso del driver en cualquier modo: en el
+                            // de puntero (el de arranque) no hay tarjeta que
+                            // lo cuente, y es lo que Windows está esperando
+                            if snap.rumble_setup == crate::rumble::RumbleSetup::Installing {
+                                ui.label(RichText::new(tr!("rumble.installing")).size(12.0).color(theme::warn()));
+                                ui.add_space(10.0);
+                            }
 
                             self.ui_repair(ui, &snap);
 
@@ -824,10 +838,8 @@ impl PepoMoteApp {
             return;
         }
         match snap.rumble_setup {
-            RumbleSetup::Installing => {
-                ui.label(RichText::new(tr!("rumble.installing")).size(12.0).color(theme::warn()));
-                return;
-            }
+            // ya lo cuenta la línea de arriba, bajo el título
+            RumbleSetup::Installing => return,
             RumbleSetup::Declined => {
                 ui.label(RichText::new(tr!("rumble.declined")).size(11.0).color(theme::text_dim()));
             }

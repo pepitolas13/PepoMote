@@ -138,6 +138,16 @@ en el entorno:
   mismo proceso, marca del arranque que no pintó, nada que pinte (mensaje
   de error, sale con 2) y la copia colgada que deja el sitio (necesita un
   OpenGL que funcione: no en el runner de GitHub, que no tiene GPU).
+- `python e2e_driver_prompt.py <PepoMote.exe> [dir] [--cases a,b]` (solo
+  Windows): el permiso de administrador del driver del mando virtual se pide
+  con la ventana del receptor pintada, delante y como dueña (su HWND en el
+  log), una sola vez; con `--minimized`, al abrir la ventana; y con el
+  intento ya apuntado, no. `PEPOMOTE_FAKE_DRIVER_MISSING=1` hace que falte el
+  driver y que el instalador conteste «cancelado» sin lanzar nada: nunca sale
+  un permiso de verdad. Si usas el PC mientras corre, Windows no deja al
+  script dar el foco a la ventana y el caso queda «sin concluir» (no es un
+  fallo). Hasta la 1.13.2 el permiso se pedía sin ventana y Windows lo
+  dejaba minimizado en la barra de tareas.
 - `python e2e_ui_hang.py <PepoMote.exe> [dir]` — la ventana se cuelga
   después de pintar (`PEPOMOTE_FAKE_UI_HANG=1`: el hilo de la ventana se
   duerme en el fotograma 3, con el QR a la vista; `=40`, en el 40) y tiene
