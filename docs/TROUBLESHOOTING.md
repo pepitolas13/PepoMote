@@ -376,12 +376,27 @@ que la ventana GamePad View se abre sola al arrancar Cemu; si la cerraste,
 vuelve a abrirla desde ese menú. En Linux la captura es X11 (vale XWayland):
 con Cemu nativo en Wayland, lánzalo con `GDK_BACKEND=x11`.
 
+**«Cemu está abierto como administrador…» (Windows):** Cemu se abrió como
+administrador (algunas guías, incluida la wiki de Cemu, lo aconsejan) y
+PepoMote no, y Windows no deja a un programa normal tocar las ventanas de uno
+elevado: ni esconder la GamePad View ni escribirle, y en Windows 10 y en
+Windows 11 anteriores a 24H2 tampoco capturarla (en 24H2 la imagen llega
+igual). Hasta la 1.13.2 el móvil decía entonces «Abre la vista del
+GamePad…» aunque estuviera abierta. Cierra Cemu y ábrelo normal. Si se abre
+siempre así: Propiedades de `Cemu.exe`, pestaña Compatibilidad, desmarca
+«Ejecutar este programa como administrador» (y en su acceso directo,
+Propiedades → Opciones avanzadas). Si lo tenías así porque Cemu está en
+Archivos de programa, muévelo a otra carpeta: la wiki de Cemu tampoco lo
+aconseja ahí.
+
 ## El teclado en pantalla de Cemu no reacciona al táctil
 
 Es cosa de Cemu: su teclado en pantalla (nombre del jugador, mensajes…) solo
 acepta teclas del PC, no toques. Pulsa el botón **Teclado** del móvil (modo
 Wii U), escribe y **Aceptar**. En Linux, el texto entra por el teclado virtual
-de PepoMote: la ventana de Cemu tiene que tener el foco.
+de PepoMote: la ventana de Cemu tiene que tener el foco. Si el móvil avisa de
+que «Cemu está abierto como administrador», Windows no deja que las teclas le
+lleguen: ábrelo normal (sección anterior).
 
 ## El GamePad gira al revés (Wii U apaisado)
 

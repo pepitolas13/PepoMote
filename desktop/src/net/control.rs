@@ -501,7 +501,13 @@ fn handle(stream: TcpStream, shared: &SharedState, sessions: &Sessions, pairing:
                     let target = shared.lock_tolerant().mode;
                     // RetroArch: a su ventana (se activa desde telemetría)
                     let wiiu = target == Mode::Cemu;
-                    let to_os = if wiiu {
+                    let to_os = if wiiu && crate::screen::cemu_admin_blocked() {
+                        // Cemu abierto como administrador: Windows se tragaría
+                        // las teclas sin decir nada; mejor decir por qué
+                        crate::log_line!("Móvil «{device_name}»: texto sin teclear, Cemu está abierto como administrador");
+                        let _ = send(&writer, &json!({"m":"notice","text":tr!("text.cemu_admin")}));
+                        false
+                    } else if wiiu {
                         // sin camino directo a la ventana (Linux): al SO, pero
                         // solo con Cemu abierto (que tendrá el foco)
                         !crate::screen::type_text(t) && cfg!(target_os = "linux") && crate::cemu::running_exe().0

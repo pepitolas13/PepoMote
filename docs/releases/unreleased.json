@@ -2,11 +2,13 @@
   "es": [
     "Windows: la ventana cerrada con la X vuelve siempre, desde la bandeja o al abrir el exe otra vez, aunque haya otra ventana llamada PepoMote (el Explorador en una carpeta con ese nombre). La primera X avisa de que PepoMote sigue en la bandeja.",
     "Windows: en un PC sin driver de la gráfica, o con uno que falla o se cuelga, la ventana se pinta con Direct3D 12 (o WARP, por CPU) en vez de cerrarse sin avisar. Queda recordado para esa gráfica, y si nada pinta, un mensaje lo explica.",
-    "Windows: salir ya no deja iconos fantasma en la bandeja, y el icono aparece aunque PepoMote arranque antes que la barra de tareas."
+    "Windows: salir ya no deja iconos fantasma en la bandeja, y el icono aparece aunque PepoMote arranque antes que la barra de tareas.",
+    "Windows: si Cemu está abierto como administrador y por eso no llega la pantalla del GamePad (o el teclado del móvil), el móvil y el PC lo dicen y piden abrirlo normal, en vez de «Abre la vista del GamePad…» con la vista ya abierta."
   ],
   "en": [
     "Windows: the window closed with the X always comes back, from the tray or by opening the exe again, even with another window called PepoMote open (Explorer on a folder with that name). The first X explains that PepoMote stays in the tray.",
     "Windows: on a PC without a graphics driver, or with one that fails or hangs, the window is drawn with Direct3D 12 (or WARP, on the CPU) instead of closing silently. It is remembered for that card, and if nothing draws, a message explains why.",
-    "Windows: quitting no longer leaves ghost icons in the tray, and the icon shows up even if PepoMote starts before the taskbar."
+    "Windows: quitting no longer leaves ghost icons in the tray, and the icon shows up even if PepoMote starts before the taskbar.",
+    "Windows: if Cemu is running as administrator and the GamePad screen (or the phone keyboard) can't reach it, the phone and the PC say so and ask to open it normally, instead of “Open the GamePad view…” with the view already open."
   ]
 }

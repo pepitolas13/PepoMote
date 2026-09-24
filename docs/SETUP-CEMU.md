@@ -132,11 +132,18 @@ y tocarla es tocar la pantalla del GamePad. Funciona así:
 2. El receptor captura esa ventana solo mientras el móvil GamePad la pide
    (hasta 30 fps, JPEG, la resolución nativa del GamePad como máximo) con
    Windows.Graphics.Capture (lo mismo que usa OBS para las ventanas con GPU;
-   en un Windows 10 antiguo cae a `PrintWindow`) y la ventana del PC dice
-   «Pantalla del GamePad: N fps».
+   en Windows 10 y en Windows 11 anteriores a 24H2, `PrintWindow`) y la
+   ventana del PC dice «Pantalla del GamePad: N fps».
 3. En el móvil, la zona táctil pasa a ser la pantalla. Si no hay imagen, el
    propio hueco dice por qué («Cemu no está abierto», «Abre la vista del
-   GamePad en Cemu…»).
+   GamePad en Cemu…», «Cemu está abierto como administrador…»).
+
+**Abre Cemu normal, sin administrador.** Con Cemu elevado y PepoMote no,
+Windows no deja a PepoMote esconder la GamePad View ni escribirle, y en
+Windows 10 y en Windows 11 anteriores a 24H2 tampoco capturarla: el móvil y
+el PC lo dicen. Si Cemu tiene marcado «Ejecutar este programa como
+administrador» (Propiedades de `Cemu.exe`, pestaña Compatibilidad),
+desmárcalo.
 
 Si prefieres botones más grandes a la pantalla, en Ajustes de la app está
 «**GamePad sin pantalla táctil**»: quita la pantalla del GamePad (y la doble
@@ -234,6 +241,10 @@ copiarlo a `controllerProfiles/`.
   motivo. Comprueba que Cemu tiene abierta la ventana GamePad View (Options →
   Separate GamePad view; escondida detrás de Cemu es lo normal); minimizada,
   PepoMote la restaura al fondo él solo; en Wayland, `GDK_BACKEND=x11`.
+- **«Cemu está abierto como administrador…»** (en la pantalla del GamePad o
+  al escribir): ciérralo y ábrelo normal, sin administrador. Windows no deja
+  a PepoMote esconder las ventanas de un Cemu elevado ni escribirles, ni
+  capturarlas antes de Windows 11 24H2.
 - **El teclado en pantalla de Cemu no hace caso a los toques**: es así en Cemu
   (solo teclas). Usa el botón **Teclado** del móvil.
 - **No encuentro la ventana GamePad View en el PC**: está detrás de la de Cemu

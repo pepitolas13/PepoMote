@@ -156,6 +156,18 @@ en el entorno:
   sin Cemu comprueba que llegan estado y keepalive. Al final manda `text`
   (teclado del móvil para el teclado en pantalla de Cemu) y comprueba que la
   sesión sigue viva.
+- `python real_cemu_admin.py <PepoMote.exe> <carpeta> [--seconds 20] [--no-wgc] [--text-at 6] [--expect admin|frames|none]`
+  (solo Windows, a mano): receptor aislado (`PEPOMOTE_CEMU_DIR` propio: la
+  configuración de Cemu de verdad no se toca) contra el Cemu que tengas
+  abierto, con un móvil simulado en modo Wii U; imprime la línea de tiempo de
+  estados, imágenes y avisos. Con Cemu abierto como administrador (un
+  permiso de Windows) y `--no-wgc` (el camino de Windows 10 y de Windows 11
+  anterior a 24H2) el móvil debe leer «Cemu está abierto como
+  administrador…» y el teclado avisar; con Windows.Graphics.Capture, en
+  Windows 11 24H2, las imágenes llegan igual. Hasta la 1.13.2 el móvil leía
+  «Abre la vista del GamePad…» con la vista abierta. Ojo al cerrar un Cemu
+  elevado con su X: guarda `open_pad=false` y el siguiente Cemu arranca sin
+  GamePad View.
 - `python cemu_live.py [idle|buttons|sticks|touch|all]` — móvil simulado contra
   el receptor NORMAL (token real por `PEPOMOTE_TOKEN`), para ver en Cemu el
   mando moviéndose. Un archivo `cemu_live.cmd` junto al script cambia el patrón.

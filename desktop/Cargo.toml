@@ -72,6 +72,10 @@ windows = { version = "0.58", features = [
     # Versión de ViGEmBus.sys para el log y --diag: los anteriores a 1.17.333
     # perdían el aviso de «motor apagado» (rumble/windows.rs).
     "Win32_Storage_FileSystem",
+    # ¿Cemu está abierto como administrador? (screen/capture_windows.rs):
+    # entonces Windows no deja escribirle ni, según el Windows, capturar su
+    # ventana.
+    "Win32_Security",
 ] }
 windows-capture = "2.0.1"
 # Direct3D 12 (con WARP, el Direct3D por CPU de Windows, si no hay GPU) para

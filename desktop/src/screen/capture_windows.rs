@@ -12,18 +12,20 @@
 
 use super::{Capture, RawFrame};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{
     ClientToScreen, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GdiFlush, GetDC, ReleaseDC,
     SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
 };
+use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
 use windows::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -234,6 +236,12 @@ pub struct Capturer {
     /// WGC no arranca en este equipo: PrintWindow para siempre.
     wgc_broken: bool,
     last_wgc_id: u64,
+    /// Última ventana mirada por si es de un Cemu abierto como
+    /// administrador: (ventana, proceso, Windows no deja llegar a ella).
+    admin: Option<(HWND, u32, bool)>,
+    /// Ventana de un Cemu abierto como administrador que Windows no deja
+    /// capturar: el aviso, sin reintentar, hasta que sea otra ventana.
+    admin_failed: Option<HWND>,
 }
 
 // HWND/HDC son manejadores opacos: el hilo de captura es el único que los usa.
@@ -248,6 +256,8 @@ impl Capturer {
             wgc: None,
             wgc_broken: std::env::var_os("PEPOMOTE_NO_WGC").is_some(),
             last_wgc_id: 0,
+            admin: None,
+            admin_failed: None,
         }
     }
 
@@ -269,6 +279,14 @@ impl Capturer {
             }
         }
         let hwnd = self.hwnd.unwrap();
+        // Cemu abierto como administrador: Windows no deja moverle la ventana
+        // ni escribirle, y capturarla depende del Windows (en 11 24H2, con
+        // WGC, sí; con PrintWindow, no). Se intenta como siempre y, si no se
+        // puede, se dice por qué
+        let admin = self.admin_blocked(hwnd);
+        if admin && self.admin_failed == Some(hwnd) {
+            return Ok(Capture::NoWindow(tr!("screen.cemu_admin").to_owned()));
+        }
         if unsafe { IsIconic(hwnd).as_bool() } {
             // Minimizada no se puede capturar (ni WGC ni PrintWindow): se
             // restaura sin activarla y se manda al fondo, que no estorbe
@@ -276,15 +294,19 @@ impl Capturer {
                 let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 let _ = SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             }
+            // (la de un Cemu elevado puede quedarse minimizada: Windows no deja)
+            if admin {
+                return Ok(Capture::NoWindow(tr!("screen.cemu_admin").to_owned()));
+            }
             return Ok(Capture::NoWindow(tr!("screen.minimized").to_owned()));
         }
         if !self.wgc_broken {
-            return self.capture_wgc(hwnd);
+            return self.capture_wgc(hwnd, admin);
         }
-        self.capture_print_window(hwnd)
+        self.capture_print_window(hwnd, admin)
     }
 
-    fn capture_wgc(&mut self, hwnd: HWND) -> Result<Capture, String> {
+    fn capture_wgc(&mut self, hwnd: HWND, admin: bool) -> Result<Capture, String> {
         if self.wgc.as_ref().is_some_and(|w| w.hwnd != hwnd) {
             self.wgc = None;
         }
@@ -295,10 +317,11 @@ impl Capturer {
                     self.last_wgc_id = 0;
                 }
                 Err(e) => {
-                    // Sin Windows.Graphics.Capture (Windows 10 antiguo): PrintWindow
-                    eprintln!("[screen] WGC no disponible ({e}); uso PrintWindow");
+                    // Sin Windows.Graphics.Capture (o sin alguno de los ajustes
+                    // de `start_wgc` en este Windows): PrintWindow
+                    crate::log_line!("Pantalla del GamePad: Windows.Graphics.Capture no arranca ({e}); uso PrintWindow");
                     self.wgc_broken = true;
-                    return self.capture_print_window(hwnd);
+                    return self.capture_print_window(hwnd, admin);
                 }
             }
         }
@@ -322,7 +345,7 @@ impl Capturer {
         }
     }
 
-    fn capture_print_window(&mut self, hwnd: HWND) -> Result<Capture, String> {
+    fn capture_print_window(&mut self, hwnd: HWND, admin: bool) -> Result<Capture, String> {
         let mut rect = RECT::default();
         unsafe { GetClientRect(hwnd, &mut rect) }.map_err(|e| format!("GetClientRect: {e}"))?;
         let (w, h) = ((rect.right - rect.left).max(0) as u32, (rect.bottom - rect.top).max(0) as u32);
@@ -337,6 +360,17 @@ impl Capturer {
         };
         let ok = unsafe { PrintWindow(hwnd, dib.dc, PW_FLAGS) };
         if !ok.as_bool() {
+            if admin {
+                // De un Cemu abierto como administrador, Windows no deja. La
+                // ventana no se suelta (el móvil leería «Abre la vista…» con la
+                // vista abierta) ni se reintenta: el aviso hasta que se abra
+                // normal, que será otra ventana
+                crate::log_line!(
+                    "Pantalla del GamePad: Windows no deja capturar la GamePad View de un Cemu abierto como administrador; se avisa de que lo abra normal"
+                );
+                self.admin_failed = Some(hwnd);
+                return Ok(Capture::NoWindow(tr!("screen.cemu_admin").to_owned()));
+            }
             self.hwnd = None;
             return Ok(Capture::NoWindow(tr!("screen.cannot_capture").to_owned()));
         }
@@ -350,6 +384,26 @@ impl Capturer {
             px[3] = 255; // el alfa del DIB no significa nada
         }
         Ok(Capture::Frame(RawFrame { w, h, bgra }))
+    }
+
+    /// ¿Es la ventana de un Cemu abierto como administrador (y PepoMote no)?
+    /// Se mira una vez por ventana: la elevación de un proceso no cambia y un
+    /// Cemu reabierto es otra ventana.
+    fn admin_blocked(&mut self, hwnd: HWND) -> bool {
+        let pid = window_pid(hwnd);
+        if let Some((h, p, blocked)) = self.admin {
+            if h == hwnd && p == pid {
+                return blocked;
+            }
+        }
+        let blocked = pid_blocked(pid);
+        if blocked {
+            crate::log_line!(
+                "Pantalla del GamePad: la GamePad View es de un Cemu abierto como administrador (PID {pid}) y PepoMote no lo está: Windows no deja esconderla ni escribirle"
+            );
+        }
+        self.admin = Some((hwnd, pid, blocked));
+        blocked
     }
 }
 
@@ -375,6 +429,68 @@ fn exe_name(pid: u32) -> Option<String> {
         let path = String::from_utf16_lossy(&buf[..len as usize]);
         path.rsplit(['\\', '/']).next().map(|s| s.to_lowercase())
     }
+}
+
+/// Proceso dueño de una ventana (0 si no se sabe).
+fn window_pid(hwnd: HWND) -> u32 {
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+    pid
+}
+
+/// ¿Windows aísla este proceso de PepoMote? Pasa cuando está abierto como
+/// administrador y PepoMote no (UIPI): no deja mover sus ventanas ni
+/// mandarles teclas, y según el Windows tampoco capturarlas. Lo que no se
+/// pueda saber no bloquea nada.
+fn pid_blocked(pid: u32) -> bool {
+    pid != 0 && elevation_blocks(is_elevated(pid), self_elevated())
+}
+
+/// La decisión: el otro proceso elevado y PepoMote no.
+fn elevation_blocks(other: Option<bool>, me: Option<bool>) -> bool {
+    other == Some(true) && me == Some(false)
+}
+
+/// ¿El proceso está abierto como administrador? Con el mismo acceso limitado
+/// que `exe_name`, que Windows da también sobre los procesos elevados del
+/// mismo usuario. `None` si no se puede saber.
+fn is_elevated(pid: u32) -> Option<bool> {
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let elevated = token_elevated(h);
+        let _ = CloseHandle(h);
+        elevated
+    }
+}
+
+/// ¿PepoMote está abierto como administrador? No cambia en toda su vida.
+fn self_elevated() -> Option<bool> {
+    static ME: OnceLock<Option<bool>> = OnceLock::new();
+    *ME.get_or_init(|| unsafe { token_elevated(GetCurrentProcess()) })
+}
+
+unsafe fn token_elevated(process: HANDLE) -> Option<bool> {
+    let mut token = HANDLE::default();
+    OpenProcessToken(process, TOKEN_QUERY, &mut token).ok()?;
+    let mut elevation = TOKEN_ELEVATION::default();
+    let mut len = 0u32;
+    let read = GetTokenInformation(
+        token,
+        TokenElevation,
+        Some(&mut elevation as *mut TOKEN_ELEVATION as *mut core::ffi::c_void),
+        std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+        &mut len,
+    );
+    let _ = CloseHandle(token);
+    read.ok()?;
+    Some(elevation.TokenIsElevated != 0)
+}
+
+/// Para el teclado del móvil: ¿el Cemu abierto está como administrador (y
+/// PepoMote no)? Entonces sus teclas no le llegarían.
+pub fn cemu_admin_blocked() -> bool {
+    let (pad, main) = cemu_windows();
+    pad.or(main).is_some_and(|h| pid_blocked(window_pid(h)))
 }
 
 unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -602,4 +718,31 @@ pub fn type_text(text: &str) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn solo_aisla_un_cemu_elevado_con_pepomote_sin_elevar() {
+        assert!(elevation_blocks(Some(true), Some(false)));
+        assert!(!elevation_blocks(Some(false), Some(false)));
+        assert!(!elevation_blocks(Some(true), Some(true)));
+        assert!(!elevation_blocks(Some(false), Some(true)));
+        // lo que no se puede saber no bloquea nada: todo como siempre
+        assert!(!elevation_blocks(None, Some(false)));
+        assert!(!elevation_blocks(Some(true), None));
+        assert!(!elevation_blocks(None, None));
+    }
+
+    #[test]
+    fn la_elevacion_se_lee_igual_por_pid_que_la_propia() {
+        let me = self_elevated();
+        assert!(me.is_some(), "el token propio siempre se puede leer");
+        assert_eq!(is_elevated(std::process::id()), me);
+        // un proceso nunca se aísla de sí mismo, y sin proceso no hay nada
+        assert!(!pid_blocked(std::process::id()));
+        assert!(!pid_blocked(0));
+    }
 }

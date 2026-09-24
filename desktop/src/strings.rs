@@ -358,6 +358,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("text.truncated", "El texto era muy largo: escribí los primeros {0} caracteres", "The text was too long: I typed the first {0} characters"),
     ("text.queue_full", "Demasiado texto seguido: descarté el último mensaje", "Too much text at once: I dropped the last message"),
     ("text.os_refused", "El sistema no dejó escribir en la ventana de delante (¿va como administrador?)", "The system refused to type into the window in front (is it running as administrator?)"),
+    ("text.cemu_admin", "Cemu está abierto como administrador y así Windows no deja a PepoMote escribir en él. Ciérralo y ábrelo normal, SIN administrador.", "Cemu is running as administrator, and that way Windows won't let PepoMote type into it. Close it and open it normally, WITHOUT administrator."),
     ("text.folded", "Aquí no se pueden teclear tildes ni signos: {0}", "Accents and symbols cannot be typed here: {0}"),
     ("text.dropped", "No pude escribir: {0}", "I could not type: {0}"),
     // --- pantalla del GamePad
@@ -368,6 +369,7 @@ pub const TABLE: &[(&str, &str, &str)] = &[
     ("screen.no_size", "La ventana GamePad View de Cemu no tiene tamaño", "Cemu's GamePad View window has no size"),
     ("screen.no_bitmap", "No puedo crear el bitmap de captura", "Cannot create the capture bitmap"),
     ("screen.cannot_capture", "Cemu no deja capturar la ventana GamePad View", "Cemu does not allow capturing the GamePad View window"),
+    ("screen.cemu_admin", "Cemu está abierto como administrador y así Windows no deja a PepoMote ver su pantalla. Ciérralo y ábrelo normal, SIN administrador. Si se abre siempre así: Propiedades de Cemu.exe, pestaña Compatibilidad, desmarca «Ejecutar este programa como administrador».", "Cemu is running as administrator, and that way Windows won't let PepoMote see its screen. Close it and open it normally, WITHOUT administrator. If it always opens that way: Cemu.exe Properties, Compatibility tab, untick “Run this program as an administrator”."),
     ("screen.open_view", "Abre la vista del GamePad en Cemu (Options → Separate GamePad view)", "Open the GamePad view in Cemu (Options → Separate GamePad view)"),
     ("screen.cemu_closed", "Cemu no está abierto", "Cemu is not open"),
     ("screen.no_x11", "Sin sesión X11: en Wayland lanza Cemu con GDK_BACKEND=x11 para la doble pantalla", "No X11 session: on Wayland launch Cemu with GDK_BACKEND=x11 for the second screen"),
