@@ -535,6 +535,50 @@ con la columna `vibrando` y los tres ejes del giroscopio: lo que lea el
 giroscopio quieto mientras `vibrando` sea 1 es el sesgo del motor. Si el
 cursor se sigue yendo con la 1.13, manda esa grabación en una incidencia.
 
+## Windows: la ventana no aparece (solo se ve en el Administrador de tareas o en la bandeja)
+
+Síntoma (hasta la 1.13.2): al abrir PepoMote «se abre un momento y se
+cierra»; en el Administrador de tareas sale PepoMote y en la bandeja (junto
+al reloj) está su icono, pero la ventana no aparece ni pulsándolo.
+
+Había dos causas, arregladas después de la 1.13.2:
+
+1. **La ventana cerrada con la X no volvía.** La X no cierra PepoMote: lo
+   esconde en la bandeja para que el móvil siga conectado. Para enseñarla
+   otra vez, PepoMote buscaba su ventana por el título, «PepoMote», y cogía la
+   primera de cualquier programa. En Windows 10 el Explorador abierto en una
+   carpeta llamada «PepoMote» (donde mucha gente guarda el exe) se titula
+   igual, así que el aviso iba a esa ventana (y hasta la desmaximizaba), y ni
+   el icono de la bandeja ni volver a abrir el exe la sacaban: la segunda
+   copia le pasa el aviso a la primera y se cierra al momento.
+   Ahora PepoMote enseña siempre su propia ventana, la trae delante y no toca
+   las de otros programas. La primera vez que pulsas la X avisa de que sigue
+   en la bandeja (con «Salir del todo» si lo que querías era cerrarlo), y si
+   no hay icono en la bandeja la X minimiza.
+2. **PCs sin OpenGL 2.0.** PepoMote pintaba solo con OpenGL. Sin el driver de
+   la tarjeta gráfica (el «Adaptador de pantalla básico de Microsoft»:
+   Windows recién instalado o recortado sin Windows Update, gráficas muy
+   antiguas, máquinas virtuales, escritorio remoto) Windows solo trae un
+   OpenGL 1.1 que no sirve, y el receptor se cerraba sin decir nada, dejando
+   un icono en la bandeja que no abría nada.
+   Ahora, si OpenGL no sirve, la ventana se pinta con Direct3D 12 y, sin
+   GPU, con WARP (el Direct3D por CPU que trae Windows 10 y 11). OpenGL se
+   prueba antes en un proceso aparte que no se ve (la sonda): si falla o no
+   contesta en 3 s (un driver que se cuelga), la ventana abre con Direct3D, y
+   queda recordado para esa gráfica, así que las siguientes veces no hay
+   espera. Si aun así una copia se queda colgada antes de pintar, al volver a
+   abrir el exe le deja el sitio a la nueva, que abre con Direct3D. Si nada
+   pinta, sale un mensaje con lo que pasa y dónde está el log. Y salir ya no
+   deja iconos fantasma en la bandeja.
+
+`receptor.log` (`%APPDATA%\pepotech\PepoMote\config`) dice qué gráfica tiene
+el PC («Gráfica: …», con «OpenGL del fabricante: no» si falta el driver), qué
+contestó la sonda y con qué pintó («Ventana: primer fotograma pintado
+(intento 1 · Direct3D 12 · Microsoft Basic Render Driver (por CPU, WARP))»).
+`PepoMote.exe --diag` lo resume en «Gráfica:» y «Ventana en esta gráfica:».
+Para forzar uno (soporte): la variable `PEPOMOTE_UI_RENDERER=direct3d` u
+`opengl`.
+
 ## Windows: la ventana de PepoMote sale negra
 
 Síntoma (1.12.0): la ventana se abre pero está entera en negro, sin ni

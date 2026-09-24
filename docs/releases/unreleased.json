@@ -1,8 +1,12 @@
 {
   "es": [
-    "Novedades desde la 1.13.2: por escribir."
+    "Windows: la ventana cerrada con la X vuelve siempre, desde la bandeja o al abrir el exe otra vez, aunque haya otra ventana llamada PepoMote (el Explorador en una carpeta con ese nombre). La primera X avisa de que PepoMote sigue en la bandeja.",
+    "Windows: en un PC sin driver de la gráfica, o con uno que falla o se cuelga, la ventana se pinta con Direct3D 12 (o WARP, por CPU) en vez de cerrarse sin avisar. Queda recordado para esa gráfica, y si nada pinta, un mensaje lo explica.",
+    "Windows: salir ya no deja iconos fantasma en la bandeja, y el icono aparece aunque PepoMote arranque antes que la barra de tareas."
   ],
   "en": [
-    "Changes since 1.13.2: to be written."
+    "Windows: the window closed with the X always comes back, from the tray or by opening the exe again, even with another window called PepoMote open (Explorer on a folder with that name). The first X explains that PepoMote stays in the tray.",
+    "Windows: on a PC without a graphics driver, or with one that fails or hangs, the window is drawn with Direct3D 12 (or WARP, on the CPU) instead of closing silently. It is remembered for that card, and if nothing draws, a message explains why.",
+    "Windows: quitting no longer leaves ghost icons in the tray, and the icon shows up even if PepoMote starts before the taskbar."
   ]
 }
