@@ -40,6 +40,17 @@ jobs:
         env:
           PEPOMOTE_E2E_SUITES: e2e_retroarch,e2e_eden,e2e_cemu,e2e_nunchuk,e2e_dolphin_ir,e2e_gamepad,e2e_rumble
         run: python desktop/e2e/run_switch_preview.py desktop/target/release/PepoMote.exe dist/e2e
+      # La ventana de verdad: el e2e de arriba arranca el receptor con
+      # --minimized y nunca la crea. El runner no tiene GPU: su OpenGL es el
+      # 1.1 de Microsoft, como un PC sin driver de la gráfica, y la ventana
+      # tiene que pintar con Direct3D 12 por WARP (desktop/src/gpu.rs). El
+      # caso «colgada» necesita un OpenGL que funcione: solo en un PC.
+      - name: Humo de la ventana (Windows sin GPU)
+        timeout-minutes: 10
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python desktop/e2e/e2e_window_windows.py desktop/target/release/PepoMote.exe dist/e2e-window --cases normal,sin_opengl,sonda_colgada,reintento,marca,nada,carpeta,carpeta_min,aviso
       - name: Procesos del receptor que se quedaron terminando
         if: always()
         shell: pwsh
@@ -52,6 +63,7 @@ jobs:
             dist/e2e/**/checks.log
             dist/e2e/**/receiver.out
             dist/e2e/**/receptor.log
+            dist/e2e-window/**/receptor.log
           if-no-files-found: warn
       - name: Diagnóstico de cierre de Windows
         if: failure()

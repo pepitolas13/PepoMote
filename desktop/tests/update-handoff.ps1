@@ -30,6 +30,19 @@ function Wait-File([string]$Path,[int]$Seconds=15) {
         Start-Sleep -Milliseconds 50
     }
 }
+# The helper writes these files with durable_write (create + write +
+# sync_all) and keeps them open for a moment after they appear: reading
+# right away sometimes failed with a sharing violation, so retry briefly.
+function Read-Text([string]$Path,[int]$Seconds=5) {
+    $until=[DateTime]::UtcNow.AddSeconds($Seconds)
+    while ($true) {
+        try { return [IO.File]::ReadAllText($Path) }
+        catch [System.IO.IOException] {
+            if ([DateTime]::UtcNow -gt $until) { throw }
+            Start-Sleep -Milliseconds 50
+        }
+    }
+}
 foreach ($failed in @($false,$true)) {
     $case=Join-Path $root $(if($failed){'rollback'}else{'success'})
     $work=Join-Path $case '.pepomote-update-fixture'
@@ -56,17 +69,17 @@ foreach ($failed in @($false,$true)) {
         [IO.File]::WriteAllText((Join-Path $work 'commit.tmp'),$nonce)
         Move-Item -LiteralPath (Join-Path $work 'commit.tmp') -Destination (Join-Path $work 'commit')
         Wait-File (Join-Path $work 'committed')
-        $ack=[IO.File]::ReadAllText((Join-Path $work 'committed'))
+        $ack=(Read-Text (Join-Path $work 'committed'))
         if($ack -ne "$($helperProcess.Id):$nonce"){throw 'Commit acknowledgment mismatch'}
         if((Get-FileHash -LiteralPath $destination).Hash.ToLowerInvariant() -ne $oldHash){throw 'Installer changed files while parent was running'}
         Stop-Process -Id $parent.Id
         Wait-File (Join-Path $work 'result') 20
-        $result=[IO.File]::ReadAllText((Join-Path $work 'result'))
+        $result=(Read-Text (Join-Path $work 'result'))
         $expected=if($failed){'rolled-back'}else{'installed'}
         if($result -ne $expected){throw "Expected $expected, got $result"}
         $expectedHash=if($failed){$oldHash}else{$newHash}
         if((Get-FileHash -LiteralPath $destination).Hash.ToLowerInvariant() -ne $expectedHash){throw 'Installed file hash mismatch'}
-        if($failed){Wait-File (Join-Path $work 'restarted-old');if([IO.File]::ReadAllText((Join-Path $work 'restarted-old')) -ne '1.10.0'){throw 'Old fixture was not relaunched'}}
+        if($failed){Wait-File (Join-Path $work 'restarted-old');if((Read-Text (Join-Path $work 'restarted-old')) -ne '1.10.0'){throw 'Old fixture was not relaunched'}}
         $helperProcess.WaitForExit(5000)|Out-Null
         Write-Output "PASS $expected : native helper acknowledgment, parent-exit gating, verified replacement and process outcome"
     } finally {

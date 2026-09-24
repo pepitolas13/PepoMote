@@ -127,6 +127,17 @@ en el entorno:
   receptor debe esperar a que se suelte, cogerlo y llegar al inyector; hasta
   la 1.13.0 se rendía a la primera y se quedaba con «Inyección: ninguna».
   Se cierra solo; en Linux sin ventana añade `PEPOMOTE_NO_UI=1`.
+- `python e2e_window_windows.py <PepoMote.exe> [dir] [--cases a,b] [--old]`
+  (solo Windows): la ventana aparece siempre. Receptores aislados que abren
+  ventanas de verdad: la X esconde y una ventana ajena titulada «PepoMote»
+  (lo que es el Explorador de Windows 10 en una carpeta con ese nombre) no
+  impide que vuelva al abrir el exe otra vez (`--old` contra la 1.13.2: ahí
+  tiene que fallar); el aviso de la primera X; y la ventana con OpenGL o
+  Direct3D 12: sonda bien o mal (`PEPOMOTE_FAKE_NO_OPENGL=1` pide el OpenGL
+  1.1 de Windows, el de un PC sin driver), sonda colgada, reintento en el
+  mismo proceso, marca del arranque que no pintó, nada que pinte (mensaje
+  de error, sale con 2) y la copia colgada que deja el sitio (necesita un
+  OpenGL que funcione: no en el runner de GitHub, que no tiene GPU).
 - `python e2e_ui_hang.py <PepoMote.exe> [dir]` — la ventana se cuelga
   después de pintar (`PEPOMOTE_FAKE_UI_HANG=1`: el hilo de la ventana se
   duerme en el fotograma 3, con el QR a la vista; `=40`, en el 40) y tiene
