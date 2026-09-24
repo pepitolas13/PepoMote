@@ -224,6 +224,21 @@ pub const TABLE: &[(&str, &str, &str)] = &[
         "Detalles en {0}. Ejecuta «PepoMote --diag» y pega el informe en un issue. Prueba a lanzarlo con LIBGL_ALWAYS_SOFTWARE=1 o PEPOMOTE_UI_BACKEND=x11.",
         "Details in {0}. Run “PepoMote --diag” and paste the report in an issue. Try launching it with LIBGL_ALWAYS_SOFTWARE=1 or PEPOMOTE_UI_BACKEND=x11.",
     ),
+    // --- la ventana no abre (Windows): ni OpenGL ni Direct3D 12 han pintado
+    (
+        "ui.start_failed_body_windows",
+        "No se pudo dibujar la ventana ni con OpenGL ni con Direct3D 12. Casi siempre es el driver de la tarjeta gráfica: instálalo o actualízalo (Windows Update o la web de Intel, AMD o NVIDIA) y vuelve a abrir PepoMote. Detalles en {0}.",
+        "The window could not be drawn with OpenGL or Direct3D 12. It is almost always the graphics card driver: install or update it (Windows Update or the Intel, AMD or NVIDIA website) and open PepoMote again. Details in {0}.",
+    ),
+    // --- la X (Windows): la primera vez, aviso de que sigue en la bandeja
+    ("win.tray_notice_title", "PepoMote sigue abierto", "PepoMote is still running"),
+    (
+        "win.tray_notice_body",
+        "La X no lo cierra: PepoMote sigue en la bandeja, junto al reloj, para que el móvil siga conectado. Para verlo otra vez, pulsa su icono o vuelve a abrir PepoMote. Para cerrarlo del todo: clic derecho en el icono y «Salir».",
+        "The X does not close it: PepoMote stays in the tray, next to the clock, so your phone stays connected. To see it again, click its icon or open PepoMote again. To quit completely: right-click the icon and choose “Quit”.",
+    ),
+    ("win.tray_notice_ok", "Entendido", "Got it"),
+    ("win.tray_notice_quit", "Salir del todo", "Quit completely"),
     ("fix.no_pkexec_launch", "No pude lanzar pkexec: {0}", "Could not launch pkexec: {0}"),
     // --- ajustes
     ("cfg.title", "Ajustes", "Settings"),

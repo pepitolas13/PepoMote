@@ -74,6 +74,13 @@ windows = { version = "0.58", features = [
     "Win32_Storage_FileSystem",
 ] }
 windows-capture = "2.0.1"
+# Direct3D 12 (con WARP, el Direct3D por CPU de Windows, si no hay GPU) para
+# pintar la ventana cuando OpenGL no sirve: PCs sin driver de la gráfica
+# (solo el OpenGL 1.1 de Microsoft) o con un driver que se cuelga. OpenGL
+# sigue siendo lo primero (gpu.rs). La feature `wgpu` de eframe sola no
+# compila Direct3D 12: hace falta `dx12` en wgpu.
+eframe = { version = "0.29", default-features = false, features = ["wgpu"] }
+wgpu = { version = "22.1", default-features = false, features = ["dx12"] }
 # Mando virtual Xbox 360 (driver ViGEmBus) por el que Dolphin, Cemu y
 # RetroArch mandan la vibracion que luego viaja al movil (rumble/windows.rs).
 # Rust puro: habla con el driver por IOCTL, sin DLL.

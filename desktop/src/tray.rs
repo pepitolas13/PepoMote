@@ -94,10 +94,10 @@ pub struct TrayHandle {
 }
 
 impl TrayHandle {
-    pub fn build(shared: &SharedState) -> Option<TrayHandle> {
+    pub fn build(shared: &SharedState) -> Result<TrayHandle, String> {
         // 32 px en Windows; 44 px (22 pt @2x) en la barra de menús de macOS
         let px: u32 = if cfg!(target_os = "macos") { 44 } else { 32 };
-        let icon_of = |rgba: Vec<u8>| Icon::from_rgba(rgba, px, px).ok();
+        let icon_of = |rgba: Vec<u8>| Icon::from_rgba(rgba, px, px).map_err(|e| e.to_string());
         let idle = icon_of(crate::icon::logo_rgba(px))?;
         let live = icon_of(crate::icon::logo_rgba_badge(px))?;
         let menu = Menu::new();
@@ -106,9 +106,9 @@ impl TrayHandle {
         // «Nueva versión X…»: existe desde el principio pero solo entra en
         // el menú (arriba del todo) cuando hay una que anunciar
         let update_item = MenuItem::new("", true, None);
-        menu.append(&show).ok()?;
-        menu.append(&PredefinedMenuItem::separator()).ok()?;
-        menu.append(&quit).ok()?;
+        menu.append(&show).map_err(|e| e.to_string())?;
+        menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
+        menu.append(&quit).map_err(|e| e.to_string())?;
         let snap = TraySnapshot::of(shared);
         let builder = TrayIconBuilder::new()
             .with_icon(if snap.players > 0 { live.clone() } else { idle.clone() })
@@ -119,7 +119,7 @@ impl TrayHandle {
             // izquierdo, como cualquier icono de la barra de menús.
             .with_menu_on_left_click(cfg!(target_os = "macos"))
             .with_tooltip(tooltip(&snap));
-        let tray = builder.build().ok()?;
+        let tray = builder.build().map_err(|e| e.to_string())?;
         let mut handle = TrayHandle {
             tray,
             idle,
@@ -134,7 +134,7 @@ impl TrayHandle {
             update_url: Arc::new(Mutex::new(None)),
         };
         handle.announce();
-        Some(handle)
+        Ok(handle)
     }
 
     /// Icono y tooltip al día; la versión nueva, anunciada en cuanto aparece.
@@ -179,7 +179,7 @@ fn menu_handler(
         if *ev.id() == show_id {
             show();
         } else if *ev.id() == quit_id {
-            std::process::exit(0);
+            quit_from_menu();
         } else if *ev.id() == update_id {
             crate::update::request_open();
             show();
@@ -187,14 +187,108 @@ fn menu_handler(
     }
 }
 
-/// Windows: hilo propio con bomba de mensajes win32 (los handlers corren en
-/// DispatchMessage) y un WM_TIMER por segundo que refresca icono y tooltip.
+/// «Salir» del menú. En Windows el manejador corre en el hilo del icono,
+/// dentro del procedimiento de ventana de tray-icon: ahí no se puede soltar
+/// el icono, así que se pide que el bucle termine (`PostQuitMessage`, que
+/// ningún bucle modal pierde); el bucle lo suelta (sin icono fantasma) y sale.
+fn quit_from_menu() {
+    #[cfg(windows)]
+    {
+        use std::sync::atomic::Ordering::SeqCst;
+        use windows::Win32::System::Threading::GetCurrentThreadId;
+        QUIT.store(true, SeqCst);
+        EXITING.store(true, SeqCst);
+        let icon_thread = ICON_THREAD.load(SeqCst);
+        if icon_thread != 0 && icon_thread == unsafe { GetCurrentThreadId() } {
+            unsafe { windows::Win32::UI::WindowsAndMessaging::PostQuitMessage(0) };
+            return;
+        }
+        crate::launch::exit(0);
+    }
+    #[cfg(not(windows))]
+    std::process::exit(0);
+}
+
+/// Windows: el icono vive y muere en su hilo (`TrayIcon` no es `Send`); los
+/// demás solo miran estas marcas y piden.
+#[cfg(windows)]
+static ICON_PRESENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Se está saliendo: no crear ni reponer más iconos.
+#[cfg(windows)]
+static EXITING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Quitar el icono ya (lo mira el bucle en cada mensaje y en cada `WM_TIMER`).
+#[cfg(windows)]
+static REMOVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// «Salir»: tras quitar el icono, terminar.
+#[cfg(windows)]
+static QUIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// El hilo que tiene el icono (para `PostThreadMessageW`); 0 = ninguno.
+#[cfg(windows)]
+static ICON_THREAD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// Mensaje al hilo del icono: quítalo (una salida desde otro hilo).
+#[cfg(windows)]
+const WM_PMP_REMOVE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 0x51;
+
+/// ¿Hay icono en la bandeja? Sin él, la X de la ventana minimiza en vez de
+/// esconder (no habría desde dónde volver a abrirla).
+#[cfg(windows)]
+pub fn icon_present() -> bool {
+    ICON_PRESENT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Antes de salir desde otro hilo: el hilo del icono lo quita (su `Drop`
+/// manda `NIM_DELETE`) y aquí se espera como mucho 1,5 s. Si el mensaje se
+/// pierde (un menú abierto), el bucle lo ve en su `WM_TIMER` de cada
+/// segundo. Sin icono, o desde el propio hilo del icono, vuelve al momento.
+#[cfg(windows)]
+pub fn remove_before_exit() {
+    use std::sync::atomic::Ordering::SeqCst;
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::PostThreadMessageW;
+    EXITING.store(true, SeqCst);
+    if !ICON_PRESENT.load(SeqCst) {
+        return;
+    }
+    let icon_thread = ICON_THREAD.load(SeqCst);
+    if icon_thread == 0 || icon_thread == unsafe { GetCurrentThreadId() } {
+        return;
+    }
+    REMOVE.store(true, SeqCst);
+    let _ = unsafe { PostThreadMessageW(icon_thread, WM_PMP_REMOVE, WPARAM(0), LPARAM(0)) };
+    let start = std::time::Instant::now();
+    while ICON_PRESENT.load(SeqCst) && start.elapsed() < std::time::Duration::from_millis(1500) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Espera entre intentos de crear el icono: 2, 4, 8, 16 y luego cada 30 s.
+#[cfg(any(windows, test))]
+pub fn retry_after(tries: u32) -> std::time::Duration {
+    std::time::Duration::from_secs(match tries {
+        0 | 1 => 2,
+        2 => 4,
+        3 => 8,
+        4 => 16,
+        _ => 30,
+    })
+}
+
+/// Windows: un hilo vigila y cada intento de icono va en su propio hilo con
+/// bomba de mensajes win32 (los handlers corren en DispatchMessage) y un
+/// WM_TIMER por segundo que refresca icono y tooltip.
+///
+/// Al arrancar con Windows (autoarranque) la barra de tareas puede no
+/// existir aún: se espera a que exista y, si crear el icono falla igual, se
+/// reintenta. Antes el hilo se rendía a la primera y el receptor quedaba
+/// vivo sin icono ni ventana (solo en el Administrador de tareas). Cada
+/// intento en un hilo nuevo: un intento fallido de tray-icon deja una
+/// ventana oculta que, al reiniciarse el Explorador, pondría un icono sin
+/// menú; Windows la destruye al terminar el hilo que la creó.
 #[cfg(windows)]
 pub fn start(shared: SharedState) {
+    use std::sync::atomic::Ordering::SeqCst;
     use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, GetMessageW, SetTimer, TranslateMessage, MSG, WM_TIMER,
-    };
 
     std::thread::Builder::new()
         .name("pmp-tray".into())
@@ -212,28 +306,123 @@ pub fn start(shared: SharedState) {
                 } => crate::singleton::request_show(),
                 _ => {}
             }));
-            let Some(mut handle) = TrayHandle::build(&shared) else { return };
-            MenuEvent::set_event_handler(Some(menu_handler(
-                handle.show_id.clone(),
-                handle.quit_id.clone(),
-                handle.update_id.clone(),
-                handle.url_slot(),
-                crate::singleton::request_show,
-            )));
-            unsafe {
-                let _ = SetTimer(None, 0, 1000, None);
-                let mut msg = MSG::default();
-                while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-                    if msg.message == WM_TIMER {
-                        handle.refresh(&shared);
-                        continue;
+            let mut tries = 0u32;
+            let mut waited_taskbar = false;
+            loop {
+                if EXITING.load(SeqCst) {
+                    return;
+                }
+                if !taskbar_ready() {
+                    if !waited_taskbar {
+                        crate::log_line!("Bandeja: la barra de tareas aún no existe; espero para poner el icono");
+                        waited_taskbar = true;
                     }
-                    let _ = TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    continue;
+                }
+                tries += 1;
+                let (tx, rx) = std::sync::mpsc::channel();
+                let s = shared.clone();
+                let Ok(icon) = std::thread::Builder::new().name("pmp-tray-icon".into()).spawn(move || run_icon(s, tx))
+                else {
+                    return;
+                };
+                match rx.recv() {
+                    Ok(Ok(())) => {
+                        if tries > 1 || waited_taskbar {
+                            crate::log_line!("Bandeja: icono puesto (intento {tries})");
+                        }
+                        let _ = icon.join();
+                        if EXITING.load(SeqCst) {
+                            return;
+                        }
+                        // El bucle del icono terminó sin que nadie lo pidiera:
+                        // se vuelve a poner, que el receptor no quede sin él
+                        crate::log_line!("Bandeja: el icono se fue sin pedirlo; lo pongo otra vez");
+                        std::thread::sleep(retry_after(tries));
+                    }
+                    Ok(Err(e)) => {
+                        let _ = icon.join();
+                        let wait = retry_after(tries);
+                        crate::log_line!("Bandeja: no se pudo poner el icono ({e}); reintento en {} s", wait.as_secs());
+                        std::thread::sleep(wait);
+                    }
+                    // El hilo del icono murió sin contestar (un pánico, ya en el log)
+                    Err(_) => {
+                        let _ = icon.join();
+                        std::thread::sleep(retry_after(tries));
+                    }
                 }
             }
         })
         .expect("hilo tray");
+}
+
+/// ¿Existe ya la barra de tareas del Explorador?
+#[cfg(windows)]
+fn taskbar_ready() -> bool {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
+    unsafe { FindWindowW(w!("Shell_TrayWnd"), PCWSTR::null()) }.is_ok_and(|h| !h.is_invalid())
+}
+
+/// El hilo del icono: lo crea, cuenta si pudo, atiende sus mensajes y, al
+/// terminar el bucle («Salir» o una salida desde otro hilo), lo suelta
+/// (`NIM_DELETE`) antes de nada más.
+#[cfg(windows)]
+fn run_icon(shared: SharedState, report: std::sync::mpsc::Sender<Result<(), String>>) {
+    use std::sync::atomic::Ordering::SeqCst;
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, GetMessageW, PeekMessageW, SetTimer, TranslateMessage, MSG, PM_NOREMOVE, WM_TIMER,
+    };
+    unsafe {
+        // La cola de mensajes del hilo, antes de dar su id: sin ella,
+        // PostThreadMessageW no tiene dónde dejar nada
+        let mut msg = MSG::default();
+        let _ = PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE);
+        ICON_THREAD.store(GetCurrentThreadId(), SeqCst);
+    }
+    let mut handle = match TrayHandle::build(&shared) {
+        Ok(h) => h,
+        Err(e) => {
+            let _ = report.send(Err(e));
+            return;
+        }
+    };
+    MenuEvent::set_event_handler(Some(menu_handler(
+        handle.show_id.clone(),
+        handle.quit_id.clone(),
+        handle.update_id.clone(),
+        handle.url_slot(),
+        crate::singleton::request_show,
+    )));
+    ICON_PRESENT.store(true, SeqCst);
+    let _ = report.send(Ok(()));
+    if !EXITING.load(SeqCst) {
+        unsafe {
+            let _ = SetTimer(None, 0, 1000, None);
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                if REMOVE.load(SeqCst) || (msg.hwnd.is_invalid() && msg.message == WM_PMP_REMOVE) {
+                    break;
+                }
+                if msg.message == WM_TIMER {
+                    handle.refresh(&shared);
+                    continue;
+                }
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+    drop(handle);
+    ICON_PRESENT.store(false, SeqCst);
+    crate::log_line!("Bandeja: icono retirado");
+    if QUIT.load(SeqCst) {
+        crate::log_line!("Salir (bandeja): salgo");
+        std::process::exit(0);
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -251,7 +440,7 @@ pub fn start_main_thread(shared: SharedState) {
     use std::cell::RefCell;
 
     let Some(mtm) = MainThreadMarker::new() else { return };
-    let Some(handle) = TrayHandle::build(&shared) else { return };
+    let Ok(handle) = TrayHandle::build(&shared) else { return };
     let handler = menu_handler(
         handle.show_id.clone(),
         handle.quit_id.clone(),
@@ -302,6 +491,12 @@ mod tests {
         let mut s = snap(1, Mode::Cemu, &["Pixel 8"]);
         s.update = Some(Version([2, 0, 0]));
         assert_eq!(tooltip(&s), "PepoMote · 1 móvil · Wii U\nPixel 8\nNueva versión 2.0.0…");
+    }
+
+    #[test]
+    fn el_icono_se_reintenta_cada_vez_con_mas_calma() {
+        let secs: Vec<u64> = (1..=7).map(|n| retry_after(n).as_secs()).collect();
+        assert_eq!(secs, vec![2, 4, 8, 16, 30, 30, 30]);
     }
 
     #[test]

@@ -108,6 +108,23 @@ pub fn report() -> String {
         ));
     }
     out.push(format!("Audio: {}", audio_probe()));
+    // Windows: la gráfica y con qué pinta la ventana en ella (gpu.rs). El
+    // «Adaptador de pantalla básico de Microsoft» sin OpenGL del fabricante
+    // es un PC sin driver de la gráfica: ahí la ventana va con Direct3D 12
+    #[cfg(windows)]
+    {
+        let cards = crate::gpu::adapters();
+        out.push(format!("Gráfica: {}", crate::gpu::describe_adapters(&cards)));
+        let fp = crate::gpu::fingerprint_of(&cards);
+        let cfg = crate::state::Config::load();
+        out.push(format!(
+            "Ventana en esta gráfica: {} · intento sin pintar pendiente: {}",
+            crate::gpu::recall(&cfg.window_renderer, &fp)
+                .map(|r| r.name())
+                .unwrap_or("aún sin decidir (el próximo arranque lanza la sonda de OpenGL)"),
+            cfg.window_pending.as_ref().map(|p| p.renderer.as_str()).unwrap_or("no")
+        ));
+    }
     out.extend(crate::rumble::diag_lines());
     #[cfg(target_os = "linux")]
     out.push(format!(

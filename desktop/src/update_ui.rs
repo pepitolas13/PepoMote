@@ -230,6 +230,8 @@ mod tests {
         }
         let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default().with_inner_size([480.0, 640.0]),
+            // Con wgpu en el receptor de Windows, eframe elegiría wgpu por defecto
+            renderer: eframe::Renderer::Glow,
             #[cfg(windows)]
             event_loop_builder: Some(Box::new(|builder| {
                 use winit::platform::windows::EventLoopBuilderExtWindows;

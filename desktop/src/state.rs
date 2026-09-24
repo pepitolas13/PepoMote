@@ -233,6 +233,27 @@ pub struct Config {
     /// vuelve a preguntar solo hasta que PepoMote traiga uno más nuevo.
     #[serde(default)]
     pub vigem_setup_version: Option<String>,
+    /// Windows: ya se enseñó el aviso de que la X deja PepoMote en la bandeja.
+    #[serde(default)]
+    pub tray_notice_seen: bool,
+    /// Windows: con qué pinta la ventana en cada gráfica (huella de las
+    /// tarjetas, su driver y la versión de PepoMote → "opengl" o
+    /// "direct3d"), las últimas cuatro (el escritorio remoto cambia las
+    /// tarjetas). Con la huella recordada no hace falta la sonda. Ver gpu.rs.
+    #[serde(default)]
+    pub window_renderer: Vec<WindowRenderer>,
+    /// Windows: el intento de ventana en curso. Se borra en cuanto pinta el
+    /// primer fotograma o falla limpio; si un arranque la encuentra puesta,
+    /// el anterior no llegó a pintar (colgado o cerrado a la fuerza).
+    #[serde(default)]
+    pub window_pending: Option<WindowRenderer>,
+}
+
+/// Una huella de gráfica y el renderer que le toca ("opengl" o "direct3d").
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct WindowRenderer {
+    pub fingerprint: String,
+    pub renderer: String,
 }
 
 impl Default for Config {
@@ -262,6 +283,9 @@ impl Default for Config {
             update_last_check: 0,
             update_latest: None,
             vigem_setup_version: None,
+            tray_notice_seen: false,
+            window_renderer: Vec::new(),
+            window_pending: None,
         }
     }
 }

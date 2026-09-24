@@ -60,6 +60,13 @@ pub struct PepoMoteApp {
     ax_ok: bool,
     #[cfg(target_os = "macos")]
     ax_checked: Instant,
+    /// Windows: el aviso de que la X deja PepoMote en la bandeja está a la
+    /// vista (la primera X; hasta pulsar «Entendido» o «Salir del todo»).
+    #[cfg(windows)]
+    close_notice: bool,
+    /// Windows: ese aviso ya se vio alguna vez (settings.json).
+    #[cfg(windows)]
+    tray_notice_seen: bool,
 }
 
 impl PepoMoteApp {
@@ -69,7 +76,12 @@ impl PepoMoteApp {
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     pub fn new(cc: &eframe::CreationContext<'_>, shared: SharedState, pairing: PairingInfo, start_hidden: bool) -> Self {
         theme::apply(&cc.egui_ctx);
-        let pref = shared.lock_tolerant().config.theme;
+        let (pref, notice_seen) = {
+            let s = shared.lock_tolerant();
+            (s.config.theme, s.config.tray_notice_seen)
+        };
+        #[cfg(not(windows))]
+        let _ = notice_seen;
         theme::set_preference(&cc.egui_ctx, pref);
         // macOS: el icono de la barra de menús solo puede nacer en el hilo
         // principal con el bucle de eventos ya en marcha: aquí
@@ -110,6 +122,10 @@ impl PepoMoteApp {
             ax_ok: crate::macos::ax_trusted(),
             #[cfg(target_os = "macos")]
             ax_checked: Instant::now(),
+            #[cfg(windows)]
+            close_notice: false,
+            #[cfg(windows)]
+            tray_notice_seen: notice_seen,
         }
     }
 
@@ -264,7 +280,14 @@ impl eframe::App for PepoMoteApp {
             crate::launch::mark_first_frame();
             self.painted_at = Some(Instant::now());
             crate::launch::ui_step(Step::Log);
-            crate::log_line!("Ventana: primer fotograma pintado ({})", crate::launch::describe(crate::launch::attempt()));
+            crate::log_line!("Ventana: primer fotograma pintado ({})", crate::launch::describe_current());
+            // Windows: la marca de «intento sin pintar» fuera, y lo que ha
+            // pintado queda recordado para esta gráfica
+            #[cfg(windows)]
+            {
+                crate::launch::ui_step(Step::SaveConfig);
+                crate::gpu::painted(&self.shared);
+            }
             crate::launch::ui_step(Step::Egui);
         }
         crate::launch::fake_ui_hang_if_requested(self.frames);
@@ -282,7 +305,7 @@ impl eframe::App for PepoMoteApp {
         if let (Some(t), Some(linger)) = (self.painted_at, self.smoke) {
             if t.elapsed() >= linger {
                 crate::log_line!("PEPOMOTE_SMOKE: fin, salgo con 0");
-                std::process::exit(0);
+                crate::launch::exit(0);
             }
         }
         // Linux: cerrar = salir (no hay bandeja); solo queda constancia
@@ -291,12 +314,29 @@ impl eframe::App for PepoMoteApp {
             crate::log_line!("Ventana cerrada por el usuario: salgo (en Linux no hay bandeja)");
         }
 
-        // En Windows, cerrar = esconder a la bandeja ("Salir" está en el tray)
+        // En Windows, cerrar = esconder a la bandeja ("Salir" está en el
+        // tray). La primera vez, antes, un aviso: quien lo usa por primera vez
+        // cree que la X lo ha cerrado y luego lo ve en el Administrador de
+        // tareas. Sin icono en la bandeja no hay desde dónde volver: minimiza
         #[cfg(windows)]
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            crate::launch::set_window_hidden(true);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            if !crate::tray::icon_present() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            } else if self.close_notice || self.tray_notice_seen {
+                // con el aviso a la vista, otra X = «Entendido»
+                if self.close_notice {
+                    self.accept_close_notice();
+                }
+                hide_to_tray(ctx);
+            } else {
+                self.close_notice = true;
+                crate::log_line!("Ventana: aviso de la bandeja a la vista (primera X)");
+            }
+        }
+        #[cfg(windows)]
+        if self.close_notice {
+            self.ui_close_notice(ctx);
         }
         // En macOS, el botón rojo = minimizar (el Dock la restaura; "Salir"
         // está en la barra de menús y en ⌘Q). Nunca ocultarla: oculta no se
@@ -452,6 +492,57 @@ impl eframe::App for PepoMoteApp {
         }
         crate::launch::ui_step(Step::Egui);
         let _ = snap.status;
+    }
+}
+
+/// Windows: la ventana a la bandeja (se vuelve con el icono o reabriendo el exe).
+#[cfg(windows)]
+fn hide_to_tray(ctx: &egui::Context) {
+    crate::launch::set_window_hidden(true);
+    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+}
+
+#[cfg(windows)]
+impl PepoMoteApp {
+    /// El aviso de la bandeja, ya visto: no vuelve a salir.
+    fn accept_close_notice(&mut self) {
+        self.close_notice = false;
+        self.tray_notice_seen = true;
+        crate::launch::ui_step(Step::SaveConfig);
+        {
+            let mut s = self.shared.lock_tolerant();
+            s.config.tray_notice_seen = true;
+            s.config.save();
+        }
+        crate::launch::ui_step(Step::Egui);
+    }
+
+    /// La primera X: PepoMote sigue en la bandeja para que el móvil siga
+    /// conectado; «Entendido» esconde la ventana como siempre y «Salir del
+    /// todo» cierra el receptor.
+    fn ui_close_notice(&mut self, ctx: &egui::Context) {
+        let (mut ok, mut quit) = (false, false);
+        egui::Window::new(RichText::new(tr!("win.tray_notice_title")).size(15.0).strong())
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_max_width(340.0);
+                ui.label(RichText::new(tr!("win.tray_notice_body")).size(13.0).color(theme::text()));
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ok = ui.button(RichText::new(tr!("win.tray_notice_ok")).size(13.0)).clicked();
+                    quit = ui.button(RichText::new(tr!("win.tray_notice_quit")).size(13.0)).clicked();
+                });
+            });
+        if ok {
+            self.accept_close_notice();
+            hide_to_tray(ctx);
+        } else if quit {
+            self.accept_close_notice();
+            crate::log_line!("Ventana: «Salir del todo» en el aviso de la bandeja: salgo");
+            crate::launch::exit(0);
+        }
     }
 }
 

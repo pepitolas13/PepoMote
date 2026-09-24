@@ -10,6 +10,13 @@
 //! por otro motivo (sandbox, red rara) ya no dejan al usuario sin ventana.
 //! `PMPDIAG1` (lo manda `--diag`) devuelve en una línea cómo está la
 //! ventana del receptor abierto: último fotograma y en qué paso se quedó.
+//!
+//! La segunda copia pide con `PMPSHOW2`, y la primera, si se colgó antes de
+//! pintar con OpenGL (Windows, ver `gpu::handover_allowed`), contesta
+//! `PMPHUNG1`, quita su icono y se termina: la nueva sigue como principal
+//! con Direct3D. Un PepoMote de antes (hasta la 1.13.2) no conoce
+//! `PMPSHOW2` (no contesta) y se le pregunta con el `PMPSHOW1` de siempre,
+//! que solo recibe `PMPACK01`.
 
 use crate::state::LockTolerant;
 use std::net::UdpSocket;
@@ -18,7 +25,14 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 const SHOW: &[u8] = b"PMPSHOW1";
+/// Mostrar, de una copia que entiende `PMPHUNG1`.
+const SHOW2: &[u8] = b"PMPSHOW2";
 const ACK: &[u8] = b"PMPACK01";
+/// «Me he colgado antes de pintar: te dejo el sitio» (solo a `PMPSHOW2`).
+const HUNG: &[u8] = b"PMPHUNG1";
+/// Lo que espera la copia nueva a que la colgada suelte el cerrojo (quitar
+/// su icono de la bandeja le lleva hasta 1,5 s).
+const HANDOVER_WAIT: Duration = Duration::from_secs(5);
 /// `--diag` pregunta por la ventana del receptor abierto; la respuesta es
 /// una línea de texto (versión, último fotograma, último paso).
 const DIAG: &[u8] = b"PMPDIAG1";
@@ -145,6 +159,9 @@ pub fn request_show() {
 pub enum Singleton {
     /// Somos la primera instancia; el socket es el cerrojo (mantener vivo).
     Primary(UdpSocket),
+    /// La que había se colgó antes de pintar y nos ha dejado el sitio:
+    /// somos la principal (y la ventana va con Direct3D).
+    TookOver(UdpSocket),
     /// Hay otro PepoMote vivo y ha contestado: ya se le ha pedido que se
     /// muestre. Salir.
     AlreadyRunning,
@@ -170,13 +187,35 @@ pub fn acquire_on(port: u16) -> Singleton {
                 use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
                 let _ = AllowSetForegroundWindow(ASFW_ANY);
             }
-            if ping(port, ACK_TIMEOUT) {
-                Singleton::AlreadyRunning
-            } else {
-                Singleton::NoLock(e)
+            match ask(port, SHOW2, ACK_TIMEOUT).as_deref() {
+                Some(r) if r == ACK => Singleton::AlreadyRunning,
+                Some(r) if r == HUNG => match wait_free(port, HANDOVER_WAIT) {
+                    Some(sock) => Singleton::TookOver(sock),
+                    None => Singleton::NoLock(e),
+                },
+                // Un PepoMote anterior no conoce PMPSHOW2: el de siempre
+                _ => {
+                    if ping(port, ACK_TIMEOUT) {
+                        Singleton::AlreadyRunning
+                    } else {
+                        Singleton::NoLock(e)
+                    }
+                }
             }
         }
         Err(e) => Singleton::NoLock(e),
+    }
+}
+
+/// Espera a que la copia que dejó el sitio suelte el cerrojo y lo coge.
+fn wait_free(port: u16, limit: Duration) -> Option<UdpSocket> {
+    let start = Instant::now();
+    loop {
+        match UdpSocket::bind(("127.0.0.1", port)) {
+            Ok(sock) => return Some(sock),
+            Err(_) if start.elapsed() < limit => std::thread::sleep(Duration::from_millis(100)),
+            Err(_) => return None,
+        }
     }
 }
 
@@ -229,7 +268,24 @@ pub fn watch(sock: UdpSocket) {
             loop {
                 match sock.recv_from(&mut buf) {
                     Ok((len, from)) => {
-                        if &buf[..len] == SHOW {
+                        if &buf[..len] == SHOW || &buf[..len] == SHOW2 {
+                            // Colgada antes de pintar con OpenGL: a la copia
+                            // nueva (solo si entiende PMPHUNG1) se le deja el
+                            // sitio, en vez de pedirle que se vaya
+                            #[cfg(windows)]
+                            if &buf[..len] == SHOW2 && crate::gpu::handover_now() {
+                                let _ = sock.send_to(HUNG, from);
+                                crate::log_line!(
+                                    "Otra copia de PepoMote pide la ventana y esta no ha pintado con OpenGL en {} s: le dejo el sitio · {}",
+                                    crate::gpu::attempt_age().map(|a| a.as_secs()).unwrap_or(0),
+                                    crate::launch::window_status()
+                                );
+                                crate::launch::before_exit();
+                                unsafe {
+                                    use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+                                    let _ = TerminateProcess(GetCurrentProcess(), 7);
+                                }
+                            }
                             let _ = sock.send_to(ACK, from);
                             crate::log_line!(
                                 "Otra copia de PepoMote pide mostrar la ventana · {}",
@@ -287,6 +343,42 @@ mod tests {
         assert!(reply.contains("fotograma"), "{reply}");
         let mute = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         assert!(query_status(mute.local_addr().unwrap().port(), Duration::from_millis(100)).is_none());
+    }
+
+    #[test]
+    fn una_copia_colgada_deja_el_sitio_a_la_nueva() {
+        let p = free_port();
+        let hung = UdpSocket::bind(("127.0.0.1", p)).unwrap();
+        let t = std::thread::spawn(move || {
+            let mut buf = [0u8; 16];
+            let (len, from) = hung.recv_from(&mut buf).unwrap();
+            assert_eq!(&buf[..len], SHOW2, "la copia nueva pregunta con PMPSHOW2");
+            hung.send_to(HUNG, from).unwrap();
+            // tarda un poco en terminarse (quitar el icono de la bandeja)
+            std::thread::sleep(Duration::from_millis(400));
+            drop(hung);
+        });
+        assert!(matches!(acquire_on(p), Singleton::TookOver(_)), "la nueva coge el cerrojo en cuanto se suelta");
+        t.join().unwrap();
+    }
+
+    #[test]
+    fn a_un_receptor_anterior_se_le_pide_como_siempre() {
+        // Hasta la 1.13.2: PMPSHOW2 no le dice nada, PMPSHOW1 sí
+        let p = free_port();
+        let old = UdpSocket::bind(("127.0.0.1", p)).unwrap();
+        let t = std::thread::spawn(move || {
+            let mut buf = [0u8; 16];
+            loop {
+                let (len, from) = old.recv_from(&mut buf).unwrap();
+                if &buf[..len] == SHOW {
+                    old.send_to(ACK, from).unwrap();
+                    return;
+                }
+            }
+        });
+        assert!(matches!(acquire_on(p), Singleton::AlreadyRunning));
+        t.join().unwrap();
     }
 
     #[test]

@@ -30,9 +30,12 @@ mod i18n;
 #[path = "../../desktop/src/update.rs"]
 mod update;
 /// `update_ui.rs` (compartido) avisa al vigilante de la ventana del receptor
-/// cuando el aviso de versión la saca de la bandeja; aquí no hay vigilante.
+/// cuando el aviso de versión la saca de la bandeja, y `update.rs` retira el
+/// icono de la bandeja antes de ceder el sitio al instalador; aquí no hay
+/// vigilante ni bandeja.
 mod launch {
     pub fn set_window_hidden(_hidden: bool) {}
+    pub fn before_exit() {}
 }
 mod strings;
 

@@ -500,6 +500,9 @@ pub fn finish_install(plan: &install::Plan) -> Result<(), String> {
     }
     // Window close hides into the tray on Windows/macOS. A successful handoff
     // must terminate this process so the helper can replace its executable.
+    // Remove the tray icon first, or Windows keeps a dead one next to the new
+    // version's icon.
+    crate::launch::before_exit();
     std::process::exit(0)
 }
 

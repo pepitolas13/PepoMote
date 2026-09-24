@@ -2,8 +2,10 @@
 //! (sin EGL/GL usable, backend Wayland roto con X11 sano, biblioteca que
 //! falta…), el error queda en receptor.log y, en Linux, el proceso se
 //! relanza a sí mismo con render por software y, si hace falta, con X11; si
-//! nada funciona, avisa por el escritorio. Lo puro (qué intento toca ahora)
-//! se prueba en cualquier SO.
+//! nada funciona, avisa por el escritorio. En Windows la ventana pinta con
+//! OpenGL o, si no sirve, con Direct3D 12 en el mismo proceso (gpu.rs), y si
+//! nada pinta lo dice en un mensaje. Lo puro (qué intento toca ahora) se
+//! prueba en cualquier SO.
 
 use std::any::Any;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
@@ -137,6 +139,39 @@ pub fn describe(a: &Attempt) -> String {
         a.backend.name(),
         if a.software_gl { "por software" } else { "de la GPU" }
     )
+}
+
+/// El intento de ventana en curso, para el log. En Windows, con qué pinta
+/// (OpenGL o Direct3D 12) y, cuando ya lo sabe, la gráfica y la versión;
+/// en Linux y macOS, lo de siempre.
+pub fn describe_current() -> String {
+    #[cfg(windows)]
+    if let Some(d) = crate::gpu::describe_current() {
+        return d;
+    }
+    describe(attempt())
+}
+
+/// La ventana en la línea de arranque del log.
+pub fn describe_startup() -> String {
+    if cfg!(windows) {
+        "OpenGL, o Direct3D 12 si OpenGL no sirve (se decide al abrirla)".to_owned()
+    } else {
+        describe(attempt())
+    }
+}
+
+/// Antes de terminar el proceso: el icono de la bandeja fuera. Sin esto
+/// Windows deja un icono fantasma que no abre nada hasta pasarle el ratón.
+pub fn before_exit() {
+    #[cfg(windows)]
+    crate::tray::remove_before_exit();
+}
+
+/// Termina el proceso (retirando antes el icono de la bandeja).
+pub fn exit(code: i32) -> ! {
+    before_exit();
+    std::process::exit(code)
 }
 
 static FIRST_FRAME: AtomicBool = AtomicBool::new(false);
@@ -336,7 +371,7 @@ pub fn start_smoke_watchdog() {
             if !first_frame_done() {
                 if start.elapsed() >= SMOKE_DEADLINE {
                     crate::log_line!("PEPOMOTE_SMOKE: sin primer fotograma a los {} s, salgo con 3", SMOKE_DEADLINE.as_secs());
-                    std::process::exit(3);
+                    exit(3);
                 }
                 continue;
             }
@@ -347,7 +382,7 @@ pub fn start_smoke_watchdog() {
                         age.as_secs(),
                         last_step().name()
                     );
-                    std::process::exit(4);
+                    exit(4);
                 }
             }
         }
@@ -439,11 +474,11 @@ pub fn finish(outcome: Outcome, attempt: &Attempt) -> i32 {
             0
         }
         Outcome::FailedAfterFrame(why) => {
-            crate::log_line!("Ventana: {} falló después de pintar: {why}", describe(attempt));
+            crate::log_line!("Ventana: {} falló después de pintar: {why}", describe_current());
             1
         }
         Outcome::FailedBeforeFrame(why) => {
-            crate::log_line!("Ventana: {} falló antes de pintar: {why}", describe(attempt));
+            crate::log_line!("Ventana: {} falló antes de pintar: {why}", describe_current());
             fallback_or_notify(attempt)
         }
     }
@@ -466,7 +501,38 @@ fn fallback_or_notify(attempt: &Attempt) -> i32 {
     2
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: ni OpenGL ni Direct3D 12 han pintado. Antes el receptor se iba
+/// sin decir nada (y con el icono de la bandeja muerto); ahora lo cuenta en
+/// un mensaje (salvo en modo humo: no hay nadie para cerrarlo).
+#[cfg(windows)]
+fn fallback_or_notify(_attempt: &Attempt) -> i32 {
+    let log = crate::log::path()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "receptor.log".to_owned());
+    let title = crate::tr!("ui.start_failed_title");
+    let body = crate::tr!("ui.start_failed_body_windows", log);
+    if smoke_linger(std::env::var(ENV_SMOKE).ok().as_deref()).is_some() {
+        crate::log_line!("Ventana: {title} (modo humo: sin mensaje)");
+    } else {
+        crate::log_line!("Ventana: {title}; lo digo en un mensaje");
+        before_exit();
+        unsafe {
+            use windows::core::HSTRING;
+            use windows::Win32::UI::WindowsAndMessaging::{
+                MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TOPMOST,
+            };
+            MessageBoxW(
+                None,
+                &HSTRING::from(body.as_str()),
+                &HSTRING::from(title),
+                MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST,
+            );
+        }
+    }
+    2
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn fallback_or_notify(_attempt: &Attempt) -> i32 {
     1
 }

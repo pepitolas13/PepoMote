@@ -11,6 +11,8 @@ mod eden;
 mod firewall;
 #[cfg(any(target_os = "linux", test))]
 mod fixes;
+#[cfg(windows)]
+mod gpu;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod screens;
 mod i18n;
@@ -47,6 +49,12 @@ use crate::state::LockTolerant;
 
 fn main() {
     if update::install::run_from_args() { return; }
+    // La sonda de OpenGL (gpu.rs), antes que nada: sin log, cerrojo, red,
+    // bandeja ni driver. Contesta una línea por stdout y termina
+    #[cfg(windows)]
+    if gpu::probe_from_args() {
+        gpu::run_probe();
+    }
     update::set_wake(singleton::request_show);
     // Lo primero de todo: que ningún pánico se pierda ni cierre el receptor
     // (el perfil release desenrolla; el hook lo deja en receptor.log)
@@ -79,13 +87,24 @@ fn main() {
         diag::env_or("WAYLAND_DISPLAY"),
         diag::env_or("DISPLAY"),
         diag::env_or("XDG_CURRENT_DESKTOP"),
-        launch::describe(launch::attempt())
+        launch::describe_startup()
     );
 
     // Instancia única: si ya hay un PepoMote vivo (quizá solo en la
-    // bandeja), se le pide que se muestre y este proceso termina.
+    // bandeja), se le pide que se muestre y este proceso termina. Si el vivo
+    // se había colgado antes de pintar con OpenGL, deja el sitio a este.
+    #[cfg(windows)]
+    let mut took_over = false;
     match singleton::acquire() {
         singleton::Singleton::Primary(lock) => singleton::watch(lock),
+        singleton::Singleton::TookOver(lock) => {
+            log_line!("El PepoMote abierto se había colgado antes de pintar y me ha dejado el sitio: sigo yo");
+            #[cfg(windows)]
+            {
+                took_over = true;
+            }
+            singleton::watch(lock);
+        }
         singleton::Singleton::AlreadyRunning => {
             log_line!(
                 "Ya hay un PepoMote escuchando en 127.0.0.1:{}: le he pedido que se muestre y salgo",
@@ -109,6 +128,14 @@ fn main() {
         i18n::set(saved.unwrap_or_else(i18n::detect_system));
     }
     let pairing = pairing::PairingInfo::generate();
+
+    // Con qué pintará la ventana (Windows): la gráfica al log, lo recordado
+    // para ella y, si hace falta, la sonda de OpenGL, que arranca ya y corre
+    // en paralelo con la red y la bandeja (con --minimized, cuando se pida
+    // la ventana). Antes de los hilos: la sonda no hereda nada de ellos.
+    #[cfg(windows)]
+    let mut window_plan =
+        gpu::WindowPlan::begin(&shared, took_over, !std::env::args().any(|a| a == "--minimized"));
 
     let dsu = dsu::start(shared.clone());
     // El hub de la vibración sondea el driver del mando virtual en su propio
@@ -172,6 +199,8 @@ fn main() {
         // Bloquea hasta que alguien pida la ventana. Los hilos de red y la
         // bandeja ya están vivos: el mando funciona sin UI.
         let _ = show_rx.recv();
+        // Ahora sí va a haber ventana: la sonda, si hace falta
+        window_plan.ensure_probe();
     }
     let hidden_window = cfg!(target_os = "macos") && start_hidden;
 
@@ -195,45 +224,117 @@ fn main() {
         launch::start_paint_watchdog();
     }
     let smoke_fail_first = attempt.n == 1 && std::env::var_os(launch::ENV_SMOKE_FAIL_FIRST).is_some();
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([460.0, 640.0])
-            .with_min_inner_size([360.0, 480.0])
-            .with_title("PepoMote")
-            // app_id (Wayland) / WM_CLASS (X11): así el compositor casa la
-            // ventana con PepoMote.desktop (icono, agrupación, reglas)
-            .with_app_id("PepoMote")
-            .with_visible(!hidden_window)
-            .with_icon(egui::IconData {
-                rgba: icon::logo_rgba(64),
-                width: 64,
-                height: 64,
-            }),
-        // Linux: backend forzado por el relanzamiento (PEPOMOTE_UI_BACKEND)
-        #[cfg(target_os = "linux")]
-        event_loop_builder: launch::event_loop_hook(attempt.backend),
-        ..Default::default()
-    };
-    // run_native va en catch_unwind: sin una configuración GL usable eframe
-    // entra en pánico en el hilo principal (no devuelve Err), y winit no
-    // permite un segundo bucle de eventos en el mismo proceso, así que la
-    // salida es el log y, en Linux, relanzarse (launch::finish).
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
-        if smoke_fail_first {
-            return Err("fallo simulado (PEPOMOTE_SMOKE_FAIL_FIRST)".to_owned());
+    let viewport = egui::ViewportBuilder::default()
+        .with_inner_size([460.0, 640.0])
+        .with_min_inner_size([360.0, 480.0])
+        .with_title("PepoMote")
+        // app_id (Wayland) / WM_CLASS (X11): así el compositor casa la
+        // ventana con PepoMote.desktop (icono, agrupación, reglas)
+        .with_app_id("PepoMote")
+        .with_visible(!hidden_window)
+        .with_icon(egui::IconData {
+            rgba: icon::logo_rgba(64),
+            width: 64,
+            height: 64,
+        });
+
+    // Windows: OpenGL, y si no sirve, Direct3D 12 (gpu.rs), en este mismo
+    // proceso: eframe reutiliza su bucle de eventos entre intentos
+    #[cfg(windows)]
+    {
+        let chain = window_plan.chain(&shared);
+        let code = run_window_windows(&chain, viewport, shared, pairing, start_hidden, smoke_fail_first);
+        launch::exit(code);
+    }
+
+    #[cfg(not(windows))]
+    {
+        let options = eframe::NativeOptions {
+            viewport,
+            renderer: eframe::Renderer::Glow,
+            // Linux: backend forzado por el relanzamiento (PEPOMOTE_UI_BACKEND)
+            #[cfg(target_os = "linux")]
+            event_loop_builder: launch::event_loop_hook(attempt.backend),
+            ..Default::default()
+        };
+        // run_native va en catch_unwind: sin una configuración GL usable eframe
+        // puede entrar en pánico en el hilo principal (no devolver Err), y
+        // aquí se sale por el log y, en Linux, relanzándose (launch::finish).
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
+            if smoke_fail_first {
+                return Err("fallo simulado (PEPOMOTE_SMOKE_FAIL_FIRST)".to_owned());
+            }
+            eframe::run_native(
+                "PepoMote",
+                options,
+                Box::new(move |cc| {
+                    singleton::set_ctx(cc.egui_ctx.clone());
+                    Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing, start_hidden)))
+                }),
+            )
+            .map_err(|e| format!("{e} ({e:?})"))
+        }));
+        let code = launch::finish(launch::classify(result, launch::first_frame_done()), attempt);
+        launch::exit(code);
+    }
+}
+
+/// Windows: la ventana con cada renderer de la cadena hasta que uno pinte.
+/// Se pasa al siguiente solo si el intento falla antes de pintar Y sin
+/// haber llegado a crear la app (la app no se crea dos veces). Devuelve el
+/// código de salida.
+#[cfg(windows)]
+fn run_window_windows(
+    chain: &[gpu::Renderer],
+    viewport: egui::ViewportBuilder,
+    shared: state::SharedState,
+    pairing: pairing::PairingInfo,
+    start_hidden: bool,
+    smoke_fail_first: bool,
+) -> i32 {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    let mut outcome = launch::Outcome::FailedBeforeFrame("ningún renderer que probar".to_owned());
+    for (i, &renderer) in chain.iter().enumerate() {
+        let n = (i + 1) as u8;
+        gpu::begin_attempt(&shared, renderer, n);
+        let created = Arc::new(AtomicBool::new(false));
+        let options = gpu::native_options(renderer, viewport.clone());
+        let (s, p, c) = (shared.clone(), pairing.clone(), created.clone());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
+            if smoke_fail_first && n == 1 {
+                return Err("fallo simulado (PEPOMOTE_SMOKE_FAIL_FIRST)".to_owned());
+            }
+            eframe::run_native(
+                "PepoMote",
+                options,
+                Box::new(move |cc| {
+                    c.store(true, Ordering::SeqCst);
+                    gpu::note_painter(cc);
+                    gpu::fake_window_hang_if_requested();
+                    singleton::set_ctx(cc.egui_ctx.clone());
+                    singleton::remember_window(cc);
+                    Ok(Box::new(app::PepoMoteApp::new(cc, s, p, start_hidden)))
+                }),
+            )
+            .map_err(|e| format!("{e} ({e:?})"))
+        }));
+        outcome = launch::classify(result, launch::first_frame_done());
+        gpu::end_attempt(&shared);
+        if let launch::Outcome::FailedBeforeFrame(why) = &outcome {
+            if !created.load(Ordering::SeqCst) {
+                if let Some(next) = chain.get(i + 1) {
+                    log_line!(
+                        "Ventana: {} falló antes de pintar: {why}; pruebo {}",
+                        launch::describe_current(),
+                        next.name()
+                    );
+                    gpu::failed_before_frame(&shared, renderer);
+                    continue;
+                }
+            }
         }
-        eframe::run_native(
-            "PepoMote",
-            options,
-            Box::new(move |cc| {
-                singleton::set_ctx(cc.egui_ctx.clone());
-                #[cfg(windows)]
-                singleton::remember_window(cc);
-                Ok(Box::new(app::PepoMoteApp::new(cc, shared, pairing, start_hidden)))
-            }),
-        )
-        .map_err(|e| format!("{e} ({e:?})"))
-    }));
-    let code = launch::finish(launch::classify(result, launch::first_frame_done()), attempt);
-    std::process::exit(code);
+        break;
+    }
+    launch::finish(outcome, launch::attempt())
 }

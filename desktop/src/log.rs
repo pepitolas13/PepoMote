@@ -51,7 +51,8 @@ struct Bridge;
 
 fn bridged(level: logfacade::Level, target: &str) -> bool {
     level <= logfacade::Level::Warn
-        || (level == logfacade::Level::Info && (target.starts_with("eframe") || target.starts_with("egui_glow")))
+        || (level == logfacade::Level::Info
+            && (target.starts_with("eframe") || target.starts_with("egui_glow") || target.starts_with("egui_wgpu")))
 }
 
 impl logfacade::Log for Bridge {
@@ -230,6 +231,8 @@ mod tests {
         assert!(bridged(Warn, "winit::platform_impl"));
         assert!(bridged(Info, "eframe::native::run"));
         assert!(bridged(Info, "egui_glow::painter"));
+        assert!(bridged(Info, "egui_wgpu"), "qué adaptador de Direct3D eligió (Windows sin OpenGL)");
+        assert!(!bridged(Info, "wgpu_core::instance"));
         assert!(!bridged(Info, "mdns_sd"));
         assert!(!bridged(Debug, "eframe"));
     }
